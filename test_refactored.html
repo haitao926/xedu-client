@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XEdu Client 2.0 - 重构版本演示</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .status-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .status-item label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+        .status-item .value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            min-width: 120px;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+        .btn-warning {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        .log-line {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        .log-info { color: #4fc1ff; }
+        .log-success { color: #89d185; }
+        .log-error { color: #f48771; }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .feature-card {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+        }
+        .feature-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .feature-card p {
+            color: #666;
+            line-height: 1.6;
+        }
+        .running {
+            background: #10b981;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .stopped {
+            background: #6b7280;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚡ XEdu Client 2.0</h1>
+            <p>专业的 Jupyter Notebook 桌面管理工具 - 重构版本演示</p>
+        </div>
+
+        <div class="content">
+            <!-- 重构特性展示 -->
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>🏗️ 模块化架构</h3>
+                    <p>采用现代化的分层架构，前端、后端、Tauri 三层分离，提高代码可维护性和扩展性。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>🎨 现代化界面</h3>
+                    <p>全新的用户界面设计，类似 VS Code 的深色主题，提供更好的用户体验。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>🔧 组件化设计</h3>
+                    <p>可复用的 UI 组件，统一的错误处理机制，完善的日志记录系统。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>🤖 AI 助手集成</h3>
+                    <p>集成 Kimi 视觉模型，支持图片分析和智能问答，提供更好的辅助功能。</p>
+                </div>
+            </div>
+
+            <!-- 状态卡片 -->
+            <div class="status-card">
+                <h2>📊 系统状态</h2>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <label>运行状态</label>
+                        <div class="value" id="running-status">
+                            <span class="stopped">已停止</span>
+                        </div>
+                    </div>
+                    <div class="status-item">
+                        <label>服务端口</label>
+                        <div class="value" id="service-port">-</div>
+                    </div>
+                    <div class="status-item">
+                        <label>进程 ID</label>
+                        <div class="value" id="process-id">-</div>
+                    </div>
+                    <div class="status-item">
+                        <label>访问地址</label>
+                        <div class="value" id="service-url">-</div>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-success" onclick="startJupyter()">启动 Jupyter</button>
+                    <button class="btn btn-danger" onclick="stopJupyter()">停止 Jupyter</button>
+                    <button class="btn btn-warning" onclick="restartJupyter()">重启 Jupyter</button>
+                    <button class="btn btn-primary" onclick="detectEnvironment()">检测环境</button>
+                </div>
+            </div>
+
+            <!-- 日志容器 -->
+            <div class="status-card">
+                <h2>📝 操作日志</h2>
+                <div class="log-container" id="log-container">
+                    <div class="log-line log-info">[INFO] XEdu Client 2.0 重构版本已启动</div>
+                    <div class="log-line log-success">[SUCCESS] 前端界面加载完成</div>
+                    <div class="log-line log-info">[INFO] 等待用户操作...</div>
+                </div>
+            </div>
+
+            <!-- API 状态 -->
+            <div class="status-card">
+                <h2>🔗 API 连接状态</h2>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <label>前端服务器</label>
+                        <div class="value">
+                            <span class="running">运行中</span>
+                        </div>
+                    </div>
+                    <div class="status-item">
+                        <label>后端 API</label>
+                        <div class="value" id="api-status">
+                            <span class="running">运行中</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5001';
+
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('log-container');
+            const time = new Date().toLocaleTimeString();
+            const logLine = document.createElement('div');
+            logLine.className = `log-line log-${type}`;
+            logLine.textContent = `[${time}] ${message}`;
+            logContainer.appendChild(logLine);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        async function apiCall(endpoint, options = {}) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                log(`API 调用失败: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        async function updateStatus() {
+            try {
+                const data = await apiCall('/api/status');
+
+                // 更新状态显示
+                const runningStatus = document.getElementById('running-status');
+                const servicePort = document.getElementById('service-port');
+                const processId = document.getElementById('process-id');
+                const serviceUrl = document.getElementById('service-url');
+
+                if (data.running) {
+                    runningStatus.innerHTML = '<span class="running">运行中</span>';
+                    servicePort.textContent = data.port;
+                    processId.textContent = data.pid;
+                    serviceUrl.textContent = data.url;
+                } else {
+                    runningStatus.innerHTML = '<span class="stopped">已停止</span>';
+                    servicePort.textContent = '-';
+                    processId.textContent = '-';
+                    serviceUrl.textContent = '-';
+                }
+
+                log('状态更新成功', 'success');
+            } catch (error) {
+                log(`状态更新失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function startJupyter() {
+            log('正在启动 Jupyter...', 'info');
+            try {
+                const data = await apiCall('/api/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        port: 8888,
+                        use_notebook: false
+                    })
+                });
+
+                if (data.success) {
+                    log(`✅ Jupyter 启动成功: ${data.message}`, 'success');
+                    log(`📍 URL: ${data.url}`, 'info');
+                    log(`🏷️ 进程 ID: ${data.pid}`, 'info');
+                    await updateStatus();
+                } else {
+                    log(`❌ 启动失败: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ 启动失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function stopJupyter() {
+            log('正在停止 Jupyter...', 'info');
+            try {
+                const data = await apiCall('/api/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+
+                if (data.success) {
+                    log(`✅ Jupyter 已停止`, 'success');
+                    await updateStatus();
+                } else {
+                    log(`❌ 停止失败: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ 停止失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function restartJupyter() {
+            log('正在重启 Jupyter...', 'info');
+            await stopJupyter();
+            setTimeout(async () => {
+                await startJupyter();
+            }, 1000);
+        }
+
+        async function detectEnvironment() {
+            log('正在检测 Python 环境...', 'info');
+            try {
+                const data = await apiCall('/api/detect_python');
+
+                if (data.success) {
+                    log(`✅ Python ${data.info.python_version} 检测成功`, 'success');
+                    log(`📍 Python 路径: ${data.info.python_executable}`, 'info');
+                    log(`💻 平台: ${data.info.platform}`, 'info');
+                    if (data.info.jupyterlab_installed) {
+                        log(`📓 JupyterLab ${data.info.jupyterlab_version} 已安装`, 'success');
+                    }
+                } else {
+                    log(`❌ 环境检测失败: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ 环境检测失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            log('🚀 XEdu Client 2.0 重构版本演示启动完成', 'success');
+            log('📡 正在连接后端 API...', 'info');
+
+            // 测试 API 连接
+            apiCall('/api/health')
+                .then(data => {
+                    log(`✅ 后端 API 连接成功: ${data.message}`, 'success');
+                    updateStatus();
+                })
+                .catch(error => {
+                    log(`❌ 后端 API 连接失败: ${error.message}`, 'error');
+                });
+        });
+    </script>
+</body>
+</html>

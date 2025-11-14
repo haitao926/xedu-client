@@ -19,7 +19,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src http://localhost:5000 http://127.0.0.1:5000 http://0.0.0.0:5000 ws://localhost:5000"
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src http://localhost:5000 http://127.0.0.1:5000 http://0.0.0.0:5000 ws://localhost:5000; media-src 'self' blob:; object-src 'self';"
     }
   },
   "bundle": {

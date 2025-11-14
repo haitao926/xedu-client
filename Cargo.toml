@@ -1,25 +1,52 @@
 [package]
-name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+name = "xedu-client"
+version = "2.0.0"
+description = "专业的 Jupyter Notebook 桌面管理工具 - 重构版本"
+authors = ["XEdu Team"]
+license = "MIT"
+repository = "https://github.com/xedu-client/xedu-client"
 edition = "2021"
 rust-version = "1.77.2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "app_lib"
+name = "xedu_client_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.5.1", features = [] }
 
 [dependencies]
+# 核心依赖
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.9.2", features = [] }
+tauri = { version = "2.9.2", features = ["dialog-open"] }
+
+# Tauri 插件
 tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+
+# HTTP 客户端
+reqwest = { version = "0.12", features = ["json"] }
+
+# 系统操作
+open = "5.0"
+
+# 文件系统
+dirs = "5.0"
+
+# 错误处理
+anyhow = "1.0"
+thiserror = "1.0"
+
+# 异步支持
+tokio = { version = "1.0", features = ["full"] }
+
+# 日期时间
+chrono = { version = "0.4", features = ["serde"] }
+
+[features]
+default = ["dialog"]
+dialog = ["tauri/dialog"]

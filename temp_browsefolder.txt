@@ -1,0 +1,19 @@
+      // 浏览文件夹 - 简化版本，直接使用绝对路径
+        function browseFolder() {
+            const projectPathInput = document.getElementById('project-path');
+
+            // 由于浏览器安全限制，无法获取真实绝对路径
+            // 直接提示用户手动输入绝对路径
+            log('💡 请手动输入文件夹的绝对路径', 'info');
+            log('   例如: D:\\MyProjects\\JupyterWork', 'info');
+            log('   例如: C:\\Users\\用户名\\Documents\\Python', 'info');
+
+            // 聚焦到输入框，方便用户输入
+            if (projectPathInput) {
+                projectPathInput.focus();
+                projectPathInput.select();
+            }
+
+            // 显示路径示例
+            showPathExample();
+        }

@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jupyter Notebook Client - 重构版</title>
+    <link rel="stylesheet" href="./styles/main.css">
+    <style>
+        /* 临时样式，用于AI助手页面 */
+        .ai-chat-layout {
+            display: flex;
+            height: calc(100vh - 200px);
+            gap: 0;
+        }
+
+        .chat-sidebar {
+            width: 200px;
+            background: #f8f9fa;
+            border-right: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .chat-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .chat-container {
+            flex: 1;
+            background: #ffffff;
+            overflow-y: auto;
+            padding: 0;
+            max-height: none;
+            border: 1px solid #e5e7eb;
+        }
+
+        .chat-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 20px;
+            text-align: center;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+        }
+
+        .chat-empty-icon {
+            font-size: 100px;
+            margin-bottom: 30px;
+            opacity: 0.3;
+        }
+
+        .chat-empty-text {
+            font-size: 18px;
+            color: #666;
+            line-height: 1.8;
+            font-weight: 500;
+        }
+
+        .chat-message {
+            display: flex;
+            gap: 16px;
+            padding: 20px;
+            border-bottom: 1px solid #f0f0f0;
+            animation: fadeIn 0.4s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .chat-message:last-child {
+            border-bottom: none;
+        }
+
+        .chat-message.answer {
+            background: #f8f9fa;
+        }
+
+        .message-avatar {
+            flex-shrink: 0;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .message-avatar.ai-avatar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .message-avatar.user-avatar {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+
+        .message-content-wrapper {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .message-sender {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .message-time {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .message-content {
+            font-size: 15px;
+            line-height: 1.7;
+            color: #333;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .ai-input-fixed {
+            padding: 16px 24px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .ai-input-container {
+            display: flex;
+            gap: 10px;
+            background: #f8f9fa;
+            border: 2px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 12px;
+            transition: all 0.3s;
+        }
+
+        .ai-input-container:focus-within {
+            border-color: #667eea;
+            background: white;
+        }
+
+        .btn-attach, .btn-send {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            flex-shrink: 0;
+        }
+
+        .btn-attach {
+            background: #e5e7eb;
+            color: #666;
+        }
+
+        .btn-attach:hover {
+            background: #d1d5db;
+            transform: scale(1.05);
+        }
+
+        .btn-send {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-send:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-send:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .ai-textarea-fixed {
+            flex: 1;
+            border: none;
+            outline: none;
+            resize: none;
+            font-size: 15px;
+            line-height: 1.6;
+            font-family: inherit;
+            max-height: 300px;
+            padding: 12px 8px;
+            background: transparent;
+        }
+
+        .ai-input-hint {
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            margin-top: 6px;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 标题 -->
+        <div class="header">
+            <h1>⚡ Jupyter Notebook Client</h1>
+            <p>专业的 Jupyter Notebook 桌面管理工具 | 重构版本 v2.0</p>
+            <p style="margin-top: 10px; font-size: 12px;">
+                API 服务器: <strong id="api-status">检测中...</strong> |
+                状态: <strong id="connection-status">未连接</strong>
+            </p>
+        </div>
+
+        <!-- 导航标签 -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="app.switchTab('main')">
+                🏠 主控制台
+            </button>
+            <button class="nav-tab" onclick="app.switchTab('settings')">
+                ⚙️ 系统设置
+            </button>
+            <button class="nav-tab" onclick="app.switchTab('ai-assistant')">
+                🤖 AI 助手
+            </button>
+        </div>
+
+        <!-- 主控制台 -->
+        <div id="main" class="tab-content active">
+            <div class="main-content">
+                <!-- 项目设置 -->
+                <div class="card">
+                    <h2>📁 项目设置</h2>
+                    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('folder-input').click()">
+                        <div class="icon">📂</div>
+                        <div class="text">拖拽文件夹到这里或点击选择</div>
+                        <div class="hint">支持将项目文件夹拖拽到此处</div>
+                        <input type="file" id="folder-input" webkitdirectory directory multiple style="display: none;">
+                    </div>
+                    <div class="path-display" style="margin-top: 20px;">
+                        <label>项目目录路径</label>
+                        <input type="text" id="project-path" placeholder="例如: C:\Users\用户名\Documents\项目文件夹"
+                               style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; margin-bottom: 10px;">
+                        <button class="btn btn-info" onclick="confirmProjectPath()" style="width: 100%; margin-top: 5px;">
+                            <span>✓</span> 确认路径
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Jupyter 控制面板 -->
+                <div id="control-panel">
+                    <!-- 这里会被 ControlPanel 组件填充 -->
+                </div>
+
+                <!-- 状态栏 -->
+                <div id="status-container">
+                    <!-- 这里会被 StatusBar 组件填充 -->
+                </div>
+
+                <!-- 实时日志 -->
+                <div class="card full-width">
+                    <h2>📝 实时日志</h2>
+                    <div class="btn-group" style="margin-bottom: 15px;">
+                        <button class="btn btn-secondary" onclick="app.clearLog()">
+                            <span>🗑️</span> 清空日志
+                        </button>
+                        <button class="btn btn-info" onclick="exportLog()">
+                            <span>💾</span> 导出日志
+                        </button>
+                        <button class="btn btn-secondary" onclick="logger.toggleAutoScroll()">
+                            <span>📜</span> 自动滚动
+                        </button>
+                    </div>
+                    <div id="log-container" class="log-container">
+                        <div class="log-line log-info">
+                            <span class="log-time">[--:--:--]</span>
+                            系统启动，等待 Jupyter Notebook Client 初始化...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统设置 -->
+        <div id="settings" class="tab-content">
+            <!-- 系统信息 -->
+            <div class="card" style="margin-bottom: 20px;">
+                <h2>📊 系统信息</h2>
+                <div class="info-grid">
+                    <div class="info-card">
+                        <h3>Python 版本</h3>
+                        <div class="value" id="python-version">-</div>
+                        <p>当前 Python 解释器版本</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>Jupyter 版本</h3>
+                        <div class="value" id="jupyter-version">-</div>
+                        <p>Jupyter Notebook 框架版本</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>操作系统</h3>
+                        <div class="value" id="os-info">-</div>
+                        <p>当前运行平台</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>API 状态</h3>
+                        <div class="value" id="api-health">检测中...</div>
+                        <p>Flask API 连接状态</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 配置设置 -->
+            <div class="card" style="margin-bottom: 20px;">
+                <h2>⚙️ 全局配置</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>API 服务器地址</label>
+                        <input type="text" id="config-api-base" value="http://127.0.0.1:5000">
+                    </div>
+                    <div class="form-group">
+                        <label>状态刷新间隔 (毫秒)</label>
+                        <input type="number" id="config-refresh-interval" value="2000" min="1000" max="60000">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="config-auto-open-browser" checked> 启动后自动打开浏览器
+                    </label>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-info" onclick="saveGlobalConfig()">
+                        <span>💾</span> 保存配置
+                    </button>
+                    <button class="btn btn-secondary" onclick="loadGlobalConfig()">
+                        <span>🔄</span> 重新加载
+                    </button>
+                </div>
+            </div>
+
+            <!-- AI助手配置 -->
+            <div class="card">
+                <h2>🤖 AI 助手配置</h2>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="ai-api-key" placeholder="输入 Moonshot API Key">
+                </div>
+                <div class="form-group">
+                    <label>Base URL</label>
+                    <input type="text" id="ai-base-url" value="https://api.moonshot.cn/v1" placeholder="https://api.moonshot.cn/v1">
+                </div>
+                <div class="form-group">
+                    <label>模型</label>
+                    <select id="ai-model" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                        <option value="moonshot-v1-8k-vision-preview">moonshot-v1-8k-vision-preview</option>
+                        <option value="moonshot-v1-32k-vision-preview">moonshot-v1-32k-vision-preview</option>
+                        <option value="moonshot-v1-128k-vision-preview">moonshot-v1-128k-vision-preview</option>
+                    </select>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-info" onclick="saveAIConfig()">
+                        <span>💾</span> 保存 AI 配置
+                    </button>
+                    <button class="btn btn-success" onclick="testAIConfig()">
+                        <span>🧪</span> 测试连接
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI助手 -->
+        <div id="ai-assistant" class="tab-content">
+            <div class="ai-chat-layout">
+                <!-- 左侧聊天历史列表 -->
+                <div class="chat-sidebar">
+                    <div class="sidebar-header" style="padding: 20px; border-bottom: 1px solid #e5e7eb;">
+                        <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">💬 对话历史</h3>
+                        <button class="btn btn-info" style="width: 100%;" onclick="startNewChat()">
+                            <span>➕</span> 新对话
+                        </button>
+                    </div>
+                    <div class="chat-list" style="flex: 1; overflow-y: auto; padding: 10px;">
+                        <div class="chat-item" style="display: flex; gap: 12px; padding: 12px; border-radius: 10px; cursor: pointer; background: #f0f0f0;">
+                            <div class="chat-item-icon" style="width: 36px; height: 36px; border-radius: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; font-size: 20px;">🤖</div>
+                            <div class="chat-item-info" style="flex: 1; min-width: 0;">
+                                <div class="chat-item-title" style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">默认对话</div>
+                                <div class="chat-item-preview" style="font-size: 12px; opacity: 0.7;">还没有消息</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧主聊天区域 -->
+                <div class="chat-main">
+                    <!-- 聊天标题栏 -->
+                    <div class="chat-main-header" style="display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #e5e7eb; background: white;">
+                        <h2 style="margin: 0; font-size: 20px; color: #333;">🤖 Kimi 视觉助手</h2>
+                        <div class="header-actions">
+                            <button class="btn btn-danger" style="padding: 8px 16px;" onclick="clearCurrentChat()">
+                                <span>🗑️</span> 清空当前
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 聊天内容区 -->
+                    <div id="chat-history" class="chat-container">
+                        <div class="chat-empty">
+                            <div class="chat-empty-icon">🤖</div>
+                            <div class="chat-empty-text">开始新对话吧！<br>上传图片并提问</div>
+                        </div>
+                    </div>
+
+                    <!-- 底部输入区 -->
+                    <div class="ai-input-fixed">
+                        <div class="ai-input-container">
+                            <button class="btn-attach" onclick="document.getElementById('ai-image-input').click()">
+                                <span>📎</span>
+                            </button>
+                            <textarea id="ai-question" rows="1" placeholder="请输入您想询问的问题..."
+                                    class="ai-textarea-fixed" onkeydown="handleAIKeyDown(event)"></textarea>
+                            <button class="btn-send" id="btn-send" onclick="askAI()">
+                                <span>➤</span>
+                            </button>
+                            <input type="file" id="ai-image-input" accept="image/*" style="display: none;">
+                        </div>
+                        <div class="ai-input-hint">
+                            支持图片上传，Kimi AI 可以分析图片内容
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 模块 -->
+    <script type="module">
+        // 导入应用模块
+        import app from './utils/app.js';
+        import StatusBar from './components/StatusBar.js';
+        import ControlPanel from './components/ControlPanel.js';
+        import logger from './utils/logger.js';
+        import configManager from './utils/config.js';
+        import apiClient from './utils/api.js';
+
+        // 将应用实例暴露到全局，以便HTML中的onclick可以访问
+        window.app = app;
+        window.logger = logger;
+        window.configManager = configManager;
+        window.apiClient = apiClient;
+
+        // 组件实例
+        let statusBar, controlPanel;
+
+        // 初始化应用
+        async function initializeApp() {
+            try {
+                // 初始化应用核心
+                await app.init();
+
+                // 初始化组件
+                statusBar = new StatusBar('status-container');
+                controlPanel = new ControlPanel('control-panel');
+
+                // 加载系统信息
+                await loadSystemInfo();
+
+                // 设置页面事件
+                setupPageEvents();
+
+                logger.success('🎉 应用初始化完成，可以开始使用了！');
+
+            } catch (error) {
+                logger.error(`❌ 应用初始化失败: ${error.message}`);
+                console.error('App initialization failed:', error);
+            }
+        }
+
+        // 加载系统信息
+        async function loadSystemInfo() {
+            try {
+                const result = await apiClient.detectPython();
+                if (result.success && result.info) {
+                    document.getElementById('python-version').textContent = result.info.python_version || '-';
+                    document.getElementById('jupyter-version').textContent = result.info.jupyterlab_version || result.info.jupyter_version || '-';
+                    document.getElementById('os-info').textContent = result.info.platform || '-';
+                }
+            } catch (error) {
+                logger.warn('无法加载系统信息');
+            }
+        }
+
+        // 设置页面事件
+        function setupPageEvents() {
+            // 监听API连接状态
+            document.addEventListener('api:connected', () => {
+                document.getElementById('api-status').textContent = '正常';
+                document.getElementById('api-status').style.color = '#16a34a';
+                document.getElementById('connection-status').textContent = '已连接';
+                document.getElementById('connection-status').style.color = '#16a34a';
+                document.getElementById('api-health').textContent = '正常';
+            });
+
+            document.addEventListener('api:disconnected', () => {
+                document.getElementById('api-status').textContent = '离线';
+                document.getElementById('api-status').style.color = '#dc2626';
+                document.getElementById('connection-status').textContent = '未连接';
+                document.getElementById('connection-status').style.color = '#dc2626';
+                document.getElementById('api-health').textContent = '离线';
+            });
+
+            // 设置拖拽功能
+            setupDragAndDrop();
+        }
+
+        // 拖拽功能
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('drop-zone');
+            const folderInput = document.getElementById('folder-input');
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+            });
+
+            dropZone.addEventListener('drop', handleDrop, false);
+            folderInput.addEventListener('change', handleFileSelect);
+
+            function handleDrop(e) {
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFiles(files);
+                }
+            }
+
+            function handleFileSelect(e) {
+                const files = e.target.files;
+                if (files.length > 0) {
+                    handleFiles(files);
+                }
+            }
+
+            function handleFiles(files) {
+                if (files.length > 0) {
+                    const firstFile = files[0];
+                    let folderName = '';
+
+                    if (firstFile.webkitRelativePath) {
+                        const pathParts = firstFile.webkitRelativePath.split('/');
+                        folderName = pathParts[0] || '';
+                    }
+
+                    if (folderName) {
+                        document.getElementById('project-path').value = folderName;
+                        logger.info(`📁 已选择文件夹: ${folderName}`);
+                        logger.info(`📊 检测到 ${files.length} 个文件`);
+                    }
+                }
+            }
+        }
+
+        // 全局函数（供HTML调用）
+        window.confirmProjectPath = function() {
+            const projectPath = document.getElementById('project-path').value.trim();
+            if (!projectPath) {
+                logger.warn('⚠️ 请输入项目目录路径');
+                return;
+            }
+
+            configManager.set('jupyter.projectDir', projectPath);
+            logger.success('✅ 项目路径已确认');
+            logger.info(`📍 路径: ${projectPath}`);
+        };
+
+        window.exportLog = function() {
+            const logData = logger.export();
+            if (logData) {
+                const blob = new Blob([logData.content], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = logData.filename;
+                a.click();
+                URL.revokeObjectURL(url);
+                logger.success('✅ 日志已导出');
+            }
+        };
+
+        window.saveGlobalConfig = function() {
+            const apiBase = document.getElementById('config-api-base').value;
+            const refreshInterval = parseInt(document.getElementById('config-refresh-interval').value);
+            const autoOpenBrowser = document.getElementById('config-auto-open-browser').checked;
+
+            configManager.setMultiple({
+                'api.baseURL': apiBase,
+                'ui.refreshInterval': refreshInterval,
+                'ui.autoOpenBrowser': autoOpenBrowser
+            });
+
+            configManager.save();
+            logger.success('✅ 全局配置已保存');
+        };
+
+        window.loadGlobalConfig = function() {
+            document.getElementById('config-api-base').value = configManager.get('api.baseURL');
+            document.getElementById('config-refresh-interval').value = configManager.get('ui.refreshInterval');
+            document.getElementById('config-auto-open-browser').checked = configManager.get('ui.autoOpenBrowser');
+            logger.info('✅ 配置已重新加载');
+        };
+
+        window.saveAIConfig = function() {
+            const config = {
+                apiKey: document.getElementById('ai-api-key').value,
+                baseURL: document.getElementById('ai-base-url').value,
+                model: document.getElementById('ai-model').value
+            };
+
+            localStorage.setItem('ai_config', JSON.stringify(config));
+            logger.success('✅ AI 配置已保存');
+        };
+
+        window.testAIConfig = function() {
+            const config = JSON.parse(localStorage.getItem('ai_config') || '{}');
+            if (config.apiKey) {
+                logger.success('✅ AI 配置已保存，可以使用');
+            } else {
+                logger.warn('⚠️ 请先配置 API Key');
+            }
+        };
+
+        window.startNewChat = function() {
+            clearCurrentChat();
+            logger.info('💬 已开始新对话');
+        };
+
+        window.clearCurrentChat = function() {
+            const chatHistory = document.getElementById('chat-history');
+            chatHistory.innerHTML = `
+                <div class="chat-empty">
+                    <div class="chat-empty-icon">🤖</div>
+                    <div class="chat-empty-text">开始新对话吧！<br>上传图片并提问</div>
+                </div>
+            `;
+            document.getElementById('ai-question').value = '';
+            document.getElementById('ai-image-input').value = '';
+        };
+
+        window.handleAIKeyDown = function(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                window.askAI();
+            }
+        };
+
+        window.askAI = async function() {
+            const config = JSON.parse(localStorage.getItem('ai_config') || '{}');
+            if (!config.apiKey) {
+                logger.warn('⚠️ 请先在设置页面配置 AI API Key');
+                return;
+            }
+
+            const imageInput = document.getElementById('ai-image-input');
+            const question = document.getElementById('ai-question').value.trim();
+
+            if (!imageInput.files || !imageInput.files[0]) {
+                logger.warn('⚠️ 请上传图片');
+                return;
+            }
+
+            if (!question) {
+                logger.warn('⚠️ 请输入问题');
+                return;
+            }
+
+            const btn = document.getElementById('btn-send');
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳</span>';
+
+            try {
+                // 转换图片为base64
+                const file = imageInput.files[0];
+                const base64 = await fileToBase64(file);
+
+                const response = await apiClient.askAI(base64, question, config);
+
+                if (response.success) {
+                    addToChatHistory(question, response.answer);
+                    document.getElementById('ai-question').value = '';
+                    imageInput.value = '';
+                } else {
+                    logger.error(`❌ AI 回答失败: ${response.message}`);
+                }
+            } catch (error) {
+                logger.error(`❌ AI 请求失败: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>➤</span>';
+            }
+        };
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        function addToChatHistory(question, answer) {
+            const chatHistory = document.getElementById('chat-history');
+
+            // 检查是否为空状态
+            if (chatHistory.children.length === 1 && chatHistory.children[0].classList.contains('chat-empty')) {
+                chatHistory.innerHTML = '';
+            }
+
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+            // 用户问题
+            const qDiv = document.createElement('div');
+            qDiv.className = 'chat-message question';
+            qDiv.innerHTML = `
+                <div class="message-avatar user-avatar">
+                    <span>👤</span>
+                </div>
+                <div class="message-content-wrapper">
+                    <div class="message-header">
+                        <span class="message-sender">您</span>
+                        <span class="message-time">${timeString}</span>
+                    </div>
+                    <div class="message-content">${question}</div>
+                </div>
+            `;
+
+            // AI回答
+            const aDiv = document.createElement('div');
+            aDiv.className = 'chat-message answer';
+            aDiv.innerHTML = `
+                <div class="message-avatar ai-avatar">
+                    <span>🤖</span>
+                </div>
+                <div class="message-content-wrapper">
+                    <div class="message-header">
+                        <span class="message-sender">Kimi AI</span>
+                        <span class="message-time">${timeString}</span>
+                    </div>
+                    <div class="message-content">${answer}</div>
+                </div>
+            `;
+
+            chatHistory.appendChild(qDiv);
+            chatHistory.appendChild(aDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', initializeApp);
+
+        // 导出供调试使用
+        window.debugApp = { statusBar, controlPanel };
+    </script>
+</body>
+</html>

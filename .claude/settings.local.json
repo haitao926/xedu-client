@@ -68,7 +68,12 @@
       "Bash(resources/venv/Scripts/python.exe resources/web_app.py)",
       "Bash(resources/venv/Scripts/python.exe -c:*)",
       "Bash(npm run dev:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(venv/Scripts/pip install:*)",
+      "Bash(\"D:\\project\\xedu-client\\test_project\\README.md\")",
+      "WebSearch",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []

@@ -16,8 +16,7 @@ import signal
 import time
 import base64
 
-# SSL 修复：在导入其他模块前设置环境变量
-os.environ['PYTHONNOUSERSITE'] = '1'
+# SSL 修复：添加DLL路径，但不禁用用户site-packages
 dlls_path = str(Path(__file__).parent / 'XEdu' / 'env' / 'DLLs')
 if os.path.exists(dlls_path):
     os.environ['PATH'] = dlls_path + os.pathsep + os.environ.get('PATH', '')
@@ -42,7 +41,7 @@ def load_config():
     return {
         'python_executable': str(venv_python),
         'jupyter_port': JUPYTER_DEFAULT_PORT,
-        'project_dir': ".",
+        'project_dir': "",
         'use_notebook': False
     }
 
@@ -63,9 +62,12 @@ class JupyterManager:
         self.process = None
         self.port = JUPYTER_DEFAULT_PORT
         self.start_time = None
+        self.managed_pid = None  # 存储我们启动的Jupyter进程的PID
         # 优先使用配置的 Python，否则使用当前 Python
         self.python_executable = CONFIG.get('python_executable', sys.executable)
-        self.project_dir = CONFIG.get('project_dir', str(Path.cwd()))
+        # 如果配置为空字符串，使用当前目录
+        project_dir_config = CONFIG.get('project_dir', str(Path.cwd()))
+        self.project_dir = project_dir_config if project_dir_config else str(Path.cwd())
         self.use_notebook = CONFIG.get('use_notebook', False)  # 默认为 lab
         self.auto_restart = True  # 进程保护开关
         self.check_interval = 5   # 检查间隔（秒）
@@ -78,9 +80,15 @@ class JupyterManager:
         print(f"\n[DEBUG] JupyterManager.start() 被调用")
         print(f"   参数 - port: {port}, python_executable: {python_executable}, project_dir: {project_dir}, use_notebook: {use_notebook}")
 
+        # 检查是否在运行，如果是则先停止
         if self.is_running():
-            print("[ERROR] Jupyter 已在运行中")
-            return {"success": False, "message": "Jupyter 已在运行中"}
+            print("[INFO] 检测到Jupyter正在运行，将先停止现有进程")
+            stop_result = self.stop()
+            if not stop_result.get("success", False):
+                print(f"[ERROR] 无法停止现有Jupyter进程: {stop_result.get('message', 'Unknown error')}")
+                return {"success": False, "message": f"无法停止现有Jupyter进程: {stop_result.get('message', 'Unknown error')}"}
+            # 等待一秒确保进程完全退出
+            time.sleep(1)
 
         try:
             # 使用传入的参数或配置
@@ -175,13 +183,15 @@ class JupyterManager:
             # 使用找到的 Python 启动
             cmd = [
                 self.python_executable, "-m", module_name,
-                f"--ServerApp.port={self.port}",
-                "--ServerApp.open_browser=False",
-                "--ServerApp.allow_origin='*'",
-                "--ServerApp.disable_check_xsrf=True",
+                f"--port={self.port}",
+                "--no-browser",
+                "--allow-root",
+                f"--ServerApp.notebook_dir={self.project_dir}",
                 "--ServerApp.token=''",
                 "--ServerApp.password=''",
-                f"--ServerApp.root_dir={self.project_dir}",
+                "--ServerApp.disable_check_xsrf=True",
+                "--ServerApp.allow_origin='*'",
+                "--ServerApp.ip='0.0.0.0'"
             ]
 
             if self.open_file:
@@ -191,7 +201,8 @@ class JupyterManager:
                     rel_url = rel_path.as_posix()
                     url_prefix = "/tree" if self.use_notebook else "/lab/tree"
                     default_url = f"{url_prefix}/{rel_url}"
-                    cmd.append(f"--ServerApp.default_url={default_url}")
+                    # 使用更兼容的默认URL参数
+                    cmd.append(f"--NotebookApp.default_url={default_url}")
                     print(f"[INFO] 默认打开路径: {default_url}")
                 except ValueError:
                     print(f"[WARN] 指定文件不在项目目录内，忽略: {self.open_file}")
@@ -225,6 +236,8 @@ class JupyterManager:
             )
 
             print(f"[DEBUG] 进程已启动，PID: {self.process.pid}")
+            # 存储我们管理的Jupyter进程PID
+            self.managed_pid = self.process.pid
 
             # 等待启动并检查错误
             print("[DEBUG] 等待启动...")
@@ -288,11 +301,16 @@ class JupyterManager:
 
     def stop(self):
         """停止 Jupyter Lab"""
-        if not self.is_running():
+        print(f"[DEBUG] stop() called - managed_pid: {self.managed_pid}, process: {self.process}")
+
+        # 即使is_running()返回false，如果我们有managed_pid，也要尝试停止
+        if not self.is_running() and not self.managed_pid:
             return {"success": False, "message": "Jupyter Lab 未运行"}
 
         try:
+            # 首先尝试停止我们管理的进程
             if self.process:
+                print(f"[DEBUG] 正在停止内部进程，PID: {self.process.pid}")
                 if platform.system() == "Windows":
                     self.process.terminate()
                 else:
@@ -301,29 +319,108 @@ class JupyterManager:
                 # 等待进程结束
                 try:
                     self.process.wait(timeout=5)
+                    print(f"[DEBUG] 内部进程已正常退出")
                 except subprocess.TimeoutExpired:
+                    print(f"[DEBUG] 内部进程超时，强制杀死")
                     if platform.system() == "Windows":
                         self.process.kill()
                     else:
                         os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
 
+            # 如果我们有managed_pid但process对象为空，直接杀死该PID
+            elif self.managed_pid:
+                print(f"[DEBUG] 直接停止管理的进程，PID: {self.managed_pid}")
+                try:
+                    if platform.system() == "Windows":
+                        os.kill(self.managed_pid, signal.SIGTERM)
+                    else:
+                        os.kill(self.managed_pid, signal.SIGTERM)
+
+                    # 等待一下看是否退出
+                    time.sleep(2)
+
+                    # 检查进程是否还在，如果还在就强制杀死
+                    try:
+                        os.kill(self.managed_pid, 0)  # 检查进程是否存在
+                        print(f"[DEBUG] 进程仍在运行，强制杀死")
+                        if platform.system() == "Windows":
+                            os.kill(self.managed_pid, signal.SIGKILL)
+                        else:
+                            os.kill(self.managed_pid, signal.SIGKILL)
+                    except OSError:
+                        print(f"[DEBUG] 进程已退出")
+                        pass
+                except Exception as e:
+                    print(f"[DEBUG] 停止managed_pid时出错: {e}")
+
+            # 清理状态
             self.process = None
+            self.managed_pid = None
             self.start_time = None
+            print(f"[DEBUG] 状态已清理")
+
             return {"success": True, "message": "Jupyter Lab 已停止"}
 
         except Exception as e:
+            print(f"[DEBUG] 停止异常: {str(e)}")
             return {"success": False, "message": f"停止异常: {str(e)}"}
 
     def is_running(self):
         """检查 Jupyter Lab 是否在运行"""
-        if not self.process:
-            return False
+        print(f"[DEBUG] is_running() called - managed_pid: {self.managed_pid}")
 
-        if self.process.poll() is None:
+        # 首先检查我们管理的进程PID
+        if self.managed_pid:
+            try:
+                # 检查进程是否存在
+                os.kill(self.managed_pid, 0)  # 发送信号0，不杀死进程，只检查是否存在
+                print(f"[DEBUG] 管理的进程 PID {self.managed_pid} 仍在运行")
+                return True
+            except OSError:
+                print(f"[DEBUG] 管理的进程 PID {self.managed_pid} 已退出")
+                # 进程已退出，清理状态
+                self.managed_pid = None
+                self.process = None
+                self.start_time = None
+                return False
+
+        # 检查内部进程对象（subprocess.Popen对象）
+        if self.process and hasattr(self.process, 'poll') and self.process.poll() is None:
+            print(f"[DEBUG] 内部进程仍在运行，PID: {self.process.pid}")
             return True
 
-        self.process = None
-        return False
+        # 如果以上都没有，检查端口是否被占用（可能是其他Jupyter实例）
+        try:
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            result = sock.connect_ex(('127.0.0.1', self.port))
+            sock.close()
+
+            if result == 0:
+                print(f"[DEBUG] 端口 {self.port} 被占用，但不是我们管理的进程")
+                # 端口被占用，但不是我们管理的进程，尝试找到对应的进程
+                try:
+                    import psutil
+                    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                        try:
+                            cmdline = ' '.join(proc.info['cmdline'] or [])
+                            if 'jupyter' in cmdline.lower() and f'--port={self.port}' in cmdline:
+                                print(f"[DEBUG] 发现其他Jupyter进程 PID: {proc.info['pid']}")
+                                # 找到了Jupyter进程，但不是我们管理的
+                                return False
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                except ImportError:
+                    pass
+                return False
+            else:
+                print(f"[DEBUG] 端口 {self.port} 未被占用")
+                # 端口未被占用，Jupyter未运行
+                return False
+        except Exception as e:
+            print(f"[DEBUG] 检查端口时出错: {e}")
+            # 出错时清理进程对象
+            return False
 
     def _process_protection(self):
         """进程保护线程 - 监控并自动重启 Jupyter 进程"""
@@ -376,7 +473,11 @@ class JupyterManager:
                     # 进程正常运行
                     consecutive_successes += 1
                     if consecutive_successes % 6 == 0:  # 每6次检查（约30秒）打印一次状态
-                        print(f"[PROC-GUARD] ✓ Jupyter 进程运行正常 (已运行 {int((time.time() - self.start_time))} 秒)")
+                        if self.start_time:
+                            uptime = int(time.time() - self.start_time)
+                            print(f"[PROC-GUARD] ✓ Jupyter 进程运行正常 (已运行 {uptime} 秒)")
+                        else:
+                            print(f"[PROC-GUARD] ✓ Jupyter 进程运行正常")
 
             except Exception as e:
                 print(f"[PROC-GUARD] ❌ 进程保护异常: {str(e)}")
@@ -395,7 +496,7 @@ class JupyterManager:
             "port": self.port,
             "url": f"http://localhost:{self.port}{url_suffix}" if self.is_running() else None,
             "pid": self.process.pid if self.process else None,
-            "uptime": int(time.time() - self.start_time) if self.start_time and self.is_running() else 0,
+            "uptime": int(time.time() - self.start_time) if self.start_time and self.is_running() and isinstance(self.start_time, (int, float)) else 0,
             "auto_restart": self.auto_restart,
             "process_protection": "enabled" if self.auto_restart else "disabled",
             "open_file": self.open_file
