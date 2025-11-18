@@ -101,6 +101,18 @@ except ImportError as e:
                     if hasattr(self.config, key):
                         setattr(self.config, key, value)
 
+                # 先检查是否已有进程在运行
+                if self.process and self.process.poll() is None:
+                    return {
+                        "success": False,
+                        "message": "Jupyter 已在运行中，请先停止后再启动"
+                    }
+
+                # 强制使用当前目录作为工作目录（避免路径问题）
+                import os
+                work_dir = os.getcwd()  # 获取当前工作目录
+                logger.info(f"使用工作目录: {work_dir}")
+
                 # 构建 Jupyter 命令
                 module = "notebook" if self.config.use_notebook else "jupyterlab"
                 cmd = [
@@ -112,10 +124,34 @@ except ImportError as e:
                     "--ServerApp.password=''"
                 ]
 
+                logger.info(f"启动命令: {' '.join(cmd)}")
+
                 # 启动进程
-                self.process = subprocess.Popen(cmd, cwd=self.config.project_dir or ".")
+                self.process = subprocess.Popen(
+                    cmd,
+                    cwd=work_dir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW  # Windows下不显示控制台窗口
+                )
                 self.start_time = time.time()
 
+                # 等待进程启动
+                time.sleep(2)
+
+                # 检查进程是否真的启动了
+                if self.process.poll() is not None:
+                    # 进程已退出，检查错误
+                    stdout, stderr = self.process.communicate()
+                    error_msg = stderr or stdout or "未知错误"
+                    logger.error(f"Jupyter 启动失败: {error_msg}")
+                    return {
+                        "success": False,
+                        "message": f"启动失败: {error_msg[:300]}"
+                    }
+
+                logger.info(f"Jupyter {module} 启动成功，PID: {self.process.pid}")
                 status = self.get_status()
                 return {
                     "success": True,
@@ -125,7 +161,29 @@ except ImportError as e:
                     "pid": status.pid
                 }
             except Exception as e:
+                logger.error(f"启动异常: {e}")
                 return {"success": False, "message": f"启动失败: {str(e)}"}
+
+        def _cleanup_existing_processes(self):
+            """清理可能残留的Jupyter进程"""
+            try:
+                # 检查系统中是否还有同端口的Jupyter进程
+                import psutil
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        cmdline = ' '.join(proc.info['cmdline'] or [])
+                        if 'jupyter' in cmdline.lower() and f'--port={self.config.port}' in cmdline:
+                            proc.terminate()
+                            proc.wait(timeout=3)
+                    except:
+                        pass
+                time.sleep(1)
+            except ImportError:
+                # 如果没有psutil，忽略
+                pass
+            except Exception:
+                # 清理失败也忽略
+                pass
 
         def stop(self):
             if self.process:
@@ -163,7 +221,40 @@ except:
     manager = SimpleJupyterManager()
 
 # 配置存储
-config_storage = {}
+import json
+
+CONFIG_FILE = "config.json"
+
+def load_config_from_file():
+    """从文件加载配置"""
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"加载配置文件失败: {e}")
+    return {
+        "python_executable": "",
+        "project_dir": "",
+        "jupyter_port": 8888,
+        "use_notebook": False,
+        "auto_restart": False,
+        "check_interval": 2000,
+        "max_restarts": 3
+    }
+
+def save_config_to_file(config):
+    """保存配置到文件"""
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"保存配置文件失败: {e}")
+        return False
+
+# 初始化配置存储
+config_storage = load_config_from_file()
 
 @app.route('/')
 def root():
@@ -205,10 +296,19 @@ def get_status():
 def start_jupyter():
     """启动 Jupyter"""
     try:
-        config = request.get_json() or {}
-        logger.info(f"启动 Jupyter，配置: {config}")
+        request_config = request.get_json() or {}
+        logger.info(f"前端请求配置: {request_config}")
 
-        result = manager.start(**config)
+        # 合并保存的配置和前端请求的配置（前端请求优先级更高）
+        merged_config = {}
+        merged_config.update(config_storage)  # 先加载保存的配置
+        merged_config.update(request_config)  # 前端配置覆盖保存的配置
+
+        logger.info(f"最终使用的配置: {merged_config}")
+
+        result = manager.start(**merged_config)
+        if result.get("success"):
+            result["config"] = merged_config  # 返回实际使用的配置
         return jsonify(result)
     except Exception as e:
         logger.error(f"启动 Jupyter 失败: {e}")
@@ -235,10 +335,19 @@ def stop_jupyter():
 def restart_jupyter():
     """重启 Jupyter"""
     try:
-        config = request.get_json() or {}
-        logger.info(f"重启 Jupyter，配置: {config}")
+        request_config = request.get_json() or {}
+        logger.info(f"前端重启请求配置: {request_config}")
 
-        result = manager.restart(**config)
+        # 合并保存的配置和前端请求的配置（前端请求优先级更高）
+        merged_config = {}
+        merged_config.update(config_storage)  # 先加载保存的配置
+        merged_config.update(request_config)  # 前端配置覆盖保存的配置
+
+        logger.info(f"重启最终使用的配置: {merged_config}")
+
+        result = manager.restart(**merged_config)
+        if result.get("success"):
+            result["config"] = merged_config  # 返回实际使用的配置
         return jsonify(result)
     except Exception as e:
         logger.error(f"重启 Jupyter 失败: {e}")
@@ -300,11 +409,20 @@ def save_config():
     try:
         config = request.get_json()
         config_storage.update(config)
-        logger.info(f"配置已保存: {list(config.keys())}")
-        return jsonify({
-            "success": True,
-            "message": "配置保存成功"
-        })
+
+        # 保存到文件
+        if save_config_to_file(config_storage):
+            logger.info(f"配置已保存到文件: {list(config.keys())}")
+            return jsonify({
+                "success": True,
+                "message": "配置保存成功",
+                "config": config_storage
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "保存到文件失败，但内存已更新"
+            }), 500
     except Exception as e:
         logger.error(f"保存配置失败: {e}")
         return jsonify({
@@ -332,6 +450,9 @@ def load_config():
 def ai_ask():
     """AI 助手接口"""
     try:
+        import requests
+        import json
+
         data = request.get_json()
         if not data:
             return jsonify({
@@ -342,23 +463,90 @@ def ai_ask():
         image = data.get('image', '')
         question = data.get('question', '')
 
-        if not image or not question:
+        if not question:
             return jsonify({
                 "success": False,
-                "message": "图片和问题不能为空"
+                "message": "问题不能为空"
             }), 400
 
-        # 这里应该调用真实的 AI API
-        # 现在返回模拟响应
-        return jsonify({
-            "success": True,
-            "answer": f"这是对问题 '{question}' 的模拟回答。注意：这是重构版本的演示响应。"
-        })
-    except Exception as e:
-        logger.error(f"AI 请求失败: {e}")
+        # 从配置中获取 AI 设置
+        ai_config = config_storage
+        api_key = ai_config.get('ai_api_key', '')
+        api_endpoint = ai_config.get('ai_api_endpoint', 'https://api.openai.com/v1/chat/completions')
+        model = ai_config.get('ai_model', 'gpt-3.5-turbo')
+
+        if not api_key:
+            return jsonify({
+                "success": False,
+                "message": "未配置 AI API 密钥，请在设置中配置"
+            }), 400
+
+        # 准备请求数据
+        messages = [{"role": "user", "content": question}]
+
+        # 如果有图片，添加到消息中
+        if image:
+            messages[0]["content"] = [
+                {"type": "text", "text": question},
+                {"type": "image_url", "image_url": {"url": image}}
+            ]
+
+        # 调用 AI API
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 1000,
+            "temperature": 0.7
+        }
+
+        logger.info(f"正在调用 AI API: {api_endpoint}")
+        logger.info(f"使用模型: {model}")
+
+        response = requests.post(api_endpoint, headers=headers, json=payload, timeout=30)
+
+        if response.status_code == 200:
+            result = response.json()
+            answer = result["choices"][0]["message"]["content"]
+
+            logger.info(f"AI 响应成功，长度: {len(answer)} 字符")
+
+            return jsonify({
+                "success": True,
+                "answer": answer
+            })
+        else:
+            error_msg = f"AI API 调用失败: {response.status_code} - {response.text}"
+            logger.error(error_msg)
+            return jsonify({
+                "success": False,
+                "message": error_msg
+            }), 500
+
+    except requests.exceptions.Timeout:
+        error_msg = "AI API 请求超时，请稍后重试"
+        logger.error(error_msg)
         return jsonify({
             "success": False,
-            "message": f"AI 请求失败: {str(e)}"
+            "message": error_msg
+        }), 500
+    except requests.exceptions.ConnectionError:
+        error_msg = "无法连接到 AI API 服务器，请检查网络连接"
+        logger.error(error_msg)
+        return jsonify({
+            "success": False,
+            "message": error_msg
+        }), 500
+    except Exception as e:
+        error_msg = f"AI 请求失败: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({
+            "success": False,
+            "message": error_msg
         }), 500
 
 if __name__ == '__main__':
