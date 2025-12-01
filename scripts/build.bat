@@ -9,7 +9,7 @@ echo.
 
 REM 步骤1: 清理旧文件
 echo [1/5] 清理旧的构建文件...
-rmdir /s /q dist 2>nul
+rmdir /s /q build 2>nul
 rmdir /s /q dist-installer 2>nul
 echo ✓ 清理完成
 echo.
@@ -59,7 +59,7 @@ echo 构建成功！
 echo ==================================
 echo.
 echo 构建输出:
-echo   - 前端文件: frontend-dist\
+echo   - 前端文件: build\
 echo   - Electron应用: dist-installer\
 echo.
 pause

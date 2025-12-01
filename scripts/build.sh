@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 
 # 步骤1: 清理旧文件
 echo -e "${YELLOW}[1/5] 清理旧的构建文件...${NC}"
-rm -rf dist
+rm -rf build
 rm -rf dist-installer
 echo -e "${GREEN}✓ 清理完成${NC}"
 echo ""
@@ -66,6 +66,6 @@ echo -e "${GREEN}构建成功！${NC}"
 echo "=================================="
 echo ""
 echo "构建输出:"
-echo "  - 前端文件: frontend-dist/"
+echo "  - 前端文件: build/"
 echo "  - Electron应用: dist-installer/"
 echo ""

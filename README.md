@@ -1,321 +1,84 @@
-# XEdu Client
+# Xedu Client
 
-<div align="center">
-
-![XEdu Client Logo](https://via.placeholder.com/200x80/667eea/ffffff?text=XEdu+Client)
-
-**专业的 Jupyter Notebook 桌面管理工具**
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/xedu-client/xedu-client)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/xedu-client/xedu-client)
-
-[功能特性](#-功能特性) • [快速开始](#-快速开始) • [使用指南](#-使用指南) • [开发指南](#-开发指南) • [贡献指南](#-贡献指南)
-
-</div>
-
-## 📋 项目概述
-
-XEdu Client 是一个基于 Tauri 框架构建的现代化 Jupyter Notebook 桌面管理工具。它提供了直观的图形界面，让用户能够轻松管理 Jupyter Notebook/Lab 环境，集成了 AI 助手功能，并支持实时状态监控。
-
-### 🎯 设计目标
-
-- **简化管理**: 提供图形化界面，简化 Jupyter 环境的管理
-- **模块化架构**: 采用现代化的前端和后端分离架构
-- **用户体验**: 提供类似 VS Code 的现代化界面和交互体验
-- **AI 集成**: 集成 AI 助手，提供智能辅助功能
-- **跨平台**: 支持 Windows、macOS 和 Linux
-
-## ✨ 功能特性
-
-### 🚀 核心功能
-
-- **Jupyter 管理**: 启动、停止、重启 Jupyter Notebook/Lab
-- **实时监控**: 实时状态显示和日志记录
-- **项目管理**: 支持拖拽选择项目文件夹
-- **进程保护**: 自动重启机制，确保服务稳定运行
-- **配置管理**: 可视化配置界面，支持配置保存和加载
-
-### 🤖 AI 助手
-
-- **Kimi 视觉模型**: 支持图片上传和分析
-- **对话历史**: 保存和管理对话记录
-- **智能问答**: 基于图片内容的智能问答
-- **多模型支持**: 支持不同的 AI 模型切换
-
-### 🛠️ 系统功能
-
-- **环境检测**: 自动检测 Python 和 Jupyter 环境
-- **系统信息**: 显示系统版本和依赖信息
-- **快捷键支持**: 丰富的键盘快捷键
-- **多主题**: 支持明暗主题切换
-- **通知系统**: 系统通知和状态提醒
-
-## 🏗️ 技术架构
-
-### 前端技术栈
-
-- **HTML5/CSS3/JavaScript ES6+**: 现代化 Web 技术
-- **模块化架构**: 采用 ES6 模块系统
-- **组件化设计**: 可复用的 UI 组件
-- **响应式布局**: 适配不同屏幕尺寸
-
-### 后端技术栈
-
-- **Tauri (Rust)**: 高性能的桌面应用框架
-- **Python Flask**: RESTful API 服务器
-- **SQLite**: 轻量级数据存储
-- **async/await**: 异步编程模型
-
-### 架构设计
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Tauri Backend │    │  Python API     │
-│                 │    │                 │    │                 │
-│ • UI Components │◄──►│ • Native APIs   │◄──►│ • Jupyter Mgmt  │
-│ • State Manager │    │ • File System   │    │ • AI Assistant  │
-│ • Event System  │    │ • System Utils   │    │ • Config Mgmt   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+专业的 Jupyter Notebook 桌面管理工具 - Electron版
 
 ## 🚀 快速开始
 
-### 系统要求
+### 开发环境运行
 
-- **操作系统**: Windows 10+, macOS 10.15+, Linux (Ubuntu 18.04+)
-- **Python**: 3.8 或更高版本
-- **Jupyter**: JupyterLab 或 Jupyter Notebook
-- **内存**: 最少 4GB RAM
-- **存储**: 至少 500MB 可用空间
+```bash
+# 开发模式（Electron + Vite热更新）
+npm run electron:dev
 
-### 安装步骤
+# 仅运行Electron
+npm run electron
 
-1. **克隆仓库**
-   ```bash
-   git clone https://github.com/xedu-client/xedu-client.git
-   cd xedu-client
-   ```
+# 前端构建
+npm run build
 
-2. **安装依赖**
-   ```bash
-   # 安装前端依赖
-   npm install
+# Electron 打包
+npm run electron:build
 
-   # 安装 Python 依赖
-   pip install -r requirements.txt
+# 使用完整构建脚本
+./build.sh        # Linux/Mac
+build.bat         # Windows
+```
 
-   # 安装 Rust 依赖
-   cargo build
-   ```
-
-3. **启动应用**
-   ```bash
-   # 开发模式
-   npm run tauri:dev
-
-   # 生产模式
-   npm run tauri:build
-   ```
-
-4. **配置 Python 环境**
-   - 确保已安装 JupyterLab 或 Jupyter Notebook
-   - 在设置页面配置 Python 解释器路径
-   - 选择项目工作目录
-
-## 📖 使用指南
-
-### 主控制台
-
-1. **项目设置**
-   - 拖拽文件夹到指定区域或点击选择
-   - 输入项目目录路径并确认
-
-2. **Jupyter 控制**
-   - 点击"启动 Notebook"开始服务
-   - 使用"停止/重启"管理服务状态
-   - 点击"打开浏览器"访问 Jupyter 界面
-
-3. **实时监控**
-   - 查看运行状态、端口、进程 ID 等信息
-   - 监控实时日志输出
-   - 导出日志文件用于分析
-
-### 系统设置
-
-1. **环境配置**
-   - 设置 Python 解释器路径
-   - 配置 Jupyter 端口号
-   - 调整刷新间隔和自动启动选项
-
-2. **AI 助手配置**
-   - 输入 Moonshot API Key
-   - 选择 AI 模型
-   - 测试连接状态
-
-### AI 助手
-
-1. **开始对话**
-   - 上传图片文件
-   - 输入相关问题
-   - 点击发送或按 Enter 键
-
-2. **管理对话**
-   - 查看对话历史
-   - 清空当前对话
-   - 开始新的对话会话
-
-## ⌨️ 快捷键
-
-| 快捷键 | 功能 |
-|--------|------|
-| `Ctrl+1` | 切换到主控制台 |
-| `Ctrl+2` | 切换到系统设置 |
-| `Ctrl+3` | 切换到 AI 助手 |
-| `Ctrl+S` | 启动 Jupyter |
-| `Ctrl+T` | 停止 Jupyter |
-| `Ctrl+R` | 重启 Jupyter |
-| `Ctrl+O` | 打开浏览器 |
-| `Ctrl+L` | 聚焦日志窗口 |
-| `Ctrl+K` | 清空日志 |
-
-## 🛠️ 开发指南
-
-### 项目结构
+## 📁 项目结构
 
 ```
 xedu-client/
-├── src/                    # 源代码目录
-│   ├── frontend/           # 前端代码
-│   │   ├── components/    # UI 组件
-│   │   ├── utils/         # 工具函数
-│   │   └── styles/        # 样式文件
-│   ├── backend/            # Python 后端
-│   │   ├── api/          # API 路由
-│   │   ├── services/     # 业务逻辑
-│   │   ├── models/       # 数据模型
-│   │   └── utils/        # 工具函数
-│   └── tauri/             # Tauri 后端
-│       ├── commands/     # Tauri 命令
-│       └── utils/        # 工具函数
-├── src-tauri/             # Tauri 配置
-├── package.json           # Node.js 依赖
-├── Cargo.toml            # Rust 依赖
-└── requirements.txt      # Python 依赖
+├── 📄 核心文件
+│   ├── backend_main.py         # 后端入口（启动 Flask API）
+│   ├── electron-main.cjs       # Electron 主进程
+│   └── package.json            # 项目配置
+├── 📁 重要目录
+│   ├── frontend-dist/          # 构建后的前端文件
+│   ├── src/                    # 源代码
+│   │   ├── index.html          # 主页面
+│   │   ├── styles/             # 样式文件
+│   │   └── backend/            # Python后端代码
+│   ├── dist-installer/         # Electron打包输出
+│   └── config/                 # 配置文件
 ```
 
-### 开发环境设置
+## ✨ 主要功能
 
-1. **安装 Rust**
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
+- 🎯 **Jupyter 管理**: 启动、停止、重启 Jupyter Notebook
+- 📂 **项目路径**: 支持拖拽和手动选择项目目录
+- 🤖 **AI 助手**: 集成 Kimi AI 视觉助手功能
+- ⚙️ **系统设置**: Python 环境配置和 AI API 设置
+- 📊 **实时监控**: 显示 Jupyter 运行状态和日志
 
-2. **安装 Node.js**
-   ```bash
-   # 使用 nvm 安装
-   nvm install 18
-   nvm use 18
-   ```
+## 🔧 技术栈
 
-3. **安装 Tauri CLI**
-   ```bash
-   cargo install tauri-cli
-   ```
+- **前端**: HTML5 + CSS3 + JavaScript (Vanilla)
+- **后端**: Python Flask API
+- **桌面应用**: Electron
+- **构建工具**: Vite
+- **AI 集成**: OpenAI Compatible API
 
-### 开发工作流
+## 📦 环境要求
 
-1. **启动开发服务器**
-   ```bash
-   npm run tauri:dev
-   ```
+- Node.js >= 16
+- Python >= 3.8
+- npm 或 yarn
 
-2. **热重载**
-   - 前端代码修改会自动刷新
-   - Rust 代码修改会自动重新编译
+## 📋 最近更新
 
-3. **调试**
-   - 前端: 使用浏览器开发者工具
-   - 后端: 查看控制台日志和日志文件
-
-### 构建发布
-
-1. **构建应用**
-   ```bash
-   npm run tauri:build
-   ```
-
-2. **发布文件位置**
-   - Windows: `src-tauri/target/release/bundle/msi/`
-   - macOS: `src-tauri/target/release/bundle/macos/`
-   - Linux: `src-tauri/target/release/bundle/deb/`
-
-## 🧪 测试
-
-### 运行测试
-
-```bash
-# 前端测试
-npm test
-
-# Python 后端测试
-python -m pytest tests/
-
-# Rust 测试
-cargo test
-```
-
-### 测试覆盖率
-
-```bash
-# Python 测试覆盖率
-python -m pytest --cov=backend tests/
-
-# Rust 测试覆盖率
-cargo tarpaulin --out Html
-```
-
-## 🤝 贡献指南
-
-我们欢迎所有形式的贡献！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详细信息。
-
-### 贡献方式
-
-1. **报告问题**: 在 Issues 中报告 bug 或提出功能请求
-2. **提交代码**: Fork 项目，创建分支，提交 Pull Request
-3. **改进文档**: 帮助完善文档和示例
-4. **分享经验**: 在社区中分享使用经验和建议
-
-### 开发规范
-
-- 遵循现有的代码风格
-- 添加适当的注释和文档
-- 确保测试通过
-- 更新相关文档
+- ✅ 从 Tauri 迁移到 Electron
+- ✅ 实现现代化侧边栏UI
+- ✅ 优化配色和排版
+- ✅ 添加平滑动画和交互效果
+- ✅ 修复项目路径输入框自动填充问题
+- ✅ 修复 Jupyter 启动路径配置问题
+- ✅ 实现真实 AI API 调用功能
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
-
-## 🙏 致谢
-
-- [Tauri](https://tauri.app/) - 现代化的桌面应用框架
-- [Jupyter](https://jupyter.org/) - 交互式计算环境
-- [Kimi AI](https://kimi.moonshot.cn/) - AI 助手服务
-- [Element Plus](https://element-plus.org/) - Vue 3 UI 组件库
-
-## 📞 联系我们
-
-- **项目主页**: https://github.com/xedu-client/xedu-client
-- **问题反馈**: https://github.com/xedu-client/xedu-client/issues
-- **讨论社区**: https://github.com/xedu-client/xedu-client/discussions
+本项目基于 MIT 许可证开源。
 
 ---
 
-<div align="center">
-
-**如果这个项目对您有帮助，请给我们一个 ⭐️**
-
-Made with ❤️ by XEdu Team
-
-</div>
+**开发团队**: XEdu Team
+**最后更新**: 2025-11-24

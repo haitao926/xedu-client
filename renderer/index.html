@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' http://localhost:3000; script-src 'self' 'unsafe-inline' http://localhost:3000; style-src 'self' 'unsafe-inline' http://localhost:3000 https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' http://localhost:3000 http://127.0.0.1:5000; font-src 'self' https://fonts.gstatic.com data:;">
+    <link rel="stylesheet" href="styles/main.css">
+    <!-- 引入 Google Fonts (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="logo-container">
+                <div class="logo-icon">⚡</div>
+                <div class="logo-text">Xedu Client</div>
+            </div>
+
+            <nav class="nav-menu">
+                <div class="nav-item active" onclick="showTab('main', this)">
+                    <span class="icon">🏠</span>
+                    <span>主控制台</span>
+                </div>
+                <div class="nav-item" onclick="showTab('ai-assistant', this)">
+                    <span class="icon">🤖</span>
+                    <span>AI 助手</span>
+                </div>
+                <div class="nav-item" onclick="showTab('settings', this)">
+                    <span class="icon">⚙️</span>
+                    <span>系统设置</span>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- 主内容区域 -->
+        <main class="main-content-wrapper">
+            <div class="top-bar">
+                <div class="page-title" id="page-title">主控制台</div>
+                </div>
+
+            <div class="content-scroll-area">
+                <!-- 主控制台页面 -->
+                <div id="main" class="page-section active">
+                    <div class="dashboard-layout">
+                        <!-- 上部区域：控制面板 -->
+                        <div class="dashboard-top">
+                            <!-- 项目设置卡片 -->
+                            <div class="card project-card">
+                                <div class="card-header">
+                                    <div class="card-title">
+                                        <span>📁</span> 项目设置
+                                    </div>
+                                </div>
+
+                                <div class="drop-zone" id="drop-zone">
+                                    <div class="drop-icon">📂</div>
+                                    <div class="text">拖拽文件夹到此处</div>
+                                    <div class="hint">或点击下方按钮选择</div>
+                                </div>
+
+                                <div class="input-group" style="margin-top: 24px;">
+                                    <label class="input-label">📍 项目目录路径</label>
+                                    <div style="display: flex; gap: 10px;">
+                                        <input type="text" id="project-path" class="form-control"
+                                            placeholder="例如: C:\Users\用户名\Documents\项目文件夹">
+                                        <button type="button" onclick="browseFolder()" class="btn btn-info"
+                                            style="white-space: nowrap;">📂 浏览</button>
+                                    </div>
+                                    <div style="margin-top: 12px; display: flex; gap: 10px;">
+                                        <button class="btn btn-primary"
+                                            onclick="confirmProjectPath().catch(err => console.error(err))">
+                                            <span>✓</span> 确认路径
+                                        </button>
+                                        <button type="button" onclick="clearProjectPath()" class="btn btn-secondary">
+                                            <span>🗑️</span> 清空
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Jupyter 控制卡片 -->
+                            <div class="card control-card">
+                                <div class="card-header">
+                                    <div class="card-title">
+                                        <span>🔴</span> Jupyter Notebook 控制
+                                    </div>
+                                    <span id="jupyter-status" class="badge badge-stopped">未知</span>
+                                </div>
+
+                                <div class="status-grid">
+                                    <div class="status-item">
+                                        <label>运行状态</label>
+                                        <div class="value" id="status-value">检查中...</div>
+                                    </div>
+                                    <div class="status-item">
+                                        <label>服务端口</label>
+                                        <div class="value" id="port-value">-</div>
+                                    </div>
+                                    <div class="status-item">
+                                        <label>进程 ID</label>
+                                        <div class="value" id="pid-value">-</div>
+                                    </div>
+                                    <div class="status-item">
+                                        <label>访问地址</label>
+                                        <div class="value" id="url-value">-</div>
+                                    </div>
+                                </div>
+
+                                <div class="btn-group">
+                                    <button id="start-btn" class="btn btn-success" onclick="startJupyter()">
+                                        <span>▶</span> 启动
+                                    </button>
+                                    <button id="stop-btn" class="btn btn-danger" onclick="stopJupyter()">
+                                        <span>⏹</span> 停止
+                                    </button>
+                                    <button id="restart-btn" class="btn btn-warning" onclick="restartJupyter()">
+                                        <span>↻</span> 重启
+                                    </button>
+                                    <button id="open-btn" class="btn btn-info" onclick="openBrowser()">
+                                        <span>🌐</span> 打开浏览器
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 下部区域：日志面板 -->
+                        <div class="dashboard-bottom">
+                            <!-- 实时日志卡片 -->
+                            <div class="card log-card">
+                                <div class="card-header">
+                                    <div class="card-title">
+                                        <span>📝</span> 实时日志
+                                    </div>
+                                </div>
+                                <div id="log-container" class="console-window">
+                                    <div class="log-entry">
+                                        <span class="log-time">[--:--:--]</span>
+                                        系统启动，等待 Xedu Client 初始化...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI 助手页面 -->
+                <div id="ai-assistant" class="page-section">
+                    <div class="chat-layout">
+                        <!-- 左侧聊天列表 -->
+                        <div class="chat-sidebar">
+                            <div
+                                style="padding: 16px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+                                <h3 style="font-size: 14px; font-weight: 600; margin: 0;">对话历史</h3>
+                                <button class="btn btn-secondary" onclick="startNewChat()"
+                                    style="padding: 4px 8px; font-size: 12px;">
+                                    <span>➕</span>
+                                </button>
+                            </div>
+                            <div class="chat-list" id="chat-list">
+                                <div class="chat-session-item active" onclick="selectChat(0)">
+                                    <div style="font-size: 18px;">🤖</div>
+                                    <div style="flex: 1; overflow: hidden;">
+                                        <div
+                                            style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            默认对话</div>
+                                        <div
+                                            style="font-size: 12px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            还没有消息</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 右侧聊天区域 -->
+                        <div class="chat-main">
+                            <div
+                                style="padding: 16px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+                                <h2 style="font-size: 16px; font-weight: 600; margin: 0;">🤖 Kimi 视觉助手</h2>
+                                <button class="btn btn-danger" onclick="clearCurrentChat()"
+                                    style="padding: 6px 12px; font-size: 12px;">
+                                    <span>🗑️</span> 清空
+                                </button>
+                            </div>
+
+                            <div id="chat-history" class="chat-messages">
+                                <div class="chat-empty" style="text-align: center; margin-top: 40px; color: #9ca3af;">
+                                    <div style="font-size: 48px; margin-bottom: 16px;">🤖</div>
+                                    <div>开始新对话吧！<br>直接输入问题或上传图片进行分析</div>
+                                </div>
+                            </div>
+
+                            <div class="input-area">
+                                <!-- 图片预览 -->
+                                <div id="image-preview" style="display: none; margin-bottom: 12px;">
+                                    <div style="position: relative; display: inline-block;">
+                                        <img id="preview-img"
+                                            style="max-height: 100px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                                        <button onclick="removeImage()"
+                                            style="position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">×</button>
+                                    </div>
+                                </div>
+
+                                <div class="ai-input-wrapper">
+                                    <button class="btn btn-secondary"
+                                        onclick="document.getElementById('ai-image-input').click()"
+                                        style="padding: 8px;">
+                                        <span>📎</span>
+                                    </button>
+                                    <textarea id="ai-question" class="ai-textarea" rows="1" placeholder="请输入您的问题..."
+                                        oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px'"
+                                        onkeydown="handleKeyDown(event)"></textarea>
+                                    <button class="btn btn-primary" id="btn-send" onclick="askAI()"
+                                        style="padding: 8px 16px;">
+                                        <span>➤</span>
+                                    </button>
+                                    <input type="file" id="ai-image-input" accept="image/*"
+                                        onchange="previewImage(this)" style="display: none;">
+                                </div>
+                                <div style="text-align: center; font-size: 12px; color: #9ca3af; margin-top: 8px;">
+                                    💡 支持纯文本提问，或上传图片进行视觉分析
+                                </div>
+                            </div>
+                            <!-- 隐藏的文件夹选择输入框（用于拖拽功能） -->
+                            <input type="file" id="folder-input" webkitdirectory directory multiple
+                                style="display: none;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 设置页面 -->
+                <div id="settings" class="page-section">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span>⚙️</span> 系统设置
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="input-group">
+                                <label class="input-label">🔑 Kimi API Key</label>
+                                <input type="password" id="api-key-input" class="form-control" placeholder="请输入您的 API Key">
+                                <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">用于 AI 助手功能的鉴权</div>
+                            </div>
+                            <div class="input-group">
+                                <label class="input-label">🐍 Python 环境路径</label>
+                                <div style="display: flex; gap: 10px;">
+                                    <input type="text" id="python-path-input" class="form-control"
+                                        placeholder="例如: python 或 C:\Python39\python.exe">
+                                    <button class="btn btn-info" onclick="testPythonEnvironment()" style="white-space: nowrap;">
+                                        <span>🔍</span> 测试
+                                    </button>
+                                </div>
+                            </div>
+                            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                                <button class="btn btn-secondary">取消</button>
+                                <button class="btn btn-primary" onclick="saveSystemConfig()">保存配置</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script type="module" src="/js/main.js"></script>
+</body>
+
+</html>

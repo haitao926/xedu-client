@@ -2,28 +2,22 @@
   "name": "xedu-client",
   "version": "2.0.0",
   "description": "专业的 Jupyter Notebook 桌面管理工具 - 重构版本",
-  "main": "electron-main.js",
+  "main": "electron/main/main.js",
   "scripts": {
     "dev": "npx vite",
     "build": "npx vite build",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "npm run build && tauri build",
     "preview": "npx vite preview",
-    "clean": "rimraf dist src-tauri/target",
-    "full-build": "npm run clean && bash build.sh",
-    "start-api": "python backend_api.py",
-    "test-api": "curl http://localhost:5000/api/health",
+    "clean": "rimraf build",
+    "full-build": "npm run clean && bash scripts/build.sh",
+    "start-api": "python backend/backend_main.py",
+    "test-api": "curl http://127.0.0.1:5000/api/health",
     "electron": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"electron .\"",
     "electron:build": "npm run build && electron-builder",
     "electron:pack": "npm run build && electron-builder --dir"
   },
-  "dependencies": {
-    "@tauri-apps/api": "^2.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@tauri-apps/cli": "^2.9.3",
     "concurrently": "^8.2.2",
     "electron": "^39.2.1",
     "electron-builder": "^26.0.12",
@@ -34,30 +28,60 @@
     "appId": "com.xeduclient",
     "productName": "Xedu Client",
     "directories": {
-      "output": "electron-dist"
+      "output": "dist-installer"
     },
     "files": [
-      "frontend-dist/**/*",
-      "backend_api.py",
-      "src/backend/**/*",
-      "electron-main.js",
-      "index-electron.html",
-      "app.js"
+      "build/**/*",
+      "electron/main/main.js",
+      "electron/preload/**/*",
+      "backend/**/*",
+      "config/**/*",
+      "scripts/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "python_env",
+        "to": "python_env"
+      },
+      {
+        "from": "backend",
+        "to": "backend"
+      },
+      {
+        "from": "config",
+        "to": "config"
+      }
     ],
     "win": {
-      "target": "nsis",
-      "icon": "src-tauri/icons/icon.ico"
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false,
+      "icon": null
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Xedu Client",
+      "uninstallDisplayName": "Xedu Client Uninstall",
+      "artifactName": "${productName}-${version}.${ext}",
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false,
+      "language": "2052"
     }
   },
   "keywords": [
     "jupyter",
     "notebook",
     "lab",
-    "tauri",
     "electron",
     "desktop",
     "python",

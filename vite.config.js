@@ -2,22 +2,31 @@ import { defineConfig } from 'vite'
 import { resolve } from 'path'
 
 export default defineConfig({
-  root: 'src',
+  root: 'renderer',
+  base: './',
   build: {
-    outDir: 'dist',
+    outDir: '../build',
     emptyOutDir: true,
+    assetsDir: 'assets',
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'renderer/index.html')
+      },
+      output: {
+        entryFileNames: 'assets/[name].js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name].[ext]'
+      }
+    }
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src/frontend'),
-      '@components': resolve(__dirname, 'src/frontend/components'),
-      '@utils': resolve(__dirname, 'src/frontend/utils'),
-      '@styles': resolve(__dirname, 'src/frontend/styles'),
-      '@assets': resolve(__dirname, 'src/frontend/assets')
+      '@': resolve(__dirname, 'renderer')
     }
   },
   server: {
     port: 3000,
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:5000',
