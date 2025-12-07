@@ -42,7 +42,7 @@
         <main class="main-content-wrapper">
             <div class="top-bar">
                 <div class="page-title" id="page-title">主控制台</div>
-                </div>
+            </div>
 
             <div class="content-scroll-area">
                 <!-- 主控制台页面 -->
@@ -58,17 +58,11 @@
                                     </div>
                                 </div>
 
-                                <div class="drop-zone" id="drop-zone">
-                                    <div class="drop-icon">📂</div>
-                                    <div class="text">拖拽文件夹到此处</div>
-                                    <div class="hint">或点击下方按钮选择</div>
-                                </div>
-
                                 <div class="input-group" style="margin-top: 24px;">
                                     <label class="input-label">📍 项目目录路径</label>
                                     <div style="display: flex; gap: 10px;">
                                         <input type="text" id="project-path" class="form-control"
-                                            placeholder="例如: C:\Users\用户名\Documents\项目文件夹">
+                                            placeholder="例如: C:\Users\用户名\Documents\项目文件夹" value="C:\Desktop">
                                         <button type="button" onclick="browseFolder()" class="btn btn-info"
                                             style="white-space: nowrap;">📂 浏览</button>
                                     </div>
@@ -226,9 +220,6 @@
                                     💡 支持纯文本提问，或上传图片进行视觉分析
                                 </div>
                             </div>
-                            <!-- 隐藏的文件夹选择输入框（用于拖拽功能） -->
-                            <input type="file" id="folder-input" webkitdirectory directory multiple
-                                style="display: none;">
                         </div>
                     </div>
                 </div>
@@ -244,7 +235,8 @@
                         <div class="card-body">
                             <div class="input-group">
                                 <label class="input-label">🔑 Kimi API Key</label>
-                                <input type="password" id="api-key-input" class="form-control" placeholder="请输入您的 API Key">
+                                <input type="password" id="api-key-input" class="form-control"
+                                    placeholder="请输入您的 API Key">
                                 <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">用于 AI 助手功能的鉴权</div>
                             </div>
                             <div class="input-group">
@@ -252,7 +244,8 @@
                                 <div style="display: flex; gap: 10px;">
                                     <input type="text" id="python-path-input" class="form-control"
                                         placeholder="例如: python 或 C:\Python39\python.exe">
-                                    <button class="btn btn-info" onclick="testPythonEnvironment()" style="white-space: nowrap;">
+                                    <button class="btn btn-info" onclick="testPythonEnvironment()"
+                                        style="white-space: nowrap;">
                                         <span>🔍</span> 测试
                                     </button>
                                 </div>

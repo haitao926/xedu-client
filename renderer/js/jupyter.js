@@ -154,11 +154,11 @@ export async function confirmProjectPath() {
     }
 }
 
-// 清空项目路径
+// 重置项目路径为默认值
 export function clearProjectPath() {
     const projectPathInput = document.getElementById('project-path');
     if (projectPathInput) {
-        projectPathInput.value = '';
+        projectPathInput.value = 'C:\\Desktop';
     }
 }
 

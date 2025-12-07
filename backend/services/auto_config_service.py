@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 import tempfile
 
-from ..models.config import AppConfig
-from ..utils.logger import get_logger
+from models.config import AppConfig
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

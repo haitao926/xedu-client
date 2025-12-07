@@ -1,4 +1,4 @@
-import { log, showTab, showModal, hideModal, initDragDrop, initModalListeners } from './ui.js';
+import { log, showTab, showModal, hideModal, initModalListeners } from './ui.js';
 import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment } from './jupyter.js';
 import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown } from './ai.js';
 
@@ -75,9 +75,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // API Key 出于安全考虑通常不回显，或者需要从后端获取
     log('系统初始化完成', 'success');
-
-    // 初始化拖拽
-    initDragDrop();
 
     // 初始化模态框事件监听器（点击外部关闭和ESC键关闭）
     initModalListeners();

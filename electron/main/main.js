@@ -113,13 +113,15 @@ function startBackendServer() {
     }
 
     let serverScript;
-    if (process.platform === 'win32') {
+    if (app.isPackaged) {
+        // 打包后，backend_main.py 在 resources 目录
         serverScript = path.join(process.resourcesPath, 'backend_main.py');
         if (!require('fs').existsSync(serverScript)) {
-            serverScript = path.join(__dirname, '../../backend_main.py');
+            serverScript = path.join(process.resourcesPath, 'backend', 'backend_main.py');
         }
     } else {
-        serverScript = path.join(__dirname, '../../backend_main.py');
+        // 开发环境，使用相对路径
+        serverScript = path.join(__dirname, '../../backend/backend_main.py');
     }
 
     const args = [serverScript];

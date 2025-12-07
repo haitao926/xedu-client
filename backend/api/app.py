@@ -17,16 +17,16 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
-from ..models.config import (
+from models.config import (
     AppConfig,
     JupyterConfig,
     SystemInfo,
     AIConfig,
 )
-from ..services.jupyter_service import JupyterManager
-from ..services.config_service import ConfigService
-from ..services.ai_service import AIService
-from ..utils.logger import get_logger
+from services.jupyter_service import JupyterManager
+from services.config_service import ConfigService
+from services.ai_service import AIService
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

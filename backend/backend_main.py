@@ -19,8 +19,8 @@ BASE_DIR = Path(__file__).resolve().parent
 # 确保 backend 包可以被导入
 sys.path.insert(0, str(BASE_DIR))
 
-from backend.api.app import create_app  # noqa: E402
-from backend.utils.logger import get_logger  # noqa: E402
+from api.app import create_app  # noqa: E402
+from utils.logger import get_logger  # noqa: E402
 
 
 logger = get_logger(__name__)

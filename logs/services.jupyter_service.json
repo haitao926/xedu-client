@@ -1,0 +1,72 @@
+{"timestamp": "2025-12-01T16:24:23.465412", "level": "\u001b[32mINFO\u001b[0m", "message": "JupyterManager initialized with config: port=8888", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:25:18.044103", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:25:20.111665", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter process started: PID=5232", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:25:20.119751", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection started - check interval: 2.0s, max restarts: 3", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:25:20.119751", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread started", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:25:20.122784", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter started successfully: PID=5232, URL=http://localhost:8888/lab", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:36:40.598497", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:36:40.598497", "level": "\u001b[31mERROR\u001b[0m", "message": "Configuration validation failed: ['项目目录不存在: C:\\\\Desktop']", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.895222", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.896223", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter is already running, stopping first...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.896223", "level": "\u001b[32mINFO\u001b[0m", "message": "Stopping Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.896223", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread exited", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.896223", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread stopped", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.984287", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter stopped successfully", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.987800", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter process started: PID=25076", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.996690", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection started - check interval: 2.0s, max restarts: 3", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.996690", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread started", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.997197", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter started successfully: PID=25076, URL=http://localhost:8888/lab", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:14.251384", "level": "\u001b[32mINFO\u001b[0m", "message": "Stopping Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:14.251384", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread exited", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:14.251384", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread stopped", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:14.251384", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter stopped successfully", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:19.857908", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:21.906200", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter process started: PID=22672", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:21.910254", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection started - check interval: 2.0s, max restarts: 3", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:21.910799", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread started", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:21.911811", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter started successfully: PID=22672, URL=http://localhost:8889/lab", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.441907", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.441907", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter is already running, stopping first...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.441907", "level": "\u001b[32mINFO\u001b[0m", "message": "Stopping Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.441907", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread exited", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.442948", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread stopped", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.442948", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter stopped successfully", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.444499", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter process started: PID=11068", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.446513", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection started - check interval: 2.0s, max restarts: 3", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.446513", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread started", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.447516", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter started successfully: PID=11068, URL=http://localhost:8888/lab", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:16.004197", "level": "\u001b[32mINFO\u001b[0m", "message": "Stopping Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:16.004197", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread exited", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:16.005603", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread stopped", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:16.005603", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter stopped successfully", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:22.114814", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:24.174097", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter process started: PID=25452", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:24.175605", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection started - check interval: 2.0s, max restarts: 3", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:24.175605", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread started", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:24.175605", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter started successfully: PID=25452, URL=http://localhost:8888/lab", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.642483", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.643004", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter is already running, stopping first...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.643004", "level": "\u001b[32mINFO\u001b[0m", "message": "Stopping Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.643004", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread exited", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.643519", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread stopped", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.643519", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter stopped successfully", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.645653", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter process started: PID=14728", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.646659", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection started - check interval: 2.0s, max restarts: 3", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.646659", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread started", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.646659", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter started successfully: PID=14728, URL=http://localhost:8888/lab", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter is already running, stopping first...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[32mINFO\u001b[0m", "message": "Stopping Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread exited", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread stopped", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:48:49.384037", "level": "\u001b[32mINFO\u001b[0m", "message": "Jupyter stopped successfully", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:48:49.394132", "level": "\u001b[31mERROR\u001b[0m", "message": "Python executable test failed: did not find executable at 'C:\\Python313\\python.exe': ???????????\r\r\n\r\n", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:58:43.649947", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:58:45.717948", "level": "\u001b[31mERROR\u001b[0m", "message": "Python executable test failed: did not find executable at 'C:\\Python313\\python.exe': ???????????\r\r\n\r\n", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:34.655120", "level": "\u001b[32mINFO\u001b[0m", "message": "Stopping Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:34.655120", "level": "\u001b[32mINFO\u001b[0m", "message": "Process protection thread stopped", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:34.655120", "level": "\u001b[33mWARNING\u001b[0m", "message": "Jupyter process was not running", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:38.263045", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:39.150168", "level": "\u001b[32mINFO\u001b[0m", "message": "Starting Jupyter...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:40.329571", "level": "\u001b[31mERROR\u001b[0m", "message": "Python executable test failed: did not find executable at 'C:\\Python313\\python.exe': ???????????\r\r\n\r\n", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:41.204204", "level": "\u001b[31mERROR\u001b[0m", "message": "Python executable test failed: did not find executable at 'C:\\Python313\\python.exe': ???????????\r\r\n\r\n", "module": "logger", "function": "_log", "line": 141}

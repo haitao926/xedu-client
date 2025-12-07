@@ -14,8 +14,8 @@ from typing import Dict, Any, Optional, List
 from PIL import Image
 import re
 
-from ..models.config import AIConfig
-from ..utils.logger import get_logger
+from models.config import AIConfig
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

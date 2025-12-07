@@ -1,0 +1,13 @@
+{"timestamp": "2025-12-01T16:24:23.465412", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\config.json", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:24:23.465412", "level": "\u001b[32mINFO\u001b[0m", "message": "创建默认配置", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:25:18.042576", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:36:40.588752", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'jupyter': ['项目目录不存在: C:\\\\Desktop'], 'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:37:29.887256", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:19.857908", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:38:33.441907", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:44:22.114814", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:45:19.642483", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:58:43.648941", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:38.263045", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-01T16:59:39.150168", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
