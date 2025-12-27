@@ -1,13 +1,79 @@
-{"timestamp": "2025-12-01T16:24:23.465412", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\config.json", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:24:23.465412", "level": "\u001b[32mINFO\u001b[0m", "message": "创建默认配置", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:25:18.042576", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:36:40.588752", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'jupyter': ['项目目录不存在: C:\\\\Desktop'], 'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:37:29.887256", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:38:19.857908", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:38:33.441907", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:44:22.114814", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:45:19.642483", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:58:43.648941", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:59:38.263045", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:59:39.150168", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'ai': ['API Key 不能为空']}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:44:47.890491", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:44:47.890491", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:44:47.891503", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:44:47.892511", "level": "\u001b[31mERROR\u001b[0m", "message": "加载配置文件失败: JupyterConfig.__init__() got an unexpected keyword argument 'jupyter_port'", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:44:47.893500", "level": "\u001b[32mINFO\u001b[0m", "message": "创建默认配置", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:45:49.995694", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:45:52.743961", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:21.318919", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:21.323434", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:21.323434", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:21.324068", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:35.550195", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:37.614339", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:45.313516", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:45.316543", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:45.316543", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:45.316543", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:59.760770", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:59.944211", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:02:00.125655", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:02:02.380300", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:44:39.472836", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:44:39.472836", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:44:39.472836", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:44:39.473844", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:45:21.349163", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:45:23.318935", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:46:17.876492", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:12.481236", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:12.483752", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:12.483752", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:12.483752", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:23.845518", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:32.813626", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T22:28:21.174085", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T22:28:21.202339", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T22:28:21.203352", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T22:28:21.204353", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:14:07.657801", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:14:07.660307", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:14:07.660307", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:14:07.661318", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:26:27.131135", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:30:24.801410", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:41:14.179928", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T20:52:46.999087", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T20:53:42.279483", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T22:21:33.749993", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:21:33.750548", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:21:33.751092", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:21:33.751092", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:23:26.119539", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:23:28.472101", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:38:07.420980", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:38:07.421522", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:38:07.422639", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:38:07.423656", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T06:55:42.367311", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T06:55:42.389551", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T06:55:42.390552", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T06:55:42.392534", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T22:08:48.086637", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T22:08:48.095733", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T22:08:48.095733", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T22:08:48.095733", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:08:56.727109", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:08:56.754863", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:08:56.754863", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:08:56.756861", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:13:23.710032", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:13:23.713992", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:13:23.713992", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:13:23.714988", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:19:53.341896", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: D:\\project\\xedu-client\\config\\config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:19:53.342897", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:19:53.343894", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:19:53.343894", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:22:13.753940", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'jupyter': ['项目目录不存在: C:/Users/lenovo/Desktop/L8_feature_engineering/??1_??????']}", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:22:29.106953", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}

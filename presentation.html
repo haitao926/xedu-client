@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>XEdu Client - 演示文稿</title>
+
+    <!-- Reveal.js CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.css">
+    <!-- Theme: Simple, Black, White, League, Beige, Sky, Night, Serif, Simple, Solarized -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/theme/league.min.css" id="theme">
+    
+    <!-- Code Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/monokai.min.css">
+
+    <style>
+        .reveal h1, .reveal h2, .reveal h3 {
+            text-transform: none; /* 防止全大写 */
+            font-family: "Microsoft YaHei", "SimHei", sans-serif;
+        }
+        .reveal p, .reveal li {
+            font-family: "Microsoft YaHei", "SimHei", sans-serif;
+            font-size: 0.9em;
+        }
+        .reveal .highlight-text {
+            color: #42affa;
+            font-weight: bold;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+        }
+        .col {
+            flex: 1;
+        }
+        .text-left {
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="reveal">
+        <div class="slides">
+
+            <!-- 封面页 -->
+            <section>
+                <h1>XEdu Client</h1>
+                <h3>专为 AI 教育打造的智能化工具</h3>
+                <p>基于 Jupyter 的桌面管理助手</p>
+                <small>XEdu Team | 2025</small>
+            </section>
+
+            <!-- 目录/大纲 -->
+            <section>
+                <h2>演示大纲</h2>
+                <ul style="font-size: 1.2em; line-height: 1.6;">
+                    <li>什么是 XEdu？</li>
+                    <li>XEdu Client 的核心价值</li>
+                    <li>主要功能特性</li>
+                    <li>强大的工具生态</li>
+                    <li>技术架构解析</li>
+                    <li>总结与展望</li>
+                </ul>
+            </section>
+
+            <!-- 第一部分：背景 -->
+            <section>
+                <section>
+                    <h2>1. 什么是 XEdu？</h2>
+                    <p class="fragment fade-up">基于 <span class="highlight-text">OpenXLab</span> (上海人工智能实验室) 的教育版</p>
+                    <p class="fragment fade-up">一套完整的 AI 学习与开发工具</p>
+                </section>
+                <section>
+                    <h3>核心理念</h3>
+                    <div class="text-left" style="margin-left: 10%;">
+                        <p>💡 <b>极简理念</b>：代码最简，开箱即用</p>
+                        <p>🚀 <b>应用先行</b>：先应用，再理解</p>
+                        <p>🎓 <b>适用对象</b>：</p>
+                        <ul>
+                            <li>中小学 AI 教育</li>
+                            <li>高校 AI 通识课程</li>
+                            <li>AI 初学者</li>
+                        </ul>
+                    </div>
+                </section>
+            </section>
+
+            <!-- 第二部分：价值 -->
+            <section>
+                <h2>2. XEdu Client 的核心价值</h2>
+                <div class="container">
+                    <div class="col fragment fade-right">
+                        <h3>痛点 😫</h3>
+                        <ul>
+                            <li>Python 环境配置繁琐</li>
+                            <li>依赖安装经常报错</li>
+                            <li>命令行操作劝退新手</li>
+                        </ul>
+                    </div>
+                    <div class="col fragment fade-left">
+                        <h3>解决方案 💊</h3>
+                        <ul>
+                            <li><span class="highlight-text">一键启动</span> Jupyter Notebook</li>
+                            <li>自动管理 Python 环境</li>
+                            <li>可视化的 Electron 界面</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 第三部分：功能 -->
+            <section>
+                <section>
+                    <h2>3. 主要功能特性</h2>
+                </section>
+                
+                <section>
+                    <h3>🎯 Jupyter 全生命周期管理</h3>
+                    <p>启动、停止、重启、日志监控，一键搞定</p>
+                    <pre><code data-trim data-noescape>
+# 后端自动处理
+def start_jupyter():
+    check_port(8888)
+    launch_process(...)
+                    </code></pre>
+                </section>
+
+                <section>
+                    <h3>🤖 内置 AI 智能助手</h3>
+                    <ul>
+                        <li>集成 <b>Kimi AI</b> / OpenAI Compatible API</li>
+                        <li>支持 <b>视觉识别</b>：截图提问，报错分析</li>
+                        <li>代码辅助：实时生成与解释代码</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3>⚙️ 自动化与配置</h3>
+                    <ul>
+                        <li><b>环境检测</b>：自动识别 Conda/Python 路径</li>
+                        <li><b>项目管理</b>：拖拽切换工作目录</li>
+                        <li><b>系统设置</b>：可视化配置 API Key 和端口</li>
+                    </ul>
+                </section>
+            </section>
+
+            <!-- 第四部分：生态 -->
+            <section>
+                <h2>4. XEdu 强大的工具生态</h2>
+                <p>Client 只是入口，背后是强大的库支持</p>
+                <ul style="font-size: 0.8em;">
+                    <li class="fragment"><b>MMEdu</b> (计算机视觉): 基于 OpenMMLab，支持图像分类、检测</li>
+                    <li class="fragment"><b>BaseNN</b> (神经网络): 类 Keras 语法的神经网络搭建</li>
+                    <li class="fragment"><b>BaseML</b> (机器学习): 类 Sklearn 语法的传统机器学习</li>
+                    <li class="fragment"><b>BaseDT</b> (数据处理): 一行代码完成数据清洗</li>
+                    <li class="fragment"><b>XEduLLM</b> (大模型): 轻松开发智能体应用</li>
+                </ul>
+            </section>
+
+            <!-- 第五部分：技术 -->
+            <section>
+                <h2>5. 技术架构</h2>
+                <div class="container" style="align-items: flex-start;">
+                    <div class="col" style="border: 1px solid #666; padding: 20px; border-radius: 10px;">
+                        <h4>前端 (Frontend)</h4>
+                        <p>Electron + Vite</p>
+                        <p>HTML5 / CSS3 / Vanilla JS</p>
+                        <p style="color: #aaa; font-size: 0.8em;">现代化 UI，平滑动画</p>
+                    </div>
+                    <div class="col" style="font-size: 2em;">⇌</div>
+                    <div class="col" style="border: 1px solid #666; padding: 20px; border-radius: 10px;">
+                        <h4>后端 (Backend)</h4>
+                        <p>Python (Flask API)</p>
+                        <p>System Processes</p>
+                        <p style="color: #aaa; font-size: 0.8em;">负责 Jupyter 控制与 AI 转发</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 结尾 -->
+            <section>
+                <h2>总结与展望</h2>
+                <ul>
+                    <li style="color: #42affa;">✅ 最近更新</li>
+                    <ul>
+                        <li>从 Tauri 迁移至 Electron (更稳定)</li>
+                        <li>全新侧边栏 UI 与暗色模式优化</li>
+                        <li>真实 AI API 调用支持</li>
+                    </ul>
+                    <br>
+                    <li style="color: #fa4242;">🚀 未来规划</li>
+                    <ul>
+                        <li>更深度的教学场景整合</li>
+                        <li>插件系统支持</li>
+                    </ul>
+                </ul>
+            </section>
+
+            <section>
+                <h1>谢谢观看</h1>
+                <p>XEdu Client 让 AI 教育更简单</p>
+                <small>按 ESC 可查看所有幻灯片概览</small>
+            </section>
+
+        </div>
+    </div>
+
+    <!-- Reveal.js Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/highlight.min.js"></script>
+    <script>
+        Reveal.initialize({
+            hash: true,
+            controls: true,
+            progress: true,
+            center: true,
+            transition: 'slide', // none/fade/slide/convex/concave/zoom
+            plugins: [ RevealHighlight ]
+        });
+    </script>
+</body>
+</html>

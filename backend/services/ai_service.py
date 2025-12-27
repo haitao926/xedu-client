@@ -15,6 +15,8 @@ from PIL import Image
 import re
 
 from models.config import AIConfig
+from services.document_service import get_document_service
+from services.markdown_document_service import get_markdown_document_service
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,18 +32,26 @@ class AIService:
             'User-Agent': 'XeduClient/2.0'
         })
 
-    def ask_question(self, question: str, image_data: Optional[str] = None) -> Dict[str, Any]:
+    def ask_question(self, question: str, image_data: Optional[str] = None, history: List[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         向AI提问
 
         Args:
             question: 问题文本
             image_data: base64编码的图片数据（可选）
+            history: 历史对话记录（可选）
 
         Returns:
             Dict[str, Any]: AI响应结果
         """
         try:
+            # 友好提示未配置 API Key 的情况
+            if not self.config.api_key:
+                return {
+                    "success": False,
+                    "error": "AI 未配置：请先在设置中填写 API Key",
+                }
+
             # 验证配置
             if not self.config.validate()[0]:
                 errors = self.config.validate()[1]
@@ -51,7 +61,7 @@ class AIService:
                 }
 
             # 准备消息
-            messages = self._prepare_messages(question, image_data)
+            messages = self._prepare_messages(question, image_data, history)
 
             # 调用API
             response = self._call_ai_api(messages)
@@ -75,10 +85,43 @@ class AIService:
                 'error': f'处理请求时出错: {str(e)}'
             }
 
-    def _prepare_messages(self, question: str, image_data: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _prepare_messages(self, question: str, image_data: Optional[str] = None, history: List[Dict[str, str]] = None) -> List[Dict[str, Any]]:
         """准备消息内容"""
         messages = []
 
+        # 添加系统提示
+        messages.append({
+            "role": "system",
+            "content": "你是XEdu AI助手，专门帮助用户解决使用XEdu进行AI学习和开发的问题。请根据提供的文档内容回答用户的问题。"
+        })
+
+        # 添加相关文档内容
+        try:
+            doc_service = get_markdown_document_service()
+            relevant_docs = doc_service.get_document_content_for_ai(question)
+            if relevant_docs:
+                messages.append({
+                    "role": "system",
+                    "content": relevant_docs
+                })
+        except Exception as e:
+            logger.warning(f"获取文档内容失败: {e}")
+
+        # 处理历史消息
+        # 前端发送的 history 包含当前问题作为最后一条。
+        # 我们取 history[:-1] 作为上下文，最后一条重新构建以包含可能的图片。
+        if history and len(history) > 0:
+            # 简单验证并添加历史上下文
+            # 注意：实际生产中可能需要限制历史长度以防 token 超出
+            context_messages = history[:-1]
+            for msg in context_messages:
+                if 'role' in msg and 'content' in msg:
+                    messages.append({
+                        "role": msg['role'],
+                        "content": msg['content']
+                    })
+
+        # 准备当前用户消息
         if image_data:
             # 处理图片数据
             processed_image = self._process_image(image_data)
@@ -241,6 +284,12 @@ class AIService:
         test_question = "你好，请简单介绍一下你自己。"
 
         try:
+            if not self.config.api_key:
+                return {
+                    "success": False,
+                    "message": "AI 未配置：请先在设置中填写 API Key",
+                }
+
             response = self.ask_question(test_question)
             if response.get('success'):
                 return {

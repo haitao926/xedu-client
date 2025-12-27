@@ -18,58 +18,53 @@ export function log(message, type = 'info') {
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
-// 标签页切换
-export function showTab(tabName, clickedElement) {
-    console.log('[DEBUG] 🎯 showTab() 函数被调用，切换到:', tabName);
-
-    try {
-        // 更新页面标题
-        const titleMap = {
-            'main': '主控制台',
-            'ai-assistant': 'AI 助手',
-            'settings': '系统设置'
-        };
-        const pageTitle = document.getElementById('page-title');
-        if (pageTitle && titleMap[tabName]) {
-            pageTitle.textContent = titleMap[tabName];
-        }
-
-        // 1. 隐藏所有页面内容
-        const allSections = document.querySelectorAll('.page-section');
-        allSections.forEach((section) => {
-            section.classList.remove('active');
-        });
-
-        // 2. 移除所有导航项的 active 类
-        const allNavItems = document.querySelectorAll('.nav-item');
-        allNavItems.forEach((item) => {
+// 切换页面 Tab
+export function showTab(tabId, navItem) {
+    // 1. 处理导航菜单高亮
+    if (navItem) {
+        // 移除所有 active 类
+        document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.remove('active');
         });
+        // 给当前点击项添加 active
+        navItem.classList.add('active');
+    }
 
-        // 3. 显示目标页面
-        const targetSection = document.getElementById(tabName);
-        if (targetSection) {
-            targetSection.classList.add('active');
-        }
+    // 2. 处理页面内容显示
+    document.querySelectorAll('.page-section').forEach(section => {
+        section.classList.remove('active');
+    });
+    
+    const targetSection = document.getElementById(tabId);
+    if (targetSection) {
+        targetSection.classList.add('active');
+    }
 
-        // 4. 高亮当前导航项
-        if (clickedElement) {
-            clickedElement.classList.add('active');
+    // 3. 特殊处理：Jupyter 视图的显隐
+    // BrowserView 是悬浮在最上层的，切换到非主页时必须隐藏它
+    if (window.app && window.app.jupyter && window.app.jupyter.setVisibility) {
+        if (tabId === 'main') {
+            // 回到主页，显示 Jupyter
+            window.app.jupyter.setVisibility(true);
         } else {
-            // 尝试根据onclick属性找到对应的导航项
-            allNavItems.forEach((item) => {
-                const onclick = item.getAttribute('onclick');
-                // 简单的匹配逻辑，实际可能需要更严谨
-                if (onclick && onclick.includes(`'${tabName}'`)) {
-                    item.classList.add('active');
-                }
+            // 离开主页，隐藏 Jupyter
+            window.app.jupyter.setVisibility(false);
+        }
+    }
+
+    // 4. 初始化特定页面功能
+    if (tabId === 'docs') {
+        // 优先使用已注册的全局模块
+        if (window.app && window.app.docs && window.app.docs.initDocsPage) {
+            window.app.docs.initDocsPage();
+        } else {
+            // 回退方案：动态导入
+            import('./docs.js').then(docs => {
+                docs.initDocsPage();
+            }).catch(err => {
+                console.error('加载文档模块失败:', err);
             });
         }
-
-        return true;
-    } catch (error) {
-        console.error('[DEBUG] ❌ showTab() 执行出错:', error);
-        return false;
     }
 }
 
@@ -153,6 +148,34 @@ export function initModalListeners() {
         }
     });
 }
+
+// Toast 提示
+export function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    // 强制重绘
+    toast.offsetHeight;
+    
+    // 显示
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+    });
+    
+    // 3秒后自动消失
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300); // 等待过渡动画结束
+    }, 3000);
+}
+
 
 // Settings modal functions removed as it is now a page
 

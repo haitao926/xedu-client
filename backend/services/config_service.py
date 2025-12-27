@@ -75,16 +75,27 @@ class ConfigService:
             config_dir: 配置目录，如果为None则使用默认路径
         """
         if config_dir is None:
-            # 获取配置目录
-            if getattr(sys, 'frozen', False):
-                # 打包后的应用
-                if sys.platform == "win32":
-                    config_dir = Path(os.environ['APPDATA']) / 'XeduClient'
-                else:
-                    config_dir = Path.home() / '.xeduclient'
+            # 环境变量优先，允许外部指定可写路径（如 Electron userData）
+            env_config_dir = os.getenv("XEDU_CONFIG_DIR") or os.getenv("XEDU_DATA_DIR")
+            if env_config_dir:
+                config_dir = Path(env_config_dir) / "config"
             else:
-                # 开发环境
-                config_dir = Path(__file__).parent.parent.parent.parent
+                # 获取配置目录
+                if getattr(sys, 'frozen', False):
+                    # 打包后的应用：落到用户级可写目录
+                    if sys.platform == "win32":
+                        # 优先 APPDATA，若缺失则回退到用户目录
+                        appdata = os.environ.get("APPDATA")
+                        config_dir = Path(appdata) / "XeduClient" if appdata else Path.home() / "AppData" / "Roaming" / "XeduClient"
+                    elif sys.platform == "darwin":
+                        config_dir = Path.home() / "Library" / "Application Support" / "XeduClient"
+                    else:
+                        # Linux/Unix
+                        config_dir = Path.home() / ".local" / "share" / "xeduclient"
+                else:
+                    # 开发环境：固定使用项目内的 config 目录，避免写到上一层磁盘根目录
+                    project_root = Path(__file__).resolve().parent.parent.parent
+                    config_dir = project_root / 'config'
 
         self.config_dir = Path(config_dir)
         self.config_file = self.config_dir / 'config.json'
@@ -118,6 +129,7 @@ class ConfigService:
                 data = self._migrate_config(data)
 
                 self._config = AppConfig.from_dict(data)
+                self._ensure_valid_python_path(self._config)
                 logger.info("配置文件加载成功")
                 return self._config
 
@@ -131,6 +143,7 @@ class ConfigService:
 
         # 如果没有配置文件，创建默认配置
         self._config = AppConfig()
+        self._ensure_valid_python_path(self._config)
         self._save_config_internal(self._config)
         logger.info("创建默认配置")
         return self._config
@@ -375,6 +388,34 @@ class ConfigService:
         except Exception as e:
             logger.error(f"导入配置失败: {e}")
             return False
+
+    def _ensure_valid_python_path(self, app_config: AppConfig):
+        """
+        确保 jupyter.python_executable 可用；不存在时回退为当前运行的解释器。
+        打包环境下当前解释器即内置 python_env，可避免跨机器绝对路径失效。
+        """
+        try:
+            project_root = Path(__file__).resolve().parent.parent.parent
+            embedded_py = project_root / "python_env" / "Scripts" / "python.exe"
+            embedded_py_alt = project_root / "python_env" / "python.exe"
+
+            py_path_str = getattr(app_config, "jupyter", None) and app_config.jupyter.python_executable
+            py_path = Path(py_path_str) if py_path_str else None
+            if not py_path or not py_path.exists():
+                candidates = [
+                    embedded_py,
+                    embedded_py_alt,
+                    Path(sys.executable),
+                ]
+                fallback = next((p for p in candidates if p.exists()), None)
+                original_path = py_path_str if py_path_str else "<empty>"
+                if fallback:
+                    app_config.jupyter.python_executable = str(fallback.resolve())
+                    logger.warning(f"检测到无效的 Python 路径: {original_path}，已回退为: {app_config.jupyter.python_executable}")
+                else:
+                    logger.error(f"检测到无效的 Python 路径且未找到可用的 fallback，原路径: {original_path}")
+        except Exception as e:
+            logger.debug(f"自动校正 python_executable 失败: {e}")
 
     def get_config_info(self) -> Dict[str, Any]:
         """获取配置信息"""

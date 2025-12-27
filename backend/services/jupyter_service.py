@@ -51,6 +51,11 @@ class JupyterManager:
             'cache_duration': 300  # 缓存5分钟
         }
 
+        # HTTP 探测失败计数，用于避免短暂波动引发误判重启
+        self._http_failure_count = 0
+        self._http_failure_threshold = 30
+        self._log_handles: Dict[str, Any] = {}
+
         # 注册退出处理器
         import atexit
         atexit.register(self.cleanup_all_jupyter_processes)
@@ -74,26 +79,58 @@ class JupyterManager:
                 "errors": errors
             }
 
-        # 检查是否已有外部 Jupyter
-        external_jupyter = self._find_external_jupyter()
-        if external_jupyter:
-            logger.info(f"Found external Jupyter running on port {external_jupyter['port']}, PID {external_jupyter['pid']}")
-            self.external_pid = external_jupyter['pid']
-            self.config.port = external_jupyter['port']
-            return {
-                "success": True,
-                "message": f"发现已有 Jupyter {merged_config.project_dir if merged_config.use_notebook else 'Lab'} 在运行",
-                "port": external_jupyter['port'],
-                "url": self._get_jupyter_url(external_jupyter['port']),
-                "pid": external_jupyter['pid'],
-                "auto_restart": False,
-                "external": True
-            }
-
-        # 如果我们自己管理的进程已在运行，先停止
+        # 如果我们自己管理的进程已在运行
         if self.is_running():
-            logger.info("Jupyter is already running, stopping first...")
-            self.stop()
+            actual_port = self._get_actual_jupyter_port() or self.config.port or merged_config.port
+
+            # 若用户更改了项目路径，先停止再按新目录重启
+            current_dir = self.config.project_dir
+            target_dir = merged_config.project_dir
+            if current_dir and target_dir:
+                try:
+                    if Path(current_dir).resolve() != Path(target_dir).resolve():
+                        logger.info("Project directory changed, restarting Jupyter with new directory")
+                        self.stop()
+                    else:
+                        return {
+                            "success": True,
+                            "message": "Jupyter 已在运行，直接挂载",
+                            "port": actual_port,
+                            "url": self._get_jupyter_url(actual_port),
+                            "pid": self.managed_pid or self.external_pid,
+                            "auto_restart": self.auto_restart,
+                            "external": bool(self.external_pid and not self.managed_pid),
+                        }
+                except Exception:
+                    # 如果路径解析异常，回退到重启
+                    self.stop()
+            else:
+                return {
+                    "success": True,
+                    "message": "Jupyter 已在运行，直接挂载",
+                    "port": actual_port,
+                    "url": self._get_jupyter_url(actual_port),
+                    "pid": self.managed_pid or self.external_pid,
+                    "auto_restart": self.auto_restart,
+                    "external": bool(self.external_pid and not self.managed_pid),
+                }
+
+        # 跳过端口扫描外部实例，直接尝试启动
+
+        # 端口占用直接报错，避免长时间扫描或误判外部实例
+        if self._is_port_occupied(merged_config.port):
+            # 尝试自动寻找可用端口
+            logger.info(f"Port {merged_config.port} is occupied, searching for available port...")
+            new_port = self._find_available_port(merged_config.port)
+            
+            if new_port:
+                logger.info(f"Found available port: {new_port}, switching from {merged_config.port}")
+                merged_config.port = new_port
+            else:
+                return {
+                    "success": False,
+                    "message": f"端口被占用: {merged_config.port}，且在 {merged_config.port}-{merged_config.port+20} 范围内未找到可用端口，请先释放或更换端口"
+                }
 
         try:
             # 快速模式：如果最近启动过且环境没变，跳过详细验证
@@ -120,8 +157,6 @@ class JupyterManager:
                 # 快速重启时减少等待时间
                 if is_recent_restart:
                     time.sleep(0.2)  # 快速重启时只等待200ms
-                else:
-                    time.sleep(1)
 
                 if self.auto_restart:
                     self._start_protection()
@@ -348,11 +383,22 @@ class JupyterManager:
             # 检查命令行参数
             cmdline = process.cmdline()
             cmdline_str = ' '.join(cmdline).lower()
+            if 'jupyter' in cmdline_str:
+                return True
 
             # 优先通过监听端口验证服务可用性
             port = self._get_process_port(pid)
-            if port and self._verify_jupyter_on_port(port):
-                return True
+            if port:
+                if self._verify_jupyter_on_port(port):
+                    self._http_failure_count = 0
+                    return True
+
+                # 探测失败但端口仍然打开，给定宽限，避免短暂波动误判
+                self._http_failure_count += 1
+                if self._http_failure_count < self._http_failure_threshold and self._is_port_occupied(port):
+                    logger.debug(f"HTTP check failed on port {port}, treating as alive (grace {self._http_failure_count}/{self._http_failure_threshold})")
+                    return True
+                return False
 
             # 命令行包含 jupyter 但未找到可用端口，继续做端口级校验
 
@@ -362,7 +408,13 @@ class JupyterManager:
                     if conn.status == 'LISTEN' and 8888 <= conn.laddr.port <= 8898:
                         # 验证端口上的服务
                         if self._verify_jupyter_on_port(conn.laddr.port):
+                            self._http_failure_count = 0
                             return True
+                        else:
+                            self._http_failure_count += 1
+                            if self._http_failure_count < self._http_failure_threshold:
+                                logger.debug(f"Grace on port {conn.laddr.port} after verification failure ({self._http_failure_count}/{self._http_failure_threshold})")
+                                return True
             except:
                 pass
 
@@ -373,30 +425,11 @@ class JupyterManager:
             logger.debug(f"Error checking if process {pid} is Jupyter: {e}")
             return False
 
-    def _verify_jupyter_on_port(self, port: int) -> bool:
-        """验证端口上的服务是否是Jupyter"""
+    def _verify_jupyter_on_port(self, port: int, timeout: float = 3.0) -> bool:
+        """Quick TCP reachability check for the target port"""
         try:
-            import urllib.request
-
-            # 尝试访问Jupyter Lab
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/lab", timeout=1) as response:
-                    content = response.read(200).decode('utf-8', errors='ignore')
-                    if 'jupyter' in content.lower() or 'JupyterLab' in content:
-                        return True
-            except:
-                pass
-
-            # 尝试访问Jupyter Notebook
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/tree", timeout=1) as response:
-                    content = response.read(200).decode('utf-8', errors='ignore')
-                    if 'jupyter' in content.lower() or 'Jupyter Notebook' in content:
-                        return True
-            except:
-                pass
-
-            return False
+            with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+                return True
         except Exception:
             return False
 
@@ -431,6 +464,13 @@ class JupyterManager:
         except Exception as e:
             logger.debug(f"Error finding external Jupyter: {e}")
 
+        return None
+
+    def _find_available_port(self, start_port: int, max_tries: int = 20) -> Optional[int]:
+        """寻找可用端口"""
+        for port in range(start_port, start_port + max_tries):
+            if not self._is_port_occupied(port):
+                return port
         return None
 
     def _get_actual_jupyter_port(self) -> Optional[int]:
@@ -539,19 +579,7 @@ class JupyterManager:
                 logger.error(f"Python executable not found: {python_exe}")
                 python_valid = False
             else:
-                # 测试 Python 是否可用（缓存结果）
-                try:
-                    test_result = subprocess.run(
-                        [str(python_path), "-c", "import sys; print('OK')"],
-                        capture_output=True,
-                        timeout=3  # 减少超时时间
-                    )
-                    if test_result.returncode != 0:
-                        logger.error(f"Python executable test failed: {test_result.stderr.decode()}")
-                        python_valid = False
-                except Exception as e:
-                    logger.error(f"Python executable test error: {e}")
-                    python_valid = False
+                python_exe = str(python_path.resolve())
 
         # 检查项目目录
         dir_valid = True
@@ -584,12 +612,16 @@ class JupyterManager:
         logger.debug("Starting Jupyter process...")
 
         try:
+            stdout_handle, stderr_handle = self._open_jupyter_logs()
+
             # 构建命令
             cmd = self._build_command(config)
             logger.debug(f"Command: {' '.join(cmd)}")
 
             # 设置环境变量
             env = self._prepare_environment(config)
+            # 确保默认 python3 内核指向当前 Python，避免旧 kernelspec（如 C:\\aisoft\\XEdu\\env）导致模块缺失
+            self._ensure_default_kernel(cmd[0], env)
 
             # 确定工作目录
             work_dir = config.project_dir or Path.cwd()
@@ -611,12 +643,12 @@ class JupyterManager:
 
                 self.process = subprocess.Popen(
                     cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
                     text=True,
                     cwd=str(work_dir),
                     env=env,
-                    creation_flags=creation_flags if platform.system() == "Windows" else 0
+                    creationflags=creation_flags if platform.system() == "Windows" else 0
                 )
 
                 # 在Unix系统上设置进程优先级
@@ -631,8 +663,8 @@ class JupyterManager:
                 # 回退到标准启动
                 self.process = subprocess.Popen(
                     cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
                     text=True,
                     cwd=str(work_dir),
                     env=env
@@ -661,12 +693,14 @@ class JupyterManager:
             else:
                 # 启动失败，清理进程
                 self._stop_process()
+                self._close_jupyter_logs()
                 return {
                     "success": False,
                     "message": "Jupyter 启动超时或失败"
                 }
 
         except Exception as e:
+            self._close_jupyter_logs()
             logger.exception("Failed to start Jupyter process")
             return {
                 "success": False,
@@ -731,8 +765,12 @@ class JupyterManager:
             f"--port={config.port}",
             "--no-browser",
             "--allow-root",
-            "--ServerApp.ip='0.0.0.0'",
-            "--ServerApp.token=''",  # 简化的token认证禁用
+            "--ServerApp.ip=0.0.0.0",
+            "--ServerApp.token=",  # 关闭 token
+            "--ServerApp.password=",
+            "--ServerApp.password_required=False",
+            "--IdentityProvider.token=",  # Jupyter Server 2.x 关闭 token
+            "--IdentityProvider.password_required=False",
             "--ServerApp.disable_check_xsrf=True",  # 禁用CSRF检查以提升速度
             "--ServerApp.open_browser=False",  # 明确禁用浏览器
             "--LabApp.default_url=/lab",  # 直接打开lab界面，跳过选择页面
@@ -744,8 +782,17 @@ class JupyterManager:
             # 生产环境建议启用必要的安全措施
         ]
 
+        # 针对经典 Notebook 的兼容参数，确保无 token/密码
+        cmd.extend([
+            "--NotebookApp.token=",
+            "--NotebookApp.password=",
+            "--NotebookApp.password_required=False",
+            "--NotebookApp.disable_check_xsrf=True"
+        ])
+
         # 只有在工作目录不为空时才添加目录参数
         if work_dir:
+            cmd.append(f"--ServerApp.root_dir={work_dir}")
             cmd.append(f"--ServerApp.notebook_dir={work_dir}")
 
         # 添加额外参数
@@ -764,20 +811,30 @@ class JupyterManager:
         # 如果使用虚拟环境的Python，设置必要的环境变量
         if config.python_executable and "python_env" in config.python_executable:
             # 提取虚拟环境路径
-            venv_path = Path(config.python_executable).parent.parent
-            logger.info(f"使用虚拟环境Python: {venv_path}")
+            scripts_path = Path(config.python_executable).parent
+            # 兼容传入 python_env\python.exe 或 python_env\Scripts\python.exe
+            if scripts_path.name.lower() == "scripts":
+                venv_root = scripts_path.parent
+            elif scripts_path.name.lower() == "python_env":
+                venv_root = scripts_path
+                scripts_path = scripts_path / "Scripts"
+            else:
+                venv_root = scripts_path.parent
+            logger.info(f"使用虚拟环境Python: {scripts_path}")
 
             # 设置虚拟环境相关环境变量
-            env['VIRTUAL_ENV'] = str(venv_path)
+            env['VIRTUAL_ENV'] = str(venv_root)
             env['PYTHONHOME'] = ''  # 清除 PYTHONHOME
 
-            # 更新 PATH，将虚拟环境的 Scripts 目录放在前面
-            scripts_path = str(venv_path / "Scripts")
+            # 更新 PATH，将虚拟环境的 Scripts 目录放在前面，并补充根目录以便加载 DLL（如 sqlite3）
             current_path = env.get('PATH', '')
-            if scripts_path not in current_path:
-                env['PATH'] = scripts_path + os.pathsep + current_path
+            new_paths = [str(scripts_path), str(venv_root)]
+            for p in new_paths:
+                if p not in current_path:
+                    current_path = p + os.pathsep + current_path
+            env['PATH'] = current_path
 
-            logger.info(f"虚拟环境环境变量设置完成: VIRTUAL_ENV={venv_path}")
+            logger.info(f"虚拟环境环境变量设置完成: VIRTUAL_ENV={venv_root}")
 
         # 如果配置了激活脚本（兼容旧配置）
         elif config.activate_script:
@@ -809,11 +866,74 @@ class JupyterManager:
         env["LANGUAGE"] = "en"
         # 显式告诉 JupyterLab 使用英文，避免缺失语言包时卡死
         env["JUPYTER_CONFIG_DATA"] = json.dumps({"appLanguage": "en"})
+        # 本地回环不走代理，避免健康检查被代理截断
+        env["NO_PROXY"] = "127.0.0.1,localhost"
+        # 让 Jupyter 优先使用当前环境的 kernelspec
+        env["JUPYTER_PREFER_ENV_PATH"] = "1"
 
         # 添加 Jupyter 相关的环境变量
         env['JUPYTER_ENABLE_LAB'] = 'yes' if not config.use_notebook else 'no'
+        # 显式关闭 token/密码，防止读取旧配置时重新生成
+        env['JUPYTER_TOKEN'] = ''
+        env['JUPYTER_PASSWORD'] = ''
+
+        # 将配置/运行时目录固定到用户可写目录，避免继承用户主目录下的旧配置再次开启 token
+        data_root = env.get('XEDU_DATA_DIR') or env.get('XEDU_LOG_DIR')
+        if data_root:
+            try:
+                cfg_dir = Path(data_root) / "jupyter_config"
+                runtime_dir = Path(data_root) / "jupyter_runtime"
+                cfg_dir.mkdir(parents=True, exist_ok=True)
+                runtime_dir.mkdir(parents=True, exist_ok=True)
+                env['JUPYTER_CONFIG_DIR'] = str(cfg_dir)
+                env['JUPYTER_RUNTIME_DIR'] = str(runtime_dir)
+            except Exception as e:
+                logger.warning(f"Failed to prepare Jupyter config/runtime dirs: {e}")
 
         return env
+
+    def _ensure_default_kernel(self, python_exe: str, env: dict) -> None:
+        """
+        确保 python3 kernelspec 指向当前 Python，避免使用用户目录下的旧内核路径。
+        """
+        try:
+            data_root = env.get('XEDU_DATA_DIR') or env.get('XEDU_LOG_DIR')
+            if data_root:
+                kernel_base = Path(data_root) / "jupyter_kernels"
+            else:
+                kernel_base = Path(os.environ.get("APPDATA", str(Path.home()))) / "jupyter" / "kernels"
+
+            kernel_dir = kernel_base / "python3"
+            if kernel_dir.exists():
+                try:
+                    for item in kernel_dir.iterdir():
+                        if item.is_file():
+                            item.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            kernel_dir.mkdir(parents=True, exist_ok=True)
+
+            kernel_json = {
+                "argv": [
+                    str(Path(python_exe).resolve()),
+                    "-m",
+                    "ipykernel_launcher",
+                    "-f",
+                    "{connection_file}"
+                ],
+                "display_name": "Python 3 (bundled)",
+                "language": "python",
+                "metadata": {"debugger": True}
+            }
+
+            with open(kernel_dir / "kernel.json", "w", encoding="utf-8") as f:
+                json.dump(kernel_json, f, ensure_ascii=False, indent=2)
+
+            # 仅暴露自有 kernelspec，避免优先加载旧路径
+            env['JUPYTER_PATH'] = str(kernel_base)
+            logger.info(f"Kernelspec refreshed: {kernel_dir} -> {python_exe}")
+        except Exception as e:
+            logger.warning(f"Failed to refresh kernelspec: {e}")
 
     def _activate_virtual_environment(self, activate_script: str) -> Optional[Dict[str, str]]:
         """
@@ -1128,6 +1248,33 @@ env
         except Exception as e:
             logger.debug(f"Error force releasing port: {e}")
 
+    def _open_jupyter_logs(self) -> Tuple[Any, Any]:
+        # 优先写入用户可写目录：XEDU_LOG_DIR（main 传入 userData/logs）或 XEDU_DATA_DIR
+        env_log_dir = os.environ.get("XEDU_LOG_DIR") or os.environ.get("XEDU_DATA_DIR")
+        if env_log_dir:
+            log_dir = Path(env_log_dir)
+            # 如果传入的是 data 目录而非 logs 目录，补一个 logs
+            if log_dir.name.lower() != "logs":
+                log_dir = log_dir / "logs"
+        else:
+            log_dir = Path(__file__).parent.parent.parent / "logs"
+
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stdout_path = log_dir / "jupyter_stdout.log"
+        stderr_path = log_dir / "jupyter_stderr.log"
+        stdout_handle = open(stdout_path, "a", encoding="utf-8", errors="replace")
+        stderr_handle = open(stderr_path, "a", encoding="utf-8", errors="replace")
+        self._log_handles = {"stdout": stdout_handle, "stderr": stderr_handle}
+        return stdout_handle, stderr_handle
+
+    def _close_jupyter_logs(self) -> None:
+        for handle in self._log_handles.values():
+            try:
+                handle.close()
+            except Exception:
+                pass
+        self._log_handles = {}
+
     def _cleanup(self):
         """清理状态"""
         self.process = None
@@ -1135,6 +1282,7 @@ env
         self.external_pid = None
         self.start_time = None
         self.restart_count = 0
+        self._close_jupyter_logs()
 
         # 注意：不要在这里设置 _manually_stopped，因为它应该在 stop() 中设置
         # 保留环境缓存以加速下次启动

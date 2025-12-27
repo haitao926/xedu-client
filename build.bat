@@ -1,65 +1,94 @@
 @echo off
-REM Xedu Client 完整打包脚本 (Windows)
-REM Electron + Python Backend
+REM Xedu Client Automated Build Script
+REM Integrates environment setup, cleanup, and packaging
 
-echo ==================================
-echo Xedu Client 打包脚本
-echo ==================================
+setlocal EnableDelayedExpansion
+
+echo ========================================================
+echo               Xedu Client Build System 2.0
+echo ========================================================
 echo.
 
-REM 步骤1: 清理旧文件
-echo [1/5] 清理旧的构建文件...
-rmdir /s /q dist 2>nul
-rmdir /s /q dist-installer 2>nul
-echo ✓ 清理完成
+REM --- Stage 1: Environment Preparation ---
+echo [1/6] Checking Portable Python Environment...
+
+set "PYTHON_ENV=python_env"
+set "MARKER_FILE=%PYTHON_ENV%\.portable_ready"
+set "SETUP_SCRIPT=scripts\setup_portable_python.py"
+
+if exist "%MARKER_FILE%" (
+    echo [INFO] Portable Python environment detected. Skipping setup.
+) else (
+    echo [WARN] Portable environment not found. Initializing...
+    echo        This may take a few minutes...
+    
+    python --version >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] System Python is required to run the setup script.
+        echo         Please install Python or run %SETUP_SCRIPT% manually.
+        exit /b 1
+    )
+    
+    python "%SETUP_SCRIPT%"
+    if errorlevel 1 (
+        echo [ERROR] Python environment initialization failed.
+        exit /b 1
+    )
+    
+    if not exist "%MARKER_FILE%" (
+        echo [ERROR] Setup script finished but marker file missing.
+        exit /b 1
+    )
+    echo [SUCCESS] Portable environment initialized.
+)
 echo.
 
-REM 步骤2: 检查Python环境
-echo [2/5] 检查Python环境...
-python --version >nul 2>&1
+REM --- Stage 2: Cleanup ---
+echo [2/6] Cleaning up...
+
+if exist "dist" rmdir /s /q "dist"
+if exist "dist-installer" rmdir /s /q "dist-installer"
+
+echo        - Removing __pycache__...
+for /d /r . %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d"
+
+echo [SUCCESS] Cleanup complete.
+echo.
+
+REM --- Stage 3: Environment Check ---
+echo [3/6] Verifying Node.js...
+call node --version >nul 2>&1
 if errorlevel 1 (
-    echo ✗ 未找到Python，请先安装Python
+    echo [ERROR] Node.js not found.
     exit /b 1
 )
-echo ✓ Python环境检查通过
+echo [OK] Node.js found.
 echo.
 
-REM 步骤3: 检查Node.js环境
-echo [3/5] 检查Node.js环境...
-node --version >nul 2>&1
-if errorlevel 1 (
-    echo ✗ 未找到Node.js，请先安装Node.js
-    exit /b 1
-)
-echo ✓ Node.js环境检查通过
-echo.
-
-REM 步骤4: 构建前端
-echo [4/5] 构建前端资源...
+REM --- Stage 4: Frontend Build ---
+echo [4/6] Building Frontend (Vite)...
 call npm run build
 if errorlevel 1 (
-    echo ✗ 前端构建失败
+    echo [ERROR] Frontend build failed.
     exit /b 1
 )
-echo ✓ 前端构建完成
+echo [SUCCESS] Frontend build complete.
 echo.
 
-REM 步骤5: 构建Electron应用
-echo [5/5] 构建Electron应用...
+REM --- Stage 5: Electron Build ---
+echo [5/6] Building Electron App...
 call npm run electron:build
 if errorlevel 1 (
-    echo ✗ Electron构建失败
+    echo [ERROR] Electron build failed.
     exit /b 1
 )
-echo ✓ Electron应用构建完成
+echo [SUCCESS] Build complete.
 echo.
 
-echo ==================================
-echo 构建成功！
-echo ==================================
+REM --- Stage 6: Finish ---
+echo ========================================================
+echo                    BUILD SUCCESSFUL
+echo ========================================================
 echo.
-echo 构建输出:
-echo   - 前端文件: frontend-dist\
-echo   - Electron应用: dist-installer\
+echo Output directory: %CD%\dist-installer
 echo.
-pause

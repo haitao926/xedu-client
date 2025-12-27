@@ -1,1 +1,28 @@
-{"timestamp": "2025-12-01T16:24:23.469017", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:44:47.902720", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:44:47.902720", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:21.330095", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:21.337774", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:45.330134", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:45.331646", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:44:39.479934", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:44:39.489177", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:12.513819", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:12.515338", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T22:28:21.213459", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T22:28:21.213459", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:14:07.678832", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:14:07.678832", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T22:21:33.757882", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:21:33.757882", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:38:07.432395", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:38:07.432395", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T06:55:42.407104", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T06:55:42.407769", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T22:08:48.103733", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-09T22:08:48.103733", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:08:56.770845", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:08:56.770845", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:13:23.724986", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:13:23.725985", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:19:53.355155", "level": "\u001b[32mINFO\u001b[0m", "message": "Xedu Client API Server 启动中 (port=5000)", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:19:53.356154", "level": "\u001b[32mINFO\u001b[0m", "message": "进程清理已配置，退出时将自动清理所有 Jupyter 进程", "module": "logger", "function": "_log", "line": 148}

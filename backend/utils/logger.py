@@ -9,6 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import json
+import os
 
 
 class ColoredFormatter(logging.Formatter):
@@ -85,8 +86,14 @@ class BackendLogger:
         self.logger.addHandler(console_handler)
 
         # 文件处理器
-        log_dir = Path(__file__).parent.parent.parent / "logs"
-        log_dir.mkdir(exist_ok=True)
+        # 日志目录：优先使用外部可写目录（例如用户数据目录），否则退回到资源目录
+        env_log_dir = os.environ.get("XEDU_LOG_DIR") or os.environ.get("XEDU_DATA_DIR")
+        if env_log_dir:
+            log_dir = Path(env_log_dir)
+        else:
+            log_dir = Path(__file__).parent.parent.parent / "logs"
+
+        log_dir.mkdir(parents=True, exist_ok=True)
 
         # 普通日志文件
         log_file = log_dir / f"{self.name}.log"

@@ -1,15 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+    // 通用 IPC 调用
+    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+    
     // 日志监听
     onLogUpdate: (callback) => ipcRenderer.on('log-update', (event, log) => callback(log)),
 
-    // 文件夹选择
+    // 兼容旧的特定方法调用 (如果还有遗留代码使用它们)
     selectFolder: () => ipcRenderer.invoke('select-folder'),
-
-    // 打开外部链接
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
-
-    // 系统信息
     getSystemInfo: () => ipcRenderer.invoke('get-system-info')
 });

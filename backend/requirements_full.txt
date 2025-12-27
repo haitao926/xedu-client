@@ -1,0 +1,38 @@
+# Core backend and Jupyter stack (Python 3.12 stable picks)
+Flask==3.0.3
+Flask-CORS==4.0.0
+requests==2.31.0
+python-dotenv==1.0.1
+Pillow==10.2.0
+psutil==5.9.8
+markdown==3.5.2
+Pygments==2.17.2
+PyYAML==6.0.1
+jupyterlab==4.5.0
+notebook==7.5.0
+ipykernel==6.29.3
+jupyter_server==2.14.1
+jupyter_core==5.7.2
+nbconvert==7.14.2
+
+# Data/ML basics
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.4.2
+scipy==1.12.0
+
+# Deep learning (CPU wheels; swap to CUDA-specific wheels if needed)
+torch==2.2.2
+torchvision==0.17.2
+torchaudio==2.2.2
+
+# LLM ecosystem
+transformers==4.38.1
+sentencepiece==0.2.1
+accelerate==0.27.2
+protobuf==4.25.3
+openai==1.23.6
+tiktoken==0.6.0
+
+# Project-specific (replace with actual version or wheel path)
+xedu-python

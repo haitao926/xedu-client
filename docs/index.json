@@ -1,0 +1,178 @@
+{
+  "version": "2.0",
+  "last_updated": "2024-12-04T15:00:00Z",
+  "documents": [
+    {
+      "id": "xedu-introduction",
+      "file_path": "overview/xedu-introduction.md",
+      "title": "XEdu核心概念详解",
+      "component": "XEdu",
+      "category": "overview",
+      "tags": ["核心概念", "定位", "特点", "生态系统", "理念"],
+      "difficulty": "beginner",
+      "keywords": ["XEdu", "核心概念", "极简理念", "应用先行", "代码最简", "兼容并蓄"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    },
+    {
+      "id": "quickstart",
+      "file_path": "overview/quickstart.md",
+      "title": "XEdu快速入门指南",
+      "component": "XEdu",
+      "category": "overview",
+      "tags": ["入门", "新手", "快速开始", "教程"],
+      "difficulty": "beginner",
+      "keywords": ["快速入门", "新手指南", "安装教程", "第一个项目"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    },
+    {
+      "id": "mmedu-guide",
+      "file_path": "components/mmedu.md",
+      "title": "MMEdu完整使用指南",
+      "component": "MMEdu",
+      "category": "guide",
+      "tags": ["计算机视觉", "OpenMMLab", "图像分类", "目标检测", "实例分割", "语义分割"],
+      "difficulty": "intermediate",
+      "keywords": ["MMEdu", "MMClassification", "MMDetection", "MMSegmentation", "预训练模型", "数据集"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    },
+    {
+      "id": "basenn-guide",
+      "file_path": "components/basenn.md",
+      "title": "BaseNN完整使用指南",
+      "component": "BaseNN",
+      "category": "guide",
+      "tags": ["神经网络", "深度学习", "PyTorch", "模型搭建"],
+      "difficulty": "intermediate",
+      "keywords": ["BaseNN", "神经网络", "DNN", "CNN", "RNN", "PyTorch"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    },
+    {
+      "id": "xeduhub-guide",
+      "file_path": "components/xeduhub.md",
+      "title": "XEduHub完整使用指南",
+      "component": "XEduHub",
+      "category": "guide",
+      "tags": ["推理", "部署", "预训练模型", "模型库"],
+      "difficulty": "beginner",
+      "keywords": ["XEduHub", "模型推理", "预训练模型", "模型库", "ONNX"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    },
+    {
+      "id": "baseml-guide",
+      "file_path": "components/baseml.md",
+      "title": "BaseML完整使用指南",
+      "component": "BaseML",
+      "category": "guide",
+      "tags": ["机器学习", "传统算法", "Scikit-learn", "数据挖掘"],
+      "difficulty": "intermediate",
+      "keywords": ["BaseML", "机器学习", "分类", "回归", "聚类", "特征工程"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    },
+    {
+      "id": "basedt-guide",
+      "file_path": "components/basedt.md",
+      "title": "BaseDT完整使用指南",
+      "component": "BaseDT",
+      "category": "guide",
+      "tags": ["数据处理", "数据增强", "特征工程", "数据可视化"],
+      "difficulty": "beginner",
+      "keywords": ["BaseDT", "数据预处理", "数据清洗", "数据增强", "数据集划分"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    },
+    {
+      "id": "xedullm-guide",
+      "file_path": "components/xedullm.md",
+      "title": "XEduLLM完整使用指南",
+      "component": "XEduLLM",
+      "category": "guide",
+      "tags": ["大模型", "LLM", "自然语言处理", "AI对话"],
+      "difficulty": "advanced",
+      "keywords": ["XEduLLM", "大语言模型", "ChatGPT", "Prompt工程", "Fine-tuning"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    },
+    {
+      "id": "basedeploy-guide",
+      "file_path": "components/basedeploy.md",
+      "title": "BaseDeploy完整使用指南",
+      "component": "BaseDeploy",
+      "category": "guide",
+      "tags": ["模型部署", "服务化", "容器化", "云部署"],
+      "difficulty": "advanced",
+      "keywords": ["BaseDeploy", "模型部署", "Docker", "FastAPI", "REST API", "Web服务"],
+      "last_updated": "2024-12-04",
+      "author": "OpenXLabEdu团队"
+    }
+  ],
+  "categories": {
+    "overview": {
+      "name": "概述",
+      "description": "XEdu框架的整体介绍和核心概念",
+      "documents": ["xedu-introduction", "quickstart"]
+    },
+    "guide": {
+      "name": "使用指南",
+      "description": "各个组件的详细使用说明",
+      "documents": ["mmedu-guide", "basenn-guide", "xeduhub-guide", "baseml-guide", "basedt-guide", "xedullm-guide", "basedeploy-guide"]
+    },
+    "tutorial": {
+      "name": "教程",
+      "description": "实战项目和示例代码",
+      "documents": []
+    },
+    "core": {
+      "name": "核心概念",
+      "description": "深入理解XEdu的设计理念",
+      "documents": []
+    }
+  },
+  "components": {
+    "XEdu": {
+      "name": "XEdu",
+      "description": "XEdu整体框架",
+      "documents": ["xedu-introduction", "quickstart"]
+    },
+    "MMEdu": {
+      "name": "MMEdu",
+      "description": "计算机视觉库，基于OpenMMLab的教育版本",
+      "documents": ["mmedu-guide"]
+    },
+    "BaseNN": {
+      "name": "BaseNN",
+      "description": "神经网络库，支持搭建各种神经网络模型",
+      "documents": ["basenn-guide"]
+    },
+    "BaseML": {
+      "name": "BaseML",
+      "description": "传统机器学习库，类似Scikit-learn",
+      "documents": ["baseml-guide"]
+    },
+    "BaseDT": {
+      "name": "BaseDT",
+      "description": "数据处理工具库",
+      "documents": ["basedt-guide"]
+    },
+    "XEduHub": {
+      "name": "XEduHub",
+      "description": "深度学习推理工具库",
+      "documents": ["xeduhub-guide"]
+    },
+    "XEduLLM": {
+      "name": "XEduLLM",
+      "description": "大模型应用库",
+      "documents": ["xedullm-guide"]
+    },
+    "BaseDeploy": {
+      "name": "BaseDeploy",
+      "description": "模型部署库",
+      "documents": ["basedeploy-guide"]
+    }
+  }
+}

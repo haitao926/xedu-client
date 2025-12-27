@@ -63,7 +63,19 @@
       "Bash(cmd:*)",
       "Bash(cat:*)",
       "Bash(\"D:\\project\\xedu-client\\python_env\\Scripts\\pip.exe\" install -r \"D:\\project\\xedu-client\\backend\\requirements.txt\")",
-      "Bash(\"D:\\project\\xedu-client\\python_env\\Scripts\\pip.exe\":*)"
+      "Bash(\"D:\\project\\xedu-client\\python_env\\Scripts\\pip.exe\":*)",
+      "Bash(\"D:\\project\\xedu-client\\python_env\\Scripts\\jupyter.exe\":*)",
+      "Bash(\"python_env\\Scripts\\activate.bat\")",
+      "Bash(\"python_env\\Scripts\\jupyter.exe\" lab --port=8888 --no-browser --notebook-dir=\"C:\\Desktop\")",
+      "Bash(powershell:*)",
+      "Bash(\"C:\\Users\\lenovo\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -m jupyterlab:*)",
+      "Bash(D:/project/xedu-client/python_env/Scripts/python.exe -c:*)",
+      "Bash(find:*)",
+      "Bash(wmic:*)",
+      "Bash(iconv:*)",
+      "Bash(jq:*)",
+      "Bash(pip install:*)",
+      "Bash(cp:*)"
     ],
     "deny": [],
     "ask": []

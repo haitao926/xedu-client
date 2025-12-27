@@ -8,7 +8,7 @@
     "build": "npx vite build",
     "preview": "npx vite preview",
     "clean": "rimraf build",
-    "full-build": "npm run clean && bash scripts/build.sh",
+    "full-build": "npm run clean && build.bat",
     "start-api": "python backend/backend_main.py",
     "test-api": "curl http://127.0.0.1:5000/api/health",
     "electron": "electron .",
@@ -27,8 +27,10 @@
   "build": {
     "appId": "com.xeduclient",
     "productName": "Xedu Client",
+    "compression": "store",
     "directories": {
-      "output": "dist-installer"
+      "output": "dist-final",
+      "buildResources": "resources"
     },
     "files": [
       "build/**/*",
@@ -50,34 +52,50 @@
       {
         "from": "config",
         "to": "config"
-      }
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "dir",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "forceCodeSigning": false,
-      "signAndEditExecutable": false,
-      "icon": null
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Xedu Client",
-      "uninstallDisplayName": "Xedu Client Uninstall",
-      "artifactName": "${productName}-${version}.${ext}",
-      "deleteAppDataOnUninstall": false,
-      "displayLanguageSelector": false,
-      "language": "2052"
-    }
-  },
+      },
+                                    {
+                                      "from": "docs",
+                                      "to": "docs"
+                                    },
+                                    {
+                                      "from": "icon.ico",
+                                      "to": "app.ico"
+                                    }
+                                  ],
+                                  "nsis": {
+                                    "oneClick": false,
+                                    "allowToChangeInstallationDirectory": true,
+                                    "createDesktopShortcut": true,
+                                    "createStartMenuShortcut": true,
+                                    "shortcutName": "Xedu Client",
+                                    "uninstallDisplayName": "Xedu Client Uninstall",
+                                    "artifactName": "${productName}-${version}.${ext}",
+                                    "deleteAppDataOnUninstall": false,
+                                    "displayLanguageSelector": false,
+                                    "language": "2052",
+                                    "installerIcon": "icon.ico",
+                                    "uninstallerIcon": "icon.ico",
+                                    "installerHeaderIcon": "icon.ico"
+                                  },
+                                  "win": {
+                                    "target": [
+                                      {
+                                        "target": "nsis",
+                                        "arch": [
+                                          "x64"
+                                        ]
+                                      },
+                                      {
+                                        "target": "dir",
+                                        "arch": [
+                                          "x64"
+                                        ]
+                                      }
+                                    ],
+                                    "forceCodeSigning": false,
+                                    "signAndEditExecutable": false,
+                                    "icon": "icon.ico"
+                                  }  },
   "keywords": [
     "jupyter",
     "notebook",

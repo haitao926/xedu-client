@@ -1,33 +1,60 @@
-import { log, showTab, showModal, hideModal, initModalListeners } from './ui.js';
-import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment } from './jupyter.js';
+import { log, showTab, showModal, hideModal, initModalListeners, showToast } from './ui.js';
+import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility } from './jupyter.js';
 import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown } from './ai.js';
+import { initDocsPage, loadComponents, loadDocument, performSearch, showTutorials, searchDocs } from './docs.js';
+import { installPackage, uninstallPackage } from './package-manager.js';
+import { registerNamespace } from './app-context.js';
 
-// 立即暴露基础函数到 window，确保在 DOM 加载前就可用
-console.log('正在暴露函数到 window 对象...');
+// 设置页选项卡切换
+function showSettingsTab(tab) {
+    const tabs = document.querySelectorAll('.settings-tab');
+    const sections = document.querySelectorAll('[data-settings-tab]');
 
-window.showTab = showTab;
-window.showModal = showModal;
-window.hideModal = hideModal;
-window.log = log;
+    tabs.forEach((btn) => {
+        const isActive = btn.dataset.tab === tab;
+        btn.classList.toggle('active', isActive);
+    });
 
-window.startJupyter = startJupyter;
-window.stopJupyter = stopJupyter;
-window.restartJupyter = restartJupyter;
-window.openBrowser = openBrowser;
-window.browseFolder = browseFolder;
-window.confirmProjectPath = confirmProjectPath;
-window.clearProjectPath = clearProjectPath;
-window.testPythonEnvironment = testPythonEnvironment;
+    sections.forEach((section) => {
+        const isActive = section.dataset.settingsTab === tab;
+        section.classList.toggle('active', isActive);
+    });
+}
 
-window.askAI = askAI;
-window.clearCurrentChat = clearCurrentChat;
-window.startNewChat = startNewChat;
-window.removeImage = removeImage;
-window.saveAIConfig = saveAIConfig;
-window.testAIConfig = testAIConfig;
-window.selectChat = selectChat;
-window.previewImage = previewImage;
-window.handleKeyDown = handleKeyDown;
+registerNamespace('ui', { showTab, showModal, hideModal, log, showToast });
+registerNamespace('jupyter', {
+    startJupyter,
+    stopJupyter,
+    restartJupyter,
+    openBrowser,
+    browseFolder,
+    confirmProjectPath,
+    clearProjectPath,
+    testPythonEnvironment,
+    refreshView,
+    openExternal,
+    toggleFullscreen,
+    setVisibility
+});
+registerNamespace('ai', {
+    askAI,
+    clearCurrentChat,
+    startNewChat,
+    removeImage,
+    saveAIConfig,
+    testAIConfig,
+    selectChat,
+    previewImage,
+    handleKeyDown
+});
+registerNamespace('docs', {
+    initDocsPage,
+    loadComponents,
+    loadDocument,
+    performSearch,
+    showTutorials,
+    searchDocs
+});
 
 // 保存系统配置函数
 async function saveSystemConfig() {
@@ -43,7 +70,8 @@ async function saveSystemConfig() {
     try {
         // 保存 API Key
         if (apiKey) {
-            await saveAIConfig(apiKey);
+            // API Key已经在input中，saveAIConfig会自己获取
+            await saveAIConfig();
         }
 
         // 保存 Python 路径 (这里暂时模拟保存，实际可能需要调用后端 API)
@@ -53,19 +81,26 @@ async function saveSystemConfig() {
         }
 
         log('配置保存成功', 'success');
+        showToast('系统配置已保存', 'success');
     } catch (error) {
         console.error('保存配置失败:', error);
         log('保存配置失败: ' + error.message, 'error');
+        showToast('保存失败: ' + error.message, 'error');
     }
 }
 
-window.saveSystemConfig = saveSystemConfig;
-
-
-console.log('所有函数已暴露到 window');
+registerNamespace('system', { saveSystemConfig, installPackage, uninstallPackage, showSettingsTab });
 
 // 初始化
 window.addEventListener('DOMContentLoaded', () => {
+    const hideStartupLoading = () => {
+        const overlay = document.getElementById('startup-loading');
+        if (overlay) {
+            overlay.classList.add('fade-out');
+            setTimeout(() => overlay.remove(), 300);
+        }
+    };
+
     // 加载 Python 路径
     const savedPythonPath = localStorage.getItem('python_path');
     if (savedPythonPath) {
@@ -80,10 +115,19 @@ window.addEventListener('DOMContentLoaded', () => {
     initModalListeners();
 
     // 初始状态检查
-    refreshStatus();
+    refreshStatus().finally(hideStartupLoading);
+
+    // 兜底：10 秒后也强制隐藏加载遮罩，防止异常阻塞
+    setTimeout(hideStartupLoading, 10000);
 
     // 启动定时状态检查
     setInterval(refreshStatus, 5000);
+
+    // 初始化文档页面（如果首次打开）
+    const docsTab = document.querySelector('[onclick*="docs"]');
+    if (docsTab && docsTab.classList.contains('active')) {
+        initDocsPage();
+    }
 
     // 监听 Electron 主进程日志
     if (window.electronAPI && window.electronAPI.onLogUpdate) {

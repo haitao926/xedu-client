@@ -1,25 +1,32 @@
-{"timestamp": "2025-12-01T16:25:18.042576", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:25:18.042576", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:36:40.597498", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:36:40.598497", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888, 'project_dir': 'C:\\\\Desktop'}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:37:29.895222", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:37:29.895222", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888, 'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:38:14.251384", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:38:19.857908", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:38:19.857908", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8889}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:38:33.441907", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:38:33.441907", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888, 'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:44:16.004197", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:44:22.114814", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:44:22.114814", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:45:19.642483", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:45:19.642483", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888, 'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:48:49.382533", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888, 'python_executable': 'D:/project/xedu-client/python_env/Scripts/python.exe'}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:58:43.648941", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:58:43.649947", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:59:34.655120", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:59:38.263045", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:59:38.263045", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888, 'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:59:39.150168", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 141}
-{"timestamp": "2025-12-01T16:59:39.150168", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'port': 8888, 'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:45:49.990518", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:45:52.743961", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:46:52.101527", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:35.531203", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T20:55:37.614339", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:00:56.969085", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:59.754234", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:01:59.939110", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:02:00.121113", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:02:02.380300", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:21:58.176227", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:45:21.345595", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:45:23.318935", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:46:17.877889", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:49:35.204172", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:23.836490", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T21:50:32.814156", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T22:05:24.186725", "level": "\u001b[32mINFO\u001b[0m", "message": "执行 pip 命令: D:\\project\\xedu-client\\python_env\\Scripts\\python.exe -m pip install pandas -i https://pypi.tuna.tsinghua.edu.cn/simple", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-07T22:32:10.273491", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:26:27.132143", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': ''}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:30:02.331959", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:30:24.802407", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': ''}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:37:15.665421", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:41:03.275333", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T16:41:14.179928", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': ''}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T20:52:47.002745", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\OneDrive\\\\1_Course\\\\2025-2026\\\\七年级人工智能\\\\运动会上的AI裁判\\\\L9_model_training'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T20:53:42.280016", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\OneDrive\\\\1_Course\\\\2025-2026\\\\七年级人工智能\\\\运动会上的AI裁判\\\\L9_model_training'}", "module": "logger", "function": "_log", "line": 141}
+{"timestamp": "2025-12-08T22:23:26.106974", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-08T22:23:28.474916", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:\\\\Users\\\\lenovo\\\\Desktop\\\\L8_feature_engineering\\\\活动1_特征提取基础'}", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:22:13.753940", "level": "\u001b[33mWARNING\u001b[0m", "message": "配置保存失败，使用内存中的配置继续运行", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:22:13.754911", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'C:/Users/lenovo/Desktop/L8_feature_engineering/??1_??????'}", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-10T22:22:29.108374", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': 'D:/project/xedu-client'}", "module": "logger", "function": "_log", "line": 148}

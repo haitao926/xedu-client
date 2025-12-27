@@ -17,6 +17,7 @@ __pycache__/
 env/
 venv/
 .venv/
+python_env/
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -36,7 +37,16 @@ config.json
 
 # Build
 dist/
-build/
+dist-installer/
 
 # Logs
 *.log
+
+# New ignores
+dist-final/
+downloads/
+build/
+logs/
+config/backups/
+.ipynb_checkpoints/
+nul

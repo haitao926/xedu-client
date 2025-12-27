@@ -3,10 +3,51 @@
  * 统一管理所有与后端的通信
  */
 
+const DEFAULT_BASE_URL = 'http://127.0.0.1:5000';
+
+// 处理 file:// 场景下 /api/* 变成 file:///.../api/* 的问题
+const rawFetch = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : fetch;
+const trimTrailingSlash = (url) => url ? url.replace(/\/$/, '') : '';
+const normalizeApiUrl = (url, base = DEFAULT_BASE_URL) => {
+    if (typeof url !== 'string') return url;
+    const cleanedBase = trimTrailingSlash(base || DEFAULT_BASE_URL);
+
+    // 已经是 http/https，保持不变
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
+    }
+
+    // 典型 /api/* 相对路径
+    if (url.startsWith('/api/')) {
+        return `${cleanedBase}${url}`;
+    }
+
+    // file:///.../api/* => 提取 /api/* 部分再拼接
+    if (url.startsWith('file:///') && url.includes('/api/')) {
+        const apiPath = url.substring(url.indexOf('/api/'));
+        return `${cleanedBase}${apiPath}`;
+    }
+
+    return url;
+};
+
+const fetchWithBase = (url, options = {}, base = DEFAULT_BASE_URL) => {
+    const normalizedUrl = normalizeApiUrl(url, base);
+    return rawFetch(normalizedUrl, options);
+};
+
+// 全局兜底：如果其他代码还在用 fetch('/api/...')，强制改写为 http://127.../api/...
+if (typeof window !== 'undefined' && !window.__XEDU_FETCH_PATCHED__) {
+    window.__XEDU_FETCH_PATCHED__ = true;
+    const originalFetch = rawFetch;
+    window.fetch = (url, options) => fetchWithBase(url, options);
+    window.__XEDU_ORIGINAL_FETCH__ = originalFetch;
+}
+
 class APIClient {
-    constructor(baseURL = 'http://127.0.0.1:5000') {
+    constructor(baseURL = DEFAULT_BASE_URL) {
         this.baseURL = baseURL;
-        this.timeout = 10000; // 10秒超时
+        this.timeout = 25000; // 25秒超时，优化后的启动时间
     }
 
     /**
@@ -16,7 +57,7 @@ class APIClient {
      * @returns {Promise} API响应
      */
     async call(endpoint, options = {}) {
-        const url = `${this.baseURL}${endpoint}`;
+        const url = normalizeApiUrl(endpoint, this.baseURL);
 
         const config = {
             headers: { 'Content-Type': 'application/json' },
@@ -143,12 +184,30 @@ class JupyterAPI extends APIClient {
     }
 
     // AI助手
-    async askAI(image, question, config) {
+    async askAI(image, question, history = []) {
         return this.post('/api/ai/ask', {
             image,
             question,
+            history
+        });
+    }
+
+    // AI配置
+    async testAIConfig(config) {
+        return this.post('/api/ai/test_config', {
             config
         });
+    }
+
+    async saveAIConfig(config) {
+        return this.post('/api/ai/save_config', {
+            config
+        });
+    }
+
+    // Python 包管理（install/uninstall/list）
+    async managePythonPackage(payload) {
+        return this.post('/api/python/pip', payload);
     }
 }
 

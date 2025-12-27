@@ -13,7 +13,7 @@ from pathlib import Path
 class JupyterConfig:
     """Jupyter 配置模型"""
     port: int = 8888
-    python_executable: str = ""
+    python_executable: str = ""  # 将在__post_init__中自动设置
     project_dir: str = ""
     activate_script: str = ""  # 虚拟环境激活脚本
     use_notebook: bool = False
@@ -24,6 +24,23 @@ class JupyterConfig:
     args: str = ""
     env: Dict[str, str] = field(default_factory=dict)
     debug: bool = False
+
+    def __post_init__(self):
+        """初始化后的处理"""
+        # 如果没有指定Python解释器，自动检测项目虚拟环境
+        if not self.python_executable:
+            # 获取项目根目录
+            try:
+                # 获取当前文件的路径并向上查找项目根目录
+                current_file = Path(__file__).resolve()
+                project_root = current_file.parent.parent.parent
+                venv_python = project_root / "python_env" / "Scripts" / "python.exe"
+
+                if venv_python.exists():
+                    self.python_executable = str(venv_python)
+            except Exception:
+                # 如果检测失败，保持为空字符串
+                pass
 
     def validate(self) -> tuple[bool, list[str]]:
         """验证配置"""
@@ -102,8 +119,9 @@ class AIConfig:
         """验证配置"""
         errors = []
 
-        if not self.api_key:
-            errors.append("API Key 不能为空")
+        # API Key可以为空，此时AI功能将不可用，但不应该阻止其他功能
+        # if not self.api_key:
+        #     errors.append("API Key 不能为空")
 
         if not self.base_url:
             errors.append("Base URL 不能为空")
@@ -195,6 +213,7 @@ class JupyterStatus:
     process_protection: str = "disabled"
     open_file: Optional[str] = None
     last_error: Optional[str] = None
+    manually_stopped: bool = False  # 是否手动停止
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
