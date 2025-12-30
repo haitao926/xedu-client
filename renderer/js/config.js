@@ -8,7 +8,9 @@ class ConfigManager {
         this.defaultConfig = {
             // API配置
             api: {
-                baseURL: 'http://127.0.0.1:5000',
+                baseURL: (typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
+                    ? window.xeduConfig.apiBase
+                    : 'http://127.0.0.1:5123',
                 timeout: 10000
             },
 

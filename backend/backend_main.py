@@ -120,6 +120,9 @@ def signal_handler(signum, frame):
 
 def main() -> None:
     """构建并运行 Flask 应用。"""
+    print(f"Python Executable: {sys.executable}")
+    print(f"System Path: {sys.path}")
+    
     # 注册退出处理
     atexit.register(cleanup_jupyter_processes)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -132,11 +135,13 @@ def main() -> None:
 
     app = create_app(env_config_dir)
 
-    logger.info("Xedu Client API Server 启动中 (port=5000)")
+    port = int(os.environ.get("XEDU_API_PORT") or os.environ.get("XEDU_BACKEND_PORT") or "5123")
+
+    logger.info(f"Xedu Client API Server 启动中 (port={port})")
     logger.info("进程清理已配置，退出时将自动清理所有 Jupyter 进程")
 
     try:
-        app.run(host="0.0.0.0", port=5000, debug=False)
+        app.run(host="0.0.0.0", port=port, debug=False)
     finally:
         cleanup_jupyter_processes()
 

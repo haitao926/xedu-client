@@ -62,12 +62,63 @@ class JupyterManager:
 
         logger.info(f"JupyterManager initialized with config: port={config.port}")
 
+    def _resolve_bundled_python(self) -> Optional[str]:
+        """Resolve the bundled python executable path."""
+        try:
+            # 1. Try to find relative to the current file (dev mode or unpacked)
+            current_file = Path(__file__).resolve()
+            project_root = current_file.parent.parent.parent
+            
+            logger.info(f"DEBUG: Resolving bundled python. Current file: {current_file}")
+            logger.info(f"DEBUG: Project root derived: {project_root}")
+            
+            candidates = []
+            if platform.system() == "Windows":
+                candidates.append(project_root / "python_env" / "Scripts" / "python.exe")
+                candidates.append(project_root / "python_env" / "python.exe")
+            else:
+                candidates.append(project_root / "python_env" / "bin" / "python3")
+                candidates.append(project_root / "python_env" / "python3")
+
+            # 2. Try to find relative to sys.executable (packaged mode)
+            sys_exec_path = Path(sys.executable).resolve()
+            logger.info(f"DEBUG: sys.executable: {sys_exec_path}")
+            
+            # If running from a venv, sys.executable IS the venv python
+            if "python_env" in str(sys_exec_path):
+                 candidates.insert(0, sys_exec_path)
+
+            # Check candidates
+            for cand in candidates:
+                exists = cand.exists()
+                is_file = cand.is_file() if exists else False
+                logger.info(f"DEBUG: Checking candidate: {cand} (Exists: {exists}, IsFile: {is_file})")
+                
+                if exists and is_file:
+                    logger.info(f"Resolved bundled python: {cand}")
+                    return str(cand)
+            
+            logger.warning("DEBUG: No bundled python found in candidates.")
+            return None
+        except Exception as e:
+            logger.error(f"Error resolving bundled python: {e}")
+            return None
+
     def start(self, **kwargs) -> Dict[str, Any]:
         """启动 Jupyter Notebook/Lab"""
         logger.info("Starting Jupyter...")
-
+        
+        # 强制检测并使用打包环境
+        bundled_python = self._resolve_bundled_python()
+        if bundled_python:
+            logger.info(f"Forcing use of bundled python: {bundled_python}")
+            kwargs['python_executable'] = bundled_python
+        
+        logger.info(f"DEBUG: sys.executable = {sys.executable}")
+        
         # 合并配置参数
         merged_config = self._merge_config(**kwargs)
+        logger.info(f"DEBUG: merged_config.python_executable = {merged_config.python_executable}")
 
         # 验证配置
         valid, errors = merged_config.validate()
@@ -564,10 +615,9 @@ class JupyterManager:
         if not python_exe:
             # 自动检测项目虚拟环境中的Python（只在第一次检测）
             if not self._env_cache['python_exe']:
-                project_root = Path(__file__).parent.parent.parent
-                venv_python = project_root / "python_env" / "Scripts" / "python.exe"
-                if venv_python.exists():
-                    python_exe = str(venv_python)
+                bundled_python = self._resolve_bundled_python()
+                if bundled_python:
+                    python_exe = bundled_python
                     logger.info(f"Auto-detected virtual environment Python: {python_exe}")
                 else:
                     python_exe = sys.executable
@@ -712,18 +762,16 @@ class JupyterManager:
         # 如果没有指定Python解释器，优先使用项目虚拟环境
         if config.python_executable:
             python_exe = config.python_executable
+            logger.info(f"DEBUG: Using configured python_executable: {python_exe}")
         else:
-            # 自动检测项目虚拟环境中的Python
-            project_root = Path(__file__).parent.parent.parent
-            venv_python = project_root / "python_env" / "Scripts" / "python.exe"
-
-            if venv_python.exists():
-                python_exe = str(venv_python)
+            bundled_python = self._resolve_bundled_python()
+            if bundled_python:
+                python_exe = bundled_python
                 logger.info(f"使用项目虚拟环境Python: {python_exe}")
             else:
                 python_exe = sys.executable
                 logger.warning(f"未找到项目虚拟环境，使用系统Python: {python_exe}")
-
+        
         # 处理Python可执行文件的相对路径
         if config.python_executable:
             python_path = Path(config.python_executable)
@@ -814,6 +862,8 @@ class JupyterManager:
             scripts_path = Path(config.python_executable).parent
             # 兼容传入 python_env\python.exe 或 python_env\Scripts\python.exe
             if scripts_path.name.lower() == "scripts":
+                venv_root = scripts_path.parent
+            elif scripts_path.name.lower() == "bin":
                 venv_root = scripts_path.parent
             elif scripts_path.name.lower() == "python_env":
                 venv_root = scripts_path

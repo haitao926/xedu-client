@@ -406,38 +406,42 @@ class DocumentIndex:
 
     def get_categories(self) -> List[Dict[str, Any]]:
         """获取所有分类"""
-        return [
-            {
-                "name": cat,
-                "count": len(doc_ids),
-                "documents": [
-                    {
+        categories = []
+        for cat, doc_ids in self.categories.items():
+            valid_docs = []
+            for doc_id in doc_ids:
+                if doc_id in self.documents:
+                    valid_docs.append({
                         "id": doc_id,
                         "title": self.documents[doc_id].metadata.title
-                    }
-                    for doc_id in doc_ids
-                ]
-            }
-            for cat, doc_ids in self.categories.items()
-        ]
+                    })
+            
+            categories.append({
+                "name": cat,
+                "count": len(valid_docs),
+                "documents": valid_docs
+            })
+        return categories
 
     def get_components(self) -> List[Dict[str, Any]]:
         """获取所有组件"""
-        return [
-            {
-                "name": comp,
-                "count": len(doc_ids),
-                "description": self._get_component_description(comp),
-                "documents": [
-                    {
+        components = []
+        for comp, doc_ids in self.components.items():
+            valid_docs = []
+            for doc_id in doc_ids:
+                if doc_id in self.documents:
+                    valid_docs.append({
                         "id": doc_id,
                         "title": self.documents[doc_id].metadata.title
-                    }
-                    for doc_id in doc_ids
-                ]
-            }
-            for comp, doc_ids in self.components.items()
-        ]
+                    })
+            
+            components.append({
+                "name": comp,
+                "count": len(valid_docs),
+                "description": self._get_component_description(comp),
+                "documents": valid_docs
+            })
+        return components
 
     def _get_component_description(self, component: str) -> str:
         """获取组件描述"""

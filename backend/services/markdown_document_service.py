@@ -22,10 +22,32 @@ class MarkdownDocumentService:
 
     def __init__(self, docs_dir: str = None):
         if docs_dir is None:
-            # 默认使用项目根目录下的docs文件夹
-            self.docs_dir = Path(__file__).parent.parent.parent / "docs"
+            # 优先使用环境变量
+            env_docs_dir = os.environ.get("XEDU_DOCS_DIR")
+            if env_docs_dir:
+                 self.docs_dir = Path(env_docs_dir)
+            else:
+                # 默认使用项目根目录下的docs文件夹
+                # 开发环境: backend/services/../../docs -> docs
+                self.docs_dir = Path(__file__).parent.parent.parent / "docs"
         else:
             self.docs_dir = Path(docs_dir)
+        
+        # 确保路径存在
+        if not self.docs_dir.exists():
+            logger.warning(f"文档目录不存在: {self.docs_dir}")
+            # 尝试在当前工作目录查找 (假设 cwd 是 backend)
+            cwd_docs = Path.cwd().parent / "docs"
+            if cwd_docs.exists():
+                self.docs_dir = cwd_docs
+                logger.info(f"使用后端上级目录下的docs: {self.docs_dir}")
+            else:
+                 # 再尝试当前目录 (假设 cwd 是 root)
+                cwd_root_docs = Path.cwd() / "docs"
+                if cwd_root_docs.exists():
+                    self.docs_dir = cwd_root_docs
+                    logger.info(f"使用当前目录下的docs: {self.docs_dir}")
+            
         self.index_file = self.docs_dir / "index.json"
         self.index: Optional[DocumentIndex] = None
         self._load_documents()
@@ -33,6 +55,7 @@ class MarkdownDocumentService:
     def _load_documents(self):
         """从Markdown文件加载文档"""
         try:
+            logger.info(f"开始加载文档，路径: {self.docs_dir.absolute()}")
             # 加载索引文件
             if self.index_file.exists():
                 with open(self.index_file, 'r', encoding='utf-8') as f:
@@ -46,6 +69,8 @@ class MarkdownDocumentService:
                     doc = self._load_markdown_document(doc_info)
                     if doc:
                         self.index.add_document(doc)
+                    else:
+                        logger.warning(f"无法加载文档: {doc_info.get('id')} - {doc_info.get('file_path')}")
 
                 # 更新分类和组件信息
                 # 转换索引文件中的结构为DocumentIndex期望的结构
@@ -64,6 +89,7 @@ class MarkdownDocumentService:
                     self.index.components[comp_key] = doc_ids
 
                 logger.info(f"成功加载 {len(self.index.documents)} 个Markdown文档")
+                logger.info(f"组件列表: {list(self.index.components.keys())}")
             else:
                 logger.warning(f"未找到文档索引文件: {self.index_file}")
                 self.index = DocumentIndex()

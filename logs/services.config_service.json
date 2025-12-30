@@ -77,3 +77,45 @@
 {"timestamp": "2025-12-10T22:19:53.343894", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
 {"timestamp": "2025-12-10T22:22:13.753940", "level": "\u001b[31mERROR\u001b[0m", "message": "配置验证失败: {'jupyter': ['项目目录不存在: C:/Users/lenovo/Desktop/L8_feature_engineering/??1_??????']}", "module": "logger", "function": "_log", "line": 148}
 {"timestamp": "2025-12-10T22:22:29.106953", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T13:03:55.069274", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T13:03:55.069985", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T13:03:55.070632", "level": "\u001b[32mINFO\u001b[0m", "message": "创建默认配置", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:46:16.726918", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:46:16.727768", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:46:16.727846", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:46:16.728114", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:46:16.728155", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:46:17.584068", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:48:07.672314", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:48:07.672554", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:48:07.672610", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:48:07.672834", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:48:07.672872", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:48:08.523996", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:57:32.082257", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:57:32.082668", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:57:32.082817", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:57:32.083115", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:57:32.083163", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T21:57:32.870752", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T22:03:44.520388", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T22:03:44.520575", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T22:03:44.520627", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T22:03:44.520836", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T22:03:44.520876", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T22:03:45.371718", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:01:08.640276", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:01:08.640866", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:01:08.640943", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:01:08.641169", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:01:08.641223", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:02:46.921290", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:02:46.921480", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:02:46.921537", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:02:46.921744", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:02:46.921789", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:07:28.391207", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:07:28.391394", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:07:28.391452", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:07:28.391655", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2025-12-29T23:07:28.391700", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}

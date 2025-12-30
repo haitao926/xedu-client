@@ -15,7 +15,7 @@ DEFAULT_CONFIG = {
     'jupyterlab_version': '4.4.10',
 
     # API 服务器配置
-    'api_port': 5000,
+    'api_port': 5123,
     'api_host': '0.0.0.0',
     'debug_mode': True,
 

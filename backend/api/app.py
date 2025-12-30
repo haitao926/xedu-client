@@ -115,6 +115,16 @@ def create_app(config_dir=None) -> Flask:
         logger.exception("后端发生未处理异常")
         return jsonify({"success": False, "message": str(error)}), 500
 
+    @app.route("/api/debug/env")
+    def debug_env():
+        return jsonify({
+            "cwd": os.getcwd(),
+            "env_docs_dir": os.environ.get("XEDU_DOCS_DIR"),
+            "app_config_dir": str(config_service.config_dir),
+            "python_path": sys.path,
+            "docs_service_path": str(get_markdown_document_service().docs_dir) if get_markdown_document_service() else "None"
+        })
+
     @app.route("/")
     def root():
         return jsonify(

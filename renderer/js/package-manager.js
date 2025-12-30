@@ -38,7 +38,11 @@ async function managePackage(action) {
 
     try {
         // 使用后端绝对地址，避免 file:// 或非同源导致的 ERR_FILE_NOT_FOUND
-        const apiBase = (apiClient && apiClient.baseURL) ? apiClient.baseURL.replace(/\/$/, '') : 'http://127.0.0.1:5000';
+        const apiBase = (apiClient && apiClient.baseURL)
+            ? apiClient.baseURL.replace(/\/$/, '')
+            : ((typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
+                ? window.xeduConfig.apiBase.replace(/\/$/, '')
+                : 'http://127.0.0.1:5123');
         const resp = await fetch(`${apiBase}/api/python/pip`, {
             method: 'POST',
             headers: {

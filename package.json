@@ -10,7 +10,7 @@
     "clean": "rimraf build",
     "full-build": "npm run clean && build.bat",
     "start-api": "python backend/backend_main.py",
-    "test-api": "curl http://127.0.0.1:5000/api/health",
+    "test-api": "curl http://127.0.0.1:5123/api/health",
     "electron": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"electron .\"",
     "electron:build": "npm run build && electron-builder",
@@ -27,7 +27,7 @@
   "build": {
     "appId": "com.xeduclient",
     "productName": "Xedu Client",
-    "compression": "store",
+    "compression": "maximum",
     "directories": {
       "output": "dist-final",
       "buildResources": "resources"
@@ -58,7 +58,7 @@
                                       "to": "docs"
                                     },
                                     {
-                                      "from": "icon.ico",
+                                      "from": "resources/xedu-logo.ico",
                                       "to": "app.ico"
                                     }
                                   ],
@@ -73,29 +73,40 @@
                                     "deleteAppDataOnUninstall": false,
                                     "displayLanguageSelector": false,
                                     "language": "2052",
-                                    "installerIcon": "icon.ico",
-                                    "uninstallerIcon": "icon.ico",
-                                    "installerHeaderIcon": "icon.ico"
+                                    "installerIcon": "resources/xedu-logo.ico",
+                                    "uninstallerIcon": "resources/xedu-logo.ico",
+                                    "installerHeaderIcon": "resources/xedu-logo.ico"
                                   },
-                                  "win": {
-                                    "target": [
-                                      {
-                                        "target": "nsis",
-                                        "arch": [
-                                          "x64"
-                                        ]
-                                      },
-                                      {
-                                        "target": "dir",
-                                        "arch": [
-                                          "x64"
-                                        ]
-                                      }
-                                    ],
-                                    "forceCodeSigning": false,
-                                    "signAndEditExecutable": false,
-                                    "icon": "icon.ico"
-                                  }  },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false,
+      "icon": "resources/xedu-logo.ico"
+    },
+    "mac": {
+      "icon": "resources/xedu-logo.icns",
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    }  },
   "keywords": [
     "jupyter",
     "notebook",

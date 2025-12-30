@@ -3,7 +3,9 @@
  * 统一管理所有与后端的通信
  */
 
-const DEFAULT_BASE_URL = 'http://127.0.0.1:5000';
+const DEFAULT_BASE_URL = (typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
+    ? window.xeduConfig.apiBase
+    : 'http://127.0.0.1:5123';
 
 // 处理 file:// 场景下 /api/* 变成 file:///.../api/* 的问题
 const rawFetch = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : fetch;

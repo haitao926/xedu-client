@@ -23,12 +23,26 @@ rm -rf dist-installer
 echo -e "${GREEN}✓ 清理完成${NC}"
 echo ""
 
-# 步骤2: 检查Python环境
-echo -e "${YELLOW}[2/5] 检查Python环境...${NC}"
-if ! command -v python &> /dev/null && ! command -v python3 &> /dev/null; then
-    echo -e "${RED}✗ 未找到Python，请先安装Python${NC}"
-    exit 1
+# 步骤2: 检查并准备Portable Python环境
+echo -e "${YELLOW}[2/5] 检查 Portable Python 环境...${NC}"
+
+if [ ! -f "python_env/.portable_ready" ]; then
+    echo -e "${YELLOW}未检测到 Portable Python 环境，正在初始化...${NC}"
+    if command -v python3 &> /dev/null; then
+        python3 scripts/setup_portable_python.py
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}Portable Python 初始化失败${NC}"
+            exit 1
+        fi
+        touch "python_env/.portable_ready"
+    else
+        echo -e "${RED}需要系统 Python3 来运行初始化脚本${NC}"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}Portable Python 环境已就绪${NC}"
 fi
+
 echo -e "${GREEN}✓ Python环境检查通过${NC}"
 echo ""
 

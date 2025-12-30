@@ -19,8 +19,8 @@ set "SETUP_SCRIPT=scripts\setup_portable_python.py"
 if exist "%MARKER_FILE%" (
     echo [INFO] Portable Python environment detected. Skipping setup.
 ) else (
-    echo [WARN] Portable environment not found. Initializing...
-    echo        This may take a few minutes...
+    echo [WARN] Portable environment not found or not marked. Initializing...
+    echo        This will ensure the packaged app works on other machines.
     
     python --version >nul 2>&1
     if errorlevel 1 (
@@ -35,10 +35,7 @@ if exist "%MARKER_FILE%" (
         exit /b 1
     )
     
-    if not exist "%MARKER_FILE%" (
-        echo [ERROR] Setup script finished but marker file missing.
-        exit /b 1
-    )
+    echo. > "%MARKER_FILE%"
     echo [SUCCESS] Portable environment initialized.
 )
 echo.
@@ -48,6 +45,7 @@ echo [2/6] Cleaning up...
 
 if exist "dist" rmdir /s /q "dist"
 if exist "dist-installer" rmdir /s /q "dist-installer"
+if exist "dist-final" rmdir /s /q "dist-final"
 
 echo        - Removing __pycache__...
 for /d /r . %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d"
@@ -77,7 +75,7 @@ echo.
 
 REM --- Stage 5: Electron Build ---
 echo [5/6] Building Electron App...
-call npm run electron:build
+call npx electron-builder
 if errorlevel 1 (
     echo [ERROR] Electron build failed.
     exit /b 1
@@ -90,5 +88,5 @@ echo ========================================================
 echo                    BUILD SUCCESSFUL
 echo ========================================================
 echo.
-echo Output directory: %CD%\dist-installer
+echo Output directory: %CD%\dist-final
 echo.

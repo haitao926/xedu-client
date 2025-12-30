@@ -59,7 +59,10 @@ function normalizeJupyterUrl(url) {
 let statusFailureCount = 0; // 新增：状态检查失败计数器
 
 // Ensure API calls hit the backend over HTTP even when loaded via file://
-const API_BASE = (apiClient && apiClient.baseURL ? apiClient.baseURL : 'http://127.0.0.1:5000').replace(/\/$/, '');
+const DEFAULT_API_BASE = (typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
+    ? window.xeduConfig.apiBase
+    : 'http://127.0.0.1:5123';
+const API_BASE = (apiClient && apiClient.baseURL ? apiClient.baseURL : DEFAULT_API_BASE).replace(/\/$/, '');
 const apiFetch = (path, options) => fetch(`${API_BASE}${path}`, options);
 
 async function parseJsonSafe(response, desc = '接口') {
@@ -523,6 +526,11 @@ export async function refreshStatus() {
 
 // 文件夹选择相关
 export async function browseFolder() {
+    if (!window.electronAPI) {
+        console.warn('Electron API不可用，可能正运行在浏览器模式');
+        alert('请在 XEdu Client 桌面应用中使用此功能');
+        return;
+    }
     try {
         const path = await window.electronAPI.invoke('select-folder');
         if (path) {

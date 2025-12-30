@@ -4,9 +4,12 @@ const path = require('path');
 const http = require('http');
 const { spawn, execSync } = require('child_process');
 
-const BACKEND_HOST = '127.0.0.1';
-const BACKEND_PORT = 5000;
-const BACKEND_READY_PATH = '/api/health';
+const BACKEND_HOST = process.env.XEDU_BACKEND_HOST || '127.0.0.1';
+const BACKEND_PORT = parseInt(
+    process.env.XEDU_BACKEND_PORT || process.env.XEDU_API_PORT || '5123',
+    10
+) || 5123;
+const BACKEND_READY_PATH = process.env.XEDU_BACKEND_READY_PATH || '/api/health';
 const BACKEND_TIMEOUT_MS = 30000;
 const BACKEND_RETRY_INTERVAL_MS = 1000;
 
@@ -145,7 +148,7 @@ function createWindow() {
             webSecurity: !isDev,
             preload: path.join(__dirname, '../preload/index.js')
         },
-        title: 'Xedu Client'
+        title: 'XEdu Client'
     });
 
     const loadBundledApp = () => {
@@ -155,22 +158,18 @@ function createWindow() {
 
     if (isDev) {
         const devUrl = process.env.ELECTRON_RENDERER_URL || 'http://localhost:3000';
-        mainWindow.loadURL(devUrl);
-
-        const handleDevServerFailure = (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-            if (!isMainFrame) return;
-            console.warn(`无法加载开发服务器 (${errorDescription})，回退到本地构建资源`);
-            mainWindow.webContents.removeListener('did-fail-load', handleDevServerFailure);
-            loadBundledApp();
+        
+        const loadDevServer = () => {
+            mainWindow.loadURL(devUrl).catch((err) => {
+                console.log(`等待开发服务器启动... (${err.message})`);
+                setTimeout(loadDevServer, 1000);
+            });
         };
 
-        mainWindow.webContents.once('did-fail-load', handleDevServerFailure);
+        loadDevServer();
+        mainWindow.webContents.openDevTools();
     } else {
         loadBundledApp();
-    }
-
-    if (isDev) {
-        mainWindow.webContents.openDevTools();
     }
 
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -246,12 +245,29 @@ function waitForBackendReady(timeoutMs = BACKEND_TIMEOUT_MS) {
                     timeout: 2000
                 },
                 (res) => {
-                    res.resume();
-                    if (res.statusCode && res.statusCode >= 200 && res.statusCode < 500) {
-                        resolve(true);
-                    } else {
-                        scheduleRetry();
-                    }
+                    let body = '';
+                    res.on('data', (chunk) => (body += chunk));
+                    res.on('end', () => {
+                        const statusCode = res.statusCode || 0;
+                        const isSuccessStatus = statusCode >= 200 && statusCode < 300;
+                        let isHealthy = false;
+
+                        if (isSuccessStatus) {
+                            try {
+                                const parsed = body ? JSON.parse(body) : {};
+                                const parsedStatus = (parsed.status || '').toString().toLowerCase();
+                                isHealthy = parsedStatus === 'ok' || parsed.message === '服务运行正常';
+                            } catch (_) {
+                                isHealthy = false;
+                            }
+                        }
+
+                        if (isHealthy) {
+                            resolve(true);
+                        } else {
+                            scheduleRetry();
+                        }
+                    });
                 }
             );
 
@@ -451,12 +467,25 @@ function startBackendServer() {
             console.warn('创建日志目录失败，可忽略:', e);
         }
 
+        // 计算文档目录
+        let docsDir;
+        if (app.isPackaged) {
+            docsDir = path.join(process.resourcesPath, 'docs');
+        } else {
+            docsDir = path.resolve(__dirname, '../../docs');
+        }
+        console.log(`文档目录: ${docsDir}`);
+
         const env = {
             ...process.env,
             PYTHONIOENCODING: 'utf-8',
             PYTHONUTF8: '1',
             XEDU_LOG_DIR: logDir,
-            XEDU_DATA_DIR: userDataDir
+            XEDU_DATA_DIR: userDataDir,
+            XEDU_DOCS_DIR: docsDir,
+            XEDU_API_PORT: String(BACKEND_PORT),
+            XEDU_BACKEND_PORT: String(BACKEND_PORT),
+            XEDU_BACKEND_HOST: BACKEND_HOST
         };
 
         backendProcess = spawn(pythonCmd, args, {

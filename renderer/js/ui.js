@@ -2,7 +2,8 @@
 
 // 日志函数
 export function log(message, type = 'info') {
-    console.log(`[LOG-${type.toUpperCase()}] ${message}`);
+    const displayMessage = typeof message === 'object' ? JSON.stringify(message) : message;
+    console.log(`[LOG-${type.toUpperCase()}] ${displayMessage}`);
     const logContainer = document.getElementById('log-container');
     if (!logContainer) return;
 
@@ -10,8 +11,6 @@ export function log(message, type = 'info') {
     const logLine = document.createElement('div');
     logLine.className = `log-entry`;
     logLine.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#10b981' : (type === 'warning' ? '#f59e0b' : '#d4d4d4'));
-
-    let displayMessage = typeof message === 'object' ? JSON.stringify(message) : message;
 
     logLine.innerHTML = `<span class="log-time">[${time}]</span> ${displayMessage}`;
     logContainer.appendChild(logLine);
