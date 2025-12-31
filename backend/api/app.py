@@ -336,10 +336,10 @@ def create_app(config_dir=None) -> Flask:
         index_url = payload.get("index_url")
         stream = bool(payload.get("stream"))
 
-        if action not in {"install", "uninstall", "list"}:
+        if action not in {"install", "uninstall", "list", "upgrade"}:
             return jsonify({"success": False, "message": "无效的操作类型"}), 400
 
-        if action in {"install", "uninstall"} and not package:
+        if action in {"install", "uninstall", "upgrade"} and not package:
             return jsonify({"success": False, "message": "包名不能为空"}), 400
 
         python_path = (
@@ -351,12 +351,15 @@ def create_app(config_dir=None) -> Flask:
         cmd = [python_path, "-m", "pip"]
         if action == "install":
             cmd += ["install", package]
+        elif action == "upgrade":
+            cmd += ["install", "--upgrade", package]
         elif action == "uninstall":
             cmd += ["uninstall", "-y", package]
         elif action == "list":
             cmd += ["list"]
 
-        if use_mirror and action in {"install", "uninstall"}:
+        # 安装/升级支持镜像源；pip uninstall 不支持 -i 参数
+        if use_mirror and action in {"install", "upgrade"}:
             cmd += ["-i", index_url or "https://pypi.tuna.tsinghua.edu.cn/simple"]
 
         logger.info(f"执行 pip 命令: {' '.join(cmd)}")

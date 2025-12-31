@@ -229,9 +229,10 @@ export function refreshView() {
     }
 }
 
-export async function openExternal() {
-    if (currentJupyterUrl) {
-        await window.electronAPI.invoke('jupyter:open-external', currentJupyterUrl);
+export async function openExternal(url) {
+    const target = url || currentJupyterUrl;
+    if (target) {
+        await window.electronAPI.invoke('jupyter:open-external', target);
     } else {
         log('Jupyter 尚未启动', 'warning');
     }

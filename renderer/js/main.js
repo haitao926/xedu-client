@@ -2,7 +2,7 @@ import { log, showTab, showModal, hideModal, initModalListeners, showToast } fro
 import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility } from './jupyter.js';
 import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown } from './ai.js';
 import { initDocsPage, loadComponents, loadDocument, performSearch, showTutorials, searchDocs } from './docs.js';
-import { installPackage, uninstallPackage } from './package-manager.js';
+import { installPackage, uninstallPackage, updatePackage } from './package-manager.js';
 import { registerNamespace } from './app-context.js';
 
 // 设置页选项卡切换
@@ -90,6 +90,7 @@ async function saveSystemConfig() {
 }
 
 registerNamespace('system', { saveSystemConfig, installPackage, uninstallPackage, showSettingsTab });
+registerNamespace('system', { saveSystemConfig, installPackage, uninstallPackage, updatePackage, showSettingsTab });
 
 // 初始化
 window.addEventListener('DOMContentLoaded', () => {

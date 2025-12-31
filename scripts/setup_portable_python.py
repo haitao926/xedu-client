@@ -32,7 +32,11 @@ MAPPING = {
 
 PROJECT_ROOT = Path(__file__).parent.parent
 PYTHON_ENV_DIR = PROJECT_ROOT / "python_env"
-REQUIREMENTS_FILE = PROJECT_ROOT / "backend" / "requirements.txt"
+
+# 优先使用完整依赖，确保打包后的 Jupyter 组件齐全；不存在则回退精简依赖
+REQ_FULL = PROJECT_ROOT / "backend" / "requirements_full.txt"
+REQ_FALLBACK = PROJECT_ROOT / "backend" / "requirements.txt"
+REQUIREMENTS_FILE = REQ_FULL if REQ_FULL.exists() else REQ_FALLBACK
 
 def get_download_url():
     system = platform.system()

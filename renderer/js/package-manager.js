@@ -32,7 +32,11 @@ async function managePackage(action) {
     }
 
     clearOutput();
-    const actionText = action === 'install' ? '开始安装' : '开始卸载';
+    const actionText = action === 'install'
+        ? '开始安装'
+        : action === 'upgrade'
+            ? '开始更新'
+            : '开始卸载';
     log(`${actionText} ${pkg}...`, 'info');
     appendOutput(`${actionText} ${pkg}...`, 'info');
 
@@ -93,4 +97,8 @@ export function installPackage() {
 
 export function uninstallPackage() {
     managePackage('uninstall');
+}
+
+export function updatePackage() {
+    managePackage('upgrade');
 }

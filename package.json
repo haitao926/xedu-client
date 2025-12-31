@@ -26,7 +26,7 @@
   },
   "build": {
     "appId": "com.xeduclient",
-    "productName": "Xedu Client",
+    "productName": "XEdu Client",
     "compression": "maximum",
     "directories": {
       "output": "dist-final",

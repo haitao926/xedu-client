@@ -4,6 +4,12 @@ const path = require('path');
 const http = require('http');
 const { spawn, execSync } = require('child_process');
 
+// 确保 Windows 任务栏/快捷方式使用自定义图标，而不是 Electron 默认图标
+const APP_ID = 'com.xeduclient';
+if (process.platform === 'win32') {
+    app.setAppUserModelId(APP_ID);
+}
+
 const BACKEND_HOST = process.env.XEDU_BACKEND_HOST || '127.0.0.1';
 const BACKEND_PORT = parseInt(
     process.env.XEDU_BACKEND_PORT || process.env.XEDU_API_PORT || '5123',
@@ -118,23 +124,25 @@ function findProcessOnPort(port) {
 function createWindow() {
     const isDev = !app.isPackaged;
     
-    // Icon path resolution
+    // Icon path resolution（统一使用 xedu-logo，避免回退到 Electron 默认图标）
     let iconPath;
     if (isDev) {
-        // In dev, resources is at ../../resources/app_v2.ico relative to electron/main/
-        iconPath = path.join(__dirname, '../../resources/app_v2.ico');
+        iconPath = path.join(__dirname, '../../resources/xedu-logo.ico');
     } else {
-        // In production, resources are usually unpacked or inside asar. 
-        // If we add 'resources/app.ico' to 'extraResources' or 'files', it will be available.
-        // Assuming we will add it to 'files' or 'extraResources'.
-        // Let's try to look in the resources path.
-        iconPath = path.join(process.resourcesPath, 'app.ico');
-        
-        // Fallback: if it's packed in asar (if we put it in 'files')
-        // const fs = require('fs');
-        // if (!fs.existsSync(iconPath)) {
-        //     iconPath = path.join(__dirname, '../../resources/app.ico');
-        // }
+        // 生产包会把 xedu-logo.ico 复制为 app.ico（extraResources 配置）
+        // 这里优先读取 app.ico，若不存在则回退到 xedu-logo.ico
+        const appIco = path.join(process.resourcesPath, 'app.ico');
+        const logoIco = path.join(process.resourcesPath, 'xedu-logo.ico');
+        iconPath = appIco;
+
+        try {
+            const fs = require('fs');
+            if (!fs.existsSync(appIco) && fs.existsSync(logoIco)) {
+                iconPath = logoIco;
+            }
+        } catch (_) {
+            // ignore fs errors, keep default iconPath
+        }
     }
 
     mainWindow = new BrowserWindow({
@@ -734,6 +742,18 @@ function setupMenu() {
                     accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
                     click: () => { app.quit(); }
                 }
+            ]
+        },
+        {
+            label: '编辑',
+            submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                { role: 'selectAll' }
             ]
         },
         {
