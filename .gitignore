@@ -50,3 +50,4 @@ logs/
 config/backups/
 .ipynb_checkpoints/
 nul
+.local-cache/
