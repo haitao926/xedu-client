@@ -36,3 +36,7 @@ tiktoken==0.6.0
 
 # Project-specific (replace with actual version or wheel path)
 xedu-python
+
+# Deployment
+onnx>=1.15.0
+onnxruntime>=1.17.0
