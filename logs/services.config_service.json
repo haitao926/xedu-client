@@ -119,3 +119,30 @@
 {"timestamp": "2025-12-29T23:07:28.391452", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
 {"timestamp": "2025-12-29T23:07:28.391655", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
 {"timestamp": "2025-12-29T23:07:28.391700", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T11:46:54.734021", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T11:46:54.734829", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T11:46:54.734989", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T11:46:54.735367", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T11:46:54.735426", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T12:36:05.782622", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T12:36:08.313664", "level": "\u001b[32mINFO\u001b[0m", "message": "配置保存成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:04:38.525800", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:04:38.526318", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:04:38.526371", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:04:38.526575", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:04:38.526616", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:24:45.446468", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:24:45.447039", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:24:45.447120", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:24:45.447651", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T13:24:45.447748", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-23T11:59:32.681963", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-23T11:59:32.682658", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-23T11:59:32.682736", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-23T11:59:32.682994", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-23T11:59:32.683042", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-24T17:59:56.101405", "level": "\u001b[32mINFO\u001b[0m", "message": "配置服务初始化: /Users/apple/Documents/GitHub/xedu-client/config/config.json", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-24T17:59:56.102237", "level": "\u001b[32mINFO\u001b[0m", "message": "检测到旧版本配置，开始迁移...", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-24T17:59:56.102322", "level": "\u001b[32mINFO\u001b[0m", "message": "配置迁移完成", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-24T17:59:56.102563", "level": "\u001b[33mWARNING\u001b[0m", "message": "检测到无效的 Python 路径: <empty>，已回退为: /Users/apple/Documents/GitHub/xedu-client/python_env/bin/python3.12", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-24T17:59:56.102611", "level": "\u001b[32mINFO\u001b[0m", "message": "配置文件加载成功", "module": "logger", "function": "_log", "line": 148}

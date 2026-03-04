@@ -248,7 +248,7 @@ function displayRenderedDocument(htmlContent, docId) {
     const content = document.getElementById('docs-content');
 
     // 直接使用后端渲染的HTML内容
-    content.innerHTML = htmlContent;
+    content.innerHTML = `<div class="docs-article">${htmlContent}</div>`;
 
     // 增强功能：添加代码复制按钮
     const codeBlocks = content.querySelectorAll('.codehilite, .highlight, pre');
@@ -334,7 +334,7 @@ function displayDocument(doc) {
     const content = document.getElementById('docs-content');
 
     let html = `
-        <div class="document-viewer">
+        <div class="document-viewer docs-article">
             <h1>${doc.metadata.title}</h1>
     `;
 
@@ -425,64 +425,15 @@ function openComponentGroup(index) {
 function showWelcomePage() {
     const content = document.getElementById('docs-content');
     content.innerHTML = `
-        <div class="docs-welcome-dashboard">
-            <div class="hero-section">
-                <div class="hero-icon">📚</div>
-                <h1>XEdu 文档中心</h1>
-                <p class="hero-desc">OpenXLabEdu (XEdu) 专为 AI 教育设计，提供从入门到进阶的全套工具链。</p>
-            </div>
+        <div class="docs-welcome">
+            <div style="font-size: 64px; margin-bottom: 24px; opacity: 0.2;">📚</div>
+            <h2>XEdu 文档中心</h2>
+            <p>XEdu 专为 AI 教育设计，提供从入门到进阶的全套工具链。</p>
+            <p style="margin-top: 12px; font-size: 13px; opacity: 0.7;">请在左侧选择组件查看详细 API 文档，或使用上方搜索栏查找内容。</p>
             
-            <div class="quick-nav-section">
-                <h3>核心组件</h3>
-                <div class="component-cards-grid">
-                    <div class="comp-card" onclick="openComponentGroup(1)">
-                        <div class="comp-icon">👁️</div>
-                        <div class="comp-info">
-                            <div class="comp-title">MMEdu</div>
-                            <div class="comp-desc">计算机视觉库，基于OpenMMLab，支持分类、检测等任务。</div>
-                        </div>
-                    </div>
-                    
-                    <div class="comp-card" onclick="openComponentGroup(2)">
-                        <div class="comp-icon">🧠</div>
-                        <div class="comp-info">
-                            <div class="comp-title">BaseNN</div>
-                            <div class="comp-desc">基础神经网络库，使用PyTorch语法搭建自定义模型。</div>
-                        </div>
-                    </div>
-                    
-                    <div class="comp-card" onclick="openComponentGroup(3)">
-                        <div class="comp-icon">📊</div>
-                        <div class="comp-info">
-                            <div class="comp-title">BaseML</div>
-                            <div class="comp-desc">传统机器学习库，提供类似Scikit-learn的简洁接口。</div>
-                        </div>
-                    </div>
-
-                    <div class="comp-card" onclick="openComponentGroup(4)">
-                        <div class="comp-icon">🚀</div>
-                        <div class="comp-info">
-                            <div class="comp-title">BaseDeploy</div>
-                            <div class="comp-desc">模型部署工具，一键将训练好的模型转化为服务。</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="quick-links-section">
-                <h3>快速开始</h3>
-                <div class="links-list">
-                    <a href="javascript:void(0)" onclick="loadDocument('xedu-introduction')" class="quick-link-item">
-                        <span class="link-icon">📖</span>
-                        <span class="link-text">了解 XEdu 核心理念</span>
-                        <span class="link-arrow">→</span>
-                    </a>
-                    <a href="javascript:void(0)" onclick="loadDocument('quickstart')" class="quick-link-item">
-                        <span class="link-icon">⚡</span>
-                        <span class="link-text">5分钟快速入门教程</span>
-                        <span class="link-arrow">→</span>
-                    </a>
-                </div>
+            <div style="margin-top: 40px; display: flex; gap: 16px; justify-content: center;">
+                <button class="btn btn-primary" onclick="loadDocument('quickstart')">快速入门</button>
+                <button class="btn btn-secondary" onclick="loadDocument('xedu-introduction')">了解更多</button>
             </div>
         </div>
     `;

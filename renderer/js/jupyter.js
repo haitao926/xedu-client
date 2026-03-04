@@ -247,10 +247,14 @@ export function toggleFullscreen() {
     const isFullscreen = card.classList.toggle('fullscreen');
     
     if (isFullscreen) {
-        icon.textContent = '↙'; // Exit fullscreen icon
+        if (icon) {
+            icon.textContent = '↙'; // Exit fullscreen icon
+        }
         log('进入专注模式', 'info');
     } else {
-        icon.textContent = '⛶'; // Enter fullscreen icon
+        if (icon) {
+            icon.textContent = '⛶'; // Enter fullscreen icon
+        }
         log('退出专注模式', 'info');
     }
     

@@ -38,3 +38,5 @@
 {"timestamp": "2025-12-29T21:57:34.517563", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 148}
 {"timestamp": "2025-12-29T22:03:45.371794", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': '.'}", "module": "logger", "function": "_log", "line": 148}
 {"timestamp": "2025-12-29T22:03:46.773426", "level": "\u001b[32mINFO\u001b[0m", "message": "停止 Jupyter", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T12:36:05.777964", "level": "\u001b[32mINFO\u001b[0m", "message": "保存配置: dict_keys(['jupyter'])", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-12T12:36:08.313741", "level": "\u001b[32mINFO\u001b[0m", "message": "启动 Jupyter，请求参数: {'project_dir': '/Users/apple/Library/CloudStorage/OneDrive-个人/1_Course/2025-2026/七年级人工智能/老师的AI课代表/Project3_Grader'}", "module": "logger", "function": "_log", "line": 148}

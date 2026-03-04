@@ -231,6 +231,18 @@ ipcMain.handle('open-external', async (event, url) => {
     await shell.openExternal(url);
 });
 
+ipcMain.handle('open-path', async (event, targetPath) => {
+    if (!targetPath) {
+        return { success: false, error: 'empty-path' };
+    }
+    const result = await shell.openPath(targetPath);
+    if (result) {
+        console.warn('打开本地路径失败:', result);
+        return { success: false, error: result };
+    }
+    return { success: true };
+});
+
 ipcMain.handle('get-system-info', () => {
     return {
         platform: process.platform,

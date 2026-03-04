@@ -1,9 +1,15 @@
 import { log, showTab, showModal, hideModal, initModalListeners, showToast } from './ui.js';
 import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility } from './jupyter.js';
-import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown } from './ai.js';
+import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown, syncModelBadge } from './ai.js';
 import { initDocsPage, loadComponents, loadDocument, performSearch, showTutorials, searchDocs } from './docs.js';
+import { initResourcesPage, refreshResources, openSubmitPage } from './resources.js';
 import { installPackage, uninstallPackage, updatePackage } from './package-manager.js';
 import { registerNamespace } from './app-context.js';
+import { ProjectWizard } from './project-wizard.js';
+import apiClient from './api.js';
+
+// Initialize the Project Wizard globally
+new ProjectWizard(apiClient);
 
 // 设置页选项卡切换
 function showSettingsTab(tab) {
@@ -45,7 +51,8 @@ registerNamespace('ai', {
     testAIConfig,
     selectChat,
     previewImage,
-    handleKeyDown
+    handleKeyDown,
+    syncModelBadge
 });
 registerNamespace('docs', {
     initDocsPage,
@@ -55,22 +62,40 @@ registerNamespace('docs', {
     showTutorials,
     searchDocs
 });
+registerNamespace('resources', {
+    initResourcesPage,
+    refreshResources,
+    openSubmitPage
+});
 
 // 保存系统配置函数
 async function saveSystemConfig() {
     console.log('saveSystemConfig 被调用');
     const apiKey = document.getElementById('api-key-input')?.value.trim();
     const pythonPath = document.getElementById('python-path-input')?.value.trim();
+    const aiBaseUrlInput = document.getElementById('ai-base-url')?.value.trim() || '';
+    const aiModelInput = document.getElementById('ai-model-input')?.value.trim() || '';
 
-    if (!apiKey && !pythonPath) {
+    const resourcesBaseUrlInput = document.getElementById('resources-base-url')?.value.trim() || '';
+    const resourcesRepoInput = document.getElementById('resources-repo')?.value.trim() || '';
+    const resourcesBranchInput = document.getElementById('resources-branch')?.value.trim() || '';
+    const resourcesIndexPathInput = document.getElementById('resources-index-path')?.value.trim() || '';
+    const resourcesSubmitUrlInput = document.getElementById('resources-submit-url')?.value.trim() || '';
+    const resourcesPublishPathInput = document.getElementById('resources-publish-path')?.value.trim() || '';
+    const resourcesPublishTokenInput = document.getElementById('resources-publish-token')?.value.trim() || '';
+
+    const hasResourcesInput = !!(resourcesBaseUrlInput || resourcesRepoInput || resourcesBranchInput || resourcesIndexPathInput || resourcesSubmitUrlInput || resourcesPublishPathInput || resourcesPublishTokenInput);
+    const hasAiInput = !!(apiKey || aiBaseUrlInput || aiModelInput);
+
+    if (!hasAiInput && !pythonPath && !hasResourcesInput) {
         log('请至少输入一项配置', 'warning');
         return;
     }
 
     try {
         // 保存 API Key
-        if (apiKey) {
-            // API Key已经在input中，saveAIConfig会自己获取
+        if (hasAiInput) {
+            // AI 配置已经在 input 中，saveAIConfig 会自行读取
             await saveAIConfig();
         }
 
@@ -79,6 +104,27 @@ async function saveSystemConfig() {
             localStorage.setItem('python_path', pythonPath);
             log('Python 环境路径已保存', 'success');
         }
+
+        // 保存课程资源库配置
+        const resourcesBaseUrl = resourcesBaseUrlInput;
+        const resourcesRepo = resourcesRepoInput;
+        const resourcesBranch = resourcesBranchInput || 'main';
+        const resourcesIndexPath = resourcesIndexPathInput || 'index.json';
+        const resourcesSubmitUrl = resourcesSubmitUrlInput;
+        const resourcesPublishPath = resourcesPublishPathInput || 'courses';
+        const resourcesPublishToken = resourcesPublishTokenInput;
+
+        const uiPayload = {
+            resources_base_url: resourcesBaseUrl,
+            resources_repo: resourcesRepo,
+            resources_branch: resourcesBranch,
+            resources_index_path: resourcesIndexPath,
+            resources_submit_url: resourcesSubmitUrl,
+            resources_publish_path: resourcesPublishPath,
+            resources_publish_token: resourcesPublishToken
+        };
+
+        await apiClient.saveConfig({ ui: uiPayload });
 
         log('配置保存成功', 'success');
         showToast('系统配置已保存', 'success');
@@ -108,6 +154,38 @@ window.addEventListener('DOMContentLoaded', () => {
         const pythonInput = document.getElementById('python-path-input');
         if (pythonInput) pythonInput.value = savedPythonPath;
     }
+
+    // 加载课程资源库配置
+    apiClient.loadConfig().then((response) => {
+        if (!response?.success) return;
+        const uiConfig = response.config?.ui || {};
+        const aiConfig = response.config?.ai || {};
+
+        const resourcesBaseUrl = document.getElementById('resources-base-url');
+        const resourcesRepo = document.getElementById('resources-repo');
+        const resourcesBranch = document.getElementById('resources-branch');
+        const resourcesIndexPath = document.getElementById('resources-index-path');
+        const resourcesSubmitUrl = document.getElementById('resources-submit-url');
+        const resourcesPublishPath = document.getElementById('resources-publish-path');
+        const resourcesPublishToken = document.getElementById('resources-publish-token');
+        const aiBaseUrl = document.getElementById('ai-base-url');
+        const aiModelInput = document.getElementById('ai-model-input');
+
+        if (resourcesBaseUrl) resourcesBaseUrl.value = uiConfig.resources_base_url || '';
+        if (resourcesRepo) resourcesRepo.value = uiConfig.resources_repo || '';
+        if (resourcesBranch) resourcesBranch.value = uiConfig.resources_branch || 'main';
+        if (resourcesIndexPath) resourcesIndexPath.value = uiConfig.resources_index_path || 'index.json';
+        if (resourcesSubmitUrl) resourcesSubmitUrl.value = uiConfig.resources_submit_url || '';
+        if (resourcesPublishPath) resourcesPublishPath.value = uiConfig.resources_publish_path || 'courses';
+        if (resourcesPublishToken) resourcesPublishToken.value = uiConfig.resources_publish_token || '';
+        if (aiBaseUrl) aiBaseUrl.value = aiConfig.base_url || '';
+        if (aiModelInput) aiModelInput.value = aiConfig.model || '';
+        if (window.app?.ai?.syncModelBadge) {
+            window.app.ai.syncModelBadge();
+        }
+    }).catch((error) => {
+        console.warn('加载课程资源库配置失败:', error);
+    });
 
     // API Key 出于安全考虑通常不回显，或者需要从后端获取
     log('系统初始化完成', 'success');

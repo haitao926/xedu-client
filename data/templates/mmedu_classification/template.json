@@ -1,0 +1,6 @@
+{
+  "id": "mmedu_classification",
+  "name": "MMEdu 图像分类",
+  "description": "内置基础的图像分类网络和数据集占位，适合快速开展计算机视觉教学。",
+  "icon": "experiment-cover-16x9.svg"
+}

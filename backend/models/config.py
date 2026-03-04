@@ -83,6 +83,13 @@ class UIConfig:
     show_notifications: bool = True
     minimize_to_tray: bool = True
     auto_open_browser: bool = True
+    resources_base_url: str = ""
+    resources_repo: str = ""
+    resources_branch: str = "main"
+    resources_index_path: str = "index.json"
+    resources_submit_url: str = ""
+    resources_publish_token: str = ""
+    resources_publish_path: str = "courses"
 
     def validate(self) -> tuple[bool, list[str]]:
         """验证配置"""

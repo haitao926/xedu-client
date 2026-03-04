@@ -10,7 +10,14 @@ export function log(message, type = 'info') {
     const time = new Date().toLocaleTimeString();
     const logLine = document.createElement('div');
     logLine.className = `log-entry`;
-    logLine.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#10b981' : (type === 'warning' ? '#f59e0b' : '#d4d4d4'));
+    
+    // Use CSS variables for consistent theming
+    let colorVar = 'var(--text-secondary)';
+    if (type === 'error') colorVar = 'var(--danger-color)';
+    else if (type === 'success') colorVar = 'var(--success-color)';
+    else if (type === 'warning') colorVar = 'var(--warning-color)';
+    
+    logLine.style.color = colorVar;
 
     logLine.innerHTML = `<span class="log-time">[${time}]</span> ${displayMessage}`;
     logContainer.appendChild(logLine);
@@ -62,6 +69,18 @@ export function showTab(tabId, navItem) {
                 docs.initDocsPage();
             }).catch(err => {
                 console.error('加载文档模块失败:', err);
+            });
+        }
+    }
+
+    if (tabId === 'resources') {
+        if (window.app && window.app.resources && window.app.resources.initResourcesPage) {
+            window.app.resources.initResourcesPage();
+        } else {
+            import('./resources.js').then(resources => {
+                resources.initResourcesPage();
+            }).catch(err => {
+                console.error('加载课程资源模块失败:', err);
             });
         }
     }
@@ -177,4 +196,3 @@ export function showToast(message, type = 'info') {
 
 
 // Settings modal functions removed as it is now a page
-

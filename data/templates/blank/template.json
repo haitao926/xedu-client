@@ -1,0 +1,6 @@
+{
+  "id": "blank",
+  "name": "空白项目",
+  "description": "包含标准目录结构的空白项目 (notebooks/, datasets/)",
+  "icon": "icon-folder.svg"
+}

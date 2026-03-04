@@ -186,11 +186,12 @@ class JupyterAPI extends APIClient {
     }
 
     // AI助手
-    async askAI(image, question, history = []) {
+    async askAI(image, question, history = [], config = null) {
         return this.post('/api/ai/ask', {
             image,
             question,
-            history
+            history,
+            config
         });
     }
 
