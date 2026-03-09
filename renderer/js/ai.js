@@ -15,7 +15,7 @@ export function addMessageToChat(content, sender, options = {}) {
     const chatHistory = document.getElementById('chat-history');
     if (!chatHistory) return null;
 
-    const emptyState = chatHistory.querySelector('.chat-empty');
+    const emptyState = chatHistory.querySelector('.chat-empty, .chat-empty-state');
     if (emptyState) emptyState.remove();
 
     const row = document.createElement('div');
@@ -124,9 +124,10 @@ export function clearCurrentChat() {
     const chatHistory = document.getElementById('chat-history');
     if (chatHistory) {
         chatHistory.innerHTML = `
-            <div class="chat-empty" style="text-align: center; margin-top: 40px; color: #9ca3af;">
-                <div style="font-size: 48px; margin-bottom: 16px;">🤖</div>
-                <div>开始新对话吧！<br>直接输入问题或上传图片进行分析</div>
+            <div class="chat-empty-state">
+                <div class="empty-icon">🤖</div>
+                <div class="empty-text">开始新对话吧</div>
+                <div class="empty-desc">输入你的教学问题、任务目标或提示词即可开始。</div>
             </div>
         `;
     }
@@ -420,16 +421,23 @@ function initAIUI() {
     if (aiUiInitialized) return;
     aiUiInitialized = true;
 
-    const addImageBtn = document.getElementById('ai-add-image-btn');
     const fileInput = document.getElementById('ai-image-input');
+    const attachmentHint = document.getElementById('ai-attachment-hint');
     const inputWrapper = document.getElementById('ai-input-wrapper');
+    const dropHost = inputWrapper?.closest('.input-area') || inputWrapper;
     const dropZone = document.getElementById('ai-drop-zone');
     const questionInput = document.getElementById('ai-question');
     const baseUrlInput = document.getElementById('ai-base-url');
     const modelInput = document.getElementById('ai-model-input');
 
-    if (addImageBtn && fileInput) {
-        addImageBtn.addEventListener('click', () => fileInput.click());
+    if (attachmentHint && fileInput) {
+        attachmentHint.addEventListener('click', () => fileInput.click());
+        attachmentHint.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                fileInput.click();
+            }
+        });
     }
 
     const showDropZone = (show) => {
@@ -438,21 +446,21 @@ function initAIUI() {
         }
     };
 
-    if (inputWrapper) {
-        inputWrapper.addEventListener('dragenter', (event) => {
+    if (dropHost) {
+        dropHost.addEventListener('dragenter', (event) => {
             event.preventDefault();
             showDropZone(true);
         });
-        inputWrapper.addEventListener('dragover', (event) => {
+        dropHost.addEventListener('dragover', (event) => {
             event.preventDefault();
             showDropZone(true);
         });
-        inputWrapper.addEventListener('dragleave', (event) => {
-            if (event.target === inputWrapper) {
+        dropHost.addEventListener('dragleave', (event) => {
+            if (event.target === dropHost) {
                 showDropZone(false);
             }
         });
-        inputWrapper.addEventListener('drop', (event) => {
+        dropHost.addEventListener('drop', (event) => {
             event.preventDefault();
             showDropZone(false);
             const file = event.dataTransfer?.files?.[0];
@@ -466,6 +474,13 @@ function initAIUI() {
     window.addEventListener('drop', () => showDropZone(false));
 
     if (questionInput) {
+        const resizeTextarea = () => {
+            questionInput.style.height = 'auto';
+            questionInput.style.height = `${Math.min(questionInput.scrollHeight, 180)}px`;
+        };
+        questionInput.addEventListener('input', resizeTextarea);
+        resizeTextarea();
+
         questionInput.addEventListener('paste', (event) => {
             const items = event.clipboardData?.items || [];
             for (const item of items) {

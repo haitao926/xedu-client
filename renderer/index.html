@@ -233,6 +233,13 @@
                             </div>
                         </div>
                         <div class="input-area">
+                            <div class="ai-composer-head">
+                                <div class="ai-composer-label">先输入问题，再按需补充图片</div>
+                                <div id="ai-attachment-hint" class="ai-attachment-hint" title="可拖拽、粘贴或点击选择图片（可选）" role="button" tabindex="0">
+                                    <span>可拖拽 / 粘贴 / 点击选择图片</span>
+                                    <em>可选</em>
+                                </div>
+                            </div>
                             <div class="ai-attachment-row">
                                 <div id="image-preview" class="image-preview hidden">
                                     <img id="preview-img" alt="图片预览">
@@ -242,12 +249,10 @@
                                     </div>
                                     <button onclick="app.ai.removeImage()" class="btn-close-preview" title="移除">×</button>
                                 </div>
-                                <div id="ai-attachment-hint" class="ai-attachment-hint">拖拽/粘贴图片，或点击“添加图片”</div>
                             </div>
                             <div class="ai-input-wrapper" id="ai-input-wrapper">
-                                <button class="btn btn-sm btn-secondary ai-add-image-btn" id="ai-add-image-btn" type="button">添加图片</button>
-                                <textarea id="ai-question" class="ai-textarea" rows="1" placeholder="输入消息..." onkeydown="app.ai.handleKeyDown(event)"></textarea>
-                                <button id="btn-send" class="btn btn-primary" onclick="app.ai.askAI()" style="display: inline-flex; align-items: center; gap: 4px;">
+                                <textarea id="ai-question" class="ai-textarea" rows="1" placeholder="输入你的问题或任务（Enter 发送，Shift+Enter 换行）" onkeydown="app.ai.handleKeyDown(event)"></textarea>
+                                <button id="btn-send" class="btn btn-primary ai-send-btn" onclick="app.ai.askAI()">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>发送
                                 </button>
                                 <input type="file" id="ai-image-input" accept="image/*" style="display: none;" onchange="app.ai.previewImage(this)">
@@ -301,10 +306,24 @@
                                     <div id="resources-count" class="resources-subtitle">0 门课程</div>
                                 </div>
                                 <div class="resources-actions">
-                                    <button id="resources-add-btn" class="btn btn-primary" style="display: flex; align-items: center; gap: 6px;">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                        创建课程
-                                    </button>
+                                    <div class="resources-create-entry-menu">
+                                        <button id="resources-add-btn" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                            创建课程
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                        </button>
+                                        <div id="resources-create-entry-menu" class="resources-create-entry-dropdown">
+                                            <button id="resources-add-new-btn" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                                                创建新课程
+                                            </button>
+                                            <button id="resources-add-local-btn" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                                                导入本地课程
+                                            </button>
+                                            <button id="resources-add-cloud-btn" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                                                云端导入
+                                            </button>
+                                        </div>
+                                    </div>
                                     <button id="resources-refresh-btn" class="btn btn-secondary" style="display: flex; align-items: center; gap: 6px;">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                                         刷新
@@ -316,6 +335,16 @@
                                 <select id="resources-filter-grade" class="form-control resources-filter"></select>
                                 <select id="resources-filter-subject" class="form-control resources-filter"></select>
                                 <select id="resources-filter-tag" class="form-control resources-filter"></select>
+                            </div>
+                            <div id="resources-classroom-bar" class="resources-classroom-bar">
+                                <div class="resources-classroom-info">
+                                    <div class="resources-classroom-title">课堂模式</div>
+                                    <div id="resources-classroom-status" class="resources-classroom-status">未开启</div>
+                                    <div id="resources-classroom-name" class="resources-classroom-name"></div>
+                                </div>
+                                <div class="resources-classroom-actions">
+                                    <button id="resources-classroom-refresh" class="btn btn-secondary btn-sm">重新搜索</button>
+                                </div>
                             </div>
                             <div id="resources-loading" class="resources-loading" style="display: none;">正在加载资源...</div>
                             <div id="resources-list" class="resources-list"></div>
@@ -344,21 +373,37 @@
                                     <button id="resources-detail-open" class="btn btn-primary btn-sm" style="display: none; align-items: center; gap: 4px;">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>在主控台打开
                                     </button>
-                                    <button id="resources-detail-download" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>下载课程包
+                                    <button id="resources-detail-classroom-start" class="btn btn-primary btn-sm" style="display: none; align-items: center; gap: 4px;">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>开启课堂
                                     </button>
-                                    <button id="resources-detail-edit" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>编辑课程
+                                    <button id="resources-detail-classroom-stop" class="btn btn-secondary btn-sm" style="display: none; align-items: center; gap: 4px;">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"></rect></svg>结束课堂
                                     </button>
-                                    <button id="resources-detail-upload" class="btn btn-primary btn-sm" style="display: none; align-items: center; gap: 4px;">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>再次上传
-                                    </button>
-                                    <button id="resources-detail-pull" class="btn btn-primary btn-sm" style="display: none; align-items: center; gap: 4px;">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>导入到本地
-                                    </button>
-                                    <button id="resources-detail-repo" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>查看仓库
-                                    </button>
+                                    <div class="resources-detail-more">
+                                        <button id="resources-detail-more-btn" class="btn btn-secondary btn-sm" type="button" style="display: inline-flex; align-items: center; gap: 4px;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>更多
+                                        </button>
+                                        <div id="resources-detail-more-menu" class="resources-detail-more-menu">
+                                            <button id="resources-detail-download" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>下载课程包
+                                            </button>
+                                            <button id="resources-detail-edit" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>编辑课程
+                                            </button>
+                                            <button id="resources-detail-delete" class="btn btn-danger btn-sm" style="display: none; align-items: center; gap: 6px;">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>删除课程
+                                            </button>
+                                            <button id="resources-detail-upload" class="btn btn-secondary btn-sm" style="display: none; align-items: center; gap: 6px;">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>上传课程
+                                            </button>
+                                            <button id="resources-detail-pull" class="btn btn-secondary btn-sm" style="display: none; align-items: center; gap: 6px;">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>更新课程
+                                            </button>
+                                            <button id="resources-detail-repo" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>查看仓库
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div id="resources-detail-content" class="resources-detail-content"></div>
@@ -381,6 +426,18 @@
                                     <div class="resources-step active" data-step="1">1 课程信息</div>
                                     <div class="resources-step" data-step="2">2 课程结构</div>
                                     <div class="resources-step" data-step="3">3 材料上传</div>
+                                </div>
+                                <div class="resources-create-guide" id="resources-create-guide">
+                                    <div class="resources-guide-title">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="12" cy="12" r="10"></circle>
+                                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                        </svg>
+                                        创建指南
+                                    </div>
+                                    <div class="resources-guide-body" id="resources-create-guide-body"></div>
                                 </div>
 
                                 <div class="resources-create-body">
@@ -445,38 +502,61 @@
                                     </div>
 
                                     <div class="resources-create-step" data-step="2">
+                                        <div class="resources-create-hint" style="margin-bottom: 10px; font-weight: 600;">可选配置（可跳过）</div>
                                         <div class="resources-create-grid">
-                                            <div class="resources-create-card">
+                                            <div id="resources-create-source-card" class="resources-create-card">
                                                 <div class="resources-create-title">
-                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>本地课程目录
+                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span id="resources-create-source-title-text">本地课程目录</span>
                                                 </div>
-                                                <div class="resources-create-hint">先选择课程根目录，再保存课程结构（支持自动解析 lesson/exp 目录）。</div>
+                                                <div id="resources-create-source-hint" class="resources-create-hint">本地创建：结构步骤可跳过，后续按需添加课节和实验；文件解析在具体实验材料选择时完成。云端拉取：导入已完成的完整课程包。</div>
+                                                <div id="resources-create-source-switch-row" class="input-row" style="gap: 8px; margin-bottom: 12px;">
+                                                    <button id="resources-source-local" class="btn btn-primary">本地创建</button>
+                                                    <button id="resources-source-cloud" class="btn btn-secondary">云端拉取</button>
+                                                </div>
+                                                <div id="resources-cloud-group" class="input-group" style="display: none;">
+                                                    <div class="resources-create-hint" style="margin-bottom: 8px;">云端导入只需要两步：选择本地保存目录 + 输入课程仓库地址。</div>
+                                                    <div class="resources-create-card" style="margin-top: 0; margin-bottom: 12px;">
+                                                        <div class="resources-create-title">云端课程地址（本次有效）</div>
+                                                        <div class="resources-create-hint">公开仓库可直接读取；私有仓库再填写 Token。</div>
+                                                        <div class="input-row" style="gap: 8px; margin-top: 8px;">
+                                                            <input id="resources-cloud-repo-address" type="text" class="form-control" placeholder="例如：http://8.145.44.54:3000/admin/xedu-courses">
+                                                        </div>
+                                                        <div class="input-row" style="gap: 8px; margin-top: 8px;">
+                                                            <input id="resources-cloud-temp-token" type="password" class="form-control" placeholder="访问令牌（私有仓库需要）">
+                                                        </div>
+                                                        <div class="action-row" style="margin-top: 8px;">
+                                                            <button id="resources-cloud-temp-load-btn" type="button" class="btn btn-secondary">读取云端课程</button>
+                                                            <button id="resources-cloud-temp-clear-btn" type="button" class="btn btn-secondary">使用默认课程源</button>
+                                                        </div>
+                                                    </div>
+                                                    <label class="input-label">云端课程</label>
+                                                    <select id="resources-cloud-course-select" class="form-control">
+                                                        <option value="">请选择课程</option>
+                                                    </select>
+                                                    <div class="action-row" style="margin-top: 10px;">
+                                                        <button id="resources-cloud-refresh-btn" class="btn btn-secondary">刷新课程列表</button>
+                                                        <button id="resources-cloud-import-btn" class="btn btn-primary" disabled>导入到本地</button>
+                                                    </div>
+                                                    <div id="resources-cloud-status" class="resources-scan-status" style="margin-top: 8px;">请先刷新云端课程列表</div>
+                                                </div>
                                                 <div id="resources-local-group" class="input-group">
-                                                    <label class="input-label">本地课程目录</label>
+                                                    <label id="resources-local-path-label" class="input-label">本地课程目录</label>
                                                     <div style="display: flex; gap: 10px;">
                                                         <input id="resources-create-local-path" type="text" class="form-control" placeholder="请选择课程文件夹">
                                                         <button id="resources-pick-local-btn" class="btn btn-secondary">选择</button>
                                                     </div>
                                                 </div>
-                                                <div class="action-row">
+                                                <div id="resources-structure-save-row" class="action-row">
                                                     <button id="resources-structure-save-btn" class="btn btn-primary" disabled style="display: inline-flex; align-items: center; gap: 4px;">
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>保存结构
-                                                    </button>
-                                                    <button id="resources-scan-btn" class="btn btn-secondary" disabled style="display: inline-flex; align-items: center; gap: 4px;">
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>读取结构
-                                                    </button>
-                                                    <button id="resources-rescan-btn" class="btn btn-secondary" disabled style="display: inline-flex; align-items: center; gap: 4px;">
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>重新读取
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>可选预保存结构
                                                     </button>
                                                 </div>
-                                                <div id="resources-scan-status" class="resources-scan-status">尚未读取课程结构</div>
-                                                <div id="resources-scan-summary" class="resources-scan-summary"></div>
                                             </div>
-                                            <div class="resources-create-card">
+                                            <div id="resources-structure-card" class="resources-create-card">
                                                 <div class="resources-create-title">
                                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>课程结构
                                                 </div>
-                                                <div class="resources-create-hint">已提供默认模板（2 节 / 每节 2 个实验）。可先建课节，再逐节上传材料。</div>
+                                                <div class="resources-create-hint">按需逐个添加课节和实验，不需要预先一次性完成。</div>
                                                 <div class="input-row" style="gap: 8px;">
                                                     <input id="resources-section-count" type="number" min="1" class="form-control" style="max-width: 120px;" placeholder="课节数">
                                                     <button id="resources-generate-sections" class="btn btn-secondary">生成课节</button>
@@ -493,7 +573,7 @@
                                                 <div class="resources-create-title">
                                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>材料上传
                                                 </div>
-                                                <div class="resources-create-hint">逐节选择实验材料文件夹，系统自动读取文件。</div>
+                                                <div class="resources-create-hint">一个实验一个实验添加材料；未准备好可先留空，后续再补。</div>
                                                 <div id="resources-material-list" class="resources-material-list"></div>
                                                 <div class="resources-create-title" style="margin-top: 16px;">
                                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>结构预览
@@ -502,11 +582,11 @@
                                             </div>
                                             <div class="resources-create-card">
                                                 <div class="resources-create-title">
-                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>发布到 Gitea
+                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>发布到 Gitea（创建 PR）
                                                 </div>
                                                 <div id="resources-publish-status" class="resources-publish-status">准备发布</div>
                                                 <div class="resources-create-actions">
-                                                    <button id="resources-publish-btn" class="btn btn-primary" disabled>发布到 Gitea</button>
+                                                    <button id="resources-publish-btn" class="btn btn-primary" disabled>发布并创建 PR</button>
                                                     <button id="resources-create-save-btn" class="btn btn-secondary" disabled>保存为本地课程</button>
                                                 </div>
                                             </div>
@@ -584,6 +664,15 @@
                                     </svg>
                                     资源库
                                 </button>
+                                <button class="btn btn-secondary settings-tab" data-tab="classroom" onclick="app.system.showSettingsTab('classroom')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M4 4h16v4H4z"></path>
+                                        <path d="M6 8h12v4H6z"></path>
+                                        <path d="M4 14h16v6H4z"></path>
+                                    </svg>
+                                    课堂设置
+                                </button>
                             </div>
 
                             <div class="settings-content active" data-settings-tab="ai">
@@ -640,56 +729,123 @@
                             </div>
 
                             <div class="settings-content" data-settings-tab="resources">
-                                <div class="form-group">
-                                    <label class="input-label">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>Gitea URL
-                                    </label>
-                                    <input type="text" id="resources-base-url" class="form-control">
+                                <div class="resources-create-hint" style="margin-bottom: 12px;">
+                                    公开课程库：通常无需访问令牌。私有课程库：填写访问令牌后使用。
+                                    仓库地址可在“课程资源 → 创建课程 → 云端拉取”中临时输入。
                                 </div>
                                 <div class="form-group">
                                     <label class="input-label">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>Repo (owner/repo)
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>访问令牌（私有库才需要）
                                     </label>
-                                    <input type="text" id="resources-repo" class="form-control">
+                                    <input type="password" id="resources-publish-token" class="form-control" placeholder="公开库可留空">
+                                    <div class="resources-create-hint" style="margin-top: 6px;">
+                                        获取方式：登录 Gitea → 右上角头像 → 设置 → 应用 → 生成个人访问令牌（PAT）→ 复制到这里。
+                                    </div>
+                                </div>
+                                <div class="resources-create-hint" style="margin-bottom: 12px;">
+                                    如需减少重复输入，可配置一个“默认课程源”（可选）。
+                                </div>
+                                <details style="margin-top: 8px;">
+                                    <summary style="cursor: pointer; color: var(--text-secondary); font-weight: 600;">默认课程源（可选）</summary>
+                                    <div style="margin-top: 12px;">
+                                        <div class="form-group">
+                                            <label class="input-label">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>资源库地址
+                                            </label>
+                                            <input type="text" id="resources-base-url" class="form-control" placeholder="例如：https://git.example.com">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="input-label">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>仓库路径
+                                            </label>
+                                            <input type="text" id="resources-repo" class="form-control" placeholder="例如：school/course-library（owner/repo）">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="input-label">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>分支
+                                            </label>
+                                            <input type="text" id="resources-branch" class="form-control" placeholder="main">
+                                        </div>
+                                    </div>
+                                </details>
+                                <div class="resources-create-hint" style="margin: 12px 0;">
+                                    更多课程源请在“课程资源 → 创建课程 → 云端拉取”中添加。
+                                </div>
+
+                                <details style="margin-top: 8px;">
+                                    <summary style="cursor: pointer; color: var(--text-secondary); font-weight: 600;">高级选项（可不填）</summary>
+                                    <div style="margin-top: 12px;">
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label class="input-label">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>索引文件
+                                                </label>
+                                                <input type="text" id="resources-index-path" class="form-control" placeholder="index.json">
+                                            </div>
+                                            <div class="form-group">
+                                                <label class="input-label">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>发布目录
+                                                </label>
+                                                <input type="text" id="resources-publish-path" class="form-control" placeholder="courses">
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="input-label">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>投稿页面地址
+                                            </label>
+                                            <input type="text" id="resources-submit-url" class="form-control" placeholder="可留空">
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                            <div class="settings-content" data-settings-tab="classroom">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="input-label">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M12 2a7 7 0 0 1 7 7v2a7 7 0 0 1-14 0V9a7 7 0 0 1 7-7z"></path><path d="M8 21h8"></path><path d="M12 17v4"></path></svg>课堂名称
+                                        </label>
+                                        <input type="text" id="classroom-name" class="form-control" placeholder="例如：七年级1班">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="input-label">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>课堂口令
+                                        </label>
+                                        <input type="text" id="classroom-code" class="form-control" placeholder="可留空">
+                                    </div>
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label class="input-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>Branch
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>教师口令
                                         </label>
-                                        <input type="text" id="resources-branch" class="form-control">
+                                        <input type="password" id="classroom-teacher-code" class="form-control" placeholder="用于开启课堂">
                                     </div>
                                     <div class="form-group">
                                         <label class="input-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>Index File
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>自动发现课堂
                                         </label>
-                                        <input type="text" id="resources-index-path" class="form-control">
+                                        <select id="classroom-auto-discover" class="form-control">
+                                            <option value="true">开启</option>
+                                            <option value="false">关闭</option>
+                                        </select>
                                     </div>
-                                </div>
-                                <div class="form-group">
-                                    <label class="input-label">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>Submit URL
-                                    </label>
-                                    <input type="text" id="resources-submit-url" class="form-control">
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label class="input-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Publish Path
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="M21 2l-9.6 9.6"></path><path d="M13 2l9 9"></path></svg>教师模式
                                         </label>
-                                        <input type="text" id="resources-publish-path" class="form-control" placeholder="courses">
+                                        <button id="resources-teacher-mode-btn" data-role="teacher-mode-toggle" class="btn btn-secondary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="M21 2l-9.6 9.6"></path><path d="M13 2l9 9"></path></svg>
+                                            <span data-role="teacher-mode-label">解锁教师模式</span>
+                                        </button>
                                     </div>
-                                    <div class="form-group">
-                                        <label class="input-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Gitea Token
-                                        </label>
-                                        <input type="password" id="resources-publish-token" class="form-control" placeholder="Personal Access Token">
-                                    </div>
+                                    <div class="form-group"></div>
                                 </div>
                             </div>
 
                             <div class="action-footer">
-                                <button class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 4px;">取消</button>
+                                <button id="settings-cancel-btn" class="btn btn-secondary" onclick="app.system.resetSystemConfig()" style="display: inline-flex; align-items: center; gap: 4px;">取消</button>
                                 <button class="btn btn-primary" onclick="app.system.saveSystemConfig()" style="display: inline-flex; align-items: center; gap: 4px;">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>保存设置
                                 </button>
@@ -700,6 +856,19 @@
             </div>
         </div>
     </main>
+</div>
+
+<div id="resources-action-modal" class="modal-overlay">
+    <div class="modal-content resources-action-modal-content">
+        <div id="resources-action-title" class="modal-title">操作确认</div>
+        <div id="resources-action-message" class="modal-message"></div>
+        <div id="resources-action-body" class="resources-action-body"></div>
+        <div id="resources-action-error" class="resources-action-error" style="display: none;"></div>
+        <div class="modal-actions">
+            <button id="resources-action-cancel" class="btn btn-secondary">取消</button>
+            <button id="resources-action-confirm" class="btn btn-primary">确定</button>
+        </div>
+    </div>
 </div>
 
 <!-- Modal -->
