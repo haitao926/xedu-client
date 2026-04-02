@@ -9,6 +9,8 @@ import hashlib
 import json
 import os
 import re
+import socket
+import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -32,7 +34,7 @@ DEFAULT_EXCLUDES = {
     "build",
 }
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
@@ -71,7 +73,7 @@ class GiteaClient:
         path: str,
         payload: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         url = self._api_url(path)
         if params:
             url = f"{url}?{parse.urlencode(params)}"
@@ -96,10 +98,11 @@ class GiteaClient:
             raise GiteaServiceError(f"Gitea 请求失败: {exc}") from exc
 
     def get_content(self, path: str) -> Optional[Dict[str, Any]]:
+        encoded_path = parse.quote((path or "").strip("/"), safe="/")
         try:
             return self._request(
                 "GET",
-                f"/repos/{self.owner}/{self.repo_name}/contents/{path}",
+                f"/repos/{self.owner}/{self.repo_name}/contents/{encoded_path}",
                 params={"ref": self.branch},
             )
         except GiteaServiceError as exc:
@@ -107,7 +110,64 @@ class GiteaClient:
                 return None
             raise
 
+    def _get_content_sha_with_fallback(self, path: str) -> str:
+        clean_path = (path or "").strip("/")
+        encoded_path = parse.quote(clean_path, safe="/")
+        candidates = [self.branch, "", "main"]
+        for ref in candidates:
+            params = {"ref": ref} if ref else None
+            try:
+                data = self._request(
+                    "GET",
+                    f"/repos/{self.owner}/{self.repo_name}/contents/{encoded_path}",
+                    params=params,
+                )
+            except GiteaServiceError as exc:
+                if "HTTP 404" in str(exc):
+                    continue
+                continue
+            if isinstance(data, dict):
+                sha = str(data.get("sha") or "").strip()
+                if sha:
+                    return sha
+            # Fallback to git tree lookup for instances where contents API cannot
+            # resolve nested paths with ref but still requires SHA for updates.
+            tree_sha = self._get_content_sha_from_tree(clean_path, ref or self.branch)
+            if tree_sha:
+                return tree_sha
+        return ""
+
+    def _get_content_sha_from_tree(self, path: str, ref: str) -> str:
+        clean_path = (path or "").strip("/")
+        if not clean_path:
+            return ""
+        ref_name = (ref or self.branch or "main").strip()
+        if not ref_name:
+            return ""
+        encoded_ref = parse.quote(ref_name, safe="")
+        try:
+            tree = self._request(
+                "GET",
+                f"/repos/{self.owner}/{self.repo_name}/git/trees/{encoded_ref}",
+                params={"recursive": "1"},
+            )
+        except GiteaServiceError:
+            return ""
+        items = tree.get("tree") if isinstance(tree, dict) else None
+        if not isinstance(items, list):
+            return ""
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("path") or "").strip("/") != clean_path:
+                continue
+            sha = str(item.get("sha") or "").strip()
+            if sha:
+                return sha
+        return ""
+
     def upsert_file(self, path: str, content: bytes, message: str) -> Dict[str, Any]:
+        encoded_path = parse.quote((path or "").strip("/"), safe="/")
         encoded = base64.b64encode(content).decode("utf-8")
         payload: Dict[str, Any] = {
             "content": encoded,
@@ -115,13 +175,380 @@ class GiteaClient:
             "branch": self.branch,
         }
         existing = self.get_content(path)
+        method = "POST"
         if existing and existing.get("sha"):
             payload["sha"] = existing["sha"]
-        return self._request(
-            "PUT",
-            f"/repos/{self.owner}/{self.repo_name}/contents/{path}",
-            payload=payload,
-        )
+            method = "PUT"
+        try:
+            return self._request(
+                method,
+                f"/repos/{self.owner}/{self.repo_name}/contents/{encoded_path}",
+                payload=payload,
+            )
+        except GiteaServiceError as exc:
+            text = str(exc)
+            # Some Gitea instances require SHA for updates but GET may return 404 on branch/ref.
+            # Retry once with a fallback SHA lookup to avoid false publish failures.
+            if "HTTP 422" in text and "SHA" in text.upper() and "REQUIRED" in text.upper() and "sha" not in payload:
+                retry_sha = self._get_content_sha_with_fallback(path)
+                if retry_sha:
+                    payload["sha"] = retry_sha
+                    return self._request(
+                        "PUT",
+                        f"/repos/{self.owner}/{self.repo_name}/contents/{encoded_path}",
+                        payload=payload,
+                    )
+            raise GiteaServiceError(f"写入文件失败: {path} ({text})") from exc
+
+    def with_branch(self, branch: str) -> "GiteaClient":
+        return GiteaClient(self.base_url, self.repo, branch or self.branch, self.token)
+
+    def branch_exists(self, branch: str) -> bool:
+        encoded = parse.quote((branch or "").strip(), safe="")
+        if not encoded:
+            return False
+        try:
+            self._request("GET", f"/repos/{self.owner}/{self.repo_name}/branches/{encoded}")
+            return True
+        except GiteaServiceError as exc:
+            if "HTTP 404" in str(exc):
+                return False
+            raise
+
+    def ensure_branch(self, branch: str, from_branch: str = "") -> None:
+        target = (branch or "").strip()
+        source = (from_branch or self.branch or "main").strip() or "main"
+        if not target:
+            raise GiteaServiceError("分支名称不能为空")
+        if self.branch_exists(target):
+            return
+        payload = {
+            "new_branch_name": target,
+            "old_branch_name": source,
+        }
+        try:
+            self._request("POST", f"/repos/{self.owner}/{self.repo_name}/branches", payload=payload)
+        except GiteaServiceError as exc:
+            if "HTTP 409" in str(exc) and self.branch_exists(target):
+                return
+            raise GiteaServiceError(f"创建分支失败: {target}（基线分支: {source}）{exc}") from exc
+
+    def create_pull_request(
+        self,
+        *,
+        head: str,
+        base: str,
+        title: str,
+        body: str = "",
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "title": title,
+            "head": head,
+            "base": base,
+        }
+        if body:
+            payload["body"] = body
+        try:
+            return self._request(
+                "POST",
+                f"/repos/{self.owner}/{self.repo_name}/pulls",
+                payload=payload,
+            )
+        except GiteaServiceError as exc:
+            text = str(exc)
+            if "HTTP 409" in text or "already exists" in text.lower():
+                existing = self.find_open_pull_request(head=head, base=base)
+                if existing:
+                    existing["_existing"] = True
+                    return existing
+                raise GiteaServiceError("已存在相同分支的未合并 PR，请先处理现有 PR") from exc
+            raise
+
+    def find_open_pull_request(self, *, head: str, base: str) -> Optional[Dict[str, Any]]:
+        params = {
+            "state": "open",
+            "base": base,
+            "head": f"{self.owner}:{head}",
+        }
+        try:
+            data = self._request(
+                "GET",
+                f"/repos/{self.owner}/{self.repo_name}/pulls",
+                params=params,
+            )
+        except GiteaServiceError:
+            return None
+        if isinstance(data, list) and data:
+            first = data[0]
+            if isinstance(first, dict):
+                return first
+        return None
+
+    def get_current_user(self) -> str:
+        try:
+            data = self._request("GET", "/user")
+        except GiteaServiceError:
+            return ""
+        if not isinstance(data, dict):
+            return ""
+        return str(data.get("login") or data.get("username") or "").strip()
+
+    def repo_exists(self) -> bool:
+        try:
+            self._request("GET", f"/repos/{self.owner}/{self.repo_name}")
+            return True
+        except GiteaServiceError as exc:
+            if "HTTP 404" in str(exc):
+                return False
+            raise
+
+    def get_repo_info(self) -> Dict[str, Any]:
+        data = self._request("GET", f"/repos/{self.owner}/{self.repo_name}")
+        return data if isinstance(data, dict) else {}
+
+    def create_repo(self, *, private: bool = False, description: str = "") -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "name": self.repo_name,
+            "private": bool(private),
+            "auto_init": False,
+        }
+        if description:
+            payload["description"] = description
+
+        current_user = self.get_current_user()
+        owner = (self.owner or "").strip()
+        if current_user and owner.lower() == current_user.lower():
+            path = "/user/repos"
+        else:
+            encoded_owner = parse.quote(owner, safe="")
+            path = f"/orgs/{encoded_owner}/repos"
+
+        try:
+            return self._request("POST", path, payload=payload)
+        except GiteaServiceError as exc:
+            text = str(exc)
+            if "HTTP 409" in text:
+                return {"_existing": True}
+            raise
+
+    def ensure_repo(
+        self,
+        *,
+        create_if_missing: bool = True,
+        private: bool = False,
+        description: str = "",
+    ) -> Dict[str, Any]:
+        exists = self.repo_exists()
+        if exists:
+            return {"exists": True, "created": False}
+        if not create_if_missing:
+            raise GiteaServiceError("目标课程仓库不存在，请先创建仓库")
+        self.create_repo(private=private, description=description)
+        return {"exists": False, "created": True}
+
+
+def _iter_read_tokens(token: str = "", prefer_anonymous: bool = True) -> List[str]:
+    clean_token = (token or "").strip()
+    ordered = ["", clean_token] if prefer_anonymous else [clean_token, ""]
+    deduped: List[str] = []
+    for item in ordered:
+        if item in deduped:
+            continue
+        deduped.append(item)
+    return deduped
+
+
+def fetch_url_bytes_with_auth_fallback(
+    url: str,
+    *,
+    token: str = "",
+    timeout: int = 30,
+    prefer_anonymous: bool = True,
+) -> bytes:
+    attempts = _iter_read_tokens(token, prefer_anonymous=prefer_anonymous)
+    last_exc: Exception | None = None
+
+    for idx, active_token in enumerate(attempts):
+        req = request.Request(url)
+        if active_token:
+            req.add_header("Authorization", f"token {active_token}")
+        try:
+            with request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except error.HTTPError as exc:
+            last_exc = exc
+            can_retry_auth = exc.code in (401, 403) and idx < len(attempts) - 1
+            if can_retry_auth:
+                logger.warning(f"读取资源鉴权失败，切换请求模式重试: {url}")
+                continue
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            raise
+
+    if last_exc:
+        raise last_exc
+    raise GiteaServiceError("读取资源失败")
+
+
+def fetch_json_with_auth_fallback(
+    url: str,
+    *,
+    token: str = "",
+    timeout: int = 30,
+    prefer_anonymous: bool = True,
+) -> Any:
+    raw = fetch_url_bytes_with_auth_fallback(
+        url,
+        token=token,
+        timeout=timeout,
+        prefer_anonymous=prefer_anonymous,
+    )
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise GiteaServiceError("资源响应格式错误") from exc
+
+
+def load_index_data(
+    *,
+    raw_base_url: str,
+    index_path: str = "index.json",
+    token: str = "",
+) -> Dict[str, Any]:
+    clean_index_path = (index_path or "index.json").strip().lstrip("/") or "index.json"
+    index_url = resolve_raw_url(raw_base_url, clean_index_path)
+    raw = fetch_url_bytes_with_auth_fallback(
+        index_url,
+        token=token,
+        timeout=15,
+        prefer_anonymous=True,
+    )
+    parsed = json.loads(raw.decode("utf-8"))
+    if not isinstance(parsed, dict):
+        raise GiteaServiceError("资源索引格式错误")
+    return parsed
+
+
+def find_course_entry_from_index(
+    *,
+    raw_base_url: str,
+    course_id: str,
+    index_path: str = "index.json",
+    token: str = "",
+) -> Dict[str, Any]:
+    clean_id = (course_id or "").strip()
+    if not clean_id:
+        raise GiteaServiceError("课程 ID 不能为空")
+
+    index_data = load_index_data(raw_base_url=raw_base_url, index_path=index_path, token=token)
+    resources = index_data.get("resources") or []
+    if not isinstance(resources, list):
+        raise GiteaServiceError("资源索引格式错误：resources 必须为数组")
+
+    for item in resources:
+        if isinstance(item, dict) and str(item.get("id") or "").strip() == clean_id:
+            return item
+    raise GiteaServiceError("资源索引中未找到该课程")
+
+
+def load_course_data_from_repo(
+    *,
+    raw_base_url: str,
+    course_path: str = "course.json",
+    token: str = "",
+) -> Dict[str, Any]:
+    clean_course_path = (course_path or "course.json").strip().lstrip("/") or "course.json"
+    course_url = resolve_raw_url(raw_base_url, clean_course_path)
+    raw = fetch_url_bytes_with_auth_fallback(
+        course_url,
+        token=token,
+        timeout=20,
+        prefer_anonymous=True,
+    )
+    parsed = json.loads(raw.decode("utf-8"))
+    if not isinstance(parsed, dict):
+        raise GiteaServiceError("course.json 格式错误")
+    return parsed
+
+
+def build_single_course_entry(
+    *,
+    course_data: Dict[str, Any],
+    course_url: str = "course.json",
+    package_url: str = "",
+) -> Dict[str, Any]:
+    normalized = _normalize_course_data(course_data)
+    course_id = str(normalized.get("id") or "").strip()
+    if not course_id:
+        raise GiteaServiceError("course.json 缺少字段: id")
+    title = str(normalized.get("title") or "").strip()
+    if not title:
+        raise GiteaServiceError("course.json 缺少字段: title")
+    version = str(normalized.get("version") or "1.0").strip() or "1.0"
+    entry = {
+        "id": course_id,
+        "title": title,
+        "description": normalized.get("description", ""),
+        "grade": normalized.get("grade", ""),
+        "subject": normalized.get("subject", ""),
+        "author": normalized.get("author", ""),
+        "version": version,
+        "updated_at": normalized.get("updated_at", ""),
+        "tags": normalized.get("tags", []) or [],
+        "course_url": course_url,
+        "package_url": package_url,
+        "single_course_repo": True,
+        "sections": normalized.get("sections", []) or [],
+    }
+    cover = normalized.get("cover") or normalized.get("cover_url") or ""
+    if isinstance(cover, str) and cover.strip():
+        entry["cover_url"] = cover.strip()
+    return entry
+
+
+def build_repo_archive_url(*, base_url: str, repo: str, branch: str) -> str:
+    clean_base = (base_url or "").rstrip("/")
+    clean_repo = (repo or "").strip().strip("/")
+    clean_branch = (branch or "main").strip() or "main"
+    if not clean_base or not clean_repo:
+        raise GiteaServiceError("课程仓库配置不完整")
+    encoded_repo = "/".join(parse.quote(part, safe="") for part in clean_repo.split("/") if part)
+    encoded_branch = parse.quote(clean_branch, safe="")
+    return f"{clean_base}/api/v1/repos/{encoded_repo}/archive/{encoded_branch}.zip"
+
+
+def build_repo_tree_api_url(*, base_url: str, repo: str, branch: str) -> str:
+    clean_base = (base_url or "").rstrip("/")
+    clean_repo = (repo or "").strip().strip("/")
+    clean_branch = (branch or "main").strip() or "main"
+    if not clean_base or not clean_repo:
+        raise GiteaServiceError("课程仓库配置不完整")
+    encoded_repo = "/".join(parse.quote(part, safe="") for part in clean_repo.split("/") if part)
+    encoded_branch = parse.quote(clean_branch, safe="")
+    return f"{clean_base}/api/v1/repos/{encoded_repo}/git/trees/{encoded_branch}?recursive=1"
+
+
+def load_repo_tree_data(
+    *,
+    base_url: str,
+    repo: str,
+    branch: str,
+    token: str = "",
+) -> List[Dict[str, Any]]:
+    tree_url = build_repo_tree_api_url(base_url=base_url, repo=repo, branch=branch)
+    parsed = fetch_json_with_auth_fallback(
+        tree_url,
+        token=token,
+        timeout=30,
+        prefer_anonymous=True,
+    )
+    if not isinstance(parsed, dict):
+        raise GiteaServiceError("仓库文件树格式错误")
+    tree = parsed.get("tree")
+    if not isinstance(tree, list):
+        raise GiteaServiceError("仓库文件树格式错误")
+    return [item for item in tree if isinstance(item, dict)]
 
 
 def _normalize_course_data(course: Dict[str, Any]) -> Dict[str, Any]:
@@ -133,6 +560,28 @@ def _normalize_course_data(course: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def _strip_runtime_course_fields(course: Dict[str, Any]) -> Dict[str, Any]:
+    cleaned = dict(course or {})
+    runtime_keys = {
+        "local_path",
+        "cloud_url",
+        "source",
+        "origin",
+        "sync",
+        "course_url",
+        "package_url",
+        "_source_id",
+        "_source_name",
+        "_source_repo_url",
+        "_source_raw_base_url",
+        "_source_branch",
+        "_source_submit_url",
+    }
+    for key in runtime_keys:
+        cleaned.pop(key, None)
+    return cleaned
+
+
 def _generate_course_id(title: str) -> str:
     base = (title or "").strip().lower()
     slug = re.sub(r"[^a-z0-9]+", "-", base)
@@ -141,6 +590,13 @@ def _generate_course_id(title: str) -> str:
         return slug
     digest = hashlib.sha1((title or "course").encode("utf-8")).hexdigest()[:8]
     return f"course-{digest}"
+
+
+def _sanitize_ref_component(value: str, fallback: str = "user") -> str:
+    text = (value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9._-]+", "-", text)
+    text = re.sub(r"-{2,}", "-", text).strip("-")
+    return text or fallback
 
 
 def _summarize_course(course: Dict[str, Any]) -> Dict[str, Any]:
@@ -204,6 +660,8 @@ def _guess_file_type(path: str) -> str:
     lower = path.lower()
     if lower.endswith(".ipynb"):
         return "ipynb"
+    if lower.endswith(".blockly.xml") or lower.endswith(".blockly.json"):
+        return "blockly"
     if lower.endswith(".html"):
         return "html"
     return "file"
@@ -420,6 +878,8 @@ def save_course_json(local_path: str, course_data: Dict[str, Any]) -> CourseScan
     if not isinstance(course_data.get("sections"), list):
         raise GiteaServiceError("课程结构 sections 必须为数组")
 
+    _persist_course_cover_to_local(base, course_data)
+
     course_file = base / "course.json"
     _write_course_json(course_file, course_data)
 
@@ -479,6 +939,58 @@ def _decode_data_url(data_url: str) -> Tuple[bytes, str]:
     return base64.b64decode(b64data), ext
 
 
+def _file_url_to_path(url: str) -> Path:
+    parsed = parse.urlparse(url)
+    if parsed.scheme.lower() != "file":
+        raise GiteaServiceError("封面文件地址格式错误")
+    raw_path = parse.unquote(parsed.path or "")
+    if os.name == "nt" and re.match(r"^/[A-Za-z]:", raw_path):
+        raw_path = raw_path[1:]
+    return Path(raw_path)
+
+
+def _persist_course_cover_to_local(base: Path, course_data: Dict[str, Any]) -> None:
+    raw_cover = course_data.get("cover")
+    if not raw_cover:
+        raw_cover = course_data.get("cover_url")
+    if not isinstance(raw_cover, str) or not raw_cover.strip():
+        return
+    cover = raw_cover.strip()
+    cover_ext = ""
+    cover_bytes: Optional[bytes] = None
+
+    if cover.startswith("data:"):
+        cover_bytes, cover_ext = _decode_data_url(cover)
+    elif cover.startswith("file://"):
+        source = _file_url_to_path(cover)
+        if source.exists() and source.is_file():
+            ext = source.suffix.lower()
+            if ext in IMAGE_EXTS:
+                cover_ext = ".jpg" if ext == ".jpeg" else ext
+                cover_bytes = source.read_bytes()
+    else:
+        source = Path(cover)
+        if source.is_absolute() and source.exists() and source.is_file():
+            ext = source.suffix.lower()
+            if ext in IMAGE_EXTS:
+                cover_ext = ".jpg" if ext == ".jpeg" else ext
+                cover_bytes = source.read_bytes()
+
+    if not cover_bytes or not cover_ext:
+        return
+    if not cover_ext.startswith("."):
+        cover_ext = f".{cover_ext}"
+    if len(cover_bytes) > MAX_FILE_SIZE:
+        raise GiteaServiceError("封面图片过大")
+
+    cover_name = f"cover{cover_ext}"
+    cover_path = base / cover_name
+    cover_path.write_bytes(cover_bytes)
+    course_data["cover"] = cover_name
+    if "cover_url" in course_data:
+        course_data.pop("cover_url", None)
+
+
 def _build_index_entry(
     course: Dict[str, Any],
     course_id: str,
@@ -514,6 +1026,20 @@ def _load_index(existing: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return existing
 
 
+def _should_fallback_to_direct_publish(branch_error: str, repo_info: Dict[str, Any]) -> bool:
+    text = (branch_error or "").lower()
+    if bool(repo_info.get("empty")):
+        return True
+    hints = [
+        "branch does not exist",
+        "old branch",
+        "base branch",
+        "reference does not exist",
+        "reference not found",
+    ]
+    return any(item in text for item in hints)
+
+
 def publish_course(
     *,
     local_path: str,
@@ -522,9 +1048,15 @@ def publish_course(
     course_id: str,
     version: str,
     meta_override: Optional[Dict[str, Any]] = None,
+    publish_branch: str = "",
+    create_pr: bool = False,
+    pr_base_branch: str = "",
+    pr_title: str = "",
+    pr_body: str = "",
+    single_course_repo: bool = False,
 ) -> Dict[str, Any]:
     scan_result = scan_course(local_path)
-    course = dict(scan_result.course)
+    course = _strip_runtime_course_fields(scan_result.course)
 
     overrides = meta_override or {}
     for key in ["title", "description", "grade", "subject", "author", "tags", "version"]:
@@ -547,20 +1079,75 @@ def publish_course(
     elif course.get("cover"):
         cover_name = Path(course["cover"]).name
 
+    # Read base index once to determine course maintainer and keep metadata.
+    base_existing_entry: Dict[str, Any] = {}
+    base_index_content = client.get_content("index.json")
+    if base_index_content and base_index_content.get("content"):
+        decoded = base64.b64decode(base_index_content["content"])
+        parsed_index = _load_index(json.loads(decoded.decode("utf-8")))
+        for item in parsed_index.get("resources", []) or []:
+            if isinstance(item, dict) and item.get("id") == course_id:
+                base_existing_entry = item
+                break
+
+    publisher = client.get_current_user()
+    maintainer = str((base_existing_entry or {}).get("maintainer") or "").strip()
+
+    default_branch = client.branch or "main"
+    base_branch = (pr_base_branch or default_branch).strip() or "main"
+    target_branch = (publish_branch or default_branch).strip() or default_branch
+    if create_pr and not publish_branch:
+        course_ref = _sanitize_ref_component(course_id, "course")
+        if publisher:
+            user_ref = _sanitize_ref_component(publisher)
+            target_branch = f"xedu/{course_ref}/{user_ref}"
+        else:
+            target_branch = f"xedu/{course_ref}"
+    if create_pr and target_branch == base_branch:
+        course_ref = _sanitize_ref_component(course_id, "course")
+        target_branch = f"xedu/{course_ref}"
+    direct_publish_fallback = False
+    if target_branch != default_branch:
+        try:
+            client.ensure_branch(target_branch, from_branch=base_branch)
+            publish_client = client.with_branch(target_branch)
+        except GiteaServiceError as exc:
+            repo_info = {}
+            try:
+                repo_info = client.get_repo_info()
+            except Exception:
+                repo_info = {}
+            if create_pr and _should_fallback_to_direct_publish(str(exc), repo_info):
+                effective_base_branch = (repo_info.get("default_branch") or base_branch or default_branch or "main").strip() or "main"
+                logger.warning(
+                    f"创建发布分支失败，降级为直发默认分支: target={target_branch} base={effective_base_branch} err={exc}"
+                )
+                target_branch = effective_base_branch
+                publish_client = client.with_branch(target_branch)
+                create_pr = False
+                direct_publish_fallback = True
+            else:
+                raise
+    else:
+        publish_client = client
+
     base = Path(local_path)
-    publish_root = f"{publish_path.rstrip('/')}/{course_id}"
+    publish_root = "" if single_course_repo else f"{publish_path.rstrip('/')}/{course_id}"
+    package_dir = "" if single_course_repo else f"{publish_root}/package"
 
     # Upload course.json (overridden)
     course_json_bytes = json.dumps(course, ensure_ascii=False, indent=2).encode("utf-8")
     if len(course_json_bytes) > MAX_FILE_SIZE:
         raise GiteaServiceError("course.json 文件过大")
-    client.upsert_file(f"{publish_root}/course.json", course_json_bytes, f"更新课程 {course_id} course.json")
+    course_json_remote = "course.json" if single_course_repo else f"{publish_root}/course.json"
+    publish_client.upsert_file(course_json_remote, course_json_bytes, f"更新课程 {course_id} course.json")
 
     # Upload cover if provided via UI
     if cover_bytes and cover_name:
         if len(cover_bytes) > MAX_FILE_SIZE:
             raise GiteaServiceError("封面图片过大")
-        client.upsert_file(f"{publish_root}/{cover_name}", cover_bytes, f"更新课程 {course_id} 封面")
+        cover_remote = cover_name if single_course_repo else f"{publish_root}/{cover_name}"
+        publish_client.upsert_file(cover_remote, cover_bytes, f"更新课程 {course_id} 封面")
 
     # Upload course files
     for file_path, rel_path in _iter_course_files(base):
@@ -571,56 +1158,107 @@ def publish_course(
         file_bytes = file_path.read_bytes()
         if len(file_bytes) > MAX_FILE_SIZE:
             raise GiteaServiceError(f"文件过大: {rel_path}")
-        remote_path = f"{publish_root}/{rel_path}"
-        client.upsert_file(remote_path, file_bytes, f"更新课程 {course_id} 文件 {rel_path}")
+        remote_path = rel_path if single_course_repo else f"{publish_root}/{rel_path}"
+        publish_client.upsert_file(remote_path, file_bytes, f"更新课程 {course_id} 文件 {rel_path}")
 
-    # Create zip package
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        zip_path = Path(tmp_dir) / f"{course_id}-{version}.zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for file_path, rel_path in _iter_course_files(base):
-                zipf.write(file_path, rel_path)
-            # Ensure updated course.json inside zip
-            zipf.writestr("course.json", course_json_bytes)
-        zip_bytes = zip_path.read_bytes()
-        if len(zip_bytes) > MAX_FILE_SIZE:
-            raise GiteaServiceError("课程包过大，请精简内容")
-        client.upsert_file(
-            f"{publish_root}/package/{course_id}-{version}.zip",
-            zip_bytes,
-            f"发布课程 {course_id} zip",
-        )
+    versioned_zip_remote = ""
+    if not single_course_repo:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            zip_path = Path(tmp_dir) / f"{course_id}-{version}.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+                for file_path, rel_path in _iter_course_files(base):
+                    if rel_path == "course.json":
+                        continue
+                    zipf.write(file_path, rel_path)
+                zipf.writestr("course.json", course_json_bytes)
+            zip_bytes = zip_path.read_bytes()
+            if len(zip_bytes) > MAX_FILE_SIZE:
+                raise GiteaServiceError("课程包过大，请精简内容")
+            versioned_zip_remote = f"{package_dir}/{course_id}-{version}.zip"
+            publish_client.upsert_file(versioned_zip_remote, zip_bytes, f"发布课程 {course_id} zip")
 
-    # Update index.json
-    index_path = "index.json"
-    existing = client.get_content(index_path)
-    index_data: Dict[str, Any] = {}
-    if existing and existing.get("content"):
-        decoded = base64.b64decode(existing["content"])
-        index_data = json.loads(decoded.decode("utf-8"))
-    index_data = _load_index(index_data)
+    if single_course_repo:
+        entry = {
+            "id": course_id,
+            "title": course.get("title", ""),
+            "description": course.get("description", ""),
+            "grade": course.get("grade", ""),
+            "subject": course.get("subject", ""),
+            "author": course.get("author", ""),
+            "version": version,
+            "updated_at": datetime.utcnow().strftime("%Y-%m-%d"),
+            "tags": course.get("tags", []) or [],
+            "course_url": "course.json",
+            "package_url": "",
+        }
+        if cover_name:
+            entry["cover_url"] = cover_name
+        if not maintainer:
+            maintainer = publisher
+        if maintainer:
+            entry["maintainer"] = maintainer
+        if publisher:
+            entry["last_publisher"] = publisher
+    else:
+        # Update index.json for multi-course repository mode.
+        index_path = "index.json"
+        existing = publish_client.get_content(index_path)
+        index_data: Dict[str, Any] = {}
+        if existing and existing.get("content"):
+            decoded = base64.b64decode(existing["content"])
+            index_data = json.loads(decoded.decode("utf-8"))
+        index_data = _load_index(index_data)
 
-    entry = _build_index_entry(course, course_id, version, publish_path, cover_name)
-    resources = index_data.get("resources", [])
-    replaced = False
-    for i, item in enumerate(resources):
-        if item.get("id") == course_id:
-            resources[i] = entry
-            replaced = True
-            break
-    if not replaced:
-        resources.append(entry)
-    index_data["resources"] = resources
-    index_data["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d")
+        entry = _build_index_entry(course, course_id, version, publish_path, cover_name)
+        if base_existing_entry:
+            for key, value in base_existing_entry.items():
+                if key not in entry:
+                    entry[key] = value
+        if not maintainer:
+            maintainer = publisher
+        if maintainer:
+            entry["maintainer"] = maintainer
+        if publisher:
+            entry["last_publisher"] = publisher
+        resources = index_data.get("resources", [])
+        replaced = False
+        for i, item in enumerate(resources):
+            if item.get("id") == course_id:
+                resources[i] = entry
+                replaced = True
+                break
+        if not replaced:
+            resources.append(entry)
+        index_data["resources"] = resources
+        index_data["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d")
 
-    index_bytes = json.dumps(index_data, ensure_ascii=False, indent=2).encode("utf-8")
-    client.upsert_file(index_path, index_bytes, f"更新课程索引 {course_id}")
+        index_bytes = json.dumps(index_data, ensure_ascii=False, indent=2).encode("utf-8")
+        publish_client.upsert_file(index_path, index_bytes, f"更新课程索引 {course_id}")
 
-    return {
+    result = {
         "course_id": course_id,
         "version": version,
         "entry": entry,
+        "branch": target_branch,
+        "maintainer": maintainer,
+        "publisher": publisher,
+        "direct_publish_fallback": direct_publish_fallback,
+        "single_course_repo": bool(single_course_repo),
     }
+    if create_pr:
+        pr_resp = client.create_pull_request(
+            head=target_branch,
+            base=base_branch,
+            title=pr_title or f"发布课程：{course.get('title') or course_id} ({version})",
+            body=pr_body or f"自动发布课程 `{course_id}`，版本 `{version}`。",
+        )
+        result["pull_request"] = {
+            "number": pr_resp.get("number"),
+            "url": pr_resp.get("html_url") or pr_resp.get("url") or "",
+            "title": pr_resp.get("title") or "",
+            "existing": bool(pr_resp.get("_existing")),
+        }
+    return result
 
 
 def resolve_raw_url(raw_base_url: str, path_or_url: str) -> str:
@@ -630,29 +1268,196 @@ def resolve_raw_url(raw_base_url: str, path_or_url: str) -> str:
     return f"{raw_base_url}/{clean}"
 
 
+def _is_syncable_repo_path(rel_path: str) -> bool:
+    clean = (rel_path or "").strip().strip("/")
+    if not clean:
+        return False
+    parts = [part for part in clean.split("/") if part]
+    if not parts:
+        return False
+    for part in parts:
+        if part in DEFAULT_EXCLUDES or part.startswith("."):
+            return False
+    return True
+
+
+def _backup_and_replace_course_dir(
+    *,
+    staged_dir: Path,
+    target_dir: Path,
+    replace_existing: bool = True,
+    backup_before_replace: bool = True,
+) -> str:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = ""
+    existing_items = list(target_dir.iterdir())
+    has_course_json = (target_dir / "course.json").exists()
+    if replace_existing and existing_items and has_course_json:
+        if backup_before_replace:
+            stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            backup_root = target_dir.parent / ".xedu_backup" / target_dir.name
+            backup_root.mkdir(parents=True, exist_ok=True)
+            backup_target = backup_root / stamp
+            shutil.copytree(target_dir, backup_target)
+            backup_path = str(backup_target)
+        for item in existing_items:
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink(missing_ok=True)
+
+    for item in staged_dir.iterdir():
+        destination = target_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, destination, dirs_exist_ok=True)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, destination)
+    return backup_path
+
+
+def _sync_single_course_repo(
+    *,
+    base_url: str,
+    repo: str,
+    branch: str,
+    raw_base_url: str,
+    target_path: str,
+    token: str = "",
+    replace_existing: bool = True,
+    backup_before_replace: bool = True,
+) -> CourseScanResult:
+    target_dir = Path(target_path)
+    tree_items = load_repo_tree_data(
+        base_url=base_url,
+        repo=repo,
+        branch=branch,
+        token=token,
+    )
+    file_paths = sorted(
+        {
+            str(item.get("path") or "").strip().strip("/")
+            for item in tree_items
+            if str(item.get("type") or "").lower() == "blob"
+            and _is_syncable_repo_path(str(item.get("path") or ""))
+        }
+    )
+    if "course.json" not in file_paths:
+        raise GiteaServiceError("仓库根目录未找到 course.json")
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        staged_dir = Path(tmp_dir) / "course"
+        staged_dir.mkdir(parents=True, exist_ok=True)
+
+        for rel_path in file_paths:
+            download_url = resolve_raw_url(raw_base_url, rel_path)
+            try:
+                data = fetch_url_bytes_with_auth_fallback(
+                    download_url,
+                    token=token,
+                    timeout=60,
+                    prefer_anonymous=True,
+                )
+            except error.HTTPError as exc:
+                if exc.code in (401, 403):
+                    raise GiteaServiceError("资源库认证失败，请检查 Gitea Token") from exc
+                if exc.code == 404:
+                    raise GiteaServiceError(f"仓库文件不存在: {rel_path}") from exc
+                raise GiteaServiceError(f"读取仓库文件失败: HTTP {exc.code} {exc.reason}") from exc
+            except (error.URLError, TimeoutError, socket.timeout) as exc:
+                raise GiteaServiceError("拉取超时，请稍后重试") from exc
+
+            destination = staged_dir / rel_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
+
+        scan_course(str(staged_dir))
+        backup_path = _backup_and_replace_course_dir(
+            staged_dir=staged_dir,
+            target_dir=target_dir,
+            replace_existing=replace_existing,
+            backup_before_replace=backup_before_replace,
+        )
+        final_result = scan_course(str(target_dir))
+        if backup_path:
+            final_result.summary["backup_path"] = backup_path
+        return final_result
+
+
 def pull_course(
     *,
     raw_base_url: str,
     course_url: str,
     package_url: str,
     target_path: str,
+    token: str = "",
+    replace_existing: bool = True,
+    backup_before_replace: bool = True,
+    single_course_repo: bool = False,
+    base_url: str = "",
+    repo: str = "",
+    branch: str = "",
 ) -> CourseScanResult:
     target_dir = Path(target_path)
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    if single_course_repo:
+        return _sync_single_course_repo(
+            base_url=base_url,
+            repo=repo,
+            branch=branch,
+            raw_base_url=raw_base_url,
+            target_path=target_path,
+            token=token,
+            replace_existing=replace_existing,
+            backup_before_replace=backup_before_replace,
+        )
 
     if not package_url:
         raise GiteaServiceError("课程包地址为空")
 
     download_url = resolve_raw_url(raw_base_url, package_url)
-    with request.urlopen(download_url, timeout=60) as resp:
-        data = resp.read()
+
+    try:
+        data = fetch_url_bytes_with_auth_fallback(
+            download_url,
+            token=token,
+            timeout=60,
+            prefer_anonymous=True,
+        )
+    except error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise GiteaServiceError("资源库认证失败，请检查 Gitea Token") from exc
+        if exc.code == 404:
+            raise GiteaServiceError("课程包不存在或索引配置错误") from exc
+        raise GiteaServiceError(f"拉取课程包失败: HTTP {exc.code} {exc.reason}") from exc
+    except (error.URLError, TimeoutError, socket.timeout) as exc:
+        raise GiteaServiceError("拉取超时，请稍后重试") from exc
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         zip_path = Path(tmp_dir) / "course.zip"
+        extract_dir = Path(tmp_dir) / "extract"
+        extract_dir.mkdir(parents=True, exist_ok=True)
         zip_path.write_bytes(data)
-        with zipfile.ZipFile(zip_path, "r") as zipf:
-            zipf.extractall(target_dir)
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zipf:
+                zipf.extractall(extract_dir)
+                extracted_root = extract_dir
+                if not (extracted_root / "course.json").exists():
+                    top_level = [item for item in extract_dir.iterdir()]
+                    if len(top_level) == 1 and top_level[0].is_dir() and (top_level[0] / "course.json").exists():
+                        extracted_root = top_level[0]
+                backup_path = _backup_and_replace_course_dir(
+                    staged_dir=extracted_root,
+                    target_dir=target_dir,
+                    replace_existing=replace_existing,
+                    backup_before_replace=backup_before_replace,
+                )
+        except zipfile.BadZipFile as exc:
+            raise GiteaServiceError("课程包格式错误，无法解压") from exc
 
     # Validate course.json after extraction
     scan_result = scan_course(str(target_dir))
+    if backup_path:
+        scan_result.summary["backup_path"] = backup_path
     return scan_result

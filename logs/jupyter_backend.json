@@ -36,3 +36,9 @@
 {"timestamp": "2025-12-27T15:33:50.453362", "level": "\u001b[32mINFO\u001b[0m", "message": "开始加载文档，路径: /Users/apple/Documents/GitHub/xedu-client/docs", "module": "logger", "function": "_log", "line": 148}
 {"timestamp": "2025-12-27T15:33:50.460397", "level": "\u001b[32mINFO\u001b[0m", "message": "成功加载 9 个Markdown文档", "module": "logger", "function": "_log", "line": 148}
 {"timestamp": "2025-12-27T15:33:50.460501", "level": "\u001b[32mINFO\u001b[0m", "message": "组件列表: ['XEdu', 'MMEdu', 'BaseNN', 'BaseML', 'BaseDT', 'XEduHub', 'XEduLLM', 'BaseDeploy']", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-25T20:52:04.651344", "level": "\u001b[32mINFO\u001b[0m", "message": "开始加载文档，路径: /Users/apple/Documents/GitHub/xedu-client/docs", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-25T20:52:04.664941", "level": "\u001b[32mINFO\u001b[0m", "message": "成功加载 9 个Markdown文档", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-02-25T20:52:04.665049", "level": "\u001b[32mINFO\u001b[0m", "message": "组件列表: ['XEdu', 'MMEdu', 'BaseNN', 'BaseML', 'BaseDT', 'XEduHub', 'XEduLLM', 'BaseDeploy']", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-03-13T09:18:17.835223", "level": "\u001b[32mINFO\u001b[0m", "message": "开始加载文档，路径: /Users/apple/Documents/GitHub/xedu-client/docs", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-03-13T09:18:17.848298", "level": "\u001b[32mINFO\u001b[0m", "message": "成功加载 9 个Markdown文档", "module": "logger", "function": "_log", "line": 148}
+{"timestamp": "2026-03-13T09:18:17.848460", "level": "\u001b[32mINFO\u001b[0m", "message": "组件列表: ['XEdu', 'MMEdu', 'BaseNN', 'BaseML', 'BaseDT', 'XEduHub', 'XEduLLM', 'BaseDeploy']", "module": "logger", "function": "_log", "line": 148}

@@ -4,7 +4,7 @@
 """
 
 from dataclasses import dataclass, asdict, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 from pathlib import Path
 
@@ -70,7 +70,40 @@ class JupyterConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'JupyterConfig':
         """从字典创建实例"""
-        return cls(**data)
+        if not isinstance(data, dict):
+            data = {}
+        allowed = {key: data[key] for key in cls.__dataclass_fields__ if key in data}
+        return cls(**allowed)
+
+
+@dataclass
+class QuickFormSettings:
+    """QuickForm CLI 配置"""
+    enabled: bool = False
+    base_url: str = "https://quickform.cn"
+    username: str = ""
+    password: str = ""
+
+    def validate(self) -> tuple[bool, list[str]]:
+        errors = []
+
+        if isinstance(self.enabled, bool) is False:
+            errors.append("QuickForm 开关必须为布尔值")
+
+        if self.enabled and not self.base_url:
+            errors.append("启用 QuickForm 时 Base URL 不能为空")
+
+        return len(errors) == 0, errors
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'QuickFormSettings':
+        if not isinstance(data, dict):
+            data = {}
+        allowed = {key: data[key] for key in cls.__dataclass_fields__ if key in data}
+        return cls(**allowed)
 
 
 @dataclass
@@ -83,6 +116,7 @@ class UIConfig:
     show_notifications: bool = True
     minimize_to_tray: bool = True
     auto_open_browser: bool = True
+    pip_use_mirror: bool = True
     resources_base_url: str = ""
     resources_repo: str = ""
     resources_branch: str = "main"
@@ -90,6 +124,13 @@ class UIConfig:
     resources_submit_url: str = ""
     resources_publish_token: str = ""
     resources_publish_path: str = "courses"
+    resources_sources: List[Dict[str, Any]] = field(default_factory=list)
+    classroom_enabled: bool = False
+    classroom_auto_discover: bool = True
+    classroom_name: str = ""
+    classroom_code: str = ""
+    classroom_teacher_code: str = ""
+    quickform: QuickFormSettings = field(default_factory=QuickFormSettings)
 
     def validate(self) -> tuple[bool, list[str]]:
         """验证配置"""
@@ -101,6 +142,22 @@ class UIConfig:
         if self.refresh_interval < 1000:
             errors.append("刷新间隔不能小于 1000 毫秒")
 
+        if isinstance(self.pip_use_mirror, bool) is False:
+            errors.append("pip 镜像开关必须为布尔值")
+
+        if not isinstance(self.resources_sources, list):
+            errors.append("课程源配置必须为数组")
+
+        if getattr(self, "classroom_enabled", None) is not None and isinstance(self.classroom_enabled, bool) is False:
+            errors.append("课堂模式开关必须为布尔值")
+
+        if getattr(self, "classroom_auto_discover", None) is not None and isinstance(self.classroom_auto_discover, bool) is False:
+            errors.append("课堂自动发现开关必须为布尔值")
+
+        quickform_valid, quickform_errors = self.quickform.validate()
+        if not quickform_valid:
+            errors.extend(quickform_errors)
+
         return len(errors) == 0, errors
 
     def to_dict(self) -> Dict[str, Any]:
@@ -110,7 +167,12 @@ class UIConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'UIConfig':
         """从字典创建实例"""
-        return cls(**data)
+        if not isinstance(data, dict):
+            data = {}
+        allowed = {key: data[key] for key in cls.__dataclass_fields__ if key in data}
+        if "quickform" in allowed:
+            allowed["quickform"] = QuickFormSettings.from_dict(allowed["quickform"])
+        return cls(**allowed)
 
 
 @dataclass
@@ -148,7 +210,10 @@ class AIConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AIConfig':
         """从字典创建实例"""
-        return cls(**data)
+        if not isinstance(data, dict):
+            data = {}
+        allowed = {key: data[key] for key in cls.__dataclass_fields__ if key in data}
+        return cls(**allowed)
 
 
 @dataclass

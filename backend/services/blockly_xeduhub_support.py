@@ -197,7 +197,7 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
             {
                 'kind': 'category',
                 'name': '逻辑',
-                'colour': '#5C81A6',
+                'colour': '#6D8EF7',
                 'visible_by_default': True,
                 'description': '条件判断与逻辑运算，编程基础积木',
                 'contents': [
@@ -213,7 +213,7 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
             {
                 'kind': 'category',
                 'name': '循环',
-                'colour': '#5CA65C',
+                'colour': '#F4B266',
                 'visible_by_default': True,
                 'description': '重复执行特定代码块，编程核心概念',
                 'contents': [
@@ -227,7 +227,7 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
             {
                 'kind': 'category',
                 'name': '数学',
-                'colour': '#5CA68E',
+                'colour': '#56C7B7',
                 'visible_by_default': True,
                 'description': '数学运算与随机数生成',
                 'contents': [
@@ -249,7 +249,7 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
             {
                 'kind': 'category',
                 'name': '文本',
-                'colour': '#5CA699',
+                'colour': '#9B8CF2',
                 'visible_by_default': True,
                 'description': '文字处理与打印输出',
                 'contents': [
@@ -272,7 +272,7 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
             {
                 'kind': 'category',
                 'name': '列表',
-                'colour': '#745CA6',
+                'colour': '#6DB6E8',
                 'visible_by_default': False,
                 'description': '集中存储多项数据，进阶数据结构',
                 'contents': [
@@ -290,13 +290,13 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
                     {'kind': 'block', 'type': 'lists_reverse'},
                 ],
             },
-            {'kind': 'category', 'name': '变量', 'custom': 'VARIABLE', 'colour': '#A65C81', 'visible_by_default': True, 'description': '存储和修改数据变量'},
-            {'kind': 'category', 'name': '函数', 'custom': 'PROCEDURE', 'colour': '#9A5CA6', 'visible_by_default': False, 'description': '代码重用与逻辑封装'},
+            {'kind': 'category', 'name': '变量', 'custom': 'VARIABLE', 'colour': '#F29C7A', 'visible_by_default': True, 'description': '存储和修改数据变量'},
+            {'kind': 'category', 'name': '函数', 'custom': 'PROCEDURE', 'colour': '#C793E8', 'visible_by_default': False, 'description': '代码重用与逻辑封装'},
             {'kind': 'sep'},
             {
                 'kind': 'category',
                 'name': 'XEduHub 推理',
-                'colour': '#4D6BFF',
+                'colour': '#5A8DEE',
                 'visible_by_default': True,
                 'description': '一键运行 AI 推理任务，快速获取结论',
                 'contents': [
@@ -316,7 +316,7 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
             {
                 'kind': 'category',
                 'name': '模型与参数',
-                'colour': '#7C4DFF',
+                'colour': '#8FA4F0',
                 'visible_by_default': False,
                 'description': '精细控制推理模型、置信度阈值等参数',
                 'contents': [
@@ -328,7 +328,7 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
             {
                 'kind': 'category',
                 'name': '底层与调试',
-                'colour': '#9C27B0',
+                'colour': '#A596C9',
                 'visible_by_default': False,
                 'description': '底层 Workflow 接口与错误排查',
                 'contents': [                    {'kind': 'block', 'type': 'xeduhub_raw_create_workflow'},
@@ -341,7 +341,7 @@ def build_xeduhub_toolbox_definition(task_type: str = 'classification') -> Dict[
             {
                 'kind': 'category',
                 'name': '扩展包',
-                'colour': '#00BFA6',
+                'colour': '#69C889',
                 'contents': [
                     {'kind': 'label', 'text': '点击上方“增加积木包”载入扩展'},
                 ],
@@ -494,81 +494,115 @@ def _build_result_summary(task: str, output: Any) -> Dict[str, Any]:
     return {'headline': headline, 'metrics': metrics, 'hints': hints}
 
 
+def _build_runtime_error(
+    *,
+    code: str,
+    message: str,
+    headline: str,
+    task: str = '',
+    model_name: str = '',
+    hints: List[str] | None = None,
+    metrics: List[Dict[str, Any]] | None = None,
+    result: Any = None,
+    artifacts: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    return {
+        'success': False,
+        'result_type': 'error',
+        'error_code': code,
+        'message': message,
+        'result': result,
+        'artifacts': artifacts or {},
+        'result_summary': {
+            'headline': headline,
+            'metrics': metrics or [],
+            'hints': hints or [],
+        },
+        'result_artifacts': {'preview_image': '', 'key_fields': {}},
+        'result_error': {
+            'code': code,
+            'task': task,
+            'model_name': model_name,
+        },
+    }
+
+
 def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
     code = str(payload.get('code') or '').strip()
     spec = payload.get('spec') if isinstance(payload.get('spec'), dict) else {}
-    task = normalize_task_type(spec.get('task') or spec.get('task_type'))
+    raw_task = str(spec.get('task') or spec.get('task_type') or '').strip()
+    task = normalize_task_type(raw_task)
     model_name = str(spec.get('model') or spec.get('model_name') or recommended_model_for_task(task)).strip()
     input_value = str(spec.get('input') or spec.get('input_path') or '').strip()
     project_root = str(payload.get('project_root') or spec.get('project_root') or '').strip()
     resolved_input = resolve_input_path(input_value, project_root)
 
-    if not task:
-        return {
-            'success': False,
-            'result_type': 'error',
-            'message': '缺少任务类型',
-            'result': None,
-            'artifacts': {'generated_python': code},
-            'result_summary': {
-                'headline': '缺少任务类型',
-                'metrics': [],
-                'hints': ['请先选择分类、检测或 OCR 任务积木。'],
-            },
-            'result_artifacts': {'preview_image': '', 'key_fields': {}},
-        }
+    if not raw_task:
+        return _build_runtime_error(
+            code='missing_task',
+            message='缺少任务类型',
+            headline='缺少任务类型',
+            hints=['请先选择分类、检测或 OCR 任务积木。'],
+            artifacts={'generated_python': code},
+        )
     if not resolved_input:
-        return {
-            'success': False,
-            'result_type': 'error',
-            'message': '请先在积木中填写输入图片路径',
-            'result': None,
-            'artifacts': {'generated_python': code},
-            'result_summary': {
-                'headline': '输入缺失',
-                'metrics': [],
-                'hints': ['先使用“选择输入图片”积木填写本地图片路径。'],
-            },
-            'result_artifacts': {'preview_image': '', 'key_fields': {}},
-        }
+        return _build_runtime_error(
+            code='missing_input',
+            message='请先在积木中填写输入图片路径',
+            headline='输入缺失',
+            task=task,
+            model_name=model_name,
+            hints=['先使用“选择输入图片”积木填写本地图片路径。'],
+            artifacts={'generated_python': code},
+        )
     if not Path(resolved_input).exists():
-        return {
-            'success': False,
-            'result_type': 'error',
-            'message': f'输入资源不存在: {resolved_input}',
-            'result': None,
-            'artifacts': {'generated_python': code},
-            'result_summary': {
-                'headline': '输入文件不存在',
-                'metrics': [{'label': '路径', 'value': resolved_input}],
-                'hints': ['请检查路径是否正确，或改为绝对路径。'],
-            },
-            'result_artifacts': {'preview_image': '', 'key_fields': {}},
-        }
+        return _build_runtime_error(
+            code='input_not_found',
+            message=f'输入资源不存在: {resolved_input}',
+            headline='输入文件不存在',
+            task=task,
+            model_name=model_name,
+            metrics=[{'label': '路径', 'value': resolved_input}],
+            hints=['请检查路径是否正确，或改为绝对路径。'],
+            artifacts={'generated_python': code},
+        )
+    supported_models = TASK_MODELS.get(task, [])
+    if supported_models and model_name not in supported_models:
+        return _build_runtime_error(
+            code='model_unavailable',
+            message=f'当前任务不支持模型: {model_name}',
+            headline='模型不可用',
+            task=task,
+            model_name=model_name,
+            metrics=[
+                {'label': '任务', 'value': TASK_LABELS.get(task, task)},
+                {'label': '模型', 'value': model_name},
+            ],
+            hints=[f"可选模型：{', '.join(supported_models)}"],
+            artifacts={'generated_python': code},
+        )
 
     try:
         from XEdu.hub import Workflow as wf  # type: ignore
     except Exception:
-        return {
-            'success': False,
-            'result_type': 'error',
-            'message': '当前环境未安装 XEduHub，无法在 Blockly 页内执行。请先安装 XEdu 后再重试。',
-            'result': {
+        return _build_runtime_error(
+            code='missing_dependency',
+            message='当前环境未安装 XEduHub，无法在 Blockly 页内执行。请先安装 XEdu 后再重试。',
+            headline='运行时缺少 XEduHub 依赖',
+            task=task,
+            model_name=model_name,
+            metrics=[
+                {'label': '任务', 'value': TASK_LABELS.get(task, task)},
+                {'label': '模型', 'value': model_name},
+            ],
+            hints=['先在平台 Python 环境安装 XEdu/XEduHub，再重新运行。'],
+            result={
                 'task_type': task,
                 'model_name': model_name,
                 'input_path': resolved_input,
             },
-            'artifacts': {'generated_python': code},
-            'result_summary': {
-                'headline': '运行时缺少 XEduHub 依赖',
-                'metrics': [
-                    {'label': '任务', 'value': TASK_LABELS.get(task, task)},
-                    {'label': '模型', 'value': model_name},
-                ],
-                'hints': ['先在平台 Python 环境安装 XEdu/XEduHub，再重新运行。'],
-            },
-            'result_artifacts': {'preview_image': '', 'key_fields': {}},
-        }
+            artifacts={'generated_python': code},
+        )
 
     try:
         workflow = wf(task=task)
@@ -606,23 +640,40 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
             },
         }
     except Exception as exc:
-        return {
-            'success': False,
-            'result_type': 'error',
-            'message': f'XEduHub 推理失败: {exc}',
-            'result': {
+        if isinstance(exc, (ModuleNotFoundError, ImportError)):
+            return _build_runtime_error(
+                code='missing_dependency',
+                message=f'XEduHub 运行依赖缺失: {exc}',
+                headline='运行时缺少 XEduHub 依赖',
+                task=task,
+                model_name=model_name,
+                metrics=[
+                    {'label': '任务', 'value': TASK_LABELS.get(task, task)},
+                    {'label': '模型', 'value': model_name},
+                ],
+                hints=['请先检查平台 Python 环境中的 XEdu/XEduHub 及其推理依赖。'],
+                result={
+                    'task_type': task,
+                    'model_name': model_name,
+                    'traceback': traceback.format_exc(limit=4),
+                },
+                artifacts={'generated_python': code},
+            )
+        return _build_runtime_error(
+            code='runtime_exception',
+            message=f'XEduHub 推理失败: {exc}',
+            headline='推理执行失败',
+            task=task,
+            model_name=model_name,
+            metrics=[
+                {'label': '任务', 'value': TASK_LABELS.get(task, task)},
+                {'label': '模型', 'value': model_name},
+            ],
+            hints=['请检查模型名、输入资源及环境依赖。'],
+            result={
                 'task_type': task,
                 'model_name': model_name,
                 'traceback': traceback.format_exc(limit=4),
             },
-            'artifacts': {'generated_python': code},
-            'result_summary': {
-                'headline': '推理执行失败',
-                'metrics': [
-                    {'label': '任务', 'value': TASK_LABELS.get(task, task)},
-                    {'label': '模型', 'value': model_name},
-                ],
-                'hints': ['请检查模型名、输入资源及环境依赖。'],
-            },
-            'result_artifacts': {'preview_image': '', 'key_fields': {}},
-        }
+            artifacts={'generated_python': code},
+        )

@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XEdu Client 测试手册</title>
+  <style>
+    @page { size: A4; margin: 10mm; }
+    :root {
+      --bg: #f4efe6;
+      --paper: #fffdf8;
+      --ink: #1f2a37;
+      --muted: #64748b;
+      --line: #d8cfc1;
+      --accent: #b45309;
+      --soft: #f6ead7;
+      --ok: #166534;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 13px/1.45 "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    }
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      background: var(--paper);
+      padding: 10mm;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .hero-main, .hero-side, .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: white;
+      padding: 10px 12px;
+    }
+    .title {
+      margin: 0 0 4px;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .subtitle {
+      color: var(--muted);
+      margin: 0;
+      font-size: 12px;
+    }
+    .repo {
+      margin-top: 8px;
+      padding: 7px 9px;
+      border-radius: 8px;
+      background: var(--soft);
+      color: #7c2d12;
+      font-size: 12px;
+      word-break: break-all;
+    }
+    .side-title {
+      margin: 0 0 6px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .side-list, .list {
+      margin: 0;
+      padding-left: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .card h2 {
+      margin: 0 0 6px;
+      font-size: 15px;
+    }
+    .mini {
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+    .list li, .side-list li {
+      margin: 2px 0;
+    }
+    .checklist {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: white;
+      padding: 10px 12px;
+    }
+    .checklist h2 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+    .checks {
+      columns: 2;
+      column-gap: 18px;
+      margin: 0;
+      padding-left: 0;
+      list-style: none;
+    }
+    .checks li {
+      break-inside: avoid;
+      margin: 0 0 6px;
+      padding-left: 22px;
+      position: relative;
+    }
+    .checks li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 3px;
+      width: 11px;
+      height: 11px;
+      border: 1.5px solid #9ca3af;
+      border-radius: 3px;
+      background: #fff;
+    }
+    .foot {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .tip {
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fffdfa;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .ok { color: var(--ok); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="hero-main">
+        <h1 class="title">XEdu Client 测试手册</h1>
+        <p class="subtitle">版本 2.0.0 · 一页验收版</p>
+        <div class="repo">公开测试仓库：http://8.145.44.54:3000/admin/zhangjiang-image-recognition</div>
+      </div>
+      <div class="hero-side">
+        <div class="side-title">测试数据</div>
+        <ul class="side-list">
+          <li>资源库地址：<strong>http://8.145.44.54:3000</strong></li>
+          <li>仓库路径：<strong>admin/zhangjiang-image-recognition</strong></li>
+          <li>分支：<strong>main</strong></li>
+          <li>本地目录：<strong>Documents/XEduCourses</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>1. 安装启动</h2>
+        <div class="mini">先确认安装包能正常打开</div>
+        <ul class="list">
+          <li>mac：打开 `XEdu Client-2.0.0-arm64-mac.zip` 并启动 App</li>
+          <li>win：运行 `XEdu Client-2.0.0.exe` 完成安装</li>
+          <li><span class="ok">预期：</span> 应用启动正常，页面不是空白</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>2. 角色模式</h2>
+        <div class="mini">学生默认进入，教师需解锁</div>
+        <ul class="list">
+          <li>学生模式仅显示：主控台 / AI 助手 / 文档中心</li>
+          <li>教师登录后显示：课程资源 / 设置</li>
+          <li><span class="ok">预期：</span> 退出教师模式后教师入口消失</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>3. 课堂功能</h2>
+        <div class="mini">重点看“进入即上课”是否成立</div>
+        <ul class="list">
+          <li>教师在课节页开启“第 N 节课堂”</li>
+          <li>学生在主控台的“课堂接入”点击课堂卡片进入</li>
+          <li><span class="ok">预期：</span> 不输课堂口令，不再确认路径，直接进入当前课节实验</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>4. 课程资源</h2>
+        <div class="mini">本地创建、导入本地、云端导入都要通</div>
+        <ul class="list">
+          <li>创建新课程：只填课程名 + 目录即可保存</li>
+          <li>导入本地课程：能读 `course.json`</li>
+          <li>云端导入：输入公开仓库地址后可读取并导入</li>
+          <li><span class="ok">预期：</span> 导入后能看到课节和实验结构</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>5. 实验访问</h2>
+        <div class="mini">HTML 和 Notebook 都要能打开</div>
+        <ul class="list">
+          <li>打开一个同时包含 `html` 和 `ipynb` 的实验</li>
+          <li>点击“打开 HTML”</li>
+          <li>点击“进入 Notebook”</li>
+          <li><span class="ok">预期：</span> HTML 直接打开，Notebook 在主控台打开</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>6. Gitea 同步</h2>
+        <div class="mini">一门课一个仓库</div>
+        <ul class="list">
+          <li>首次上传：填写资源库地址 / 仓库路径 / 分支</li>
+          <li>上传更新：修改本地课程后点击“上传更新”</li>
+          <li>拉取更新：远端有新版本后点击“拉取更新”</li>
+          <li><span class="ok">预期：</span> 本地已改动时会先提示确认</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="checklist">
+      <h2>最小回归清单</h2>
+      <ul class="checks">
+        <li>学生模式正常</li>
+        <li>教师登录正常</li>
+        <li>创建新课程正常</li>
+        <li>导入本地课程正常</li>
+        <li>云端导入公开课程正常</li>
+        <li>实验 HTML 正常打开</li>
+        <li>实验 Notebook 正常打开</li>
+        <li>开启课堂正常</li>
+        <li>学生进入课堂后直接进当前课节实验</li>
+        <li>上传课程正常</li>
+        <li>上传更新正常</li>
+        <li>拉取更新正常</li>
+      </ul>
+    </section>
+
+    <section class="foot">
+      <div class="tip">说明：mac 包未签名，首次打开可能需要手动放行。</div>
+      <div class="tip">说明：发布到 Gitea 属于写操作，私有仓库或写权限场景通常需要 Token。</div>
+    </section>
+  </div>
+</body>
+</html>

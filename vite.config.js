@@ -10,7 +10,8 @@ export default defineConfig({
     assetsDir: 'assets',
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'renderer/index.html')
+        main: resolve(__dirname, 'renderer/index.html'),
+        'blockly-workspace': resolve(__dirname, 'renderer/js/blockly-workspace.js')
       },
       output: {
         entryFileNames: 'assets/[name].js',

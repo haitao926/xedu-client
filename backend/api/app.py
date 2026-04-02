@@ -9,16 +9,18 @@ Flask 应用构建模块
 from __future__ import annotations
 
 import json
+import mimetypes
+import os
 import platform
 import sys
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from flask import Flask, jsonify, request, Response, stream_with_context
+from flask import Flask, jsonify, request, Response, stream_with_context, send_file, after_this_request
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
@@ -26,7 +28,6 @@ from models.config import (
     AppConfig,
     JupyterConfig,
     SystemInfo,
-    AIConfig,
 )
 from services.jupyter_service import JupyterManager
 from services.config_service import ConfigService
@@ -36,6 +37,10 @@ from services.markdown_document_service import get_markdown_document_service
 from services.gitea_service import (
     GiteaClient,
     GiteaServiceError,
+    build_single_course_entry,
+    find_course_entry_from_index,
+    load_index_data,
+    load_course_data_from_repo,
     publish_course,
     pull_course,
     scan_course,
@@ -43,8 +48,56 @@ from services.gitea_service import (
     scan_folder,
 )
 from services.project_service import ProjectService
+from services.quickform_service import (
+    QuickFormService,
+    QuickFormServiceError,
+)
+from services.quickform_agent_service import (
+    QuickFormAgentService,
+    QuickFormAgentToolAdapter,
+    looks_like_confirmation,
+    looks_like_quickform_request,
+)
+from services.xedu_pack_agent_service import (
+    XEduPackAgentService,
+    XEduPackToolAdapter,
+    looks_like_xedu_pack_request,
+)
+from services.blockly_builder_agent_service import (
+    BlocklyBuilderAgentService,
+    BlocklyBuilderToolAdapter,
+    looks_like_blockly_builder_request,
+)
+from services.classroom_service import (
+    ClassroomService,
+    ClassroomServiceError,
+)
 from utils.logger import get_logger
 from .config_utils import merge_jupyter_payload, normalize_config_payload, build_ai_service
+from .quickform_runtime import (
+    inject_quickform_file,
+    merge_quickform_config,
+    normalize_quickform_public_config,
+)
+from .resource_runtime import (
+    build_blockly_playground_html,
+    build_single_course_source_entry,
+    collect_resource_sources,
+    decode_local_preview_token,
+    derive_course_id_from_path,
+    guess_blockly_notebook_path,
+    guess_blockly_python_path,
+    guess_blockly_toolbox_path,
+    get_frontend_build_dir,
+    normalize_resource_source,
+    resolve_local_course_file,
+    resolve_resource_source_for_request,
+    execute_xeduhub_runtime,
+)
+from .routes.ai import register_ai_routes
+from .routes.classroom import register_classroom_routes
+from .routes.quickform import register_quickform_routes
+from .routes.resources import register_resource_routes
 
 logger = get_logger(__name__)
 
@@ -62,6 +115,7 @@ def create_app(config_dir=None) -> Flask:
     jupyter_manager = JupyterManager(app_config.jupyter)
     ai_service = AIService(app_config.ai)
     project_service = ProjectService()
+    classroom_service = ClassroomService()
 
     app = Flask(__name__)
     CORS(app)
@@ -82,6 +136,192 @@ def create_app(config_dir=None) -> Flask:
         }
         return status
 
+    def _resolve_resources_token(ui_config, token_override: str = "") -> str:
+        """
+        Resolve publish token with server-side fallback for classroom-wide deployment.
+        Priority: request override > UI config > XEDU_GITEA_TOKEN env.
+        """
+        override = (token_override or "").strip()
+        if override:
+            return override
+        config_token = (getattr(ui_config, "resources_publish_token", "") or "").strip()
+        if config_token:
+            return config_token
+        return (os.getenv("XEDU_GITEA_TOKEN", "") or "").strip()
+
+    def _parse_bool(value: Any, default: bool = True) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"false", "0", "no", "off"}:
+                return False
+            if text in {"true", "1", "yes", "on"}:
+                return True
+        if value is None:
+            return default
+        return bool(value)
+
+    def _build_quickform_service(overrides: Dict[str, Any] | None = None) -> QuickFormService:
+        cfg = merge_quickform_config(app_config.ui, _parse_bool, overrides)
+        if not cfg.get("enabled"):
+            raise QuickFormServiceError("请先在设置中启用 QuickForm")
+        return QuickFormService(
+            base_url=cfg["base_url"],
+            username=cfg["username"],
+            password=cfg["password"],
+        )
+
+    def _save_local_course(local_path: str, course: Dict[str, Any]) -> Dict[str, Any]:
+        result = save_course_json(local_path, course)
+        normalized_course = dict(result.course or {})
+        normalized_course["local_path"] = local_path
+        normalized_course["source"] = "local"
+        return {
+            "course": normalized_course,
+            "summary": result.summary,
+        }
+
+    def _build_quickform_tool_adapter(overrides: Dict[str, Any] | None = None) -> QuickFormAgentToolAdapter:
+        def mutation_guard(request_context: Dict[str, Any]) -> tuple[bool, str]:
+            if not _validate_teacher_code(request):
+                return False, "教师权限校验失败"
+            if not request_context.get("confirmed"):
+                return False, "请先让教师明确确认后再执行写入"
+            return True, ""
+
+        return QuickFormAgentToolAdapter(
+            quickform_factory=lambda: _build_quickform_service(overrides),
+            mutation_guard=mutation_guard,
+            html_injector=lambda local_path, html_path, quickform, create_backup=True: inject_quickform_file(
+                local_path,
+                html_path,
+                quickform,
+                create_backup,
+                _parse_bool,
+                resolve_local_course_file,
+            ),
+            course_saver=_save_local_course,
+        )
+
+    def _build_quickform_agent_service(overrides: Dict[str, Any] | None = None) -> QuickFormAgentService:
+        runner_factory = app.config.get("KIMI_AGENT_RUNNER_FACTORY")
+        runner = runner_factory() if callable(runner_factory) else None
+        return QuickFormAgentService(
+            ai_config=_build_ai_service(overrides).config,
+            tool_adapter=_build_quickform_tool_adapter(overrides),
+            fallback_ai_service=_build_ai_service(overrides),
+            runner=runner,
+        )
+
+    def _publish_xedu_pack_output(local_path: str, options: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        payload = options or {}
+        course_meta = payload.get("course") if isinstance(payload.get("course"), dict) else {}
+        source_override = (course_meta.get("origin") if isinstance(course_meta.get("origin"), dict) else {}) or {}
+        source_id = str(payload.get("source_id") or source_override.get("source_id") or "").strip()
+        version = str(payload.get("version") or course_meta.get("version") or "").strip()
+
+        selected_source = resolve_resource_source_for_request(
+            app_config.ui,
+            _parse_bool,
+            source_id=source_id,
+            source_override=source_override,
+        )
+        if not selected_source:
+            raise GiteaServiceError("未配置可用的课程发布源")
+
+        base_url = (selected_source.get("base_url") or "").rstrip("/")
+        repo = (selected_source.get("repo") or "").strip("/")
+        branch = (selected_source.get("branch") or "main").strip() or "main"
+        publish_path = (selected_source.get("publish_path") or "courses").strip("/") or "courses"
+        token = _resolve_resources_token(app_config.ui, "")
+        single_course_repo = _parse_bool(selected_source.get("single_course_repo"), True)
+
+        if not token:
+            raise GiteaServiceError("写操作需要 Token（请在设置中填写或由服务端配置 XEDU_GITEA_TOKEN）")
+
+        client = GiteaClient(base_url, repo, branch, token)
+        repo_status = client.ensure_repo(create_if_missing=True, private=False, description="")
+        result = publish_course(
+            local_path=local_path,
+            client=client,
+            publish_path=publish_path,
+            course_id=str(course_meta.get("id") or "").strip(),
+            version=version,
+            meta_override={
+                "title": course_meta.get("title") or "",
+                "description": course_meta.get("description") or "",
+                "grade": course_meta.get("grade") or "",
+                "subject": course_meta.get("subject") or "",
+                "author": course_meta.get("author") or "",
+                "tags": course_meta.get("tags") or [],
+                "version": version,
+            },
+            publish_branch="",
+            create_pr=True,
+            pr_base_branch=branch,
+            single_course_repo=single_course_repo,
+        )
+        return {
+            "result": result,
+            "pr_url": ((result.get("pull_request") or {}).get("url") or ""),
+            "repo_created": bool(repo_status.get("created")),
+            "origin": {
+                "source_id": selected_source.get("id", ""),
+                "base_url": base_url,
+                "repo": repo,
+                "branch": branch,
+                "publish_path": "" if single_course_repo else publish_path,
+                "single_course_repo": single_course_repo,
+            },
+        }
+
+    def _build_xedu_pack_tool_adapter(overrides: Dict[str, Any] | None = None) -> XEduPackToolAdapter:
+        def mutation_guard(request_context: Dict[str, Any]) -> tuple[bool, str]:
+            if not _validate_teacher_code(request):
+                return False, "教师权限校验失败"
+            if not request_context.get("confirmed"):
+                return False, "请先让教师明确确认后再执行写入"
+            return True, ""
+
+        return XEduPackToolAdapter(
+            mutation_guard=mutation_guard,
+            publisher=_publish_xedu_pack_output,
+        )
+
+    def _build_xedu_pack_agent_service(overrides: Dict[str, Any] | None = None) -> XEduPackAgentService:
+        runner_factory = app.config.get("KIMI_AGENT_RUNNER_FACTORY")
+        runner = runner_factory() if callable(runner_factory) else None
+        return XEduPackAgentService(
+            ai_config=_build_ai_service(overrides).config,
+            tool_adapter=_build_xedu_pack_tool_adapter(overrides),
+            fallback_ai_service=_build_ai_service(overrides),
+            runner=runner,
+        )
+
+    def _build_blockly_builder_tool_adapter(overrides: Dict[str, Any] | None = None) -> BlocklyBuilderToolAdapter:
+        def mutation_guard(request_context: Dict[str, Any]) -> tuple[bool, str]:
+            if not _validate_teacher_code(request):
+                return False, "教师权限校验失败"
+            if not request_context.get("confirmed"):
+                return False, "请先让教师明确确认后再执行写入"
+            return True, ""
+
+        return BlocklyBuilderToolAdapter(
+            mutation_guard=mutation_guard,
+            draft_root=config_service.config_dir / "blockly_drafts",
+        )
+
+    def _build_blockly_builder_agent_service(overrides: Dict[str, Any] | None = None) -> BlocklyBuilderAgentService:
+        runner_factory = app.config.get("KIMI_AGENT_RUNNER_FACTORY")
+        runner = runner_factory() if callable(runner_factory) else None
+        return BlocklyBuilderAgentService(
+            ai_config=_build_ai_service(overrides).config,
+            tool_adapter=_build_blockly_builder_tool_adapter(overrides),
+            fallback_ai_service=_build_ai_service(overrides),
+            runner=runner,
+        )
+
     def _merge_jupyter_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         """Wrap merge helper with current config + persistence."""
         return merge_jupyter_payload(
@@ -98,6 +338,32 @@ def create_app(config_dir=None) -> Flask:
     def _build_ai_service(overrides: Dict[str, Any]):
         """Build AI service with overrides merged onto current config."""
         return build_ai_service(app_config, overrides)
+
+    def _resolve_api_port() -> int:
+        try:
+            host = request.host or ""
+            if ":" in host:
+                return int(host.rsplit(":", 1)[-1])
+        except Exception:
+            pass
+        return int(os.environ.get("XEDU_API_PORT") or os.environ.get("XEDU_BACKEND_PORT") or "5123")
+
+    def _get_teacher_code_from_request(req) -> str:
+        payload = req.get_json(silent=True) or {}
+        return (
+            req.headers.get("X-Teacher-Code")
+            or req.args.get("teacher_code")
+            or payload.get("teacher_code")
+            or payload.get("teacherCode")
+            or ""
+        )
+
+    def _validate_teacher_code(req) -> bool:
+        required = (app_config.ui.classroom_teacher_code or "").strip()
+        if not required:
+            return True
+        provided = _get_teacher_code_from_request(req)
+        return (provided or "").strip() == required
 
     def _collect_system_info() -> SystemInfo:
         info = SystemInfo(
@@ -122,6 +388,66 @@ def create_app(config_dir=None) -> Flask:
             info.jupyter_notebook_version = None
 
         return info
+
+    register_quickform_routes(app, {
+        "build_quickform_service": _build_quickform_service,
+        "merge_quickform_config": lambda overrides=None: merge_quickform_config(app_config.ui, _parse_bool, overrides),
+        "logger": logger,
+    })
+
+    register_ai_routes(app, {
+        "ai_service": ai_service,
+        "build_ai_service": _build_ai_service,
+        "build_quickform_agent_service": _build_quickform_agent_service,
+        "build_xedu_pack_agent_service": _build_xedu_pack_agent_service,
+        "build_blockly_builder_agent_service": _build_blockly_builder_agent_service,
+        "looks_like_confirmation": looks_like_confirmation,
+        "looks_like_quickform_request": looks_like_quickform_request,
+        "looks_like_xedu_pack_request": looks_like_xedu_pack_request,
+        "looks_like_blockly_builder_request": looks_like_blockly_builder_request,
+        "config_service": config_service,
+        "get_app_config": lambda: app_config,
+    })
+
+    register_classroom_routes(app, {
+        "classroom_service": classroom_service,
+        "logger": logger,
+        "validate_teacher_code": _validate_teacher_code,
+        "resolve_api_port": _resolve_api_port,
+    })
+
+    register_resource_routes(app, {
+        "get_app_config": lambda: app_config,
+        "logger": logger,
+        "parse_bool": _parse_bool,
+        "resolve_resources_token": _resolve_resources_token,
+        "normalize_resource_source": lambda raw, fallback_id: normalize_resource_source(raw, fallback_id, _parse_bool),
+        "collect_resource_sources": lambda ui_config: collect_resource_sources(ui_config, _parse_bool),
+        "resolve_resource_source_for_request": lambda ui_config, **kwargs: resolve_resource_source_for_request(
+            ui_config,
+            _parse_bool,
+            **kwargs,
+        ),
+        "build_single_course_source_entry": build_single_course_source_entry,
+        "derive_course_id_from_path": derive_course_id_from_path,
+        "decode_local_preview_token": decode_local_preview_token,
+        "resolve_local_course_file": resolve_local_course_file,
+        "normalize_quickform_public_config": lambda raw: normalize_quickform_public_config(raw, _parse_bool),
+        "inject_quickform_file": lambda local_path, html_path, quickform, create_backup=True: inject_quickform_file(
+            local_path,
+            html_path,
+            quickform,
+            create_backup,
+            _parse_bool,
+            resolve_local_course_file,
+        ),
+        "guess_blockly_toolbox_path": guess_blockly_toolbox_path,
+        "guess_blockly_python_path": guess_blockly_python_path,
+        "guess_blockly_notebook_path": guess_blockly_notebook_path,
+        "get_frontend_build_dir": get_frontend_build_dir,
+        "build_blockly_playground_html": build_blockly_playground_html,
+        "execute_xeduhub_runtime": execute_xeduhub_runtime,
+    })
 
     @app.errorhandler(Exception)
     def _handle_exception(error: Exception):
@@ -246,90 +572,6 @@ def create_app(config_dir=None) -> Flask:
             }
         )
 
-    @app.route("/api/ai/ask", methods=["POST"])
-    def ai_ask():
-        payload = request.get_json() or {}
-        question = (payload.get("question") or "").strip()
-        if not question:
-            return (
-                jsonify({"success": False, "message": "问题不能为空"}),
-                400,
-            )
-
-        image_data = payload.get("image")
-        history = payload.get("history", [])
-        overrides = payload.get("config", {})
-        
-        service = _build_ai_service(overrides)
-        # 未配置 API Key 时直接返回 400，避免继续请求外部接口
-        if not service.config.api_key:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "AI 未配置：请先在设置中填写 API Key",
-                    }
-                ),
-                400,
-            )
-
-        response = service.ask_question(question, image_data, history)
-        status_code = 200 if response.get("success") else 500
-        return jsonify(response), status_code
-
-    @app.route("/api/ai/test_config", methods=["POST"])
-    def ai_test_config():
-        payload = request.get_json() or {}
-        overrides = payload.get("config", {})
-
-        # 构建临时AI服务进行测试
-        test_service = _build_ai_service(overrides)
-
-        # 测试连接
-        result = test_service.test_connection()
-        status_code = 200 if result.get("success") else 500
-        return jsonify(result), status_code
-
-    @app.route("/api/ai/save_config", methods=["POST"])
-    def ai_save_config():
-        nonlocal app_config
-        payload = request.get_json() or {}
-
-        # 更新AI配置
-        ai_config_dict = app_config.ai.to_dict()
-        if payload.get("config"):
-            ai_config_dict.update(payload["config"])
-
-        # 创建新的AI配置
-        new_ai_config = AIConfig.from_dict(ai_config_dict)
-
-        # 验证配置
-        is_valid, errors = new_ai_config.validate()
-        if not is_valid:
-            return (
-                jsonify({
-                    "success": False,
-                    "message": "AI配置验证失败",
-                    "errors": errors
-                }),
-                400,
-            )
-
-        # 更新应用配置
-        app_config.ai = new_ai_config
-
-        # 保存配置
-        if config_service.save_config(app_config):
-            # 更新AI服务实例
-            ai_service.config = new_ai_config
-            return jsonify({
-                "success": True,
-                "message": "AI配置保存成功",
-                "config": new_ai_config.to_dict()
-            })
-
-            return jsonify({"success": False, "message": "保存AI配置失败"}), 500
-
     @app.route("/api/python/pip", methods=["POST"])
     def manage_python_package():
         """
@@ -395,8 +637,10 @@ def create_app(config_dir=None) -> Flask:
                             yield line
                     ret = proc.wait()
                     yield f"\n=== 退出码: {ret} ===\n"
+                    yield f"__XEDU_PIP_RESULT__={json.dumps({'return_code': ret, 'success': ret == 0}, ensure_ascii=False)}\n"
                 except Exception as e:
                     yield f"\n[error] {str(e)}\n"
+                    yield f"__XEDU_PIP_RESULT__={json.dumps({'return_code': -1, 'success': False, 'message': str(e)}, ensure_ascii=False)}\n"
 
             return Response(stream_with_context(generate()), mimetype="text/plain")
 
@@ -515,204 +759,6 @@ def create_app(config_dir=None) -> Flask:
         except Exception as e:
             logger.error(f"获取文档组件失败: {e}")
             return jsonify({"success": False, "message": "获取组件失败"}), 500
-
-    @app.route("/api/resources/index")
-    def get_resources_index():
-        ui_config = app_config.ui
-        base_url = (ui_config.resources_base_url or "").rstrip("/")
-        repo = (ui_config.resources_repo or "").strip("/")
-        branch = (ui_config.resources_branch or "main").strip() or "main"
-        index_path = (ui_config.resources_index_path or "index.json").lstrip("/")
-        submit_url = (ui_config.resources_submit_url or "").strip()
-
-        if not base_url or not repo:
-            return jsonify({
-                "success": False,
-                "message": "课程资源库未配置",
-                "index": {},
-                "submit_url": submit_url,
-                "repo_url": "",
-                "raw_base_url": "",
-                "branch": branch
-            })
-
-        repo_url = f"{base_url}/{repo}"
-        raw_base_url = f"{repo_url}/raw/{branch}"
-        index_url = f"{raw_base_url}/{index_path}"
-        if not submit_url:
-            submit_url = f"{repo_url}/issues/new"
-
-        try:
-            with urllib.request.urlopen(index_url, timeout=10) as response:
-                raw = response.read().decode("utf-8")
-            index_data = json.loads(raw)
-            return jsonify({
-                "success": True,
-                "index": index_data,
-                "source_url": index_url,
-                "repo_url": repo_url,
-                "raw_base_url": raw_base_url,
-                "branch": branch,
-                "submit_url": submit_url
-            })
-        except urllib.error.HTTPError as e:
-            logger.error(f"获取资源索引失败: HTTP {e.code} {e.reason}")
-            return jsonify({
-                "success": False,
-                "message": "获取资源索引失败",
-                "error": f"HTTP {e.code} {e.reason}"
-            }), 500
-        except Exception as e:
-            logger.error(f"获取资源索引失败: {e}")
-            return jsonify({
-                "success": False,
-                "message": "获取资源索引失败",
-                "error": str(e)
-            }), 500
-
-    @app.route("/api/resources/scan", methods=["POST"])
-    def scan_resource_course():
-        payload = request.get_json(silent=True) or {}
-        local_path = payload.get("local_path", "")
-        init_if_missing = bool(payload.get("init_if_missing"))
-        init_meta = payload.get("meta") or {}
-        auto_build = bool(payload.get("auto_build"))
-        try:
-            result = scan_course(
-                local_path,
-                init_if_missing=init_if_missing,
-                init_meta=init_meta,
-                auto_build=auto_build,
-            )
-            return jsonify({
-                "success": True,
-                "course": result.course,
-                "summary": result.summary,
-            })
-        except GiteaServiceError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        except Exception as e:
-            logger.error(f"扫描课程失败: {e}")
-            return jsonify({"success": False, "message": "扫描课程失败"}), 500
-
-    @app.route("/api/resources/publish", methods=["POST"])
-    def publish_resource_course():
-        payload = request.get_json(silent=True) or {}
-        local_path = payload.get("local_path", "")
-        course_id = payload.get("course_id", "")
-        version = payload.get("version", "")
-        meta_override = payload.get("meta_override") or {}
-
-        ui_config = app_config.ui
-        base_url = (ui_config.resources_base_url or "").rstrip("/")
-        repo = (ui_config.resources_repo or "").strip("/")
-        branch = (ui_config.resources_branch or "main").strip() or "main"
-        publish_path = (getattr(ui_config, "resources_publish_path", "") or "courses").strip("/") or "courses"
-        token = (getattr(ui_config, "resources_publish_token", "") or "").strip()
-
-        if not base_url or not repo:
-            return jsonify({"success": False, "message": "课程资源库未配置"}), 400
-        if not token:
-            return jsonify({"success": False, "message": "未配置 Gitea Token"}), 400
-
-        try:
-            client = GiteaClient(base_url, repo, branch, token)
-            result = publish_course(
-                local_path=local_path,
-                client=client,
-                publish_path=publish_path,
-                course_id=course_id,
-                version=version,
-                meta_override=meta_override,
-            )
-            return jsonify({
-                "success": True,
-                "result": result,
-            })
-        except GiteaServiceError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        except Exception as e:
-            logger.error(f"发布课程失败: {e}")
-            return jsonify({"success": False, "message": "发布课程失败"}), 500
-
-    @app.route("/api/resources/pull", methods=["POST"])
-    def pull_resource_course():
-        payload = request.get_json(silent=True) or {}
-        course_url = payload.get("course_url", "")
-        package_url = payload.get("package_url", "")
-        target_path = payload.get("target_path", "")
-
-        ui_config = app_config.ui
-        base_url = (ui_config.resources_base_url or "").rstrip("/")
-        repo = (ui_config.resources_repo or "").strip("/")
-        branch = (ui_config.resources_branch or "main").strip() or "main"
-        publish_path = (getattr(ui_config, "resources_publish_path", "") or "courses").strip("/") or "courses"
-
-        if not base_url or not repo:
-            return jsonify({"success": False, "message": "课程资源库未配置"}), 400
-
-        raw_base_url = f"{base_url}/{repo}/raw/{branch}"
-
-        if not target_path:
-            default_root = Path.home() / "Documents" / "XeduCourses"
-            default_root.mkdir(parents=True, exist_ok=True)
-            course_id = (course_url or "").split("/")[-2] if course_url else "course"
-            target_path = str(default_root / course_id)
-
-        try:
-            result = pull_course(
-                raw_base_url=raw_base_url,
-                course_url=course_url,
-                package_url=package_url,
-                target_path=target_path,
-            )
-            return jsonify({
-                "success": True,
-                "course": result.course,
-                "summary": result.summary,
-                "local_path": target_path,
-                "publish_path": publish_path,
-            })
-        except GiteaServiceError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        except Exception as e:
-            logger.error(f"导入课程失败: {e}")
-            return jsonify({"success": False, "message": "导入课程失败"}), 500
-
-    @app.route("/api/resources/save-course", methods=["POST"])
-    def save_resource_course():
-        payload = request.get_json(silent=True) or {}
-        local_path = payload.get("local_path", "")
-        course = payload.get("course") or {}
-        try:
-            result = save_course_json(local_path, course)
-            return jsonify({
-                "success": True,
-                "course": result.course,
-                "summary": result.summary,
-            })
-        except GiteaServiceError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        except Exception as e:
-            logger.error(f"保存课程结构失败: {e}")
-            return jsonify({"success": False, "message": "保存课程结构失败"}), 500
-
-    @app.route("/api/resources/scan-folder", methods=["POST"])
-    def scan_resource_folder():
-        payload = request.get_json(silent=True) or {}
-        base_path = payload.get("base_path", "")
-        folder_path = payload.get("folder_path", "")
-        try:
-            files = scan_folder(base_path, folder_path)
-            return jsonify({
-                "success": True,
-                "files": files
-            })
-        except GiteaServiceError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        except Exception as e:
-            logger.error(f"读取材料失败: {e}")
-            return jsonify({"success": False, "message": "读取材料失败"}), 500
 
     @app.route("/api/projects/templates", methods=["GET"])
     def get_project_templates():

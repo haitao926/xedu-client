@@ -241,7 +241,8 @@ class ConfigService:
                 'refresh_interval': data.get('refresh_interval', 2000),
                 'show_notifications': data.get('show_notifications', True),
                 'minimize_to_tray': data.get('minimize_to_tray', True),
-                'auto_open_browser': data.get('auto_open_browser', True)
+                'auto_open_browser': data.get('auto_open_browser', True),
+                'pip_use_mirror': data.get('pip_use_mirror', True),
             }
 
             # 设置默认AI配置

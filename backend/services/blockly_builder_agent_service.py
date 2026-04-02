@@ -485,13 +485,15 @@ class BlocklyBuilderToolAdapter:
             'unsupported_features': unsupported,
             'convertible_subset': ['assign', 'if', 'for-range', 'while', 'print'],
         }
+        pedagogy_profile = runtime_config.get('pedagogy_profile', {})
+        default_blocks = (toolbox_validation.get('normalized') or toolbox).get('required_block_types', [])
         return {
             'success': True,
             'message': '已生成 Python→Blockly 草稿计划',
             'needs_confirmation': True,
             'summary': (
                 f"将根据 Python 生成 Blockly 积木包到 `{output_dir}`，输出 toolbox/workspace/runtime 三件套。"
-                f" 不支持语法数量：{len(unsupported)}。"
+                f" 默认层级：{pedagogy_profile.get('level_default', 'L1')}，不支持语法数量：{len(unsupported)}。"
             ),
             'draft_name': slug,
             'title': resolved_title,
@@ -500,6 +502,8 @@ class BlocklyBuilderToolAdapter:
             'workspace_xml': workspace_xml,
             'runtime_config': runtime_config,
             'unsupported_syntax': unsupported,
+            'pedagogy_profile': pedagogy_profile,
+            'default_blocks': default_blocks,
         }
 
     def apply_python_to_blockly_pack(
@@ -544,6 +548,8 @@ class BlocklyBuilderToolAdapter:
             'generated_files': [str(toolbox_path), str(workspace_path), str(runtime_path)],
             'unsupported_syntax': prepared.get('unsupported_syntax') or [],
             'runtime_config': prepared.get('runtime_config') or {},
+            'pedagogy_profile': prepared.get('pedagogy_profile') or {},
+            'default_blocks': prepared.get('default_blocks') or [],
         }
 
 

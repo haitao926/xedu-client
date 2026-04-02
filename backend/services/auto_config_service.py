@@ -117,7 +117,7 @@ class AutoConfigService:
                         'version': version_info,
                         'type': 'system'
                     })
-            except:
+            except (subprocess.SubprocessError, OSError):
                 continue
 
         # 检查常见安装位置
@@ -143,7 +143,7 @@ class AutoConfigService:
                             'version': result.stdout.strip(),
                             'type': 'installation'
                         })
-                except:
+                except (subprocess.SubprocessError, OSError):
                     continue
 
         # 选择最佳候选（优先选择安装版本，其次是系统版本）

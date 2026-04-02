@@ -7,3 +7,6 @@ psutil==5.9.0
 markdown==3.5.1
 Pygments==2.16.1
 PyYAML
+jupyterlab-language-pack-zh-CN==4.5.post1
+xedu-python==0.0.1
+kimi-agent-sdk

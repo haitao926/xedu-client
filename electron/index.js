@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
     // 日志监听
     onLogUpdate: (callback) => ipcRenderer.on('log-update', (event, log) => callback(log)),
+    onDeepLinkOpenPractice: (callback) => ipcRenderer.on('deep-link-open-practice', (event, payload) => callback(payload)),
 
     // 文件夹选择
     selectFolder: () => ipcRenderer.invoke('select-folder'),

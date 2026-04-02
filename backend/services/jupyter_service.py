@@ -13,6 +13,7 @@ import threading
 import json
 import psutil
 import socket
+import importlib.util
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
@@ -466,7 +467,7 @@ class JupyterManager:
                             if self._http_failure_count < self._http_failure_threshold:
                                 logger.debug(f"Grace on port {conn.laddr.port} after verification failure ({self._http_failure_count}/{self._http_failure_threshold})")
                                 return True
-            except:
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
 
             return False
@@ -508,9 +509,9 @@ class JupyterManager:
                                             'pid': proc.pid,
                                             'port': port
                                         }
-                            except:
+                            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                                 continue
-                except:
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         except Exception as e:
             logger.debug(f"Error finding external Jupyter: {e}")
@@ -558,7 +559,7 @@ class JupyterManager:
                     # 快速验证是否是Jupyter
                     if self._verify_jupyter_on_port(port):
                         return port
-            except:
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
 
         return None
@@ -570,7 +571,7 @@ class JupyterManager:
             for conn in process.connections():
                 if conn.status == 'LISTEN' and 8888 <= conn.laddr.port <= 8898:
                     return conn.laddr.port
-        except:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
         return None
 
@@ -706,7 +707,7 @@ class JupyterManager:
                     try:
                         import os
                         os.nice(-5)  # 提高优先级
-                    except:
+                    except (OSError, PermissionError):
                         pass
             except Exception as e:
                 logger.warning(f"无法设置高优先级，使用默认优先级: {e}")
@@ -914,8 +915,8 @@ class JupyterManager:
         env["LANG"] = "en_US.UTF-8"
         env["LC_ALL"] = "en_US.UTF-8"
         env["LANGUAGE"] = "en"
-        # 显式告诉 JupyterLab 使用英文，避免缺失语言包时卡死
-        env["JUPYTER_CONFIG_DATA"] = json.dumps({"appLanguage": "en"})
+        app_language = self._resolve_jupyter_locale()
+        env["JUPYTER_CONFIG_DATA"] = json.dumps({"appLanguage": app_language})
         # 本地回环不走代理，避免健康检查被代理截断
         env["NO_PROXY"] = "127.0.0.1,localhost"
         # 让 Jupyter 优先使用当前环境的 kernelspec
@@ -1040,7 +1041,7 @@ set
             # 清理临时文件
             try:
                 temp_bat.unlink()
-            except:
+            except (OSError, FileNotFoundError):
                 pass
 
             if result.returncode == 0:
@@ -1208,7 +1209,7 @@ env
                     try:
                         child.terminate()
                         logger.debug(f"Terminated child process: PID {child.pid}")
-                    except:
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass
 
                 # 优雅终止主进程
@@ -1225,11 +1226,11 @@ env
                     for child in children:
                         try:
                             child.wait(timeout=1)
-                        except:
+                        except psutil.TimeoutExpired:
                             try:
                                 child.kill()
                                 logger.debug(f"Force killed child process: PID {child.pid}")
-                            except:
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
                                 pass
 
                 except psutil.TimeoutExpired:
@@ -1238,7 +1239,7 @@ env
                     for child in children:
                         try:
                             child.kill()
-                        except:
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
                             pass
                     process.kill()
 
@@ -1273,7 +1274,7 @@ env
                             if time.time() - create_time < 300:  # 5分钟内启动的
                                 logger.info(f"Found recent Jupyter process: PID {proc.pid}, terminating...")
                                 proc.terminate()
-                        except:
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
                             pass
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
@@ -1366,8 +1367,21 @@ env
         suffix = "/tree" if self.config.use_notebook else "/lab"
         # 使用指定的端口或配置的端口
         actual_port = port or self.config.port
-        # 强制 locale=en，避免缺失中文语言包时前端无限加载
-        return f"http://localhost:{actual_port}{suffix}?locale=en"
+        locale = self._resolve_jupyter_locale()
+        return f"http://localhost:{actual_port}{suffix}?locale={locale}"
+
+    def _resolve_jupyter_locale(self) -> str:
+        """Resolve locale for JupyterLab/Notebook UI."""
+        env_locale = os.environ.get("XEDU_JUPYTER_LOCALE") or os.environ.get("JUPYTER_LOCALE")
+        locale = (env_locale or "zh-CN").strip() or "en"
+
+        if locale.lower().startswith("zh"):
+            if importlib.util.find_spec("jupyterlab_language_pack_zh_CN") is None:
+                logger.warning("未检测到中文语言包，回退到英文界面")
+                return "en"
+            return "zh-CN"
+
+        return locale
 
     def _start_protection(self):
         """启动进程保护线程"""

@@ -166,6 +166,9 @@ class BlocklyBuilderRouteTestCase(unittest.TestCase):
         self.assertTrue(any(path.endswith('.toolbox.json') for path in result['generated_files']))
         self.assertTrue(any(path.endswith('.blockly.xml') for path in result['generated_files']))
         self.assertTrue(any(path.endswith('.runtime.json') for path in result['generated_files']))
+        self.assertIn('pedagogy_profile', result)
+        self.assertEqual(result['pedagogy_profile'].get('level_default'), 'L1')
+        self.assertTrue(isinstance(result.get('default_blocks'), list))
 
 
 if __name__ == '__main__':

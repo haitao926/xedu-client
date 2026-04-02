@@ -18,14 +18,26 @@ const BACKEND_PORT = parseInt(
 const BACKEND_READY_PATH = process.env.XEDU_BACKEND_READY_PATH || '/api/health';
 const BACKEND_TIMEOUT_MS = 30000;
 const BACKEND_RETRY_INTERVAL_MS = 1000;
+const XEDU_PROTOCOL = 'xedu';
 
 let mainWindow;
 let backendProcess;
 let cleanupBackend;
 let backendReadyPromise;
 let quitting = false;
+let pendingPracticeDeepLink = null;
 const gotTheLock = app.requestSingleInstanceLock();
 let jupyterManagedPid = null;
+
+const DEV_RENDERER_CANDIDATES = [
+    process.env.ELECTRON_RENDERER_URL,
+    'http://127.0.0.1:3000',
+    'http://localhost:3000',
+    'http://127.0.0.1:3001',
+    'http://localhost:3001',
+    'http://127.0.0.1:5173',
+    'http://localhost:5173'
+].filter(Boolean);
 
 // 规范化 Jupyter URL，修正偶发的 "/lablocale=en"（缺少 '?') 等问题
 function normalizeJupyterUrl(url) {
@@ -121,6 +133,63 @@ function findProcessOnPort(port) {
     return null;
 }
 
+function probeRendererUrl(targetUrl, timeoutMs = 1200) {
+    return new Promise((resolve) => {
+        try {
+            const url = new URL(targetUrl);
+            const req = http.request(
+                {
+                    host: url.hostname,
+                    port: url.port || 80,
+                    path: url.pathname || '/',
+                    method: 'GET',
+                    timeout: timeoutMs,
+                },
+                (res) => {
+                    const contentType = String(res.headers['content-type'] || '');
+                    if (!(res.statusCode >= 200 && res.statusCode < 500 && contentType.includes('text/html'))) {
+                        res.resume();
+                        resolve(false);
+                        return;
+                    }
+
+                    let body = '';
+                    res.setEncoding('utf8');
+                    res.on('data', (chunk) => {
+                        if (body.length < 8192) {
+                            body += chunk;
+                        }
+                    });
+                    res.on('end', () => {
+                        const looksLikeXEduRenderer =
+                            body.includes('<title>XEdu Client</title>') ||
+                            body.includes('正在启动 XEdu Client') ||
+                            body.includes('/@vite/client');
+                        resolve(looksLikeXEduRenderer);
+                    });
+                }
+            );
+            req.on('error', () => resolve(false));
+            req.on('timeout', () => {
+                req.destroy();
+                resolve(false);
+            });
+            req.end();
+        } catch (_) {
+            resolve(false);
+        }
+    });
+}
+
+async function resolveRendererUrl() {
+    for (const url of DEV_RENDERER_CANDIDATES) {
+        if (await probeRendererUrl(url)) {
+            return url;
+        }
+    }
+    return null;
+}
+
 function createWindow() {
     const isDev = !app.isPackaged;
     
@@ -165,17 +234,20 @@ function createWindow() {
     };
 
     if (isDev) {
-        const devUrl = process.env.ELECTRON_RENDERER_URL || 'http://localhost:3000';
-        
-        const loadDevServer = () => {
-            mainWindow.loadURL(devUrl).catch((err) => {
-                console.log(`等待开发服务器启动... (${err.message})`);
-                setTimeout(loadDevServer, 1000);
-            });
-        };
+        resolveRendererUrl().then((devUrl) => {
+            if (devUrl) {
+                console.log(`加载前端开发服务器: ${devUrl}`);
+                mainWindow.loadURL(devUrl).catch((err) => {
+                    console.log(`开发服务器加载失败，回退到本地构建页面: ${err.message}`);
+                    loadBundledApp();
+                });
+                mainWindow.webContents.openDevTools();
+                return;
+            }
 
-        loadDevServer();
-        mainWindow.webContents.openDevTools();
+            console.log('未检测到可用的前端开发服务器，改为加载 build/index.html');
+            loadBundledApp();
+        });
     } else {
         loadBundledApp();
     }
@@ -184,6 +256,62 @@ function createWindow() {
         shell.openExternal(url);
         return { action: 'deny' };
     });
+
+    mainWindow.webContents.on('did-finish-load', () => {
+        if (pendingPracticeDeepLink) {
+            mainWindow.webContents.send('deep-link-open-practice', pendingPracticeDeepLink);
+            pendingPracticeDeepLink = null;
+        }
+    });
+
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+        jupyterView = null;
+    });
+}
+
+function registerXeduProtocol() {
+    try {
+        if (process.defaultApp && process.argv.length >= 2) {
+            app.setAsDefaultProtocolClient(XEDU_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+            return;
+        }
+        app.setAsDefaultProtocolClient(XEDU_PROTOCOL);
+    } catch (error) {
+        console.warn('注册 xedu 协议失败:', error.message || error);
+    }
+}
+
+function parsePracticeDeepLink(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return null;
+    try {
+        const parsed = new URL(rawUrl);
+        if (parsed.protocol !== `${XEDU_PROTOCOL}:`) return null;
+        const action = (parsed.hostname || parsed.pathname.replace(/^\/+/, '') || '').trim();
+        if (action !== 'open-practice') return null;
+        const projectDir = (parsed.searchParams.get('project') || '').trim();
+        const filePath = (parsed.searchParams.get('file') || '').trim();
+        const kind = (parsed.searchParams.get('kind') || '').trim();
+        if (!projectDir || !filePath) return null;
+        return { projectDir, filePath, kind };
+    } catch (_) {
+        return null;
+    }
+}
+
+function dispatchPracticeDeepLink(payload) {
+    if (!payload) return;
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        if (mainWindow.webContents.isLoading()) {
+            pendingPracticeDeepLink = payload;
+            return;
+        }
+        mainWindow.webContents.send('deep-link-open-practice', payload);
+        return;
+    }
+    pendingPracticeDeepLink = payload;
 }
 
 // 允许在 BrowserView 中嵌入 Jupyter：移除 CSP/X-Frame 限制
@@ -623,77 +751,118 @@ let jupyterView = null;
 const { BrowserView } = require('electron');
 
 function setupJupyterView() {
+    const hasValidWindow = () => Boolean(mainWindow && !mainWindow.isDestroyed());
+    const hasValidView = () =>
+        Boolean(jupyterView && jupyterView.webContents && !jupyterView.webContents.isDestroyed());
+    const ensureValidViewRef = () => {
+        if (!hasValidView()) {
+            jupyterView = null;
+            return false;
+        }
+        return true;
+    };
+    const isDestroyedViewError = (error) =>
+        String(error?.message || '').includes('destroyed child view');
+    const createFreshView = async (safeUrl, bounds) => {
+        const view = new BrowserView({
+            webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+                session: mainWindow.webContents.session,
+                webSecurity: false,
+                allowRunningInsecureContent: true
+            }
+        });
+
+        view.webContents.once('destroyed', () => {
+            if (jupyterView === view) {
+                jupyterView = null;
+            }
+        });
+
+        if (mainWindow.getBrowserView() && mainWindow.getBrowserView() !== view) {
+            mainWindow.setBrowserView(null);
+        }
+        mainWindow.setBrowserView(view);
+        if (bounds) {
+            view.setBounds(bounds);
+        }
+        view.setAutoResize({ width: true, height: true, horizontal: true, vertical: true });
+        try {
+            await view.webContents.loadURL(safeUrl);
+        } catch (e) {
+            console.error('Failed to load Jupyter URL:', e);
+        }
+        jupyterView = view;
+    };
+
     ipcMain.handle('jupyter:create-view', async (event, url, bounds) => {
-        if (!mainWindow) return;
+        if (!hasValidWindow()) {
+            return { success: false, error: 'main-window-unavailable' };
+        }
 
         const safeUrl = normalizeJupyterUrl(url);
 
         console.log('正在创建/更新 Jupyter 视图:', safeUrl, bounds);
 
         // 如果已存在，仅更新 URL (如果不同)
-        if (jupyterView) {
-            // 确保它在最上层
-            mainWindow.setBrowserView(jupyterView);
-            
-            // 更新位置
-            if (bounds) {
-                jupyterView.setBounds(bounds);
-            }
-            
-            // 如果 URL 不同，加载新 URL
-            if (jupyterView.webContents.getURL() !== safeUrl) {
-                await jupyterView.webContents.loadURL(safeUrl);
-            }
-            return;
-        }
-
-        // 创建新视图
-        jupyterView = new BrowserView({
-            webPreferences: {
-                nodeIntegration: false,
-                contextIsolation: true,
-                session: mainWindow.webContents.session, // 共享会话
-                webSecurity: false, // 放宽同源策略以嵌入本地 Jupyter
-                allowRunningInsecureContent: true
-            }
-        });
-
-        mainWindow.setBrowserView(jupyterView);
-        
-        if (bounds) {
-            jupyterView.setBounds(bounds);
-        }
-
-        // 自动调整大小属性 - 让视图随窗口变化
-        jupyterView.setAutoResize({ width: true, height: true, horizontal: true, vertical: true });
-
-        // 加载 Jupyter URL
-        try {
-            await jupyterView.webContents.loadURL(safeUrl);
-        } catch (e) {
-            console.error('Failed to load Jupyter URL:', e);
-        }
-    });
-
-    ipcMain.handle('jupyter:update-bounds', (event, bounds) => {
-        if (jupyterView && mainWindow) {
-            // 简单校验 bounds
-            if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
-            
+        if (ensureValidViewRef()) {
             try {
-                // 确保视图已附加
+                // 确保它在最上层
                 if (mainWindow.getBrowserView() !== jupyterView) {
                     mainWindow.setBrowserView(jupyterView);
                 }
-                jupyterView.setBounds(bounds);
-            } catch (e) {
-                console.error('更新视图位置失败:', e);
+
+                // 更新位置
+                if (bounds) {
+                    jupyterView.setBounds(bounds);
+                }
+
+                // 如果 URL 不同，加载新 URL
+                if (jupyterView.webContents.getURL() !== safeUrl) {
+                    await jupyterView.webContents.loadURL(safeUrl);
+                }
+                return { success: true, reused: true };
+            } catch (error) {
+                console.warn('复用旧 Jupyter 视图失败，准备重建:', error?.message || error);
+                jupyterView = null;
             }
+        }
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                await createFreshView(safeUrl, bounds);
+                return { success: true, recreated: true, attempt };
+            } catch (error) {
+                console.error('创建 Jupyter 视图失败:', error);
+                jupyterView = null;
+                if (!isDestroyedViewError(error) || attempt === 1) {
+                    return { success: false, error: error?.message || 'create-view-failed' };
+                }
+            }
+        }
+        return { success: false, error: 'create-view-failed' };
+    });
+
+    ipcMain.handle('jupyter:update-bounds', (event, bounds) => {
+        if (!hasValidWindow() || !ensureValidViewRef()) return;
+        // 简单校验 bounds
+        if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+
+        try {
+            // 确保视图已附加
+            if (mainWindow.getBrowserView() !== jupyterView) {
+                mainWindow.setBrowserView(jupyterView);
+            }
+            jupyterView.setBounds(bounds);
+        } catch (e) {
+            console.error('更新视图位置失败:', e);
+            jupyterView = null;
         }
     });
 
     ipcMain.handle('jupyter:set-visibility', (event, visible) => {
-        if (!jupyterView || !mainWindow) return;
+        if (!hasValidWindow() || !ensureValidViewRef()) return;
         
         if (visible) {
             // 显示视图
@@ -707,26 +876,29 @@ function setupJupyterView() {
     });
 
     ipcMain.handle('jupyter:destroy-view', () => {
-        if (jupyterView && mainWindow) {
-            console.log('销毁 Jupyter 视图');
-            mainWindow.removeBrowserView(jupyterView);
-            // 显式销毁 WebContents 以释放资源
-            try {
-                // jupyterView.webContents.destroy(); // 某些版本 Electron 可能不稳定，remove 即可
-                // 将引用置空，等待 GC
-            } catch(e) {}
-            jupyterView = null;
+        if (!ensureValidViewRef()) return { success: true };
+        console.log('销毁 Jupyter 视图');
+        try {
+            if (hasValidWindow() && mainWindow.getBrowserView() === jupyterView) {
+                mainWindow.removeBrowserView(jupyterView);
+            } else if (hasValidWindow()) {
+                mainWindow.setBrowserView(null);
+            }
+        } catch (e) {
+            console.warn('移除 Jupyter 视图失败:', e?.message || e);
         }
+        jupyterView = null;
+        return { success: true };
     });
 
     ipcMain.handle('jupyter:reload', () => {
-        if (jupyterView) {
+        if (ensureValidViewRef()) {
             jupyterView.webContents.reload();
         }
     });
     
     ipcMain.handle('jupyter:go-back', () => {
-        if (jupyterView && jupyterView.webContents.canGoBack()) {
+        if (ensureValidViewRef() && jupyterView.webContents.canGoBack()) {
             jupyterView.webContents.goBack();
         }
     });
@@ -735,12 +907,7 @@ function setupJupyterView() {
         await shell.openExternal(url);
     });
 
-    // 监听主窗口关闭，清理视图
-    if (mainWindow) {
-        mainWindow.on('closed', () => {
-            jupyterView = null;
-        });
-    }
+    // 主窗口关闭时在 createWindow 中统一清理引用
 }
 
 function setupMenu() {
@@ -800,7 +967,11 @@ function setupMenu() {
 if (!gotTheLock) {
     app.quit();
 } else {
-    app.on('second-instance', () => {
+    app.on('second-instance', (event, argv) => {
+        const deepLinkArg = (argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`));
+        if (deepLinkArg) {
+            dispatchPracticeDeepLink(parsePracticeDeepLink(deepLinkArg));
+        }
         if (mainWindow) {
             if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.focus();
@@ -808,15 +979,22 @@ if (!gotTheLock) {
     });
 
     app.whenReady().then(async () => {
+        registerXeduProtocol();
         setupJupyterCspBypass();
         setupMenu();
         setupJupyterView(); // 初始化 Jupyter 视图管理器
-        // 优先创建窗口，避免启动阶段的空白等待
-        createWindow();
-        startBackendServer().catch((error) => {
+        try {
+            await startBackendServer();
+        } catch (error) {
             console.error('后端服务器未能正常启动', error);
             dialog.showErrorBox('后端启动失败', error.message || '请查看日志了解详情');
-        });
+        }
+        createWindow();
+    });
+
+    app.on('open-url', (event, url) => {
+        event.preventDefault();
+        dispatchPracticeDeepLink(parsePracticeDeepLink(url));
     });
 
     app.on('window-all-closed', () => {

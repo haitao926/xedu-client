@@ -1,5 +1,21 @@
 // UI 工具函数
 
+function hasVisibleModal() {
+    return Boolean(document.querySelector('.modal-overlay.show'));
+}
+
+function shouldShowJupyterView() {
+    const consoleActive = Boolean(document.getElementById('main')?.classList.contains('active'));
+    return consoleActive && !hasVisibleModal();
+}
+
+function syncJupyterVisibilityForModalState() {
+    if (!(window.app && window.app.jupyter && window.app.jupyter.setVisibility)) {
+        return;
+    }
+    window.app.jupyter.setVisibility(shouldShowJupyterView());
+}
+
 // 日志函数
 export function log(message, type = 'info') {
     const displayMessage = typeof message === 'object' ? JSON.stringify(message) : message;
@@ -26,6 +42,15 @@ export function log(message, type = 'info') {
 
 // 切换页面 Tab
 export function showTab(tabId, navItem) {
+    if (tabId === 'settings') {
+        const settingsNav = document.getElementById('nav-settings-item');
+        const hiddenForStudent = settingsNav && settingsNav.style.display === 'none';
+        if (hiddenForStudent) {
+            tabId = 'main';
+            navItem = document.getElementById('nav-main-item') || navItem;
+        }
+    }
+
     // 1. 处理导航菜单高亮
     if (navItem) {
         // 移除所有 active 类
@@ -45,31 +70,46 @@ export function showTab(tabId, navItem) {
     if (targetSection) {
         targetSection.classList.add('active');
     }
+    document.body.classList.toggle('blockly-toolbar-top', tabId === 'blockly-workspace');
+
+    const titleMap = {
+        main: {
+            title: '总控制台',
+            subtitle: '',
+        },
+        'blockly-workspace': {
+            title: 'Blockly',
+            subtitle: '',
+        },
+        'ai-assistant': {
+            title: 'AI 助手',
+            subtitle: '教师优先的课程助教工作台',
+        },
+        resources: {
+            title: '课程资源',
+            subtitle: '浏览课程、实验与文件，并按需打开到实验环境',
+        },
+        settings: {
+            title: '设置',
+            subtitle: '系统、模型与资源源配置',
+        },
+    };
+    const titleConfig = titleMap[tabId] || titleMap.main;
+    const titleEl = document.getElementById('page-title');
+    const subtitleEl = document.getElementById('page-subtitle');
+    if (titleEl && titleConfig?.title) titleEl.textContent = titleConfig.title;
+    if (subtitleEl && titleConfig?.subtitle) subtitleEl.textContent = titleConfig.subtitle;
 
     // 3. 特殊处理：Jupyter 视图的显隐
-    // BrowserView 是悬浮在最上层的，切换到非主页时必须隐藏它
+    // BrowserView 是悬浮在最上层的，离开总控制台时必须隐藏它
     if (window.app && window.app.jupyter && window.app.jupyter.setVisibility) {
-        if (tabId === 'main') {
-            // 回到主页，显示 Jupyter
-            window.app.jupyter.setVisibility(true);
-        } else {
-            // 离开主页，隐藏 Jupyter
-            window.app.jupyter.setVisibility(false);
-        }
-    }
-
-    // 4. 初始化特定页面功能
-    if (tabId === 'docs') {
-        // 优先使用已注册的全局模块
-        if (window.app && window.app.docs && window.app.docs.initDocsPage) {
-            window.app.docs.initDocsPage();
-        } else {
-            // 回退方案：动态导入
-            import('./docs.js').then(docs => {
-                docs.initDocsPage();
-            }).catch(err => {
-                console.error('加载文档模块失败:', err);
-            });
+        window.app.jupyter.setVisibility(shouldShowJupyterView());
+        if (tabId !== 'main') {
+            const card = document.getElementById('jupyter-card');
+            if (card && card.classList.contains('fullscreen')) {
+                card.classList.remove('fullscreen');
+                document.body.classList.remove('focus-mode');
+            }
         }
     }
 
@@ -84,6 +124,10 @@ export function showTab(tabId, navItem) {
             });
         }
     }
+
+    window.dispatchEvent(new CustomEvent('xedu:tab-changed', {
+        detail: { tabId },
+    }));
 }
 
 // 模态框控制
@@ -93,6 +137,7 @@ export function showModal(modalIdOrTitle, message, path, icon = '✓') {
         const modal = document.getElementById(modalIdOrTitle);
         if (modal) {
             modal.classList.add('show');
+            syncJupyterVisibilityForModalState();
         } else {
             console.warn(`Modal with ID '${modalIdOrTitle}' not found.`);
         }
@@ -121,6 +166,7 @@ export function showModal(modalIdOrTitle, message, path, icon = '✓') {
             }
         }
         modal.classList.add('show');
+        syncJupyterVisibilityForModalState();
     }
 }
 
@@ -131,6 +177,7 @@ export function hideModal(modalId) {
             modal.classList.remove('show');
             // 清除所有内联样式，让 CSS 默认样式生效
             modal.removeAttribute('style');
+            syncJupyterVisibilityForModalState();
         }
     } else {
         // 如果没有传 ID，尝试关闭所有打开的模态框
@@ -139,6 +186,7 @@ export function hideModal(modalId) {
             modal.classList.remove('show');
             modal.removeAttribute('style');
         });
+        syncJupyterVisibilityForModalState();
     }
 }
 
@@ -149,9 +197,11 @@ export function initModalListeners() {
         // 查找所有显示的模态框
         const modals = document.querySelectorAll('.modal-overlay.show');
         modals.forEach(modal => {
+            if (modal.dataset.lockModal === 'true') return;
             // 如果点击的是模态框遮罩层本身（即外部区域），则关闭
             if (event.target === modal) {
                 modal.classList.remove('show');
+                syncJupyterVisibilityForModalState();
             }
         });
     });
@@ -161,7 +211,11 @@ export function initModalListeners() {
         if (event.key === 'Escape') {
             const modals = document.querySelectorAll('.modal-overlay.show');
             if (modals.length > 0) {
-                modals.forEach(modal => modal.classList.remove('show'));
+                modals.forEach(modal => {
+                    if (modal.dataset.lockModal === 'true') return;
+                    modal.classList.remove('show');
+                });
+                syncJupyterVisibilityForModalState();
             }
         }
     });

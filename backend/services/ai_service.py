@@ -228,7 +228,7 @@ class AIService:
                     error_detail = response.json()
                     if 'error' in error_detail:
                         error_msg += f" - {error_detail['error'].get('message', '未知错误')}"
-                except:
+                except (ValueError, KeyError):
                     error_msg += f" - {response.text}"
 
                 logger.error(error_msg)

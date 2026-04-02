@@ -9,14 +9,17 @@
     "preview": "npx vite preview",
     "clean": "rimraf build",
     "full-build": "npm run clean && build.bat",
-    "start-api": "python backend/backend_main.py",
+    "start-api": "python3 backend/backend_main.py || python backend/backend_main.py",
     "test-api": "curl http://127.0.0.1:5123/api/health",
     "electron": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"electron .\"",
     "electron:build": "npm run build && electron-builder",
     "electron:pack": "npm run build && electron-builder --dir"
   },
-  "dependencies": {},
+  "dependencies": {
+    "blockly": "^12.5.1",
+    "jszip": "^3.10.1"
+  },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "electron": "^39.2.1",
@@ -42,10 +45,6 @@
     ],
     "extraResources": [
       {
-        "from": "python_env",
-        "to": "python_env"
-      },
-      {
         "from": "backend",
         "to": "backend"
       },
@@ -53,30 +52,30 @@
         "from": "config",
         "to": "config"
       },
-                                    {
-                                      "from": "docs",
-                                      "to": "docs"
-                                    },
-                                    {
-                                      "from": "resources/xedu-logo.ico",
-                                      "to": "app.ico"
-                                    }
-                                  ],
-                                  "nsis": {
-                                    "oneClick": false,
-                                    "allowToChangeInstallationDirectory": true,
-                                    "createDesktopShortcut": true,
-                                    "createStartMenuShortcut": true,
-                                    "shortcutName": "Xedu Client",
-                                    "uninstallDisplayName": "Xedu Client Uninstall",
-                                    "artifactName": "${productName}-${version}.${ext}",
-                                    "deleteAppDataOnUninstall": false,
-                                    "displayLanguageSelector": false,
-                                    "language": "2052",
-                                    "installerIcon": "resources/xedu-logo.ico",
-                                    "uninstallerIcon": "resources/xedu-logo.ico",
-                                    "installerHeaderIcon": "resources/xedu-logo.ico"
-                                  },
+      {
+        "from": "docs",
+        "to": "docs"
+      },
+      {
+        "from": "resources/xedu-logo.ico",
+        "to": "app.ico"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Xedu Client",
+      "uninstallDisplayName": "Xedu Client Uninstall",
+      "artifactName": "${productName}-${version}.${ext}",
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false,
+      "language": "2052",
+      "installerIcon": "resources/xedu-logo.ico",
+      "uninstallerIcon": "resources/xedu-logo.ico",
+      "installerHeaderIcon": "resources/xedu-logo.ico"
+    },
     "win": {
       "target": [
         {
@@ -94,7 +93,13 @@
       ],
       "forceCodeSigning": false,
       "signAndEditExecutable": false,
-      "icon": "resources/xedu-logo.ico"
+      "icon": "resources/xedu-logo.ico",
+      "extraResources": [
+        {
+          "from": "python_env_win",
+          "to": "python_env"
+        }
+      ]
     },
     "mac": {
       "icon": "resources/xedu-logo.icns",
@@ -105,8 +110,15 @@
             "arm64"
           ]
         }
+      ],
+      "extraResources": [
+        {
+          "from": "python_env",
+          "to": "python_env"
+        }
       ]
-    }  },
+    }
+  },
   "keywords": [
     "jupyter",
     "notebook",

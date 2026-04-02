@@ -180,18 +180,36 @@ class JupyterAPI extends APIClient {
         return this.get('/api/load_config');
     }
 
+    async testQuickForm(config = {}) {
+        return this.post('/api/quickform/test', { config });
+    }
+
+    async listQuickFormTasks(config = {}) {
+        return this.post('/api/quickform/tasks', { config });
+    }
+
+    async createQuickFormTask(payload = {}) {
+        return this.post('/api/quickform/tasks/create', payload);
+    }
+
+    async injectQuickForm(payload = {}) {
+        return this.post('/api/resources/quickform/inject', payload);
+    }
+
     // 环境检测
     async detectPython() {
         return this.get('/api/detect_python');
     }
 
     // AI助手
-    async askAI(image, question, history = [], config = null) {
+    async askAI(image, question, history = [], config = null, context = null) {
         return this.post('/api/ai/ask', {
             image,
             question,
             history,
-            config
+            config,
+            context,
+            teacher_code: context?.teacher_mode?.code || ''
         });
     }
 

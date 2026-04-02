@@ -4,8 +4,8 @@ if (!window[APP_KEY]) {
     window[APP_KEY] = {
         ui: {},
         jupyter: {},
+        workspace: {},
         ai: {},
-        docs: {},
         system: {},
         internal: {}
     };

@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
     // 日志监听
     onLogUpdate: (callback) => ipcRenderer.on('log-update', (event, log) => callback(log)),
+    onDeepLinkOpenPractice: (callback) => ipcRenderer.on('deep-link-open-practice', (event, payload) => callback(payload)),
 
     // 兼容旧的特定方法调用 (如果还有遗留代码使用它们)
     selectFolder: () => ipcRenderer.invoke('select-folder'),

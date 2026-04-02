@@ -5,6 +5,7 @@ let checkTimer = null;
 let currentJupyterUrl = '';
 let isViewAttached = false;
 let isAttaching = false;
+let allowAutoAttach = false;
 let resizeObserver = null;
 const LAST_PROJECT_KEY = 'xedu-last-project-dir';
 let lastProjectDir = loadLastProjectDir();
@@ -57,6 +58,12 @@ function normalizeJupyterUrl(url) {
         .replace('/treelocale=', '/tree?locale=');
 }
 let statusFailureCount = 0; // 新增：状态检查失败计数器
+
+function shouldDisplayEmbeddedJupyter() {
+    const workspaceActive = Boolean(document.getElementById('main')?.classList.contains('active'));
+    const hasVisibleModal = Boolean(document.querySelector('.modal-overlay.show'));
+    return workspaceActive && !hasVisibleModal;
+}
 
 // Ensure API calls hit the backend over HTTP even when loaded via file://
 const DEFAULT_API_BASE = (typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
@@ -131,9 +138,10 @@ function stopViewSync() {
     }
 }
 
-async function attachJupyterView(url) {
+async function attachJupyterView(url, options = {}) {
     if (!url) return;
-    if (isAttaching || isViewAttached) return;
+    if (isAttaching) return;
+    if (isViewAttached && !options.force) return;
 
     const normalizedUrl = normalizeJupyterUrl(url);
 
@@ -162,7 +170,10 @@ async function attachJupyterView(url) {
 
         if (bounds) {
             log('正在挂载 Jupyter 视图...', 'info');
-            await window.electronAPI.invoke('jupyter:create-view', normalizedUrl, bounds);
+            const result = await window.electronAPI.invoke('jupyter:create-view', normalizedUrl, bounds);
+            if (result && result.success === false) {
+                throw new Error(result.error || 'jupyter-create-view-failed');
+            }
             isViewAttached = true;
             
             // Hide placeholder content, keep container for layout
@@ -178,6 +189,7 @@ async function attachJupyterView(url) {
             }
 
             startViewSync();
+            await setVisibility(shouldDisplayEmbeddedJupyter());
         }
     } catch (e) {
         console.error('挂载视图失败:', e);
@@ -245,6 +257,7 @@ export function toggleFullscreen() {
     if (!card) return;
     
     const isFullscreen = card.classList.toggle('fullscreen');
+    document.body.classList.toggle('focus-mode', isFullscreen);
     
     if (isFullscreen) {
         if (icon) {
@@ -268,9 +281,91 @@ export function toggleFullscreen() {
     }, 300);
 }
 
+function normalizePathForCompare(path) {
+    return (path || '').toString().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function normalizeNotebookPath(filePath, projectDir) {
+    if (!filePath) return '';
+    let normalized = filePath.toString().replace(/\\/g, '/');
+    const base = (projectDir || '').toString().replace(/\\/g, '/').replace(/\/+$/, '');
+    if (base && normalizePathForCompare(normalized).startsWith(normalizePathForCompare(base) + '/')) {
+        normalized = normalized.slice(base.length + 1);
+    }
+    return normalized.replace(/^\/+/, '');
+}
+
+function buildNotebookUrl(baseUrl, filePath) {
+    if (!baseUrl || !filePath) return baseUrl;
+    try {
+        const url = new URL(baseUrl);
+        const basePath = url.pathname.replace(/\/+$/, '');
+        const useLab = basePath.includes('/lab');
+        const prefix = useLab ? '/lab/tree/' : '/tree/';
+        const encodedPath = filePath
+            .split('/')
+            .filter(Boolean)
+            .map((part) => encodeURIComponent(part))
+            .join('/');
+        url.pathname = `${prefix}${encodedPath}`;
+        return url.toString();
+    } catch (err) {
+        return baseUrl;
+    }
+}
+
+export async function openNotebookFile(filePath, projectDir) {
+    if (!filePath) return;
+    allowAutoAttach = true;
+
+    const normalizedPath = normalizeNotebookPath(filePath, projectDir);
+    if (!normalizedPath) return;
+
+    if (projectDir) {
+        const input = document.getElementById('project-path');
+        if (input) input.value = projectDir;
+    }
+
+    let statusData = null;
+    try {
+        const response = await apiFetch('/api/status');
+        if (response.ok) {
+            statusData = await parseJsonSafe(response, '/api/status');
+        }
+    } catch (error) {
+        // ignore
+    }
+
+    const statusProjectDir = statusData?.config?.project_dir || '';
+    const needsRestart = projectDir && statusProjectDir
+        ? normalizePathForCompare(projectDir) !== normalizePathForCompare(statusProjectDir)
+        : false;
+
+    if (!statusData?.running || needsRestart) {
+        await startJupyter();
+        try {
+            const refreshed = await apiFetch('/api/status');
+            if (refreshed.ok) {
+                statusData = await parseJsonSafe(refreshed, '/api/status');
+            }
+        } catch (error) {
+            // ignore
+        }
+    } else if (statusData?.url && !isViewAttached) {
+        await attachJupyterView(statusData.url, { force: true });
+    }
+
+    const baseUrl = statusData?.url || currentJupyterUrl;
+    if (!baseUrl) return;
+
+    const fileUrl = buildNotebookUrl(baseUrl, normalizedPath);
+    await attachJupyterView(fileUrl, { force: true });
+}
+
 // --- Core Jupyter Logic ---
 
 export async function startJupyter() {
+    allowAutoAttach = true;
     const btn = document.getElementById('start-btn');
     if (btn) {
         btn.disabled = true;
@@ -412,6 +507,7 @@ export async function startJupyter() {
 }
 
 export async function stopJupyter() {
+    allowAutoAttach = false;
     const btn = document.getElementById('stop-btn');
     if (btn) {
         btn.disabled = true;
@@ -440,6 +536,7 @@ export async function stopJupyter() {
 export async function restartJupyter() {
     if (!confirm('确定要重启 Jupyter 吗？未保存的工作可能会丢失。')) return;
     
+    allowAutoAttach = true;
     await stopJupyter();
     setTimeout(() => startJupyter(), 1000);
 }
@@ -486,8 +583,8 @@ export async function refreshStatus() {
             if (stopBtn) stopBtn.disabled = false;
             if (restartBtn) restartBtn.disabled = false;
             
-            // If running but view not attached (e.g. after refresh), attach it
-            if (!isViewAttached && !isAttaching && data.url) {
+            // Only attach when the user explicitly entered Jupyter in this session.
+            if (!isViewAttached && !isAttaching && data.url && allowAutoAttach && shouldDisplayEmbeddedJupyter()) {
                 // Ensure placeholder is ready
                 if (document.getElementById('jupyter-view-placeholder')) {
                     attachJupyterView(data.url);

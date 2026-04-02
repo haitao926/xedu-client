@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:3000; style-src 'self' 'unsafe-inline' http://localhost:3000; img-src 'self' data: blob:; connect-src 'self' http://localhost:3000 http://127.0.0.1:* http://localhost:*; font-src 'self' data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:3000; style-src 'self' 'unsafe-inline' http://localhost:3000; img-src 'self' data: blob:; connect-src 'self' http://localhost:3000 http://127.0.0.1:* http://localhost:*; frame-src 'self' http://127.0.0.1:* http://localhost:* data: blob:; font-src 'self' data:;">
     <title>XEdu Client</title>
     <link rel="stylesheet" href="styles/main.css">
     <link rel="stylesheet" href="styles/wizard.css">
     <script>
         window.__xeduAppContext__ = window.__xeduAppContext__ || {
-            ui: {}, jupyter: {}, ai: {}, docs: {}, system: {}, internal: {}
+            ui: {}, jupyter: {}, workspace: {}, ai: {}, system: {}, internal: {}
         };
         window.app = window.__xeduAppContext__;
     </script>
@@ -27,41 +27,46 @@
         <div class="logo-container">
             <img src="assets/xedu-logo.svg" alt="XEdu Logo" class="logo-icon-img" style="height: 32px; width: 32px;">
             <div class="logo-text">XEdu Client</div>
+            <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" type="button" title="收起侧边栏" aria-label="收起侧边栏">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m15 18-6-6 6-6"></path>
+                </svg>
+            </button>
         </div>
 
         <nav class="nav-menu">
-            <div class="nav-group-title">控制台</div>
-            <div class="nav-item active" onclick="app.ui.showTab('main', this)">
+            <div id="nav-group-console-title" class="nav-group-title">实验环境</div>
+            <div id="nav-main-item" class="nav-item active" onclick="app.ui.showTab('main', this)">
                 <div class="icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                 </div>
-                <span>主控台</span>
+                <span>总控制台</span>
+            </div>
+
+            <div id="nav-blockly-item" class="nav-item" onclick="app.ui.showTab('blockly-workspace', this)">
+                <div class="icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="7" height="10" rx="2"></rect><rect x="14" y="4" width="7" height="7" rx="2"></rect><rect x="14" y="13" width="7" height="7" rx="2"></rect><path d="M10 10h4"></path><path d="M10 14h4"></path></svg>
+                </div>
+                <span>Blockly</span>
             </div>
             
-            <div class="nav-item" onclick="app.ui.showTab('ai-assistant', this)">
+            <div id="nav-ai-item" class="nav-item" onclick="app.ui.showTab('ai-assistant', this)">
                 <div class="icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 22 4-10 4 10"/></svg>
                 </div>
                 <span>AI 助手</span>
             </div>
 
-            <div class="nav-group-title">资源</div>
-            <div class="nav-item" onclick="app.ui.showTab('docs', this)">
-                <div class="icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                </div>
-                <span>文档中心</span>
-            </div>
-
-            <div class="nav-item" onclick="app.ui.showTab('resources', this)">
+            <div id="nav-group-resources-title" class="nav-group-title">资源</div>
+            <div id="nav-resources-item" class="nav-item" onclick="app.ui.showTab('resources', this)">
                 <div class="icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
                 </div>
                 <span>课程资源</span>
             </div>
 
-            <div class="nav-group-title">系统</div>
-            <div class="nav-item" onclick="app.ui.showTab('settings', this)">
+            <div id="nav-group-system-title" class="nav-group-title">系统</div>
+            <div id="nav-settings-item" class="nav-item" onclick="app.ui.showTab('settings', this)">
                 <div class="icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                 </div>
@@ -70,10 +75,14 @@
         </nav>
 
         <div class="sidebar-footer">
-            <div style="font-size: 11px; color: var(--text-muted); text-align: center; padding: 12px 10px; line-height: 1.6; letter-spacing: 0.02em; display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                <span>上海科技大学附属学校信息组</span>
-            </div>
+            <button class="sidebar-about-btn" type="button" onclick="app.ui.showModal('about-us-modal')" aria-label="关于我们">
+                <span class="sidebar-about-icon" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7h.01"></path></svg>
+                </span>
+                <span class="sidebar-about-copy">
+                    <strong>查看开发信息</strong>
+                </span>
+            </button>
         </div>
     </aside>
 
@@ -82,9 +91,15 @@
         <div class="top-bar">
             <div class="page-header">
                 <div class="page-title-group">
-                    <div class="page-title" id="page-title">主控制台</div>
-                    <div class="page-subtitle">Python 交互式开发与管理环境</div>
+                    <div class="page-title" id="page-title">总控制台</div>
+                    <div class="page-subtitle" id="page-subtitle"></div>
                 </div>
+            </div>
+            <div class="top-bar-actions">
+                <button id="topbar-teacher-mode-btn" data-role="teacher-mode-toggle" class="btn btn-secondary btn-sm topbar-teacher-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="M21 2l-9.6 9.6"></path><path d="M13 2l9 9"></path></svg>
+                    <span data-role="teacher-mode-label">教师登录</span>
+                </button>
             </div>
         </div>
 
@@ -92,9 +107,7 @@
             <!-- MAIN DASHBOARD -->
             <div id="main" class="page-section active">
                 <div class="dashboard-layout">
-                    <!-- Left Column -->
                     <div class="dashboard-left-col">
-                        <!-- Project Settings -->
                         <div class="card">
                             <div class="card-header">
                                 <div class="card-title">
@@ -105,8 +118,7 @@
                             <div class="card-body">
                                 <div class="input-row">
                                     <input type="text" id="project-path" class="form-control" placeholder="选择工作目录...">
-                                    <button onclick="app.jupyter.browseFolder()" class="btn btn-secondary btn-icon-only"
-                                        title="选择目录" aria-label="选择目录">
+                                    <button onclick="app.jupyter.browseFolder()" class="btn btn-secondary btn-icon-only" title="选择目录" aria-label="选择目录">
                                         <img class="btn-icon-img" src="assets/icon-folder.svg" alt="" aria-hidden="true">
                                     </button>
                                 </div>
@@ -115,12 +127,11 @@
                                     <button onclick="app.jupyter.clearProjectPath()" class="btn btn-secondary">清除</button>
                                 </div>
                                 <div class="action-row" style="margin-top: 10px;">
-                                    <button onclick="app.projectWizard.open()" class="btn btn-secondary" style="width: 100%; border-style: dashed;">+ 快速新建项目 / 课程</button>
+                                    <button id="dashboard-open-blockly-blank-btn" class="btn btn-secondary" style="width: 100%;">打开 Blockly 空白工作台</button>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Jupyter Control -->
                         <div class="card">
                             <div class="card-header">
                                 <div class="card-title">
@@ -149,7 +160,6 @@
                             </div>
                         </div>
 
-                        <!-- Logs -->
                         <div class="card flex-1">
                             <div class="card-header">
                                 <div class="card-title">运行日志</div>
@@ -160,13 +170,11 @@
                         </div>
                     </div>
 
-                    <!-- Right Column: Jupyter View -->
                     <div class="jupyter-canvas-card" id="jupyter-card">
                         <div class="jupyter-toolbar">
                             <div class="jupyter-title">
                                 <span class="jupyter-icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                        stroke-linecap="round" stroke-linejoin="round">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <rect x="3" y="3" width="18" height="18" rx="3"></rect>
                                         <path d="M7 8l3 3-3 3"></path>
                                         <path d="M11 14h6"></path>
@@ -176,16 +184,13 @@
                                 <span id="canvas-status" class="badge badge-stopped ml-2">未连接</span>
                             </div>
                             <div class="toolbar-actions jupyter-actions">
-                                <button class="btn btn-secondary btn-icon-only jupyter-icon-btn" onclick="app.jupyter.refreshView()"
-                                    title="刷新" aria-label="刷新">
+                                <button class="btn btn-secondary btn-icon-only jupyter-icon-btn" onclick="app.jupyter.refreshView()" title="刷新" aria-label="刷新">
                                     <img class="jupyter-icon-img" src="assets/icon-refresh.svg" alt="" aria-hidden="true">
                                 </button>
-                                <button class="btn btn-secondary btn-icon-only jupyter-icon-btn" onclick="app.jupyter.openExternal()"
-                                    title="浏览器" aria-label="浏览器">
+                                <button class="btn btn-secondary btn-icon-only jupyter-icon-btn" onclick="app.jupyter.openExternal()" title="浏览器" aria-label="浏览器">
                                     <img class="jupyter-icon-img" src="assets/icon-external.svg" alt="" aria-hidden="true">
                                 </button>
-                                <button class="btn btn-secondary btn-icon-only jupyter-icon-btn" onclick="app.jupyter.toggleFullscreen()"
-                                    title="全屏" aria-label="全屏">
+                                <button class="btn btn-secondary btn-icon-only jupyter-icon-btn" onclick="app.jupyter.toggleFullscreen()" title="全屏" aria-label="全屏">
                                     <img class="jupyter-icon-img" src="assets/icon-fullscreen.svg" alt="" aria-hidden="true">
                                 </button>
                             </div>
@@ -194,7 +199,23 @@
                             <div class="jupyter-placeholder">
                                 <div class="placeholder-icon">⚡</div>
                                 <div class="placeholder-title">准备就绪</div>
-                                <div class="placeholder-desc">点击左侧“启动”按钮开启编程环境</div>
+                                <div class="placeholder-desc">点击左侧“启动 Jupyter Lab”按钮开启主代码实验环境</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+
+            <div id="blockly-workspace" class="page-section">
+                <div class="workspace-shell">
+                    <div class="workspace-iframe-card workspace-stage-card">
+                        <div class="workspace-iframe-wrap">
+                            <iframe id="blockly-workspace-frame" class="workspace-iframe" title="Blockly 工作台"></iframe>
+                            <div id="blockly-workspace-empty" class="jupyter-placeholder">
+                                <div class="placeholder-icon">🧱</div>
+                                <div class="placeholder-title">打开空白 Blockly 工作台</div>
+                                <div class="placeholder-desc">可随时载入 `.blockly.xml` 或 `.blockly.json` 工作区。</div>
                             </div>
                         </div>
                     </div>
@@ -219,25 +240,49 @@
                     <div class="chat-main">
                         <div class="chat-header">
                             <div class="chat-header-left">
-                                <span>AI 助手</span>
+                                <div class="chat-header-copy">
+                                    <span class="chat-header-title">AI 助手</span>
+                                    <span class="chat-header-subtitle">教师侧课程助教工作台：支持方案讨论、QuickForm 接入与课程打包</span>
+                                </div>
                                 <span id="ai-model-badge" class="ai-model-badge">未设置模型</span>
+                                <span id="ai-context-pill" class="ai-context-pill">教师工作台</span>
                             </div>
                             <div class="chat-header-actions">
+                                <div id="ai-agent-status" class="ai-agent-status">
+                                    <span class="ai-agent-status-dot"></span>
+                                    <span id="ai-agent-status-text">待命中</span>
+                                </div>
                                 <button class="btn btn-sm btn-secondary" onclick="app.ai.clearCurrentChat()">清空</button>
                             </div>
                         </div>
                         <div id="chat-history" class="chat-messages">
                             <div class="chat-empty-state">
-                                <div class="empty-icon">🤖</div>
-                                <div class="empty-text">有什么可以帮你的吗？</div>
+                                <div class="empty-orb">
+                                    <div class="empty-orb-ring"></div>
+                                    <div class="empty-icon">✦</div>
+                                </div>
+                                <div class="empty-text">把它当成你的课程助教工作台</div>
+                                <div class="empty-desc">可以先讨论方案，再在确认后执行 QuickForm 接入或 `xedu-pack` 打包。</div>
+                                <div class="chat-empty-suggestions">
+                                    <button class="chat-suggestion-chip" data-ai-suggestion="帮我给第 2 课第 1 个实验接入 QuickForm">接入 QuickForm</button>
+                                    <button class="chat-suggestion-chip" data-ai-suggestion="帮我把这门课按 xedu-pack 打包">打包课程</button>
+                                    <button class="chat-suggestion-chip" data-ai-suggestion="先帮我看看当前课程适合怎么整理实验结构">整理课程结构</button>
+                                </div>
+                                <div class="chat-empty-notes">
+                                    <span>多轮澄清</span>
+                                    <span>执行前确认</span>
+                                    <span>仅教师可写入</span>
+                                </div>
                             </div>
                         </div>
                         <div class="input-area">
                             <div class="ai-composer-head">
-                                <div class="ai-composer-label">先输入问题，再按需补充图片</div>
+                                <div class="ai-composer-meta">
+                                    <div class="ai-composer-label">教师助教模式</div>
+                                    <div class="ai-composer-caption">会先澄清目标，再在确认后执行教师侧写入动作</div>
+                                </div>
                                 <div id="ai-attachment-hint" class="ai-attachment-hint" title="可拖拽、粘贴或点击选择图片（可选）" role="button" tabindex="0">
-                                    <span>可拖拽 / 粘贴 / 点击选择图片</span>
-                                    <em>可选</em>
+                                    <span>添加图片</span>
                                 </div>
                             </div>
                             <div class="ai-attachment-row">
@@ -251,45 +296,21 @@
                                 </div>
                             </div>
                             <div class="ai-input-wrapper" id="ai-input-wrapper">
-                                <textarea id="ai-question" class="ai-textarea" rows="1" placeholder="输入你的问题或任务（Enter 发送，Shift+Enter 换行）" onkeydown="app.ai.handleKeyDown(event)"></textarea>
+                                <textarea id="ai-question" class="ai-textarea" rows="2" placeholder="输入教师侧任务：课程方案、QuickForm 接入、xedu-pack 打包等（Enter 发送）" onkeydown="app.ai.handleKeyDown(event)"></textarea>
                                 <button id="btn-send" class="btn btn-primary ai-send-btn" onclick="app.ai.askAI()">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>发送
                                 </button>
                                 <input type="file" id="ai-image-input" accept="image/*" style="display: none;" onchange="app.ai.previewImage(this)">
                             </div>
+                            <div class="ai-composer-footer">
+                                <div class="ai-composer-hints">
+                                    <span>Enter 发送</span>
+                                    <span>Shift + Enter 换行</span>
+                                    <span>支持粘贴图片</span>
+                                </div>
+                                <div id="ai-write-guard" class="ai-write-guard">涉及课程写入时会先请求确认</div>
+                            </div>
                             <div id="ai-drop-zone" class="ai-drop-zone">拖拽图片到这里</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- DOCS -->
-            <div id="docs" class="page-section">
-                <div class="resources-layout">
-                    <div class="resources-sidebar">
-                        <div class="sidebar-header">
-                            <span>组件列表</span>
-                        </div>
-                        <div id="docs-components" class="component-list">
-                            <!-- JS will populate this -->
-                        </div>
-                    </div>
-                    <div class="resources-main">
-                        <div class="docs-toolbar">
-                            <div class="docs-search-wrapper">
-                                <input type="text" id="docs-search-input" class="form-control" placeholder="搜索文档 (Cmd+K)..." onkeyup="app.docs.searchDocs(event)">
-                            </div>
-                            <button class="btn btn-primary" onclick="app.docs.performSearch()" style="display: inline-flex; align-items: center; gap: 4px;">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>搜索
-                            </button>
-                        </div>
-
-                        <div id="docs-content" class="docs-content-area">
-                            <div class="docs-welcome">
-                                <div style="font-size: 64px; margin-bottom: 24px; opacity: 0.2;">📚</div>
-                                <h2>文档中心</h2>
-                                <p>请在左侧选择组件查看详细 API 文档与使用示例，或使用上方搜索栏查找内容。</p>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -328,23 +349,17 @@
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                                         刷新
                                     </button>
+                                    <button id="resources-search-toggle-btn" class="btn btn-secondary" style="display: flex; align-items: center; gap: 6px;">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+                                        搜索
+                                    </button>
                                 </div>
                             </div>
-                            <div class="resources-filter-bar">
+                            <div id="resources-filter-bar" class="resources-filter-bar" style="display: none;">
                                 <input id="resources-search-input" type="text" class="form-control" placeholder="搜索课程、作者、标签...">
                                 <select id="resources-filter-grade" class="form-control resources-filter"></select>
                                 <select id="resources-filter-subject" class="form-control resources-filter"></select>
                                 <select id="resources-filter-tag" class="form-control resources-filter"></select>
-                            </div>
-                            <div id="resources-classroom-bar" class="resources-classroom-bar">
-                                <div class="resources-classroom-info">
-                                    <div class="resources-classroom-title">课堂模式</div>
-                                    <div id="resources-classroom-status" class="resources-classroom-status">未开启</div>
-                                    <div id="resources-classroom-name" class="resources-classroom-name"></div>
-                                </div>
-                                <div class="resources-classroom-actions">
-                                    <button id="resources-classroom-refresh" class="btn btn-secondary btn-sm">重新搜索</button>
-                                </div>
                             </div>
                             <div id="resources-loading" class="resources-loading" style="display: none;">正在加载资源...</div>
                             <div id="resources-list" class="resources-list"></div>
@@ -371,7 +386,7 @@
                                 </div>
                                 <div class="resources-detail-actions">
                                     <button id="resources-detail-open" class="btn btn-primary btn-sm" style="display: none; align-items: center; gap: 4px;">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>在主控台打开
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>在 Jupyter 中打开
                                     </button>
                                     <button id="resources-detail-classroom-start" class="btn btn-primary btn-sm" style="display: none; align-items: center; gap: 4px;">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>开启课堂
@@ -415,17 +430,17 @@
                                 </button>
                                 <div class="resources-detail-info">
                                     <div class="resources-detail-title">创建课程</div>
-                                    <div class="resources-detail-meta">分三步完成课程创建与发布</div>
+                                    <div class="resources-detail-meta">本地创建、导入本地或云端导入</div>
                                 </div>
                                 <div class="resources-detail-actions">
                                     <button id="resources-create-submit-btn" class="btn btn-primary" disabled>打开投稿页面</button>
                                 </div>
                             </div>
-                            <div class="resources-detail-content">
+                            <div class="resources-detail-content resources-create-layout">
                                 <div class="resources-create-steps" id="resources-create-steps">
-                                    <div class="resources-step active" data-step="1">1 课程信息</div>
-                                    <div class="resources-step" data-step="2">2 课程结构</div>
-                                    <div class="resources-step" data-step="3">3 材料上传</div>
+                                    <div class="resources-step active" data-step="1" id="resources-step-label-1">1 课程信息</div>
+                                    <div class="resources-step" data-step="2" id="resources-step-label-2">2 课程结构</div>
+                                    <div class="resources-step" data-step="3" id="resources-step-label-3">3 材料整理</div>
                                 </div>
                                 <div class="resources-create-guide" id="resources-create-guide">
                                     <div class="resources-guide-title">
@@ -442,55 +457,77 @@
 
                                 <div class="resources-create-body">
                                     <div class="resources-create-step active" data-step="1">
-                                        <div class="resources-create-grid">
-                                            <div class="resources-create-card">
+                                        <div id="resources-create-step1-grid" class="resources-create-grid">
+                                            <div class="resources-create-card resources-create-primary-card resources-create-rail-card">
                                                 <div class="resources-create-title">
-                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>课程信息
+                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>基础信息
                                                 </div>
+                                                <div class="resources-create-hint">先填课程名称，其他内容可后补。</div>
                                                 <div class="input-group">
                                                     <label class="input-label">课程名称</label>
-                                                    <input id="resources-create-title" type="text" class="form-control" placeholder="例如：AI 视觉入门实验包">
-                                                </div>
-                                                <div class="input-group">
-                                                    <label class="input-label">课程描述</label>
-                                                    <textarea id="resources-create-desc" class="form-control" rows="3" placeholder="简要介绍课程内容与适用年级"></textarea>
+                                                    <input id="resources-create-title" type="text" class="form-control" placeholder="例如 AI 视觉入门">
                                                 </div>
                                                 <div class="input-group">
                                                     <label class="input-label">年级 / 学科</label>
-                                                    <div style="display: flex; gap: 10px;">
-                                                        <input id="resources-create-grade" type="text" class="form-control" placeholder="例如：七年级">
-                                                        <input id="resources-create-subject" type="text" class="form-control" placeholder="例如：信息科技">
+                                                    <div class="form-row">
+                                                        <input id="resources-create-grade" type="text" class="form-control" placeholder="七年级">
+                                                        <input id="resources-create-subject" type="text" class="form-control" placeholder="信息科技">
                                                     </div>
-                                                </div>
-                                                <div class="input-group">
-                                                    <label class="input-label">作者</label>
-                                                    <input id="resources-create-author" type="text" class="form-control" placeholder="例如：张老师">
-                                                </div>
-                                                <div class="input-group">
-                                                    <label class="input-label">课程版本</label>
-                                                    <input id="resources-create-version" type="text" class="form-control" placeholder="例如：1.0">
                                                 </div>
                                                 <input id="resources-create-id" type="hidden">
-                                                <div class="input-group">
-                                                    <label class="input-label">标签（用逗号分隔）</label>
-                                                    <input id="resources-create-tags" type="text" class="form-control" placeholder="例如：视觉,入门,实验">
-                                                </div>
-                                                <div class="input-group">
-                                                    <label class="input-label">封面图片</label>
-                                                    <input id="resources-create-cover" type="hidden">
-                                                    <div class="resources-cover-upload">
-                                                        <label class="resources-cover-drop" id="resources-cover-drop" for="resources-cover-file">
-                                                            <div class="resources-cover-title">点击或拖拽上传封面</div>
-                                                            <div class="resources-cover-hint">建议 16:9，大小不超过 10MB</div>
-                                                        </label>
-                                                        <input id="resources-cover-file" type="file" class="resources-cover-input" accept="image/*">
-                                                        <div class="resources-cover-preview" id="resources-cover-preview" style="display: none;">
-                                                            <img id="resources-cover-preview-img" alt="课程封面预览">
-                                                            <button type="button" class="btn btn-secondary" id="resources-cover-clear">清除</button>
+                                                <details class="resources-create-optional">
+                                                    <summary>补充信息（可选）</summary>
+                                                    <div class="resources-create-optional-body">
+                                                        <div class="input-group">
+                                                            <label class="input-label">课程描述</label>
+                                                            <textarea id="resources-create-desc" class="form-control" rows="3" placeholder="简单写一下课程内容"></textarea>
                                                         </div>
+                                                        <div class="form-row">
+                                                            <div class="input-group">
+                                                                <label class="input-label">作者</label>
+                                                                <input id="resources-create-author" type="text" class="form-control" placeholder="张老师">
+                                                            </div>
+                                                            <div class="input-group">
+                                                                <label class="input-label">课程版本</label>
+                                                                <input id="resources-create-version" type="text" class="form-control" placeholder="1.0">
+                                                            </div>
+                                                        </div>
+                                                        <div class="input-group">
+                                                            <label class="input-label">标签</label>
+                                                            <input id="resources-create-tags" type="text" class="form-control" placeholder="视觉, 入门, 实验">
+                                                        </div>
+                                                        <div class="input-group">
+                                                            <label class="input-label">封面图片</label>
+                                                            <input id="resources-create-cover" type="hidden">
+                                                            <div class="resources-cover-upload">
+                                                                <label class="resources-cover-drop" id="resources-cover-drop" for="resources-cover-file">
+                                                                    <div class="resources-cover-title">添加封面</div>
+                                                                    <div class="resources-cover-hint">建议 16:9</div>
+                                                                </label>
+                                                                <input id="resources-cover-file" type="file" class="resources-cover-input" accept="image/*">
+                                                                <div class="resources-cover-preview" id="resources-cover-preview" style="display: none;">
+                                                                    <img id="resources-cover-preview-img" alt="课程封面预览">
+                                                                    <button type="button" class="btn btn-secondary" id="resources-cover-clear">清除</button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <details class="resources-create-optional" style="margin-top: 12px;">
+                                                            <summary>QuickForm 默认配置（可选）</summary>
+                                                            <div class="resources-create-optional-body">
+                                                                <div class="input-group">
+                                                                    <label class="package-manager-option" style="margin: 0;">
+                                                                        <input type="checkbox" id="resources-create-quickform-enabled">
+                                                                        <span>新实验默认启用 QuickForm</span>
+                                                                    </label>
+                                                                </div>
+                                                                <div class="input-group">
+                                                                    <label class="input-label">默认 HTML 文件路径</label>
+                                                                    <input id="resources-create-quickform-html-path" type="text" class="form-control" placeholder="例如：index.html 或 experiments/form/index.html">
+                                                                </div>
+                                                            </div>
+                                                        </details>
                                                     </div>
-                                                    <div class="resources-create-hint">上传图片后会自动作为课程封面。</div>
-                                                </div>
+                                                </details>
                                             </div>
                                             <div class="resources-create-card">
                                                 <div class="resources-create-title">
@@ -502,86 +539,86 @@
                                     </div>
 
                                     <div class="resources-create-step" data-step="2">
-                                        <div class="resources-create-hint" style="margin-bottom: 10px; font-weight: 600;">可选配置（可跳过）</div>
-                                        <div class="resources-create-grid">
+                                        <div id="resources-step2-mode-hint" class="resources-create-hint" style="margin-bottom: 10px; font-weight: 600;">课程目录与结构（可跳过）</div>
+                                        <div id="resources-create-step2-grid" class="resources-create-grid">
                                             <div id="resources-create-source-card" class="resources-create-card">
                                                 <div class="resources-create-title">
                                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span id="resources-create-source-title-text">本地课程目录</span>
                                                 </div>
-                                                <div id="resources-create-source-hint" class="resources-create-hint">本地创建：结构步骤可跳过，后续按需添加课节和实验；文件解析在具体实验材料选择时完成。云端拉取：导入已完成的完整课程包。</div>
+                                                <div id="resources-create-source-hint" class="resources-create-hint">先选课程目录，再按需添加课节和实验。</div>
                                                 <div id="resources-create-source-switch-row" class="input-row" style="gap: 8px; margin-bottom: 12px;">
                                                     <button id="resources-source-local" class="btn btn-primary">本地创建</button>
                                                     <button id="resources-source-cloud" class="btn btn-secondary">云端拉取</button>
                                                 </div>
                                                 <div id="resources-cloud-group" class="input-group" style="display: none;">
-                                                    <div class="resources-create-hint" style="margin-bottom: 8px;">云端导入只需要两步：选择本地保存目录 + 输入课程仓库地址。</div>
                                                     <div class="resources-create-card" style="margin-top: 0; margin-bottom: 12px;">
-                                                        <div class="resources-create-title">云端课程地址（本次有效）</div>
-                                                        <div class="resources-create-hint">公开仓库可直接读取；私有仓库再填写 Token。</div>
+                                                        <div class="resources-create-title">课程仓库地址（本次有效）</div>
                                                         <div class="input-row" style="gap: 8px; margin-top: 8px;">
-                                                            <input id="resources-cloud-repo-address" type="text" class="form-control" placeholder="例如：http://8.145.44.54:3000/admin/xedu-courses">
+                                                            <input id="resources-cloud-repo-address" type="text" class="form-control" placeholder="例如：http://8.145.44.54:3000/admin/ai-class-assistant">
                                                         </div>
                                                         <div class="input-row" style="gap: 8px; margin-top: 8px;">
                                                             <input id="resources-cloud-temp-token" type="password" class="form-control" placeholder="访问令牌（私有仓库需要）">
                                                         </div>
-                                                        <div class="action-row" style="margin-top: 8px;">
-                                                            <button id="resources-cloud-temp-load-btn" type="button" class="btn btn-secondary">读取云端课程</button>
-                                                            <button id="resources-cloud-temp-clear-btn" type="button" class="btn btn-secondary">使用默认课程源</button>
+                                                        <div class="action-row resources-cloud-source-actions" style="margin-top: 8px;">
+                                                            <button id="resources-cloud-temp-load-btn" type="button" class="btn resources-cloud-read-btn">读取课程</button>
+                                                            <button id="resources-cloud-temp-clear-btn" type="button" class="btn resources-cloud-clear-btn" style="display: none;">清空地址</button>
                                                         </div>
                                                     </div>
-                                                    <label class="input-label">云端课程</label>
+                                                    <label id="resources-cloud-course-label" class="input-label">云端课程</label>
                                                     <select id="resources-cloud-course-select" class="form-control">
                                                         <option value="">请选择课程</option>
                                                     </select>
-                                                    <div class="action-row" style="margin-top: 10px;">
+                                                    <div id="resources-cloud-course-preview" class="resources-cloud-course-preview" style="display: none;"></div>
+                                                    <div id="resources-cloud-inline-actions" class="action-row" style="margin-top: 10px;">
                                                         <button id="resources-cloud-refresh-btn" class="btn btn-secondary">刷新课程列表</button>
-                                                        <button id="resources-cloud-import-btn" class="btn btn-primary" disabled>导入到本地</button>
+                                                        <button id="resources-cloud-import-btn" class="btn btn-primary resources-cloud-import-btn" disabled>导入到本地</button>
                                                     </div>
-                                                    <div id="resources-cloud-status" class="resources-scan-status" style="margin-top: 8px;">请先刷新云端课程列表</div>
+                                                    <div id="resources-cloud-status" class="resources-scan-status" style="margin-top: 8px;">请先读取课程仓库。</div>
                                                 </div>
                                                 <div id="resources-local-group" class="input-group">
-                                                    <label id="resources-local-path-label" class="input-label">本地课程目录</label>
-                                                    <div style="display: flex; gap: 10px;">
-                                                        <input id="resources-create-local-path" type="text" class="form-control" placeholder="请选择课程文件夹">
-                                                        <button id="resources-pick-local-btn" class="btn btn-secondary">选择</button>
+                                                    <label id="resources-local-path-label" class="input-label">课程目录</label>
+                                                    <div class="resources-local-path-panel">
+                                                        <div id="resources-local-path-caption" class="resources-local-path-caption">保存位置</div>
+                                                        <input id="resources-create-local-path" type="text" class="form-control resources-local-path-input" placeholder="请选择课程文件夹">
+                                                        <button id="resources-pick-local-btn" class="btn resources-local-path-btn">选择目录</button>
                                                     </div>
+                                                    <div id="resources-local-path-summary" class="resources-local-path-summary">未选择目录时，可稍后再选。</div>
                                                 </div>
                                                 <div id="resources-structure-save-row" class="action-row">
                                                     <button id="resources-structure-save-btn" class="btn btn-primary" disabled style="display: inline-flex; align-items: center; gap: 4px;">
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>可选预保存结构
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>保存当前结构
                                                     </button>
                                                 </div>
                                             </div>
                                             <div id="resources-structure-card" class="resources-create-card">
                                                 <div class="resources-create-title">
-                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>课程结构
+                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>课节与实验
                                                 </div>
-                                                <div class="resources-create-hint">按需逐个添加课节和实验，不需要预先一次性完成。</div>
-                                                <div class="input-row" style="gap: 8px;">
-                                                    <input id="resources-section-count" type="number" min="1" class="form-control" style="max-width: 120px;" placeholder="课节数">
-                                                    <button id="resources-generate-sections" class="btn btn-secondary">生成课节</button>
-                                                    <button id="resources-add-section" class="btn btn-secondary">添加课节</button>
+                                                <div id="resources-structure-editor-pane">
+                                                    <div id="resources-local-structure-intro" class="resources-local-structure-intro"></div>
+                                                    <div id="resources-local-structure-summary" class="resources-local-structure-summary"></div>
+                                                    <div class="resources-local-structure-toolbar">
+                                                        <input id="resources-section-count" type="number" min="1" class="form-control resources-section-count-input" placeholder="课节数">
+                                                        <button id="resources-generate-sections" class="btn btn-secondary">快速生成</button>
+                                                        <button id="resources-add-section" class="btn btn-secondary">添加课节</button>
+                                                    </div>
+                                                    <div id="resources-section-editor" class="resources-section-editor"></div>
                                                 </div>
-                                                <div id="resources-section-editor" class="resources-section-editor"></div>
+                                                <div id="resources-cloud-detail-panel" class="resources-cloud-detail-panel" style="display: none;">
+                                                    <div id="resources-cloud-detail-preview" class="resources-cloud-course-preview" style="display: none;"></div>
+                                                    <div class="action-row" style="margin-top: 10px;">
+                                                        <button id="resources-cloud-detail-import-btn" class="btn btn-primary resources-cloud-import-btn is-prominent" disabled>导入到本地</button>
+                                                    </div>
+                                                    <div id="resources-cloud-detail-status" class="resources-scan-status" style="margin-top: 8px;">请先读取课程仓库。</div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
 
                                     <div class="resources-create-step" data-step="3">
-                                        <div class="resources-create-grid">
-                                            <div class="resources-create-card">
-                                                <div class="resources-create-title">
-                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>材料上传
-                                                </div>
-                                                <div class="resources-create-hint">一个实验一个实验添加材料；未准备好可先留空，后续再补。</div>
-                                                <div id="resources-material-list" class="resources-material-list"></div>
-                                                <div class="resources-create-title" style="margin-top: 16px;">
-                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>结构预览
-                                                </div>
-                                                <div id="resources-structure-preview" class="resources-structure-preview"></div>
-                                            </div>
-                                            <div class="resources-create-card">
-                                                <div class="resources-create-title">
+                                        <div id="resources-create-step3-grid" class="resources-create-grid">
+                                            <div id="resources-step3-action-card" class="resources-create-card resources-create-rail-card">
+                                                <div id="resources-step3-action-title" class="resources-create-title">
                                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>发布到 Gitea（创建 PR）
                                                 </div>
                                                 <div id="resources-publish-status" class="resources-publish-status">准备发布</div>
@@ -590,11 +627,22 @@
                                                     <button id="resources-create-save-btn" class="btn btn-secondary" disabled>保存为本地课程</button>
                                                 </div>
                                             </div>
+                                            <div class="resources-create-card">
+                                                <div id="resources-step3-main-title" class="resources-create-title">
+                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>材料整理
+                                                </div>
+                                                <div id="resources-step3-main-hint" class="resources-create-hint">一个实验一个实验补充材料；未准备好可先留空，后续再补。</div>
+                                                <div id="resources-material-list" class="resources-material-list"></div>
+                                                <div id="resources-step3-structure-title" class="resources-create-title" style="margin-top: 16px;">
+                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>结构预览
+                                                </div>
+                                                <div id="resources-structure-preview" class="resources-structure-preview"></div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div class="resources-create-footer">
+                            <div class="resources-create-footer">
                                     <button id="resources-step-prev" class="btn btn-secondary" style="display: flex; align-items: center; gap: 6px;">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                                         上一步
@@ -626,7 +674,16 @@
                         </div>
                         <div class="card-body">
                             <div class="settings-tabs">
-                                <button class="btn btn-secondary settings-tab active" data-tab="ai" onclick="app.system.showSettingsTab('ai')">
+                                <button class="btn btn-secondary settings-tab active" data-tab="about" onclick="app.system.showSettingsTab('about')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                    </svg>
+                                    关于
+                                </button>
+                                <button class="btn btn-secondary settings-tab" data-tab="ai" data-teacher-only="true" onclick="app.system.showSettingsTab('ai')">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                         stroke-linecap="round" stroke-linejoin="round">
                                         <rect x="4" y="4" width="16" height="16" rx="2"></rect>
@@ -638,7 +695,7 @@
                                     </svg>
                                     AI 配置
                                 </button>
-                                <button class="btn btn-secondary settings-tab" data-tab="python" onclick="app.system.showSettingsTab('python')">
+                                <button class="btn btn-secondary settings-tab" data-tab="python" data-teacher-only="true" onclick="app.system.showSettingsTab('python')">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                         stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M4 4h16v6H4z"></path>
@@ -647,7 +704,7 @@
                                     </svg>
                                     Python
                                 </button>
-                                <button class="btn btn-secondary settings-tab" data-tab="packages" onclick="app.system.showSettingsTab('packages')">
+                                <button class="btn btn-secondary settings-tab" data-tab="packages" data-teacher-only="true" onclick="app.system.showSettingsTab('packages')">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                         stroke-linecap="round" stroke-linejoin="round">
                                         <path d="m7.5 4.5 9 3-9 3-9-3z"></path>
@@ -656,7 +713,7 @@
                                     </svg>
                                     包管理
                                 </button>
-                                <button class="btn btn-secondary settings-tab" data-tab="resources" onclick="app.system.showSettingsTab('resources')">
+                                <button class="btn btn-secondary settings-tab" data-tab="resources" data-teacher-only="true" onclick="app.system.showSettingsTab('resources')">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                         stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M3 4h18v6H3z"></path>
@@ -664,7 +721,7 @@
                                     </svg>
                                     资源库
                                 </button>
-                                <button class="btn btn-secondary settings-tab" data-tab="classroom" onclick="app.system.showSettingsTab('classroom')">
+                                <button class="btn btn-secondary settings-tab" data-tab="classroom" data-teacher-only="true" onclick="app.system.showSettingsTab('classroom')">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                         stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M4 4h16v4H4z"></path>
@@ -675,7 +732,48 @@
                                 </button>
                             </div>
 
-                            <div class="settings-content active" data-settings-tab="ai">
+                            <div class="settings-content active" data-settings-tab="about">
+                                <div class="resources-create-hint" style="margin-bottom: 12px;">
+                                    当前为学生模式时，仅展示基础信息。如需管理课程、课堂与资源库，请在右上角使用“教师登录”解锁教师模式。
+                                </div>
+                                <div class="about-panel">
+                                    <div class="about-panel-header">
+                                        <div>
+                                            <div class="about-panel-title">XEdu Client</div>
+                                            <div class="about-panel-subtitle">面向教学场景的 Python / Jupyter / 课程资源管理客户端</div>
+                                        </div>
+                                        <button class="btn btn-secondary btn-sm" type="button" onclick="app.ui.showModal('about-us-modal')">关于我们</button>
+                                    </div>
+                                    <div class="about-panel-grid">
+                                        <div class="about-panel-card">
+                                            <label class="input-label">常用用法</label>
+                                            <div class="about-panel-list">
+                                                <div class="about-panel-item">1. Jupyter Lab 和 Blockly 是独立环境，也支持从课堂或课程资源直接打开文件。</div>
+                                                <div class="about-panel-item">2. 学生模式下可直接进入课堂、查看学习资源并完成学习任务。</div>
+                                                <div class="about-panel-item">3. 教师模式下可管理资源库、课堂设置、Python 环境与包管理。</div>
+                                            </div>
+                                        </div>
+                                        <div class="about-panel-card">
+                                            <label class="input-label">使用 Tips</label>
+                                            <div class="about-panel-list">
+                                                <div class="about-panel-item">1. 第一次使用建议先到“Python”页确认解释器路径是否正确。</div>
+                                                <div class="about-panel-item">2. 如果包安装失败，先检查网络与镜像源，再重试。</div>
+                                                <div class="about-panel-item">3. 课堂资源建议按课程统一整理，方便后续共享、发布与复用。</div>
+                                            </div>
+                                        </div>
+                                        <div class="about-panel-card">
+                                            <label class="input-label">推荐流程</label>
+                                            <div class="about-panel-list">
+                                                <div class="about-panel-item">1. 教师先配置课程与环境。</div>
+                                                <div class="about-panel-item">2. 学生直接进入课堂开始学习。</div>
+                                                <div class="about-panel-item">3. 课程内容可持续修改、共享与共建。</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-content" data-settings-tab="ai" data-teacher-only="true">
                                 <div class="form-group">
                                     <label class="input-label">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>API Key
@@ -698,7 +796,7 @@
                                 </div>
                             </div>
 
-                            <div class="settings-content" data-settings-tab="python">
+                            <div class="settings-content" data-settings-tab="python" data-teacher-only="true">
                                 <div class="form-group">
                                     <label class="input-label">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>Python 路径
@@ -712,27 +810,63 @@
                                 </div>
                             </div>
 
-                            <div class="settings-content" data-settings-tab="packages">
+                            <div class="settings-content" data-settings-tab="packages" data-teacher-only="true">
                                 <div class="input-row mb-3">
-                                    <input type="text" id="python-package-input" class="form-control" placeholder="包名">
-                                    <button class="btn btn-success" onclick="app.system.installPackage()" style="display: inline-flex; align-items: center; gap: 4px;">
+                                    <input type="text" id="python-package-input" class="form-control" placeholder="包名，例如 pyfiglet 或 pyfiglet==1.0.4">
+                                    <button class="btn btn-success" data-package-action="install" onclick="app.system.installPackage()" style="display: inline-flex; align-items: center; gap: 4px;">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>安装
                                     </button>
-                                    <button class="btn btn-warning" onclick="app.system.updatePackage()" style="display: inline-flex; align-items: center; gap: 4px;">
+                                    <button class="btn btn-warning" data-package-action="upgrade" onclick="app.system.updatePackage()" style="display: inline-flex; align-items: center; gap: 4px;">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>更新
                                     </button>
-                                    <button class="btn btn-danger" onclick="app.system.uninstallPackage()" style="display: inline-flex; align-items: center; gap: 4px;">
+                                    <button class="btn btn-danger" data-package-action="uninstall" onclick="app.system.uninstallPackage()" style="display: inline-flex; align-items: center; gap: 4px;">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>卸载
                                     </button>
                                 </div>
+                                <label class="package-manager-option">
+                                    <input type="checkbox" id="use-tsinghua-mirror" checked>
+                                    <span>安装/更新时默认使用清华镜像</span>
+                                </label>
                                 <div id="package-output" class="console-window small-console"></div>
                             </div>
 
-                            <div class="settings-content" data-settings-tab="resources">
+                            <div class="settings-content" data-settings-tab="resources" data-teacher-only="true">
                                 <div class="resources-create-hint" style="margin-bottom: 12px;">
-                                    公开课程库：通常无需访问令牌。私有课程库：填写访问令牌后使用。
-                                    仓库地址可在“课程资源 → 创建课程 → 云端拉取”中临时输入。
+                                    单课单仓库模式下，公开课程通常无需访问令牌；私有课程再填写访问令牌。
                                 </div>
+                                <details open style="margin-bottom: 14px;">
+                                    <summary style="cursor: pointer; color: var(--text-heading); font-weight: 700;">QuickForm CLI（可选）</summary>
+                                    <div style="margin-top: 12px;">
+                                        <div class="form-group">
+                                            <label class="package-manager-option">
+                                                <input type="checkbox" id="quickform-enabled">
+                                                <span>启用 QuickForm 集成</span>
+                                            </label>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label class="input-label">Base URL</label>
+                                                <input type="text" id="quickform-base-url" class="form-control" placeholder="https://quickform.cn">
+                                            </div>
+                                            <div class="form-group">
+                                                <label class="input-label">用户名</label>
+                                                <input type="text" id="quickform-username" class="form-control" placeholder="teacher1">
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="input-label">密码</label>
+                                            <div class="input-row">
+                                                <input type="password" id="quickform-password" class="form-control" placeholder="请输入 QuickForm 密码">
+                                                <button class="btn btn-secondary" onclick="app.system.testQuickFormConfig()" style="display: inline-flex; align-items: center; gap: 4px;">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>测试连接
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="resources-create-hint">
+                                            XEdu 仅保存账号用于创建/读取任务；课程文件只保存 `apiid` 与提交地址。
+                                        </div>
+                                    </div>
+                                </details>
                                 <div class="form-group">
                                     <label class="input-label">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>访问令牌（私有库才需要）
@@ -743,10 +877,10 @@
                                     </div>
                                 </div>
                                 <div class="resources-create-hint" style="margin-bottom: 12px;">
-                                    如需减少重复输入，可配置一个“默认课程源”（可选）。
+                                    如需减少重复输入，可配置一个默认课程仓库（可选）。
                                 </div>
                                 <details style="margin-top: 8px;">
-                                    <summary style="cursor: pointer; color: var(--text-secondary); font-weight: 600;">默认课程源（可选）</summary>
+                                    <summary style="cursor: pointer; color: var(--text-secondary); font-weight: 600;">默认课程仓库（可选）</summary>
                                     <div style="margin-top: 12px;">
                                         <div class="form-group">
                                             <label class="input-label">
@@ -798,19 +932,13 @@
                                     </div>
                                 </details>
                             </div>
-                            <div class="settings-content" data-settings-tab="classroom">
+                            <div class="settings-content" data-settings-tab="classroom" data-teacher-only="true">
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label class="input-label">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><path d="M12 2a7 7 0 0 1 7 7v2a7 7 0 0 1-14 0V9a7 7 0 0 1 7-7z"></path><path d="M8 21h8"></path><path d="M12 17v4"></path></svg>课堂名称
                                         </label>
                                         <input type="text" id="classroom-name" class="form-control" placeholder="例如：七年级1班">
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="input-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>课堂口令
-                                        </label>
-                                        <input type="text" id="classroom-code" class="form-control" placeholder="可留空">
                                     </div>
                                 </div>
                                 <div class="form-row">
@@ -829,6 +957,9 @@
                                             <option value="false">关闭</option>
                                         </select>
                                     </div>
+                                </div>
+                                <div class="resources-create-hint" style="margin-top: 8px;">
+                                    教师口令：用于登录教师模式与开启/结束课堂，仅教师使用。
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group">
@@ -867,6 +998,52 @@
         <div class="modal-actions">
             <button id="resources-action-cancel" class="btn btn-secondary">取消</button>
             <button id="resources-action-confirm" class="btn btn-primary">确定</button>
+        </div>
+    </div>
+</div>
+
+<div id="teacher-init-modal" class="modal-overlay teacher-init-modal" data-lock-modal="true">
+    <div class="modal-content teacher-init-modal-content">
+        <div class="modal-title">设置教师口令</div>
+        <div class="modal-message">首次使用请先设置教师口令。该口令用于解锁教师模式和课堂控制功能。</div>
+        <div class="resources-action-body">
+            <div class="resources-action-field">
+                <label class="input-label">新教师口令</label>
+                <input id="teacher-init-code" type="password" class="form-control" placeholder="至少 4 位字符">
+            </div>
+            <div class="resources-action-field">
+                <label class="input-label">确认教师口令</label>
+                <input id="teacher-init-code-confirm" type="password" class="form-control" placeholder="再次输入教师口令">
+            </div>
+            <div id="teacher-init-error" class="resources-action-error" style="display: none;"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="teacher-init-confirm" class="btn btn-primary">确定并进入</button>
+        </div>
+    </div>
+</div>
+
+<div id="about-us-modal" class="modal-overlay">
+    <div class="modal-content about-us-modal-content">
+        <div class="modal-icon">⌘</div>
+        <div class="modal-title">关于我们</div>
+        <div class="modal-message">Powered by XEdu Pro Team.</div>
+        <div class="about-us-body">
+            <div class="about-us-card">
+                <div class="about-us-label">关于本项目</div>
+                <div class="about-us-value">本项目聚焦简化教学中的 AI 实践流程，帮助师生更高效地开展课程与项目。<br><br>本项目是 XEDU PRO 的子项目，聚焦为教学与学习场景提供更顺手的一体化工具体验。</div>
+            </div>
+            <div class="about-us-card">
+                <div class="about-us-label">软件贡献者名单</div>
+                <div class="about-us-value">王海涛（上海科技大学附属学校）<br>邱奕盛（上海科技大学附属学校）<br><br>项目指导：谢作如</div>
+            </div>
+            <div class="about-us-card">
+                <div class="about-us-label">测试贡献者</div>
+                <div class="about-us-value">刘啸宇<br>洪丹妮</div>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-primary" onclick="app.ui.hideModal('about-us-modal')">知道了</button>
         </div>
     </div>
 </div>

@@ -18,6 +18,7 @@ env/
 venv/
 .venv/
 python_env/
+python_env_win/
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -51,3 +52,6 @@ config/backups/
 .ipynb_checkpoints/
 nul
 .local-cache/
+/course.json
+*.part
+*.backup

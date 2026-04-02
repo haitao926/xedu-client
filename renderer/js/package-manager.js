@@ -1,8 +1,18 @@
 import apiClient from './api.js';
 import { log } from './ui.js';
 
+const RESULT_PREFIX = '__XEDU_PIP_RESULT__=';
+
 function getOutputBox() {
     return document.getElementById('package-output');
+}
+
+function getPackageInput() {
+    return document.getElementById('python-package-input');
+}
+
+function getActionButtons() {
+    return Array.from(document.querySelectorAll('[data-package-action]'));
 }
 
 function clearOutput() {
@@ -20,8 +30,60 @@ function appendOutput(line, type = 'info') {
     box.scrollTop = box.scrollHeight;
 }
 
+function setBusy(isBusy) {
+    const input = getPackageInput();
+    if (input) input.disabled = isBusy;
+    getActionButtons().forEach((button) => {
+        button.disabled = isBusy;
+    });
+}
+
+function classifyOutput(line) {
+    if (!line) return 'info';
+    if (/^WARNING:/i.test(line)) return 'warning';
+    if (/^\[error\]/i.test(line) || /^ERROR:/i.test(line) || /Traceback/i.test(line)) return 'error';
+    if (/Successfully installed|Successfully uninstalled|Requirement already satisfied/i.test(line)) {
+        return 'success';
+    }
+    return 'info';
+}
+
+function parseResultLine(line) {
+    if (!line) return null;
+
+    if (line.startsWith(RESULT_PREFIX)) {
+        try {
+            return JSON.parse(line.slice(RESULT_PREFIX.length));
+        } catch (_) {
+            return { success: false, return_code: -1, message: '无法解析 pip 结果' };
+        }
+    }
+
+    const match = line.match(/===\s*退出码:\s*(-?\d+)\s*===/);
+    if (!match) return null;
+
+    const returnCode = Number(match[1]);
+    return {
+        success: returnCode === 0,
+        return_code: returnCode
+    };
+}
+
+function appendStreamLine(line, state) {
+    const result = parseResultLine(line);
+    if (result) {
+        state.result = result;
+        if (!line.startsWith(RESULT_PREFIX)) {
+            appendOutput(line, result.success ? 'success' : 'error');
+        }
+        return;
+    }
+
+    appendOutput(line, classifyOutput(line));
+}
+
 async function managePackage(action) {
-    const input = document.getElementById('python-package-input');
+    const input = getPackageInput();
     const useMirror = document.getElementById('use-tsinghua-mirror')?.checked ?? true;
     const pkg = input ? input.value.trim() : '';
 
@@ -39,9 +101,9 @@ async function managePackage(action) {
             : '开始卸载';
     log(`${actionText} ${pkg}...`, 'info');
     appendOutput(`${actionText} ${pkg}...`, 'info');
+    setBusy(true);
 
     try {
-        // 使用后端绝对地址，避免 file:// 或非同源导致的 ERR_FILE_NOT_FOUND
         const apiBase = (apiClient && apiClient.baseURL)
             ? apiClient.baseURL.replace(/\/$/, '')
             : ((typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
@@ -66,9 +128,14 @@ async function managePackage(action) {
             throw new Error(text || `HTTP ${resp.status}`);
         }
 
-        const reader = resp.body.getReader();
+        const reader = resp.body?.getReader();
+        if (!reader) {
+            throw new Error('浏览器不支持流式读取响应');
+        }
+
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
+        const state = { result: null };
 
         while (true) {
             const { done, value } = await reader.read();
@@ -76,18 +143,27 @@ async function managePackage(action) {
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
-            lines.forEach((line) => appendOutput(line, 'info'));
+            lines.forEach((line) => appendStreamLine(line, state));
         }
 
-        if (buffer) appendOutput(buffer, 'info');
+        if (buffer) {
+            appendStreamLine(buffer, state);
+        }
 
-        appendOutput('操作结束', 'success');
-        log('操作结束', 'success');
+        if (state.result && state.result.success === false) {
+            const msg = state.result.message || `pip 退出码 ${state.result.return_code}`;
+            throw new Error(msg);
+        }
+
+        appendOutput('操作成功', 'success');
+        log('操作成功', 'success');
     } catch (error) {
         const msg = error?.message || '未知错误';
         log(`操作失败: ${msg}`, 'error');
         appendOutput(`操作失败: ${msg}`, 'error');
         console.error(error);
+    } finally {
+        setBusy(false);
     }
 }
 

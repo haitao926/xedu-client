@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XEdu Client 项目介绍</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: rgba(255, 252, 246, 0.88);
+      --card: #fffaf2;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: rgba(148, 163, 184, 0.28);
+      --accent: #0f766e;
+      --accent-soft: rgba(15, 118, 110, 0.12);
+      --shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28%),
+        radial-gradient(circle at right center, rgba(245, 158, 11, 0.14), transparent 24%),
+        linear-gradient(180deg, #f6f1e8 0%, #f0ebe3 100%);
+      min-height: 100vh;
+      padding: 32px;
+    }
+
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      overflow: hidden;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 28px;
+      padding: 36px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    h1 {
+      margin: 18px 0 12px;
+      font-size: 44px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.75;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .meta-item {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--line);
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .screenshot-card {
+      min-height: 360px;
+      border-radius: 24px;
+      padding: 18px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.92), rgba(249,245,236,0.95)),
+        repeating-linear-gradient(
+          45deg,
+          rgba(15, 118, 110, 0.05) 0,
+          rgba(15, 118, 110, 0.05) 12px,
+          rgba(245, 158, 11, 0.05) 12px,
+          rgba(245, 158, 11, 0.05) 24px
+        );
+      border: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .screenshot-card::before {
+      content: "";
+      position: absolute;
+      inset: 14px;
+      border-radius: 18px;
+      border: 1.5px dashed rgba(15, 118, 110, 0.35);
+    }
+
+    .screenshot-placeholder {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      padding: 24px;
+      max-width: 360px;
+    }
+
+    .screenshot-placeholder strong {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 10px;
+    }
+
+    .screenshot-placeholder p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .content {
+      padding: 30px 36px 40px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 15px;
+    }
+
+    .feature-list,
+    .stack-list,
+    .scenario-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .feature-list li,
+    .stack-list li,
+    .scenario-list li {
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      line-height: 1.65;
+    }
+
+    .feature-list strong,
+    .stack-list strong,
+    .scenario-list strong {
+      display: inline-block;
+      margin-right: 6px;
+      color: var(--text);
+    }
+
+    .wide {
+      grid-column: 1 / -1;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: rgba(15, 118, 110, 0.08);
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+
+    @media (max-width: 980px) {
+      body {
+        padding: 18px;
+      }
+
+      .hero,
+      .content {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .content,
+      .hero {
+        padding: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div>
+        <span class="eyebrow">XEdu Client · 项目概览</span>
+        <h1>面向课堂教学的桌面化 Jupyter 学习与课程管理客户端</h1>
+        <p class="lead">
+          XEdu Client 是一个基于 Electron + Python 的桌面应用，围绕教学现场提供
+          Jupyter 启动管理、课程资源组织、教师/学生双角色使用、AI 助手与课程发布同步能力。
+          它的目标不是单纯打开 Notebook，而是把“上课、备课、管课、发布课程”串成一个完整流程。
+        </p>
+        <div class="meta">
+          <span class="meta-item">版本：2.0.0</span>
+          <span class="meta-item">桌面端：Electron</span>
+          <span class="meta-item">后端：Python Flask</span>
+          <span class="meta-item">核心场景：课堂教学 / 实验课 / 课程资源管理</span>
+        </div>
+      </div>
+
+      <div class="screenshot-card">
+        <div class="screenshot-placeholder">
+          <strong>项目截图放置区</strong>
+          <p>
+            这里预留给产品截图、课程页面截图或主控台截图。<br />
+            后续可直接替换为 <code>&lt;img&gt;</code>，或把截图作为背景图放入此区域。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="content">
+      <article class="card">
+        <h2>项目定位</h2>
+        <p>
+          该项目面向学校教学和实验教学场景，解决传统 Jupyter 工具“只会运行，不会组织教学”的问题。
+          学生侧聚焦进入课堂、打开实验和跟随学习；教师侧聚焦课程创建、课节管理、实验材料整理、课堂开启与课程发布。
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>核心能力</h2>
+        <ul class="feature-list">
+          <li><strong>Jupyter 管理：</strong>启动、挂载、进入指定实验目录，作为课堂实验运行底座。</li>
+          <li><strong>课程资源：</strong>支持课程、课节、实验三级结构组织，适合按教学逻辑管理内容。</li>
+          <li><strong>角色区分：</strong>学生模式与教师模式分离，教师功能默认隐藏，减少误操作。</li>
+          <li><strong>课程同步：</strong>支持本地课程、云端课程、仓库发布与更新拉取。</li>
+          <li><strong>AI 助手：</strong>为课堂中的代码理解、问答和实验辅助提供入口。</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>典型使用流程</h2>
+        <ul class="scenario-list">
+          <li><strong>教师备课：</strong>创建课程，设计课节与实验，整理 Notebook、HTML 与素材文件。</li>
+          <li><strong>教师上课：</strong>开启课堂，进入指定课节实验，让学生按统一路径开始操作。</li>
+          <li><strong>学生学习：</strong>直接进入课堂实验，在主控台中打开 Jupyter 并完成实验。</li>
+          <li><strong>课程沉淀：</strong>将课程发布到仓库，后续持续更新、拉取和复用。</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>技术架构</h2>
+        <ul class="stack-list">
+          <li><strong>前端：</strong>原生 HTML / CSS / JavaScript，负责课程界面、课堂入口和交互逻辑。</li>
+          <li><strong>桌面壳：</strong>Electron，负责窗口管理、本地能力调用和 Jupyter 视图承载。</li>
+          <li><strong>后端服务：</strong>Python Flask，负责配置、课程接口、Jupyter 控制与资源同步。</li>
+          <li><strong>运行环境：</strong>内置 Python 环境，支持 Mac 与 Windows 桌面分发。</li>
+        </ul>
+      </article>
+
+      <article class="card wide">
+        <h2>当前项目价值</h2>
+        <p>
+          XEdu Client 的价值在于把“实验运行工具”升级成“教学工作台”。它不仅面向单个 Notebook，
+          更面向完整课程生命周期：本地创建、课堂使用、云端同步、后续维护。对于需要统一教学入口、
+          降低学生操作复杂度、同时保留教师管理能力的学校场景，这个方向是成立的。
+        </p>
+        <div class="footer-note">
+          建议截图内容：主控台首页、课程资源页、课程详情页、实验运行页。把其中一张主界面截图放到右上角占位区即可。
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

@@ -35,9 +35,7 @@ export class ProjectWizard {
 
     async loadTemplates() {
         try {
-            const baseUrl = window.app.config?.getApiBaseUrl() || 'http://127.0.0.1:8000';
-            const res = await fetch(`${baseUrl}/api/projects/templates`);
-            const data = await res.json();
+            const data = await this.api.get('/api/projects/templates');
             if (data.success) {
                 this.templates = data.templates;
                 this.defaultPath = data.default_path;
@@ -134,18 +132,13 @@ export class ProjectWizard {
         document.getElementById('wizard-btn-next').style.display = 'none';
 
         try {
-            const baseUrl = window.app.config?.getApiBaseUrl() || 'http://127.0.0.1:8000';
             const desc = document.getElementById('wizard-project-desc').value.trim();
-            const res = await fetch(`${baseUrl}/api/projects/create`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name, path,
-                    template_id: this.selectedTemplateId,
-                    description: desc
-                })
+            const data = await this.api.post('/api/projects/create', {
+                name,
+                path,
+                template_id: this.selectedTemplateId,
+                description: desc
             });
-            const data = await res.json();
             
             if (data.success) {
                 this.createdProjectPath = data.project_path;
