@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "npx vite",
     "build": "npx vite build",
+    "check:bundle": "node scripts/check_bundle_size.js",
+    "test:blockly-runtime": "node --test renderer/js/blockly/runtime-helpers.test.js",
+    "test:blockly-real": "python3 scripts/blockly_real_runtime_audit.py",
     "preview": "npx vite preview",
     "clean": "rimraf build",
     "full-build": "npm run clean && build.bat",
