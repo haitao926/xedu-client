@@ -1,0 +1,14 @@
+<xml xmlns="https://developers.google.com/blockly/xml">
+  <block type="xeduhub_set_input_resource" id="xeduhub_pose_hand21_runtime_input" x="28" y="28">
+    <field name="INPUT">demo.jpg</field>
+    <next>
+      <block type="xeduhub_run_pose_hand21" id="xeduhub_pose_hand21_runtime_run">
+        <next>
+          <block type="xeduhub_show_result_card" id="xeduhub_pose_hand21_runtime_show">
+            <field name="TITLE">手部关键点 21 结果</field>
+          </block>
+        </next>
+      </block>
+    </next>
+  </block>
+</xml>

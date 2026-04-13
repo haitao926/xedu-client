@@ -1,0 +1,14 @@
+<xml xmlns="https://developers.google.com/blockly/xml">
+  <block type="xeduhub_set_input_resource" id="xeduhub_pose_face106_runtime_input" x="28" y="28">
+    <field name="INPUT">demo.jpg</field>
+    <next>
+      <block type="xeduhub_run_pose_face106" id="xeduhub_pose_face106_runtime_run">
+        <next>
+          <block type="xeduhub_show_result_card" id="xeduhub_pose_face106_runtime_show">
+            <field name="TITLE">人脸关键点 106 结果</field>
+          </block>
+        </next>
+      </block>
+    </next>
+  </block>
+</xml>
