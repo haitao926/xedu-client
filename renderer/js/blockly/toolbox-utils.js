@@ -1,11 +1,48 @@
-const CATEGORY_REQUIRED_NAMES = new Set(['核心积木', 'L1 入门闭环', 'XEduHub 教学', '基础逻辑', '拓展积木']);
+const CATEGORY_REQUIRED_NAMES = new Set([
+  'XEdu',
+  'XEduHub',
+  '媒体与设备',
+  '调试与扩展',
+  '图像视频',
+  '通信控制',
+  '核心语法',
+  '结果处理',
+  '调试扩展',
+  '图像分类',
+  '目标检测',
+  'OCR',
+  '关键点识别',
+  '内容生成',
+  '图像分割',
+  '深度估计',
+  '多模态特征',
+  '全景感知',
+  '结果显示',
+  '进阶调试',
+  '核心积木',
+  'L2 任务语义块',
+  'XEduHub 教学',
+  '基础逻辑',
+  '拓展积木',
+  '逻辑',
+  '循环',
+  '数学',
+  '文本',
+  '列表',
+  '变量',
+  '函数',
+]);
 const RUNNABLE_BLOCK_TYPES = new Set([
-  'xeduhub_classify_run',
-  'xeduhub_detect_run',
-  'xeduhub_ocr_run',
-  'xeduhub_run_vision',
-  'xeduhub_create_flow',
-  'xeduhub_create_workflow',
+  'xeduhub_workflow_create',
+  'xeduhub_workflow_set_task',
+  'xeduhub_workflow_infer',
+  'xeduhub_workflow_create_var',
+  'xeduhub_workflow_infer_var',
+  'xeduhub_workflow_infer_pair',
+  'xeduhub_cv_open_camera',
+  'xeduhub_cv_open_video',
+  'xeduhub_http_open_stream',
+  'xeduhub_http_get',
 ]);
 
 function clone(value) {
@@ -132,15 +169,35 @@ function validateToolboxPayload(toolbox) {
 }
 
 function mergeToolboxes(baseToolbox, customToolbox) {
+  const normalizeCategoryName = (value) => String(value || '').trim();
+  const normalizeBuiltinCustomKey = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) {
+      return '';
+    }
+    const upper = raw.toUpperCase();
+    if (upper === 'VARIABLE' || upper === 'VARIABLE_DYNAMIC' || upper === 'PROCEDURE') {
+      return upper;
+    }
+    return raw;
+  };
   const base = normalizeCategoryMeta(baseToolbox && baseToolbox.kind === 'categoryToolbox' ? baseToolbox : { kind: 'categoryToolbox', contents: [] });
   const custom = normalizeCategoryMeta(customToolbox && customToolbox.kind === 'categoryToolbox' ? customToolbox : { kind: 'categoryToolbox', contents: [] });
   const merged = clone(base);
-  const byName = new Map((merged.contents || []).map((item) => [item?.name || '', item]));
+  const byName = new Map((merged.contents || []).map((item) => {
+    if (item && item.kind === 'category') {
+      item.name = normalizeCategoryName(item.name);
+      item.custom = normalizeBuiltinCustomKey(item.custom);
+    }
+    return [item?.name || '', item];
+  }));
 
   (custom.contents || []).forEach((item) => {
     if (!item || item.kind !== 'category') {
       return;
     }
+    item.name = normalizeCategoryName(item.name);
+    item.custom = normalizeBuiltinCustomKey(item.custom);
     const name = item.name || '';
     if (!name) {
       return;
@@ -150,6 +207,18 @@ function mergeToolboxes(baseToolbox, customToolbox) {
       existing.level = item.level || existing.level;
       if (typeof item.visible_by_default === 'boolean') {
         existing.visible_by_default = item.visible_by_default;
+      }
+      existing.custom = normalizeBuiltinCustomKey(existing.custom);
+      const existingCustom = typeof existing.custom === 'string' ? existing.custom : '';
+      const incomingCustom = typeof item.custom === 'string' ? item.custom : '';
+      if (incomingCustom) {
+        existing.custom = incomingCustom;
+        delete existing.contents;
+        return;
+      }
+      if (existingCustom) {
+        // Keep built-in dynamic categories (VARIABLE / PROCEDURE) from being downgraded to static lists.
+        return;
       }
       if (Array.isArray(item.contents) && item.contents.length > 0) {
         existing.contents = item.contents;

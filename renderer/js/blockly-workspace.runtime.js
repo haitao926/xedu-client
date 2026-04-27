@@ -43,12 +43,20 @@ Blockly.setLocale(ZhHans);
 const runtimeConfig = window.__XEDU_BLOCKLY_RUNTIME_CONFIG__ || {};
 const CLASSROOM_DEFAULTS = Object.freeze({
   workspaceFallbackTitle: 'Blockly 课堂练习',
-  toolbarMoreClosedLabel: '更多 ▾',
-  toolbarMoreOpenLabel: '更多 ▴',
+  toolbarMoreClosedLabel: '操作',
+  toolbarMoreOpenLabel: '收起操作',
+  workspaceMetaLabel: '任务驱动课堂工作台',
   codePanelVisible: true,
-  resultIdleText: '$ 等待运行',
-  resultRunningText: '$ 运行中...',
+  resultIdleText: '尚未运行',
+  resultRunningText: '正在执行当前流程，请稍候…',
 });
+
+const STUDENT_QUICK_ACTION_IDS = Object.freeze([
+  'openWorkspaceBtn',
+  'saveWorkspaceBtn',
+  'copyPythonBtn',
+  'downloadPythonBtn',
+]);
 
 const BLOCKLY_DEBUG_ENABLED = (() => {
   try {
@@ -104,41 +112,62 @@ const state = {
   toolbarOverflowState: { menuOpen: false },
   controlPanelState: { open: false },
   codePanelVisible: CLASSROOM_DEFAULTS.codePanelVisible,
-  resultRunState: { hasRun: false },
+  resultRunState: { hasRun: false, lastPayload: null, lastTone: 'idle' },
   migrationReport: null,
   lastFlyoutButtonInvoke: { key: '', at: 0 },
   createVariableFallback: null,
   variableNameDialog: { resolve: null, visible: false },
   codePanelResizeTimer: null,
+  toolboxSelectionSyncing: false,
+  sideNavCollapsed: {},
 };
 
 const CATEGORY_ICON_SVGS = {
-  XEduHub: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4.8 18 8v8l-6 3.2L6 16V8l6-3.2Z" fill="currentColor" opacity=".14"/><path d="M12 8.1v7.4m-3.3-3.7h6.6" stroke="currentColor" stroke-width="1.76" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  图像分类: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3.4" fill="currentColor" opacity=".11"/><path d="M8.1 14.9 10.8 12l2.2 2.2 3-3.3" stroke="currentColor" stroke-width="1.72" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.1" cy="9.1" r="1.2" fill="currentColor"/></svg>',
-  目标检测: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5.4" y="5.4" width="13.2" height="13.2" rx="3" stroke="currentColor" stroke-width="1.7" opacity=".42"/><rect x="8.3" y="8.3" width="7.4" height="7.4" rx="1.9" stroke="currentColor" stroke-width="1.7"/><path d="M12 4.5v2.2M12 17.3v2.2M4.5 12h2.2M17.3 12h2.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
-  OCR: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.8" y="5" width="14.4" height="14" rx="3.2" stroke="currentColor" opacity=".34"/><path d="M8.2 9.2h7.6M8.2 12h5.6M8.2 14.8h7.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M15.8 16.8h3.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
-  关键点识别: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="7.2" r="1.5" fill="currentColor"/><circle cx="8.1" cy="11" r="1.4" fill="currentColor" opacity=".88"/><circle cx="15.9" cy="11" r="1.4" fill="currentColor" opacity=".88"/><circle cx="9.4" cy="16.1" r="1.3" fill="currentColor" opacity=".78"/><circle cx="14.6" cy="16.1" r="1.3" fill="currentColor" opacity=".78"/><path d="M12 8.7v4.8M12 10.2l-2.6.8M12 10.2l2.6.8M12 13.5l-2 2M12 13.5l2 2" stroke="currentColor" stroke-width="1.64" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  内容生成: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4.7 13.8 9l4.5.4-3.4 2.8 1 4.4L12 14.4l-3.9 2.2 1-4.4-3.4-2.8 4.5-.4L12 4.7Z" fill="currentColor" opacity=".12"/><path d="M12 7.4v3.4m0 0 2.4 1.4M12 10.8 9.6 12.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  图像分割: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 7.6c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v8.8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7.6Z" fill="currentColor" opacity=".1"/><path d="M8.2 8.7c1.6.2 2.8 1.3 3 3 .1 1.4-.5 2.6-1.6 3.4m6.2-6.4c-1.6.2-2.8 1.3-3 3-.1 1.4.5 2.6 1.6 3.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
-  深度估计: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 8.2 12 5l6 3.2v7.6L12 19l-6-3.2V8.2Z" fill="currentColor" opacity=".11"/><path d="M12 5v14M6 8.2l6 3.4 6-3.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  多模态特征: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="5.2" width="5.2" height="5.2" rx="1.5" fill="currentColor" opacity=".85"/><rect x="13.8" y="5.2" width="5.2" height="5.2" rx="1.5" fill="currentColor" opacity=".6"/><rect x="9.4" y="13.6" width="5.2" height="5.2" rx="1.5" fill="currentColor" opacity=".35"/><path d="M10.3 9.3h3.4m-1.7 0v4.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
-  全景感知: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5.2 15.8c1.8-3 4.1-4.5 6.8-4.5 2.8 0 5 1.5 6.8 4.5" stroke="currentColor" stroke-width="1.72" stroke-linecap="round"/><path d="M6.3 14.6V9.2a2 2 0 0 1 2-2H15.7a2 2 0 0 1 2 2v5.4" stroke="currentColor" stroke-width="1.72" stroke-linecap="round"/><circle cx="8.2" cy="16.6" r="1.2" fill="currentColor"/><circle cx="15.8" cy="16.6" r="1.2" fill="currentColor"/></svg>',
-  结果显示: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.9" y="5" width="14.2" height="14" rx="3.1" fill="currentColor" opacity=".11"/><path d="M8.2 12.2h3.1l1.7-2.1 2.8 4" stroke="currentColor" stroke-width="1.72" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8.4" cy="9.2" r="1.1" fill="currentColor"/></svg>',
-  逻辑: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4.6 16.6 8 12 11.4 7.4 8 12 4.6Z" fill="currentColor" opacity=".16"/><rect x="4.9" y="14.2" width="5.4" height="4.6" rx="1.2" fill="currentColor" opacity=".11"/><rect x="13.7" y="14.2" width="5.4" height="4.6" rx="1.2" fill="currentColor" opacity=".11"/><path d="M12 11.6v2.5m0 .1H9.3m2.7 0h2.7" stroke="currentColor" stroke-width="1.78" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  循环: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6.3H4.7V9.6M16 17.7h3.3v-3.3M5.2 9a7 7 0 0 1 12.8-1.9M18.8 15a7 7 0 0 1-12.8 1.9" stroke="currentColor" stroke-width="1.84" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg>',
-  数学: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.7" y="4.7" width="14.6" height="14.6" rx="3.6" fill="currentColor" opacity=".11"/><path d="M8.1 9.4h4m-2-2v4m-2 4.6h4m2.3-7 3 3m0-3-3 3m.2 4.1h2.8" stroke="currentColor" stroke-width="1.68" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  文本: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.8" y="4.8" width="14.4" height="14.4" rx="3.7" stroke="currentColor" opacity=".34"/><path d="M7.4 8h9.2M12 8v8M9 16h6" stroke="currentColor" stroke-width="1.82" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  列表: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="5.2" width="14" height="13.6" rx="3.4" fill="currentColor" opacity=".1"/><circle cx="8.3" cy="9" r="1.1" fill="currentColor"/><circle cx="8.3" cy="12.2" r="1.1" fill="currentColor"/><circle cx="8.3" cy="15.4" r="1.1" fill="currentColor"/><path d="M11.3 9h4.5m-4.5 3.2h5.2m-5.2 3.2h4.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
-  变量: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4.8 18 8v8l-6 3.2L6 16V8l6-3.2Z" fill="currentColor" opacity=".13"/><path d="M12 4.8 18 8v8l-6 3.2L6 16V8l6-3.2Zm0 3.7v6.9" stroke="currentColor" stroke-width="1.74" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.9 10.6h4.2" stroke="currentColor" stroke-width="1.62" stroke-linecap="round"/></svg>',
-  函数: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.6 6.2c-2 1.5-2 10.1 0 11.6M15.4 6.2c2 1.5 2 10.1 0 11.6" stroke="currentColor" stroke-width="1.84" stroke-linecap="round"/><path d="M10.2 14.7c.8-2.6 2.3-4.4 4.4-5.7m-4 1.6h4.9" stroke="currentColor" stroke-width="1.58" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  图像视频: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.8" y="6" width="11.8" height="9.2" rx="2.1" fill="currentColor" opacity=".12"/><path d="M16.5 9.2 19.7 7.4v6.1l-3.2-1.8" stroke="currentColor" stroke-width="1.68" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10.4" cy="10.6" r="2" stroke="currentColor" stroke-width="1.58"/><path d="M6.8 18.4h10.4" stroke="currentColor" stroke-width="1.68" stroke-linecap="round"/></svg>',
-  通信控制: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.9" y="5.1" width="10.8" height="13.8" rx="2.9" fill="currentColor" opacity=".12"/><path d="M8.1 8.9h4.6M8.1 12h4.6M8.1 15.1h3.2M16.5 9.3h2.9M17.9 7.9v2.9" stroke="currentColor" stroke-width="1.68" stroke-linecap="round"/><circle cx="18.1" cy="15.7" r="2" stroke="currentColor" stroke-width="1.6"/></svg>',
-  进阶调试: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5.1 6.4 8.3v7.4l5.6 3.2 5.6-3.2V8.3L12 5.1Z" fill="currentColor" opacity=".1"/><path d="m9.1 13 1.8 1.8 4-4.2M12 5.1 6.4 8.3v7.4l5.6 3.2 5.6-3.2V8.3L12 5.1Z" stroke="currentColor" stroke-width="1.68" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  'XEduHub 推理': '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4.6 14 8.7l4.6.7-3.3 3.2.8 4.6-4.1-2-4.1 2 .8-4.6-3.3-3.2 4.6-.7L12 4.6Z" fill="currentColor" opacity=".12"/><path d="M10 11.2a2 2 0 1 1 4 0c0 1.2-2 1.7-2 3m0 2h.01" stroke="currentColor" stroke-width="1.72" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  '模型与参数': '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 8h12M6 12h12M6 16h12" stroke="currentColor" stroke-width="1.78" stroke-linecap="round"/><rect x="8" y="6.8" width="3.3" height="2.4" rx="1.2" fill="currentColor"/><rect x="13.1" y="10.8" width="3.3" height="2.4" rx="1.2" fill="currentColor"/><rect x="10.5" y="14.8" width="3.3" height="2.4" rx="1.2" fill="currentColor"/></svg>',
-  '底层与调试': '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.8" y="5.3" width="14.4" height="13.4" rx="3.1" fill="currentColor" opacity=".1"/><path d="m8.1 9.2 2.1 2.1-2.1 2.1m4.1 1.7h4m-8-6.4h7.8" stroke="currentColor" stroke-width="1.68" stroke-linecap="round" stroke-linejoin="round"/><circle cx="15.9" cy="11.3" r="1.1" fill="currentColor"/></svg>',
-  扩展包: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5 18.3 8v8L12 19l-6.3-3V8L12 5Z" fill="currentColor" opacity=".12"/><path d="M12 5 18.3 8v8L12 19l-6.3-3V8L12 5Zm0 3.7v6.6m-3.3-3.3h6.6" stroke="currentColor" stroke-width="1.72" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  基础编程: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="5.2" height="5.2" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="10.3" y="2.5" width="5.2" height="5.2" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="6.4" y="10.3" width="5.2" height="5.2" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M7.7 5.1h2.6M9 7.7v2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  XEdu: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 2.6 13.8 5v5.2L9 12.6 4.2 10.2V5L9 2.6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 5.5.9 1.8 2 .3-1.5 1.4.4 1.9L9 10l-1.8.9.4-1.9L6 7.6l2-.3L9 5.5Z" fill="currentColor" opacity=".18" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  'XEdu Hub': '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 2.6 13.8 5v5.2L9 12.6 4.2 10.2V5L9 2.6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 5.5.9 1.8 2 .3-1.5 1.4.4 1.9L9 10l-1.8.9.4-1.9L6 7.6l2-.3L9 5.5Z" fill="currentColor" opacity=".18" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  '媒体与设备': '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M3.4 8.7a5.6 5.6 0 0 1 11.2 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6.2 8.9v2.6M11.8 8.9v2.6M9 2.9v2.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="5.5" y="11.2" width="7" height="3.2" rx="1.4" stroke="currentColor" stroke-width="1.5"/></svg>',
+  '调试与扩展': '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" fill="currentColor" opacity=".1"/><path d="m6.9 9.4 1.3 1.3 3-3.2M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  扩展工具: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M3.4 8.7a5.6 5.6 0 0 1 11.2 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6.2 8.9v2.6M11.8 8.9v2.6M9 2.9v2.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="5.5" y="11.2" width="7" height="3.2" rx="1.4" stroke="currentColor" stroke-width="1.5"/></svg>',
+  逻辑: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 2.8 13.3 6 9 9.2 4.7 6 9 2.8Z" fill="currentColor" opacity=".18"/><path d="M9 9.4v2.2m0 0H6.8m2.2 0h2.2" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/><rect x="3.2" y="11.4" width="4.1" height="3.2" rx="1.2" fill="currentColor" opacity=".12"/><rect x="10.7" y="11.4" width="4.1" height="3.2" rx="1.2" fill="currentColor" opacity=".12"/></svg>',
+  循环: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M6 4.8H3.8v2.2M12 13.2h2.2V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.1 6.1A4.8 4.8 0 0 1 13 4.8M13.9 11.9A4.8 4.8 0 0 1 5 13.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="9" r="1.1" fill="currentColor"/></svg>',
+  数学: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.1" y="3.1" width="11.8" height="11.8" rx="3.1" fill="currentColor" opacity=".12"/><path d="M6.2 7.1h3.2m-1.6-1.6v3.2m-.9 4h3.4m1.5-5.1 2.1 2.1m0-2.1-2.1 2.1" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  文本: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.3" y="3.3" width="11.4" height="11.4" rx="2.8" stroke="currentColor" opacity=".28"/><path d="M5.8 6.2h6.4M9 6.2v5.8M7 12h4" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  列表: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.1" y="3.4" width="11.8" height="11.2" rx="2.8" fill="currentColor" opacity=".11"/><circle cx="5.8" cy="6.4" r=".8" fill="currentColor"/><circle cx="5.8" cy="9" r=".8" fill="currentColor"/><circle cx="5.8" cy="11.6" r=".8" fill="currentColor"/><path d="M8.1 6.4h4.4M8.1 9h5M8.1 11.6h3.6" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
+  变量: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 2.8 13.5 5.2v4.9L9 12.6 4.5 10.1V5.2L9 2.8Z" fill="currentColor" opacity=".14"/><path d="M9 2.8 13.5 5.2v4.9L9 12.6 4.5 10.1V5.2L9 2.8Zm0 3.1v3.7m-1.8-1.9h3.6" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  函数: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M6.6 4.6c-1.5 1.2-1.5 7.6 0 8.8M11.4 4.6c1.5 1.2 1.5 7.6 0 8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M7.8 11.1c.6-1.8 1.8-3.1 3.4-4m-3 1.2h3.7" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  图像分类: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.2" y="3.2" width="11.6" height="11.6" rx="2.8" fill="currentColor" opacity=".12"/><path d="M5.8 11.8 8 9.6l1.8 1.7 2.5-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.8" cy="6.6" r="1" fill="currentColor"/></svg>',
+  目标检测: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.8" y="3.8" width="10.4" height="10.4" rx="2.4" stroke="currentColor" stroke-width="1.4" opacity=".36"/><rect x="6.2" y="6.2" width="5.6" height="5.6" rx="1.4" stroke="currentColor" stroke-width="1.5"/><path d="M9 2.8v1.8M9 13.4v1.8M2.8 9h1.8M13.4 9h1.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  关键点识别: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="5.3" r="1.1" fill="currentColor"/><circle cx="6" cy="8.3" r="1" fill="currentColor" opacity=".88"/><circle cx="12" cy="8.3" r="1" fill="currentColor" opacity=".88"/><circle cx="7" cy="12.3" r=".9" fill="currentColor" opacity=".78"/><circle cx="11" cy="12.3" r=".9" fill="currentColor" opacity=".78"/><path d="M9 6.5v3.4M9 7.5 7 8.3M9 7.5l2 .8M9 9.9l-1.5 1.6M9 9.9l1.5 1.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  OCR: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.4" y="3.4" width="11.2" height="11.2" rx="2.8" stroke="currentColor" opacity=".3"/><path d="M5.8 6.3h6.4M5.8 8.9h4.7M5.8 11.5h6.4" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/><path d="M11.8 13.2h2.1" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
+  内容生成: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.3 10.3 6l3 .3-2.2 1.9.7 3-2.8-1.5-2.8 1.5.7-3-2.2-1.9 3-.3L9 3.3Z" fill="currentColor" opacity=".14"/><path d="M9 5.3v2.4m0 0 1.7 1M9 7.7l-1.7 1" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  图像分割: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.6" y="3.8" width="10.8" height="10.4" rx="2.4" fill="currentColor" opacity=".1"/><path d="M6 6.5c1.2.1 2.1 1 2.3 2.2.1 1-.4 1.9-1.2 2.5m4.9-4.7c-1.2.1-2.1 1-2.3 2.2-.1 1 .4 1.9 1.2 2.5" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
+  深度估计: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.5 5.8 9 3.4l4.5 2.4v5.6L9 14 4.5 11.4V5.8Z" fill="currentColor" opacity=".12"/><path d="M9 3.4V14M4.5 5.8 9 8.4l4.5-2.6" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  图像视频: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.6" y="5" width="8.6" height="6.6" rx="1.6" fill="currentColor" opacity=".12"/><path d="M12.2 7.2 14.5 6v4.2l-2.3-1.2" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7.7" cy="8.3" r="1.4" stroke="currentColor" stroke-width="1.3"/><path d="M5.1 13.7h7.8" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
+  通信控制: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.6" y="3.8" width="8.2" height="10.4" rx="2.2" fill="currentColor" opacity=".12"/><path d="M6.1 6.7h3.5M6.1 9h3.5M6.1 11.3h2.4M12.4 7h2M13.4 6v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="13.6" cy="11.8" r="1.5" stroke="currentColor" stroke-width="1.35"/></svg>',
+  核心语法: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.2 5.1h4.1v2.6H4.2zm5.5 2.8h4.1v2.6H9.7zM6.3 10.9h4.1v2.6H6.3z" fill="currentColor" opacity=".16"/><path d="M8.3 6.4h1.1c.7 0 1.3.6 1.3 1.3v.2M8.4 12.2h-.8c-.7 0-1.3-.6-1.3-1.3v-.1M10.8 10.7v.2c0 .7-.6 1.3-1.3 1.3H9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
+  结果处理: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.2" y="3.2" width="11.6" height="11.6" rx="2.8" fill="currentColor" opacity=".12"/><path d="M5.8 11.8 8 9.6l1.8 1.7 2.5-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.8" cy="6.6" r="1" fill="currentColor"/></svg>',
+  调试扩展: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" fill="currentColor" opacity=".1"/><path d="m6.9 9.4 1.3 1.3 3-3.2M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  进阶调试: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" fill="currentColor" opacity=".1"/><path d="m6.9 9.4 1.3 1.3 3-3.2M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  AI流程: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.2 5.1h4.1v2.6H4.2zm5.5 2.8h4.1v2.6H9.7zM6.3 10.9h4.1v2.6H6.3z" fill="currentColor" opacity=".16"/><path d="M8.3 6.4h1.1c.7 0 1.3.6 1.3 1.3v.2M8.4 12.2h-.8c-.7 0-1.3-.6-1.3-1.3v-.1M10.8 10.7v.2c0 .7-.6 1.3-1.3 1.3H9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
 };
+
+const DEFAULT_CATEGORY_ICON_SVG = '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.2" y="3.4" width="5.1" height="5.1" rx="1.5" fill="currentColor" opacity=".16"/><rect x="9.7" y="3.4" width="5.1" height="5.1" rx="1.5" fill="currentColor" opacity=".16"/><rect x="6.4" y="9.7" width="5.1" height="5.1" rx="1.5" fill="currentColor" opacity=".16"/><path d="M5.8 8.5v1.2c0 .7.6 1.3 1.3 1.3h.2M12.2 8.5v1.2c0 .7-.6 1.3-1.3 1.3h-.2" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>';
+
+const TASK_FIRST_CATEGORY_META = Object.freeze({
+  基础编程: { colour: '#6366f1', description: '逻辑、循环、数学、文本和变量等基础积木。' },
+  XEdu: { colour: '#3b82f6', description: 'XEdu 平台的核心语法、快捷任务和结果处理积木。' },
+  'XEdu Hub': { colour: '#3b82f6', description: '和 XEdu Hub 实验相关的输入、任务、结果与常用语义积木。' },
+  '媒体与设备': { colour: '#0ea5e9', description: '摄像头、视频流、显示、保存与设备控制积木。' },
+  '调试与扩展': { colour: '#6366f1', description: '流程调试、异常保护和扩展积木。' },
+  扩展工具: { colour: '#f97316', description: '媒体处理、通信控制和更多扩展能力。' },
+  扩展包与调试: { colour: '#f97316', description: '教师侧调试、兼容旧流程和扩展能力。' },
+});
+
+const BASIC_PROGRAM_CATEGORY_NAMES = new Set(['逻辑', '循环', '数学', '文本', '列表', '变量', '函数']);
+const ADVANCED_CATEGORY_NAMES = new Set(['图像视频', '通信控制', '进阶调试', '底层与调试', '扩展包']);
+const DEFAULT_INPUT_RESOURCE = 'courses/blockly-smoke/demo.jpg';
+const DEFAULT_INPUT_SEQUENCE = '["courses/blockly-smoke/demo.jpg","courses/blockly-smoke/demo.jpg"]';
 
 function ensureRuntimeStyles() {
   if (document.getElementById('xedu-blockly-runtime-style')) {
@@ -156,8 +185,18 @@ function getConfigValue(key, fallback = '') {
   return value == null ? fallback : value;
 }
 
+function getUserRole() {
+  return String(getConfigValue('userRole', '')).trim().toLowerCase() === 'teacher'
+    ? 'teacher'
+    : 'student';
+}
+
+function isTeacherMode() {
+  return getUserRole() === 'teacher';
+}
+
 function canImportToolboxPacks() {
-  return Boolean(getConfigValue('toolboxImportEnabled', getConfigValue('toolboxSwitchEnabled', true)));
+  return isTeacherMode() && Boolean(getConfigValue('toolboxImportEnabled', getConfigValue('toolboxSwitchEnabled', true)));
 }
 
 function ensureVariableNameDialog() {
@@ -270,89 +309,372 @@ async function validateToolboxWithApi(toolbox) {
   return check;
 }
 
-const scratchLikeTheme = Blockly.Theme.defineTheme('xedu_scratch_like', {
+const scratchLikeTheme = Blockly.Theme.defineTheme('xedu_refined_classroom', {
   base: Blockly.Themes.Classic,
   blockStyles: {
     logic_blocks: {
-      colourPrimary: '#4F7CFF',
-      colourSecondary: '#3D68EC',
-      colourTertiary: '#2C53CD',
+      colourPrimary: '#a5b4fc',
+      colourSecondary: '#818cf8',
+      colourTertiary: '#6366f1',
     },
     loop_blocks: {
-      colourPrimary: '#F59B42',
-      colourSecondary: '#E8842A',
-      colourTertiary: '#CF6C14',
+      colourPrimary: '#fbbf24',
+      colourSecondary: '#f59e0b',
+      colourTertiary: '#d97706',
     },
     math_blocks: {
-      colourPrimary: '#22C7A1',
-      colourSecondary: '#16B38E',
-      colourTertiary: '#0E9575',
+      colourPrimary: '#60a5fa',
+      colourSecondary: '#3b82f6',
+      colourTertiary: '#2563eb',
     },
     text_blocks: {
-      colourPrimary: '#8E68F8',
-      colourSecondary: '#7B55E7',
-      colourTertiary: '#6743CC',
+      colourPrimary: '#f9a8d4',
+      colourSecondary: '#f472b6',
+      colourTertiary: '#ec4899',
     },
     list_blocks: {
-      colourPrimary: '#37A7F7',
-      colourSecondary: '#1F93E6',
-      colourTertiary: '#147CC5',
+      colourPrimary: '#5eead4',
+      colourSecondary: '#14b8a6',
+      colourTertiary: '#0d9488',
     },
     variable_blocks: {
-      colourPrimary: '#F06F7F',
-      colourSecondary: '#DB5B6C',
-      colourTertiary: '#BD4859',
+      colourPrimary: '#fb7185',
+      colourSecondary: '#f43f5e',
+      colourTertiary: '#e11d48',
     },
     variable_dynamic_blocks: {
-      colourPrimary: '#F06F7F',
-      colourSecondary: '#DB5B6C',
-      colourTertiary: '#BD4859',
+      colourPrimary: '#fb7185',
+      colourSecondary: '#f43f5e',
+      colourTertiary: '#e11d48',
     },
     procedure_blocks: {
-      colourPrimary: '#AA6CF6',
-      colourSecondary: '#9559E4',
-      colourTertiary: '#7C48C9',
+      colourPrimary: '#c4b5fd',
+      colourSecondary: '#a78bfa',
+      colourTertiary: '#8b5cf6',
     },
   },
   componentStyles: {
-    workspaceBackgroundColour: '#f7faff',
-    toolboxBackgroundColour: '#f8fbff',
-    toolboxForegroundColour: '#243247',
-    flyoutBackgroundColour: '#f9fbff',
-    flyoutForegroundColour: '#243247',
+    workspaceBackgroundColour: '#fcfeff',
+    toolboxBackgroundColour: '#ffffff',
+    toolboxForegroundColour: '#334155',
+    flyoutBackgroundColour: '#ffffff',
+    flyoutForegroundColour: '#334155',
     flyoutOpacity: 1,
-    scrollbarColour: '#8aa0c4',
-    insertionMarkerColour: '#4F7CFF',
-    insertionMarkerOpacity: 0.35,
-    markerColour: '#2C53CD',
-    cursorColour: '#2C53CD',
+    scrollbarColour: '#b8c7db',
+    insertionMarkerColour: '#6366f1',
+    insertionMarkerOpacity: 0.4,
+    markerColour: '#6366f1',
+    cursorColour: '#6366f1',
   },
   fontStyle: {
     family: "'Avenir Next', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
     weight: '700',
-    size: 11.2,
+    size: 11.6,
   },
   startHats: true,
 });
 
-function getSourceToolbox() {
+function getDefaultTaskId() {
+  return String(getConfigValue('xeduhubTaskRegistry', {})?.default_task_id || 'cls_imagenet').trim() || 'cls_imagenet';
+}
+
+function makeBlock(type, { fields, inputs, ...rest } = {}) {
+  const block = { kind: 'block', type, ...rest };
+  if (fields && Object.keys(fields).length > 0) {
+    block.fields = fields;
+  }
+  if (inputs && Object.keys(inputs).length > 0) {
+    block.inputs = inputs;
+  }
+  return block;
+}
+
+function getRawSourceToolbox() {
   return state.toolboxVariants?.course
     || state.toolboxVariants?.official
     || normalizeCategoryMeta(getConfigValue('defaultXEduHubToolbox', {}));
 }
 
+function buildDefaultWorkspaceSerialized() {
+  const defaultTaskId = getDefaultTaskId();
+  const xmlText = [
+    '<xml xmlns="https://developers.google.com/blockly/xml">',
+    `<block type="xeduhub_set_input_resource" id="input1" x="28" y="28"><field name="INPUT">${DEFAULT_INPUT_RESOURCE}</field>`,
+    '<next>',
+    `<block type="xeduhub_workflow_create_var" id="flow1"><field name="TASK_ID">${defaultTaskId}</field><field name="MODEL_VAR">lab_flow</field>`,
+    '<next>',
+    '<block type="xeduhub_workflow_infer_var" id="infer1"><field name="MODEL_VAR">lab_flow</field><field name="RESULT_VAR">lab_result</field></block>',
+    '</next>',
+    '</block>',
+    '</next>',
+    '</block>',
+    '</xml>',
+  ].join('');
+  return { kind: 'xml', value: xmlText };
+}
+
+function walkToolboxItems(items, visitor) {
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    if (!item || typeof item !== 'object') {
+      return;
+    }
+    visitor(item);
+    if (item.kind === 'category' && Array.isArray(item.contents)) {
+      walkToolboxItems(item.contents, visitor);
+    }
+  });
+}
+
+function hasTaskDrivenToolboxSignal(toolbox) {
+  let matched = false;
+  walkToolboxItems(toolbox?.contents || [], (item) => {
+    if (matched) {
+      return;
+    }
+    const categoryName = String(item.name || '').trim();
+    if (item.kind === 'category' && (categoryName === 'XEduHub' || categoryName === 'XEdu')) {
+      matched = true;
+      return;
+    }
+    if (item.kind === 'block' && String(item.type || '').trim().startsWith('xeduhub_')) {
+      matched = true;
+    }
+  });
+  return matched;
+}
+
+function buildToolboxItemKey(item) {
+  if (!item || typeof item !== 'object') {
+    return '';
+  }
+  if (item.kind === 'category') {
+    return `category:${String(item.name || '').trim()}:${String(item.custom || '').trim()}`;
+  }
+  if (item.kind === 'block' || item.kind === 'shadow') {
+    return `${item.kind}:${String(item.type || '').trim()}:${JSON.stringify(item.fields || {})}:${JSON.stringify(item.inputs || {})}`;
+  }
+  if (item.kind === 'label') {
+    return `label:${String(item.text || '').trim()}`;
+  }
+  return '';
+}
+
+function dedupeToolboxContents(contents) {
+  const result = [];
+  const seen = new Set();
+  (Array.isArray(contents) ? contents : []).forEach((item) => {
+    if (!item || typeof item !== 'object') {
+      return;
+    }
+    if (item.kind === 'sep') {
+      if (!result.length || result[result.length - 1]?.kind === 'sep') {
+        return;
+      }
+      result.push({ kind: 'sep' });
+      return;
+    }
+    const key = buildToolboxItemKey(item);
+    if (key && seen.has(key)) {
+      return;
+    }
+    if (key) {
+      seen.add(key);
+    }
+    result.push(clone(item));
+  });
+  if (result[result.length - 1]?.kind === 'sep') {
+    result.pop();
+  }
+  return result;
+}
+
+function buildTaskFirstToolbox(rawToolbox) {
+  if (!hasTaskDrivenToolboxSignal(rawToolbox)) {
+    return normalizeCategoryMeta(rawToolbox);
+  }
+
+  const topLevelCategories = (rawToolbox?.contents || []).filter((item) => item && item.kind === 'category');
+  const categoryMap = new Map(topLevelCategories.map((item) => [String(item.name || '').trim(), clone(item)]));
+  const xeduCategory = categoryMap.get('XEdu') || categoryMap.get('XEduHub');
+  const mediaCategory = categoryMap.get('媒体与设备');
+  const debugCategory = categoryMap.get('调试与扩展');
+
+  if (xeduCategory && mediaCategory && debugCategory) {
+    return normalizeCategoryMeta({
+      ...rawToolbox,
+      contents: [
+        clone(categoryMap.get('基础编程')),
+        clone(xeduCategory),
+        clone(mediaCategory),
+        clone(debugCategory),
+      ].filter(Boolean),
+    });
+  }
+
+  const xeduContents = Array.isArray(xeduCategory?.contents) ? xeduCategory.contents : [];
+  const xeduCategoryMap = new Map(
+    xeduContents
+      .filter((item) => item && item.kind === 'category')
+      .map((item) => [String(item.name || '').trim(), clone(item)]),
+  );
+  const quickTaskNames = ['图像分类', '目标检测', '关键点识别', 'OCR', '内容生成', '图像分割', '深度估计'];
+  const basicNames = ['逻辑', '循环', '数学', '文本', '变量', '列表', '函数'];
+  const mediaNames = ['图像视频', '通信控制'];
+
+  const contents = [];
+
+  const basicContents = basicNames.map((name) => categoryMap.get(name)).filter(Boolean).map((item) => clone(item));
+  if (basicContents.length > 0) {
+    contents.push({
+      kind: 'category',
+        name: '基础编程',
+        colour: TASK_FIRST_CATEGORY_META.基础编程.colour,
+        description: TASK_FIRST_CATEGORY_META.基础编程.description,
+        visible_by_default: true,
+        expanded: true,
+        contents: basicContents,
+    });
+  }
+
+  const xeduPlatformContents = [
+    {
+      kind: 'category',
+      name: '核心语法',
+      colour: '#8b5cf6',
+      description: '创建任务、执行推理与串联流程。',
+      contents: dedupeToolboxContents([
+        makeBlock('xeduhub_set_input_resource', { fields: { INPUT: DEFAULT_INPUT_RESOURCE } }),
+        makeBlock('xeduhub_set_input_list', { fields: { INPUTS: DEFAULT_INPUT_SEQUENCE } }),
+        makeBlock('xeduhub_workflow_create_var', {
+          fields: {
+            TASK_ID: getDefaultTaskId(),
+            MODEL_VAR: 'lab_flow',
+          },
+        }),
+        makeBlock('xeduhub_workflow_infer_var', {
+          fields: {
+            MODEL_VAR: 'lab_flow',
+            RESULT_VAR: 'lab_result',
+          },
+        }),
+        makeBlock('xeduhub_workflow_infer_pair', {
+          fields: {
+            MODEL_VAR: 'lab_flow',
+            RESULT_VAR: 'lab_result',
+            IMAGE_VAR: 'display_img',
+          },
+        }),
+      ]),
+    },
+    {
+      kind: 'category',
+      name: '结果处理',
+      colour: '#10b981',
+      description: '提取结果里的框、关键点、文本和结果图。',
+      contents: dedupeToolboxContents([
+        makeBlock('xeduhub_result_first_box'),
+        makeBlock('xeduhub_bbox_center_x'),
+        makeBlock('xeduhub_keypoint_axis', { fields: { AXIS: 'x' } }),
+        makeBlock('xeduhub_ocr_first_text'),
+        makeBlock('xeduhub_show_result_card', { fields: { TITLE: '运行结果' } }),
+        makeBlock('xeduhub_show_result_image'),
+        makeBlock('xeduhub_clear_result'),
+      ]),
+    },
+    ...quickTaskNames.map((name) => xeduCategoryMap.get(name)).filter(Boolean).map((item) => clone(item)),
+  ];
+
+  if (xeduPlatformContents.length > 0) {
+    contents.push({
+      kind: 'category',
+      name: 'XEdu',
+      colour: TASK_FIRST_CATEGORY_META.XEdu.colour,
+      description: TASK_FIRST_CATEGORY_META.XEdu.description,
+      visible_by_default: true,
+      expanded: true,
+      contents: xeduPlatformContents,
+    });
+  }
+
+  const mediaContents = mediaNames
+    .map((name) => categoryMap.get(name))
+    .filter(Boolean)
+    .map((item) => clone(item));
+  if (mediaContents.length > 0) {
+    contents.push({
+      kind: 'category',
+      name: '媒体与设备',
+      colour: TASK_FIRST_CATEGORY_META['媒体与设备'].colour,
+      description: TASK_FIRST_CATEGORY_META['媒体与设备'].description,
+      visible_by_default: true,
+      expanded: true,
+      contents: mediaContents,
+    });
+  }
+
+  const debugContents = dedupeToolboxContents([
+    makeBlock('xeduhub_debug_print', { fields: { VAR: 'lab_result' } }),
+    makeBlock('xeduhub_catch_error', { fields: { ERROR_VAR: 'lab_error' } }),
+    makeBlock('xeduhub_run_and_record'),
+  ]);
+  if (debugContents.length > 0) {
+    contents.push({
+      kind: 'category',
+      name: '调试与扩展',
+      colour: TASK_FIRST_CATEGORY_META['调试与扩展'].colour,
+      description: TASK_FIRST_CATEGORY_META['调试与扩展'].description,
+      visible_by_default: true,
+      expanded: true,
+      contents: [{
+        kind: 'category',
+        name: '调试扩展',
+        colour: '#6366f1',
+        description: '记录结果、打印调试信息并对流程做异常保护。',
+        contents: debugContents,
+      }],
+    });
+  }
+
+  return normalizeCategoryMeta({ ...rawToolbox, contents });
+}
+
+function getSourceToolbox() {
+  return buildTaskFirstToolbox(getRawSourceToolbox());
+}
+
+function collectLeafToolboxCategories(items, result = []) {
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    if (!item || item.kind !== 'category') {
+      return;
+    }
+    const children = Array.isArray(item.contents)
+      ? item.contents.filter((child) => child && child.kind === 'category')
+      : [];
+    if (children.length > 0) {
+      collectLeafToolboxCategories(children, result);
+      return;
+    }
+    result.push(clone(item));
+  });
+  return result;
+}
+
+function buildBlocklyToolbox(toolbox) {
+  return normalizeCategoryMeta({
+    ...toolbox,
+    contents: collectLeafToolboxCategories(toolbox?.contents || []),
+  });
+}
+
 function getActiveToolbox() {
-  const activeToolbox = getSourceToolbox();
+  const activeToolbox = buildBlocklyToolbox(getSourceToolbox());
   const copy = clone(activeToolbox);
   copy.contents = (copy.contents || []).filter((item) => {
     if (!item) {
       return false;
     }
-    if (item.kind === 'label') {
-      return true;
-    }
     if (item.kind !== 'category') {
-      return false;
+      return item.kind === 'label';
     }
     const name = String(item.name || '').trim();
     if (!name || !(name in state.categoryVisibility)) {
@@ -389,7 +711,7 @@ function collectCategoryNames(toolbox) {
 }
 
 function getCategoryIconSvg(name) {
-  return CATEGORY_ICON_SVGS[name] || '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  return CATEGORY_ICON_SVGS[name] || DEFAULT_CATEGORY_ICON_SVG;
 }
 
 function syncCategoryVisuals(container, name, color, selected = false) {
@@ -397,36 +719,51 @@ function syncCategoryVisuals(container, name, color, selected = false) {
     return;
   }
   container.style.setProperty('--xedu-category-color', color);
+  container.dataset.categoryName = name;
   container.classList.add('xedu-toolbox-category-row');
   container.classList.toggle('xedu-toolbox-category-selected', selected);
 
   const labelEl = container.querySelector('.blocklyToolboxCategoryLabel, .blocklyTreeLabel, .group-item-main');
   if (labelEl) {
     labelEl.classList.add('xedu-toolbox-category-label');
-    let iconEl = container.querySelector('.xedu-toolbox-category-icon');
-    if (!iconEl) {
-      iconEl = document.createElement('span');
-      iconEl.className = 'xedu-toolbox-category-icon';
-      labelEl.parentNode?.insertBefore(iconEl, labelEl);
+    const iconMarkup = getCategoryIconSvg(name);
+    container.classList.toggle('xedu-toolbox-category-textual', !iconMarkup);
+    const iconEl = container.querySelector('.xedu-toolbox-category-icon');
+    if (iconMarkup) {
+      const nextIconEl = iconEl || document.createElement('span');
+      nextIconEl.className = 'xedu-toolbox-category-icon is-graphic';
+      nextIconEl.innerHTML = iconMarkup;
+      if (!iconEl) {
+        labelEl.parentNode?.insertBefore(nextIconEl, labelEl);
+      }
+    } else {
+      iconEl?.remove();
     }
-    iconEl.innerHTML = getCategoryIconSvg(name);
   }
 }
 
 function resetCategoryVisibility(toolbox) {
   const nextVisibility = {};
+  state.categoryColors = {};
+  state.categoryNotes = {};
   (toolbox?.contents || []).forEach((item) => {
     if (item && item.kind === 'category' && item.name) {
       const name = String(item.name).trim();
       nextVisibility[name] = name in state.categoryVisibility
         ? state.categoryVisibility[name]
         : (typeof item.visible_by_default === 'boolean' ? item.visible_by_default : true);
-      if (item.colour) {
-        state.categoryColors[name] = item.colour;
-      }
-      if (item.description) {
-        state.categoryNotes[name] = item.description;
-      }
+    }
+  });
+  walkToolboxItems(toolbox?.contents || [], (item) => {
+    if (item?.kind !== 'category' || !item.name) {
+      return;
+    }
+    const name = String(item.name).trim();
+    if (item.colour) {
+      state.categoryColors[name] = item.colour;
+    }
+    if (item.description) {
+      state.categoryNotes[name] = item.description;
     }
   });
   state.categoryVisibility = nextVisibility;
@@ -441,7 +778,7 @@ function renderGroupDrawer() {
   const names = collectCategoryNames(sourceToolbox);
   body.innerHTML = names.map((name, index) => {
     const checked = state.categoryVisibility[name] !== false ? 'checked' : '';
-    const note = state.categoryNotes[name] || '通用工具积木';
+    const note = state.categoryNotes[name] || '当前工作区工具分组';
     const color = state.categoryColors[name] || '#3F76CF';
     const inputId = `group-item-${index}`;
     return `
@@ -493,6 +830,50 @@ function setMoreMenuOpen(open) {
   }
 }
 
+function moveStudentActionsToTopbar() {
+  let quickActions = document.getElementById('toolbarQuickActions');
+  const moreGroup = document.querySelector('.toolbar-more');
+  if (!quickActions && moreGroup?.parentElement) {
+    quickActions = document.createElement('div');
+    quickActions.id = 'toolbarQuickActions';
+    quickActions.className = 'toolbar-quick-actions';
+    quickActions.setAttribute('aria-label', '常用操作');
+    moreGroup.parentElement.insertBefore(quickActions, moreGroup);
+  }
+  if (!quickActions) {
+    return;
+  }
+  if (isTeacherMode()) {
+    quickActions.style.display = 'none';
+    return;
+  }
+  quickActions.style.display = '';
+  STUDENT_QUICK_ACTION_IDS.forEach((id) => {
+    const action = document.getElementById(id);
+    if (!action) {
+      return;
+    }
+    action.classList.add('toolbar-quick-action');
+    quickActions.appendChild(action);
+  });
+}
+
+function configureRoleScopedToolbar() {
+  const studentMode = !isTeacherMode();
+  const controlPanel = document.getElementById('controlPanel');
+  const controlToggle = document.getElementById('controlPanelToggleBtn');
+  if (studentMode) {
+    setControlPanelOpen(false);
+  }
+  if (controlPanel) {
+    controlPanel.style.display = studentMode ? 'none' : '';
+  }
+  if (controlToggle) {
+    controlToggle.style.display = studentMode ? 'none' : '';
+  }
+  moveStudentActionsToTopbar();
+}
+
 function setCodePanelVisible(visible) {
   state.codePanelVisible = Boolean(visible);
   document.getElementById('blocklyLayout')?.classList.toggle('code-collapsed', !state.codePanelVisible);
@@ -501,7 +882,7 @@ function setCodePanelVisible(visible) {
   const button = document.getElementById('codeDockToggleBtn');
   if (button) {
     button.setAttribute('aria-expanded', state.codePanelVisible ? 'true' : 'false');
-    button.setAttribute('aria-label', state.codePanelVisible ? '收起代码面板' : '展开代码面板');
+    button.setAttribute('aria-label', state.codePanelVisible ? '收起右侧工作栏' : '展开右侧工作栏');
     button.classList.toggle('is-collapsed', !state.codePanelVisible);
   }
   queueBlocklyResize();
@@ -598,7 +979,7 @@ function styleToolboxCategoryRows() {
       }
       const isSelected = row.classList.contains('blocklyToolboxSelected') || row.classList.contains('blocklyTreeSelected');
       syncCategoryVisuals(row, label, color, isSelected);
-      });
+    });
     return;
   }
   toolboxItems.forEach((item) => {
@@ -610,25 +991,34 @@ function styleToolboxCategoryRows() {
     }
     row.classList.remove('xedu-toolbox-category-row', 'xedu-toolbox-category-selected');
     row.style.removeProperty('--xedu-category-color');
-      row.style.removeProperty('background-color');
-      row.style.removeProperty('border-color');
-      row.style.removeProperty('box-shadow');
-      row.style.removeProperty('border-left');
-      if (!color) {
-        return;
-      }
+    row.style.removeProperty('background-color');
+    row.style.removeProperty('border-color');
+    row.style.removeProperty('box-shadow');
+    row.style.removeProperty('border-left');
+    if (!color) {
+      return;
+    }
     const isSelected = row.classList.contains('blocklyToolboxSelected') || row.classList.contains('blocklyTreeSelected');
     syncCategoryVisuals(row, label, color, isSelected);
-    row.style.borderLeft = `4px solid ${color}`;
-    row.style.backgroundColor = hexToRgba(color, isSelected ? 0.22 : 0.12);
-    row.style.borderColor = hexToRgba(color, isSelected ? 0.38 : 0.20);
-    row.style.boxShadow = `inset 0 0 0 1px ${hexToRgba(color, isSelected ? 0.30 : 0.15)}`;
+    row.style.borderLeft = `2px solid ${hexToRgba(color, isSelected ? 0.42 : 0.24)}`;
+    row.style.backgroundColor = hexToRgba(color, isSelected ? 0.08 : 0.025);
+    row.style.borderColor = hexToRgba(color, isSelected ? 0.18 : 0.08);
+    row.style.boxShadow = `inset 0 0 0 1px ${hexToRgba(color, isSelected ? 0.10 : 0.04)}`;
+  });
+}
+
+function alignToolboxFlyout() {
+  document.querySelectorAll('.blocklyToolboxFlyout').forEach((flyout) => {
+    flyout.style.setProperty('transform', 'translate(0px, 0px)', 'important');
   });
 }
 
 function queueToolboxRowStyling() {
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => styleToolboxCategoryRows());
+    requestAnimationFrame(() => {
+      styleToolboxCategoryRows();
+      alignToolboxFlyout();
+    });
   });
 }
 
@@ -656,6 +1046,339 @@ function renderToolboxPacks() {
 
 function switchToolboxMode(mode) {
   void mode;
+}
+
+function getToolboxItemColour(item, fallbackName = '') {
+  const itemColour = String(item?.toolboxItemDef_?.colour || '').trim();
+  if (itemColour) {
+    return itemColour;
+  }
+  const fallback = state.categoryColors[String(fallbackName || '').trim()];
+  return fallback || '#6366f1';
+}
+
+function selectToolboxItem(item) {
+  const toolbox = state.workspace?.getToolbox?.();
+  if (!toolbox || typeof toolbox.setSelectedItem !== 'function' || !item) {
+    return;
+  }
+  toolbox.setSelectedItem(item);
+}
+
+function buildSideNavModel() {
+  const liveItems = getAllToolboxItems();
+  const liveItemsByName = new Map(liveItems.map((item) => [getToolboxCategoryName(item), item]).filter(([name]) => name));
+  const sourceSections = (getSourceToolbox()?.contents || [])
+    .filter((item) => item && item.kind === 'category');
+
+  const groupedSections = sourceSections
+    .map((section) => {
+      const name = String(section.name || '').trim();
+      const children = (Array.isArray(section.contents) ? section.contents : [])
+        .filter((child) => child && child.kind === 'category');
+      return {
+        item: children.length > 0 ? liveItemsByName.get(String(children[0].name || '').trim()) : liveItemsByName.get(name),
+        name,
+        colour: section.colour || state.categoryColors[name] || '#6366f1',
+        children: children
+          .map((child) => {
+            const childName = String(child.name || '').trim();
+            const liveItem = liveItemsByName.get(childName);
+            if (!childName) {
+              return null;
+            }
+            return {
+              item: liveItem,
+              name: childName,
+              colour: child.colour || getToolboxItemColour(liveItem, childName),
+            };
+          })
+          .filter((child) => child && child.item),
+      };
+    })
+    .filter((section) => section.name && section.children.length > 0);
+
+  if (groupedSections.length > 0) {
+    return groupedSections;
+  }
+
+  return liveItems
+    .map((item) => {
+      const name = getToolboxCategoryName(item);
+      return {
+        item,
+        name,
+        colour: getToolboxItemColour(item, name),
+        children: [{ item, name, colour: getToolboxItemColour(item, name) }],
+      };
+    })
+    .filter((section) => section.name);
+}
+
+function renderCustomSideNav() {
+  const root = document.getElementById('blocklySideNavBody');
+  if (!root) {
+    return;
+  }
+  const sections = buildSideNavModel();
+  const selectedName = String(getSelectedToolboxCategoryMeta().name || '').trim();
+  root.innerHTML = '';
+
+  sections.forEach((section) => {
+    const collapsed = Boolean(state.sideNavCollapsed[section.name]);
+    const sectionEl = document.createElement('section');
+    sectionEl.className = 'blockly-side-section';
+    sectionEl.classList.toggle('is-collapsed', collapsed);
+    sectionEl.style.setProperty('--xedu-section-color', section.colour);
+
+    const heading = document.createElement('button');
+    heading.type = 'button';
+    heading.className = 'blockly-side-section-head';
+    heading.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    heading.innerHTML = `
+      <span class="blockly-side-section-icon">${getCategoryIconSvg(section.name)}</span>
+      <span class="blockly-side-section-title">${section.name}</span>
+      <span class="blockly-side-section-chevron" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none">
+          <path d="m5.2 6.4 2.8 2.8 2.8-2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    `;
+    heading.addEventListener('click', () => {
+      state.sideNavCollapsed[section.name] = !Boolean(state.sideNavCollapsed[section.name]);
+      renderCustomSideNav();
+    });
+    sectionEl.appendChild(heading);
+
+    const list = document.createElement('div');
+    list.className = 'blockly-side-section-list';
+    section.children.forEach((child) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'blockly-side-leaf';
+      if (child.name === selectedName) {
+        button.classList.add('is-active');
+      }
+      button.style.setProperty('--xedu-leaf-color', child.colour);
+      button.innerHTML = `
+        <span class="blockly-side-leaf-icon">${getCategoryIconSvg(child.name)}</span>
+        <span class="blockly-side-leaf-label">${child.name}</span>
+      `;
+      button.addEventListener('click', () => selectToolboxItem(child.item));
+      list.appendChild(button);
+    });
+    sectionEl.appendChild(list);
+    root.appendChild(sectionEl);
+  });
+}
+
+function getFirstLeafToolboxItem(item) {
+  if (!item) {
+    return null;
+  }
+  const isSelectable = typeof item.isSelectable === 'function' ? item.isSelectable() : false;
+  const children = typeof item.getChildToolboxItems === 'function' ? (item.getChildToolboxItems() || []) : [];
+  if (children.length > 0) {
+    for (const child of children) {
+      const nested = getFirstLeafToolboxItem(child);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return isSelectable ? item : null;
+}
+
+function normalizeSelectedToolboxItem() {
+  if (state.toolboxSelectionSyncing) {
+    return;
+  }
+  const toolbox = state.workspace?.getToolbox?.();
+  if (!toolbox || typeof toolbox.getSelectedItem !== 'function' || typeof toolbox.setSelectedItem !== 'function') {
+    return;
+  }
+  const selected = toolbox.getSelectedItem();
+  if (!selected || typeof selected.getChildToolboxItems !== 'function') {
+    return;
+  }
+  const children = selected.getChildToolboxItems() || [];
+  if (!children.length) {
+    return;
+  }
+  const firstLeaf = getFirstLeafToolboxItem(children[0]) || children.map((child) => getFirstLeafToolboxItem(child)).find(Boolean);
+  if (!firstLeaf || firstLeaf === selected) {
+    return;
+  }
+  state.toolboxSelectionSyncing = true;
+  try {
+    toolbox.setSelectedItem(firstLeaf);
+  } finally {
+    window.setTimeout(() => {
+      state.toolboxSelectionSyncing = false;
+    }, 0);
+  }
+}
+
+function ensureInitialToolboxSelection() {
+  const toolbox = state.workspace?.getToolbox?.();
+  if (!toolbox || typeof toolbox.getSelectedItem !== 'function' || typeof toolbox.setSelectedItem !== 'function') {
+    return;
+  }
+  if (toolbox.getSelectedItem()) {
+    normalizeSelectedToolboxItem();
+    return;
+  }
+  const firstSelectable = (toolbox.getToolboxItems?.() || [])
+    .map((item) => getFirstLeafToolboxItem(item))
+    .find(Boolean);
+  if (firstSelectable) {
+    toolbox.setSelectedItem(firstSelectable);
+  }
+}
+
+function renderResultTerminal(text) {
+  const container = document.getElementById('resultEvidence');
+  if (!container) {
+    return;
+  }
+  container.innerHTML = `<pre id="resultTerminal" class="result-terminal"></pre>`;
+  const terminal = document.getElementById('resultTerminal');
+  if (terminal) {
+    terminal.textContent = String(text || '').trim() || '$ ';
+  }
+}
+
+function getResultHint(payload) {
+  const hints = Array.isArray(payload?.result_summary?.hints) ? payload.result_summary.hints : [];
+  return String(hints[0] || '').trim();
+}
+
+function deriveTaskContext() {
+  const workspaceTitle = String(getConfigValue('workspaceTitle', '')).trim() || CLASSROOM_DEFAULTS.workspaceFallbackTitle;
+  const practiceLabel = String(getConfigValue('practiceLabel', '')).trim();
+  const practiceKind = String(getConfigValue('practiceKind', '')).trim();
+  const taskGoal = String(getConfigValue('taskGoal', '')).trim();
+  const taskStage = String(getConfigValue('taskStage', '')).trim();
+  const taskHint = String(getConfigValue('taskHint', '')).trim();
+  const lastTone = String(state.resultRunState.lastTone || 'idle');
+  const lastHint = getResultHint(state.resultRunState.lastPayload);
+  const blockCount = state.workspace?.getAllBlocks(false)?.length || 0;
+  const spec = state.workspace ? extractXEduHubSpec() : null;
+  const task = spec?.task_id ? getTaskById(spec.task_id) : null;
+  const taskLabel = String(task?.label || spec?.task_label || '').trim();
+  const hasExplicitTaskSignal = Boolean(taskGoal) || Boolean(taskLabel) || Boolean(practiceLabel);
+  if (!hasExplicitTaskSignal) {
+    return {
+      visible: false,
+      workspaceTitle,
+      roleLabel: isTeacherMode() ? '教师工作台' : '学生工作台',
+      stage: '',
+      summary: '',
+      description: '',
+      hint: '',
+      practiceLabel,
+    };
+  }
+  let summary = taskGoal;
+  if (!summary) {
+    if (taskLabel) {
+      summary = isTeacherMode()
+        ? `围绕${taskLabel}实验做调试与预演`
+        : `继续完成${taskLabel}实验`;
+    } else if (practiceLabel) {
+      summary = isTeacherMode()
+        ? `围绕${practiceLabel}继续备课与调试`
+        : `继续完成${practiceLabel}`;
+    } else if (hasExplicitTaskSignal && workspaceTitle && !workspaceTitle.includes('Blockly')) {
+      summary = isTeacherMode()
+        ? `围绕${workspaceTitle}继续调试`
+        : `继续完成${workspaceTitle}`;
+    }
+  }
+  let stage = taskStage;
+  if (!stage) {
+    if (lastTone === 'success') {
+      stage = '结果复盘';
+    } else if (lastTone === 'error') {
+      stage = '排查问题';
+    } else if (isTeacherMode()) {
+      stage = hasRunnableFlow() ? '教师预演' : '搭建与调试';
+    } else if (blockCount === 0) {
+      stage = '开始实验';
+    } else if (hasRunnableFlow()) {
+      stage = '运行验证';
+    } else {
+      stage = '完善流程';
+    }
+  }
+  const roleLabel = isTeacherMode() ? '教师工作台' : '学生工作台';
+  let description = '';
+  if (taskLabel) {
+    description = `当前工作区聚焦${taskLabel}。页面会优先把输入、任务、参数和结果组织成一条实验主流程。`;
+  } else if (practiceLabel) {
+    description = `当前工作区关联到${practiceLabel}${practiceKind ? ` · ${practiceKind}` : ''}，先完成主流程，再按需查看代码和调试细节。`;
+  }
+  const hint = taskHint
+    || lastHint
+    || (!hasRunnableFlow()
+      ? '先从“输入资源”和“任务与模型”里拖入关键积木，搭出本节实验的主流程。'
+      : isTeacherMode()
+        ? '需要导入工作区、查看代码或扩展积木时，再从右上角次级入口进入。'
+        : '先点击运行程序查看证据，再决定是否调整参数或补充基础编程积木。');
+  return {
+    visible: true,
+    workspaceTitle,
+    roleLabel,
+    stage,
+    summary,
+    description,
+    hint,
+    practiceLabel,
+  };
+}
+
+function updateTaskContext() {
+  const context = deriveTaskContext();
+  const card = document.getElementById('taskContextCard');
+  if (card) {
+    card.hidden = !context.visible;
+  }
+  const workspaceLabel = document.getElementById('workspaceLabel');
+  if (workspaceLabel) {
+    workspaceLabel.textContent = context.workspaceTitle;
+  }
+  const workspaceMetaLabel = document.getElementById('workspaceMetaLabel');
+  if (workspaceMetaLabel) {
+    workspaceMetaLabel.textContent = context.visible && context.stage
+      ? `${context.roleLabel} · ${context.stage}`
+      : CLASSROOM_DEFAULTS.workspaceMetaLabel;
+  }
+  const mapping = {
+    taskContextRole: context.roleLabel,
+    taskContextStage: context.stage,
+    taskContextSummary: context.summary,
+    taskContextDescription: context.description,
+    taskContextWorkspace: context.workspaceTitle,
+    taskContextHint: context.hint,
+  };
+  Object.entries(mapping).forEach(([id, value]) => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = value;
+    }
+  });
+  const practiceLink = document.getElementById('taskContextPractice');
+  if (practiceLink) {
+    const href = String(getConfigValue('practiceLaunchUrl', '') || getConfigValue('practiceUrl', '') || '').trim();
+    if (context.practiceLabel && href) {
+      practiceLink.style.display = 'inline-flex';
+      practiceLink.href = href;
+      practiceLink.textContent = `查看关联实验：${context.practiceLabel}`;
+    } else {
+      practiceLink.style.display = 'none';
+      practiceLink.removeAttribute('href');
+    }
+  }
 }
 
 function setPythonCode(code) {
@@ -690,11 +1413,20 @@ function setResultMode(mode = 'idle') {
 }
 
 function setResultTerminal(text) {
-  const terminalEl = document.getElementById('resultTerminal');
-  if (!terminalEl) {
-    return;
-  }
-  terminalEl.textContent = String(text || '').trim() || '$ ';
+  const tone = text === CLASSROOM_DEFAULTS.resultRunningText ? 'running' : 'idle';
+  state.resultRunState.lastPayload = {
+    success: text === CLASSROOM_DEFAULTS.resultIdleText,
+    message: String(text || '').trim(),
+    result_summary: {
+      headline: String(text || '').trim(),
+      metrics: [],
+      hints: [],
+    },
+    result_artifacts: { preview_image: '', key_fields: {} },
+  };
+  state.resultRunState.lastTone = tone;
+  renderResultTerminal(text);
+  updateTaskContext();
 }
 
 async function parseJsonResponse(response, fallbackMessage = '请求失败') {
@@ -816,15 +1548,19 @@ function buildTerminalOutput(payload) {
 function setResultIdleView() {
   setResultMode('idle');
   setResultBadge('未运行');
-  setResultTerminal(CLASSROOM_DEFAULTS.resultIdleText);
+  state.resultRunState = { hasRun: false, lastPayload: null, lastTone: 'idle' };
+  renderResultTerminal(CLASSROOM_DEFAULTS.resultIdleText);
   resetDebugDetails({ payload: {}, open: false });
+  updateTaskContext();
 }
 
 function setResultRunningView() {
   setResultMode('running');
   setResultBadge('运行中', 'is-running');
-  setResultTerminal(CLASSROOM_DEFAULTS.resultRunningText);
+  state.resultRunState = { hasRun: true, lastPayload: { status: 'running' }, lastTone: 'running' };
+  renderResultTerminal(CLASSROOM_DEFAULTS.resultRunningText);
   resetDebugDetails({ payload: { status: 'running' }, open: false });
+  updateTaskContext();
 }
 
 function updatePython() {
@@ -857,6 +1593,7 @@ function loadWorkspaceSnapshot(serialized, { asInitial = false } = {}) {
     state.initialSerialized = serialized;
   }
   updatePython();
+  updateTaskContext();
 }
 
 async function openWorkspaceFile(file) {
@@ -882,6 +1619,7 @@ async function openWorkspaceFile(file) {
       artifacts: {},
     });
   }
+  updateTaskContext();
 }
 
 function hasExecutablePython() {
@@ -956,6 +1694,10 @@ function hasRunnableFlow() {
   });
 }
 
+function hasRuntimeBoundInputSpec(spec) {
+  return Boolean(spec && spec.input === '__runtime_bound__');
+}
+
 function getWorkspaceVariableNameById(variableId) {
   return lookupWorkspaceVariableName(state.workspace, variableId);
 }
@@ -999,13 +1741,44 @@ function renderMigrationReport(report) {
   state.migrationReport = report;
   setResultMode('success');
   setResultBadge('完成', 'is-success');
-  setResultTerminal([
+  state.resultRunState = {
+    hasRun: true,
+    lastPayload: {
+      success: true,
+      message: '已自动迁移旧版工作区',
+      result_summary: {
+        headline: '已自动迁移旧版工作区',
+        metrics: [
+          { label: '成功迁移', value: report.changed?.length || 0 },
+          { label: '失败项', value: report.failed?.length || 0 },
+        ],
+        hints: ['请继续检查工作区是否符合当前实验目标。'],
+      },
+      result_artifacts: { preview_image: '', key_fields: {} },
+      result: report,
+    },
+    lastTone: 'success',
+  };
+  renderResultTerminal([
     '# 已自动迁移旧版工作区',
     `success: ${report.changed?.length || 0}`,
     `failed: ${report.failed?.length || 0}`,
   ].join('\n'));
   resetDebugDetails({ payload: report, open: false });
+  updateTaskContext();
   blocklyDebugLog('工作区迁移报告', report);
+}
+
+function syncWorkspaceTaskContext() {
+  updateTaskContext();
+  if (state.workspace && typeof state.workspace.getAllBlocks === 'function') {
+    const hasTask = Boolean(extractXEduHubSpec()?.task_id);
+    const hasBlocks = state.workspace.getAllBlocks(false).length > 0;
+    const shouldHintRun = hasTask || hasBlocks;
+    if (shouldHintRun && state.resultRunState.lastTone === 'idle' && !state.resultRunState.hasRun) {
+      renderResultTerminal(CLASSROOM_DEFAULTS.resultIdleText);
+    }
+  }
 }
 
 function validateRunnableSpec(spec) {
@@ -1016,7 +1789,7 @@ function validateRunnableSpec(spec) {
     return buildPreflightError('missing_task', '当前流程缺少任务类型，请先放入运行积木。', '请先放入一个带任务语义的 XEduHub 运行积木。');
   }
   if (spec.input === undefined || spec.input === null || spec.input === '') {
-    return buildPreflightError('missing_input', '当前流程缺少输入路径。', '先使用“选择输入图片”积木填写图片路径。');
+    return buildPreflightError('missing_input', '当前流程缺少输入路径。', '先使用“选择输入图片”积木，或直接在任务块的输入槽接入文本路径。');
   }
   return null;
 }
@@ -1024,14 +1797,16 @@ function validateRunnableSpec(spec) {
 function updateResultView(payload) {
   const success = Boolean(payload && payload.success);
   state.resultRunState.hasRun = true;
+  state.resultRunState.lastPayload = payload || {};
+  state.resultRunState.lastTone = success ? 'success' : 'error';
   setResultMode(success ? 'success' : 'error');
-
   setResultBadge(success ? '完成' : '异常', success ? 'is-success' : 'is-error');
-  setResultTerminal(buildTerminalOutput(payload));
+  renderResultTerminal(buildTerminalOutput(payload || {}));
   resetDebugDetails({
     payload: payload?.result ?? payload ?? {},
     open: !success && Boolean(payload?.result && Object.keys(payload.result).length > 0),
   });
+  updateTaskContext();
 }
 
 async function executeXEduHub() {
@@ -1058,6 +1833,19 @@ async function executeXEduHub() {
       const specError = validateRunnableSpec(spec);
       if (specError) {
         updateResultView(specError);
+        return;
+      }
+      if (hasRuntimeBoundInputSpec(spec)) {
+        const response = await fetch(String(getConfigValue('pythonRunUrl', '/api/python/run')), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: getPythonRaw(),
+            project_root: String(getConfigValue('projectRoot', '')),
+          }),
+        });
+        const payload = await parseJsonResponse(response, '运行 Python 代码失败');
+        updateResultView(normalizePythonRunPayload(payload));
         return;
       }
       const response = await fetch(String(getConfigValue('xeduhubExecuteUrl', '/api/resources/blockly/xeduhub/execute')), {
@@ -1558,10 +2346,12 @@ async function init() {
   state.toolboxVariants = await loadToolboxes();
   logDynamicCategorySnapshot(state.toolboxVariants?.course || state.toolboxVariants?.official || {}, 'loadToolboxes');
   resetCategoryVisibility(getSourceToolbox());
+  state.sideNavCollapsed = {};
   logDynamicCategorySnapshot(getSourceToolbox(), 'getSourceToolbox');
   state.workspace = Blockly.inject('blocklyDiv', {
     toolbox: getActiveToolbox(),
     renderer: 'zelos',
+    sounds: false,
     rendererOverrides: {
       ADD_START_HATS: true,
       CORNER_RADIUS: 7,
@@ -1611,6 +2401,10 @@ async function init() {
     if (migrationReport && ((migrationReport.changed || []).length || (migrationReport.failed || []).length)) {
       renderMigrationReport(migrationReport);
     }
+  } else {
+    state.initialSerialized = buildDefaultWorkspaceSerialized();
+    const xml = Blockly.utils.xml.textToDom(state.initialSerialized.value);
+    Blockly.Xml.domToWorkspace(xml, state.workspace);
   }
 
   state.workspace.addChangeListener(() => updatePython());
@@ -1625,8 +2419,12 @@ async function init() {
       });
     }
     if (event?.type === 'toolbox_item_select') {
+      normalizeSelectedToolboxItem();
+      renderCustomSideNav();
       queueToolboxRowStyling();
     }
+    alignToolboxFlyout();
+    syncWorkspaceTaskContext();
   });
 
   document.addEventListener('click', (event) => {
@@ -1681,22 +2479,19 @@ async function init() {
   if (workspaceLabel) {
     workspaceLabel.textContent = String(getConfigValue('workspaceTitle', '')) || CLASSROOM_DEFAULTS.workspaceFallbackTitle;
   }
+  const workspaceMetaLabel = document.getElementById('workspaceMetaLabel');
+  if (workspaceMetaLabel) {
+    workspaceMetaLabel.textContent = `${isTeacherMode() ? '教师工作台' : '学生工作台'} · ${CLASSROOM_DEFAULTS.workspaceMetaLabel}`;
+  }
 
   const toolboxImportEnabled = canImportToolboxPacks();
-  const controlPanel = document.getElementById('controlPanel');
-  const controlToggle = document.getElementById('controlPanelToggleBtn');
   const packPanel = document.getElementById('toolboxPackPanel');
   const extendFab = document.getElementById('blocklyExtendFab');
   const addPackBtn = document.getElementById('addPackBtn');
   const toolboxLabel = document.getElementById('toolboxLabel');
-  if (controlPanel) {
-    controlPanel.style.display = '';
-  }
-  if (controlToggle) {
-    controlToggle.style.display = toolboxImportEnabled ? '' : 'none';
-  }
+  configureRoleScopedToolbar();
   if (packPanel) {
-    packPanel.style.display = '';
+    packPanel.style.display = toolboxImportEnabled ? '' : 'none';
     packPanel.classList.toggle('is-readonly', !toolboxImportEnabled);
   }
   if (extendFab) {
@@ -1718,6 +2513,8 @@ async function init() {
   setMoreMenuOpen(false);
   setControlPanelOpen(false);
   setCodePanelVisible(CLASSROOM_DEFAULTS.codePanelVisible);
+  ensureInitialToolboxSelection();
+  renderCustomSideNav();
   queueToolboxRowStyling();
 
   setResultIdleView();
@@ -1731,10 +2528,12 @@ async function init() {
     if (practiceBtn) {
       practiceBtn.style.display = 'inline-flex';
       practiceBtn.href = practiceLaunchUrl || practiceUrl || '#';
+      practiceBtn.textContent = `在 Jupyter 打开：${practiceLabel}`;
     }
   }
 
   updatePython();
+  updateTaskContext();
 }
 
 init().catch((error) => {

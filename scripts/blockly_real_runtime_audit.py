@@ -22,6 +22,10 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from api.app import create_app  # noqa: E402
+from services.blockly_xeduhub_support import (  # noqa: E402
+    _get_runtime_supported_tasks,
+    _resolve_runtime_task_id,
+)
 
 
 def workspace_files() -> List[Path]:
@@ -96,6 +100,19 @@ def run_xeduhub_runtime(client, generated: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def should_use_xeduhub_runtime(generated: Dict[str, Any]) -> bool:
+    spec = generated.get("spec") if isinstance(generated.get("spec"), dict) else {}
+    return str(spec.get("input") or "").strip() != "__runtime_bound__"
+
+
+def expected_xedu_outcome(task_id: str) -> Dict[str, Any]:
+    supported_runtime_tasks = set(_get_runtime_supported_tasks())
+    runtime_task_id = _resolve_runtime_task_id(task_id)
+    if runtime_task_id in supported_runtime_tasks:
+        return {"success": True, "error_code": ""}
+    return {"success": False, "error_code": "runtime_task_unavailable"}
+
+
 def is_xedu_workspace(workspace_path: Path) -> bool:
     return "xeduhub_" in workspace_path.read_text(encoding="utf-8")
 
@@ -149,10 +166,20 @@ def main() -> int:
         generated = generate_python_for_workspace(workspace_path)
         run_result = (
             run_xeduhub_runtime(client, generated)
-            if is_xedu_workspace(workspace_path)
+            if is_xedu_workspace(workspace_path) and should_use_xeduhub_runtime(generated)
             else run_generated_python(client, workspace_path, generated["generated_python"])
         )
-        summary = run_result["message"] if run_result["success"] else summarize_failure(run_result["stderr"], run_result["stdout"])
+        expected = None
+        if is_xedu_workspace(workspace_path):
+            spec = generated.get("spec") or {}
+            expected = expected_xedu_outcome(str(spec.get("task_id") or ""))
+            passed = (
+                run_result["success"] == expected["success"]
+                and str(run_result.get("error_code") or "") == str(expected["error_code"] or "")
+            )
+        else:
+            passed = run_result["success"]
+        summary = run_result["message"] if passed else summarize_failure(run_result["stderr"], run_result["stdout"])
         rows.append({
             "workspace": workspace_path.name,
             "is_xedu": is_xedu_workspace(workspace_path),
@@ -160,13 +187,15 @@ def main() -> int:
             "migration_changed": len((generated.get("migration_report") or {}).get("changed") or []),
             "http_status": run_result["http_status"],
             "return_code": run_result["return_code"],
-            "success": run_result["success"],
+            "success": passed,
+            "actual_success": run_result["success"],
             "summary": summary,
             "generated_python": generated["generated_python"],
             "spec": generated.get("spec"),
             "stdout": run_result["stdout"],
             "stderr": run_result["stderr"],
             "error_code": run_result.get("error_code", ""),
+            "expected": expected,
         })
 
     REPORT_JSON.write_text(json.dumps({"rows": rows}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

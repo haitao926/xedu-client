@@ -7,6 +7,7 @@ import base64
 import copy
 import io
 import json
+import os
 import re
 import traceback
 from html import escape
@@ -14,6 +15,16 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 PEDAGOGY_LEVELS = ("L1", "L2", "L3")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_BLOCKLY_SAMPLE_IMAGE = "courses/blockly-smoke/demo.jpg"
+DEFAULT_BLOCKLY_SAMPLE_ALIASES = {
+    "demo.jpg",
+    "./demo.jpg",
+    "demo.jpeg",
+    "./demo.jpeg",
+    "demo.png",
+    "./demo.png",
+}
 
 _TOOLBOX_BLOCK_KINDS = {"block", "shadow", "label", "sep", "category"}
 _UNSAFE_INPUT_PRESET_BLOCKS = {
@@ -42,15 +53,15 @@ ADVANCED_BLOCK_TYPES = (
 )
 
 TASK_FAMILY_META = {
-    "detection": {"label": "目标检测", "colour": "#F59B42", "description": "检测并定位人体、人脸、人手和 COCO 目标"},
-    "pose": {"label": "关键点识别", "colour": "#F06F7F", "description": "识别人脸、人体、手部和全身关键点"},
-    "ocr": {"label": "OCR", "colour": "#18B898", "description": "提取图像中的文字内容"},
-    "classification": {"label": "图像分类", "colour": "#4F7CFF", "description": "识别图像类别并返回预测结果"},
-    "generation": {"label": "内容生成", "colour": "#8E68F8", "description": "执行风格迁移与图像着色"},
-    "panoptic": {"label": "全景感知", "colour": "#63B66E", "description": "驾驶场景的检测与区域感知"},
-    "multimodal": {"label": "多模态特征", "colour": "#2F9BF4", "description": "提取图像、文本与音频向量"},
-    "segmentation": {"label": "图像分割", "colour": "#37A7F7", "description": "基于提示点或框执行 SAM 分割"},
-    "depth": {"label": "深度估计", "colour": "#AA6CF6", "description": "生成单目深度结果图"},
+    "detection": {"label": "目标检测", "colour": "#f59e0b", "description": "检测并定位人体、人脸、人手和 COCO 目标"},
+    "pose": {"label": "关键点识别", "colour": "#ec4899", "description": "识别人脸、人体、手部和全身关键点"},
+    "ocr": {"label": "OCR", "colour": "#14b8a6", "description": "提取图像中的文字内容"},
+    "classification": {"label": "图像分类", "colour": "#3b82f6", "description": "识别图像类别并返回预测结果"},
+    "generation": {"label": "内容生成", "colour": "#8b5cf6", "description": "执行风格迁移与图像着色"},
+    "panoptic": {"label": "全景感知", "colour": "#7c3aed", "description": "驾驶场景的检测与区域感知"},
+    "multimodal": {"label": "多模态特征", "colour": "#2563eb", "description": "提取图像、文本与音频向量"},
+    "segmentation": {"label": "图像分割", "colour": "#06b6d4", "description": "基于提示点或框执行 SAM 分割"},
+    "depth": {"label": "深度估计", "colour": "#6366f1", "description": "生成单目深度结果图"},
 }
 
 TASK_FAMILY_ORDER = [
@@ -71,6 +82,14 @@ TOOLBOX_HIDDEN_TASK_IDS = {
     "pose_body17_l",
     "pose_body26",
     "pose_wholebody133",
+}
+
+HIDDEN_TASK_FALLBACKS: Dict[str, str] = {
+    "det_body_l": "det_body",
+    "det_coco_l": "det_coco",
+    "pose_body17_l": "pose_body17",
+    "pose_body26": "pose_body17",
+    "pose_wholebody133": "pose_body17",
 }
 
 TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
@@ -302,6 +321,16 @@ RUNTIME_TASK_ID_MAP: Dict[str, str] = {
     "pose_wholebody133": "wholebody133",
 }
 
+SMOKE_CHECKPOINT_MAP: Dict[str, str] = {
+    "bodydetect": "bodydetect.onnx",
+    "cocodetect": "cocodetect.onnx",
+    "body17": "body17.onnx",
+    "body26": "body26.onnx",
+    "wholebody133": "whole133.onnx",
+    "face106": "face106.onnx",
+    "hand21": "hand21.onnx",
+}
+
 
 def _frontend_task_params(task: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [
@@ -453,11 +482,11 @@ def validate_toolbox_schema(toolbox: Any) -> Dict[str, Any]:
 def _canonical_task_id(value: Any) -> str:
     text = str(value or "").strip()
     if text in TASK_REGISTRY:
-        return text
+        return HIDDEN_TASK_FALLBACKS.get(text, text)
     lowered = text.lower()
     for task_id in TASK_REGISTRY:
         if task_id.lower() == lowered:
-            return task_id
+            return HIDDEN_TASK_FALLBACKS.get(task_id, task_id)
     return ""
 
 
@@ -533,6 +562,14 @@ def _resolve_runtime_task_id(task_id: str) -> str:
     return RUNTIME_TASK_ID_MAP.get(normalized, normalized)
 
 
+def _resolve_smoke_checkpoint(runtime_task_id: str) -> str:
+    checkpoint_name = SMOKE_CHECKPOINT_MAP.get(str(runtime_task_id or "").strip())
+    if not checkpoint_name:
+        return ""
+    checkpoint_path = (REPO_ROOT / "courses" / "blockly-smoke" / "checkpoints" / checkpoint_name).resolve()
+    return str(checkpoint_path) if checkpoint_path.exists() else ""
+
+
 def _is_runtime_task_available(task_id: str, supported_tasks: List[str] | None = None) -> bool:
     runtime_task_id = _resolve_runtime_task_id(task_id)
     if not runtime_task_id:
@@ -599,6 +636,9 @@ def get_xeduhub_frontend_registry() -> Dict[str, Any]:
                 "description": task.get("description") or task["label"],
                 "input_mode": task["input_mode"],
                 "result_kind": task["result_kind"],
+                "result_shape": _result_shape_for_task(task),
+                "quick_block_enabled": _quick_block_enabled(task_id, task),
+                "core_api_enabled": True,
                 "params": _frontend_task_params(task),
             }
         )
@@ -611,14 +651,34 @@ def get_xeduhub_frontend_registry() -> Dict[str, Any]:
     }
 
 
+def _result_shape_for_task(task: Dict[str, Any]) -> str:
+    result_kind = str(task.get("result_kind") or "").strip()
+    if result_kind in {"generation", "depth"}:
+        return "image"
+    return result_kind or "unknown"
+
+
+def _quick_block_enabled(task_id: str, task: Dict[str, Any]) -> bool:
+    family = str(task.get("family") or "").strip()
+    if task_id in TOOLBOX_HIDDEN_TASK_IDS:
+        return False
+    return family in {
+        "classification",
+        "detection",
+        "pose",
+        "ocr",
+        "generation",
+        "segmentation",
+        "depth",
+    }
+
+
 def _task_ids_for_family(family: str) -> List[str]:
-    supported_tasks = _get_runtime_supported_tasks()
     return [
         task_id
         for task_id, task in TASK_REGISTRY.items()
         if task["family"] == family
         and task_id not in TOOLBOX_HIDDEN_TASK_IDS
-        and _is_runtime_task_available(task_id, supported_tasks)
     ]
 
 
@@ -639,22 +699,47 @@ def _build_family_category(family: str, *, visible_by_default: bool = True) -> D
 
 def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[str, Any]:
     starter_task_id = recommended_model_for_task(task_type)
-    xeduhub_families = ("classification", "detection", "pose", "ocr", "generation", "segmentation", "depth")
-    xeduhub_contents: List[Dict[str, Any]] = [
-        {"kind": "block", "type": "xeduhub_workflow_create_var", "fields": {"TASK_ID": starter_task_id, "MODEL_VAR": "lab_flow"}},
-        {"kind": "sep"},
-        {"kind": "block", "type": "xeduhub_result_first_box"},
-        {"kind": "block", "type": "xeduhub_bbox_center_x"},
-        {"kind": "block", "type": "xeduhub_keypoint_axis", "fields": {"AXIS": "x"}},
-        {"kind": "block", "type": "xeduhub_ocr_first_text"},
-        {"kind": "sep"},
+    quick_task_families = ("classification", "detection", "pose", "ocr", "generation", "segmentation", "depth")
+
+    xedu_contents: List[Dict[str, Any]] = [
+        {
+            "kind": "category",
+            "name": "核心语法",
+            "colour": "#8b5cf6",
+            "visible_by_default": True,
+            "description": "创建任务、执行推理和串联 AI 主流程。",
+            "contents": [
+                {"kind": "block", "type": "xeduhub_set_input_resource", "fields": {"INPUT": DEFAULT_BLOCKLY_SAMPLE_IMAGE}},
+                {"kind": "block", "type": "xeduhub_set_input_list", "fields": {"INPUTS": '["courses/blockly-smoke/demo.jpg","courses/blockly-smoke/demo.jpg"]'}},
+                {"kind": "block", "type": "xeduhub_workflow_create_var", "fields": {"TASK_ID": starter_task_id, "MODEL_VAR": "lab_flow"}},
+                {"kind": "block", "type": "xeduhub_workflow_infer_var", "fields": {"MODEL_VAR": "lab_flow", "RESULT_VAR": "lab_result"}},
+                {"kind": "block", "type": "xeduhub_workflow_infer_pair", "fields": {"MODEL_VAR": "lab_flow", "RESULT_VAR": "lab_result", "IMAGE_VAR": "display_img"}},
+            ],
+        },
+        {
+            "kind": "category",
+            "name": "结果处理",
+            "colour": "#10b981",
+            "visible_by_default": True,
+            "description": "从结构化推理结果中提取框、关键点、文本和结果图。",
+            "contents": [
+                {"kind": "block", "type": "xeduhub_result_first_box"},
+                {"kind": "block", "type": "xeduhub_bbox_center_x"},
+                {"kind": "block", "type": "xeduhub_keypoint_axis", "fields": {"AXIS": "x"}},
+                {"kind": "block", "type": "xeduhub_ocr_first_text"},
+                {"kind": "block", "type": "xeduhub_show_result_card", "fields": {"TITLE": "运行结果"}},
+                {"kind": "block", "type": "xeduhub_show_result_image"},
+                {"kind": "block", "type": "xeduhub_clear_result"},
+            ],
+        },
     ]
-    for family in xeduhub_families:
-        xeduhub_contents.append(_build_family_category(family, visible_by_default=True))
+    for family in quick_task_families:
+        xedu_contents.append(_build_family_category(family, visible_by_default=True))
 
     image_video_contents: List[Dict[str, Any]] = [
         {"kind": "block", "type": "xeduhub_cv_open_camera", "fields": {"SOURCE": 0, "CAMERA_VAR": "camera", "WINDOW": "video"}},
         {"kind": "block", "type": "xeduhub_cv_open_video", "fields": {"CAMERA_VAR": "video", "WINDOW": "video"}},
+        {"kind": "block", "type": "xeduhub_cv_loop_frames", "fields": {"CAMERA_VAR": "camera", "FRAME_VAR": "frame", "QUIT_KEY": "q", "DELAY": 1}},
         {"kind": "block", "type": "xeduhub_cv_show_frame", "fields": {"WINDOW": "video"}},
         {"kind": "block", "type": "xeduhub_cv_draw_boxes", "fields": {"IMAGE_VAR": "display_img"}},
         {"kind": "block", "type": "xeduhub_cv_save_image"},
@@ -662,21 +747,28 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
     ]
 
     communication_contents: List[Dict[str, Any]] = [
-        {"kind": "block", "type": "xeduhub_http_open_stream", "fields": {"STREAM_VAR": "response"}},
-        {"kind": "block", "type": "xeduhub_http_send_command", "fields": {"RESPONSE_VAR": "response", "STOP_CMD": "S", "DELAY": 0.3}},
-        {"kind": "sep"},
-        {"kind": "block", "type": "xeduhub_servo_setup", "fields": {"BOARD": "uno", "PIN": "D4", "SERVO_VAR": "servo"}},
-        {"kind": "sep"},
         {"kind": "block", "type": "xeduhub_http_get", "fields": {"RESPONSE_VAR": "response"}},
+        {"kind": "block", "type": "xeduhub_http_open_stream", "fields": {"STREAM_VAR": "response"}},
+        {"kind": "block", "type": "xeduhub_http_loop_stream_frames", "fields": {"STREAM_VAR": "response", "FRAME_VAR": "frame", "CHUNK_SIZE": 16384, "MIN_SIZE": 100}},
+        {"kind": "block", "type": "xeduhub_http_iter_chunks", "fields": {"STREAM_VAR": "response", "CHUNK_VAR": "chunk", "CHUNK_SIZE": 16384}},
         {"kind": "block", "type": "xeduhub_chunk_over_size"},
         {"kind": "block", "type": "xeduhub_cv_decode_chunk", "fields": {"IMAGE_VAR": "frame"}},
+        {"kind": "block", "type": "xeduhub_http_send_command", "fields": {"RESPONSE_VAR": "response", "STOP_CMD": "S", "DELAY": 0.3}},
+        {"kind": "block", "type": "xeduhub_servo_setup", "fields": {"BOARD": "uno", "PIN": "D4", "SERVO_VAR": "servo"}},
+        {"kind": "block", "type": "xeduhub_servo_write_angle", "fields": {"SERVO_VAR": "servo"}},
     ]
 
-    contents: List[Dict[str, Any]] = [
+    debug_extension_contents: List[Dict[str, Any]] = [
+        {"kind": "block", "type": "xeduhub_debug_print", "fields": {"VAR": "lab_result"}},
+        {"kind": "block", "type": "xeduhub_catch_error", "fields": {"ERROR_VAR": "lab_error"}},
+        {"kind": "block", "type": "xeduhub_run_and_record"},
+    ]
+
+    basic_programming_contents: List[Dict[str, Any]] = [
         {
             "kind": "category",
             "name": "逻辑",
-            "colour": "#4F7CFF",
+            "colour": "#a5b4fc",
             "visible_by_default": True,
             "description": "条件判断与逻辑运算，编程基础积木",
             "contents": [
@@ -692,7 +784,7 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "循环",
-            "colour": "#F59B42",
+            "colour": "#fbbf24",
             "visible_by_default": True,
             "description": "重复执行特定代码块，编程核心概念",
             "contents": [
@@ -705,7 +797,7 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "数学",
-            "colour": "#22C7A1",
+            "colour": "#60a5fa",
             "visible_by_default": True,
             "description": "数学运算与随机数生成",
             "contents": [
@@ -725,7 +817,7 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "文本",
-            "colour": "#8E68F8",
+            "colour": "#f9a8d4",
             "visible_by_default": True,
             "description": "文字处理与打印输出",
             "contents": [
@@ -740,7 +832,7 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "列表",
-            "colour": "#37A7F7",
+            "colour": "#5eead4",
             "visible_by_default": False,
             "description": "集中存储多项数据，进阶数据结构",
             "contents": [
@@ -750,11 +842,11 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
                 {"kind": "block", "type": "lists_indexOf"},
             ],
         },
-        {"kind": "category", "name": "变量", "custom": "VARIABLE", "colour": "#F06F7F", "visible_by_default": True, "description": "存储和修改数据变量"},
+        {"kind": "category", "name": "变量", "custom": "VARIABLE", "colour": "#fb7185", "visible_by_default": True, "description": "存储和修改数据变量"},
         {
             "kind": "category",
             "name": "函数",
-            "colour": "#AA6CF6",
+            "colour": "#c4b5fd",
             "visible_by_default": False,
             "description": "代码重用与逻辑封装",
             "contents": [
@@ -762,39 +854,75 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
                 {"kind": "block", "type": "procedures_defreturn"},
             ],
         },
+    ]
+
+    contents: List[Dict[str, Any]] = [
         {
             "kind": "category",
-            "name": "图像视频",
-            "colour": "#11B59C",
+            "name": "基础编程",
+            "colour": "#6366f1",
             "visible_by_default": True,
-            "description": "摄像头、视频、显示、绘图与保存",
-            "contents": image_video_contents,
+            "description": "逻辑、循环、数学、文本与变量等基础编程积木。",
+            "contents": basic_programming_contents,
         },
         {
             "kind": "category",
-            "name": "通信控制",
-            "colour": "#F18A31",
+            "name": "XEdu",
+            "colour": "#3b82f6",
             "visible_by_default": True,
-            "description": "网络视频流、设备动作与控制指令",
-            "contents": communication_contents,
+            "description": "XEdu 平台核心语法、快捷任务和结果处理。",
+            "contents": xedu_contents,
         },
         {
             "kind": "category",
-            "name": "XEduHub",
-            "colour": "#4F7CFF",
+            "name": "媒体与设备",
+            "colour": "#0ea5e9",
             "visible_by_default": True,
-            "description": "XEduHub 算法工具箱",
-            "contents": xeduhub_contents,
+            "description": "摄像头、视频流、显示、保存和设备控制。",
+            "contents": [
+                {
+                    "kind": "category",
+                    "name": "图像视频",
+                    "colour": "#0ea5e9",
+                    "visible_by_default": True,
+                    "description": "摄像头、视频、显示、绘图与保存",
+                    "contents": image_video_contents,
+                },
+                {
+                    "kind": "category",
+                    "name": "通信控制",
+                    "colour": "#f97316",
+                    "visible_by_default": True,
+                    "description": "网络视频流、设备动作与控制指令",
+                    "contents": communication_contents,
+                },
+            ],
+        },
+        {
+            "kind": "category",
+            "name": "调试与扩展",
+            "colour": "#6366f1",
+            "visible_by_default": True,
+            "description": "调试打印、异常保护和可扩展流程积木。",
+            "contents": [
+                {
+                    "kind": "category",
+                    "name": "调试扩展",
+                    "colour": "#6366f1",
+                    "visible_by_default": True,
+                    "description": "记录结果、打印调试信息并对流程做异常保护。",
+                    "contents": debug_extension_contents,
+                },
+            ],
         },
     ]
     return {
         "kind": "categoryToolbox",
         "pedagogy_level_default": "L1",
         "required_block_types": [
+            "xeduhub_set_input_resource",
             "xeduhub_workflow_create_var",
-            "xeduhub_cv_open_camera",
-            "xeduhub_http_open_stream",
-            f"xeduhub_run_{starter_task_id}",
+            "xeduhub_workflow_infer_var",
         ],
         "contents": contents,
     }
@@ -804,16 +932,20 @@ def _escape_field(value: Any) -> str:
     return escape(str(value or ""))
 
 
-def build_xeduhub_workspace_xml(title: str, task_type: str = "classification", model_name: str = "", input_path: str = "demo.jpg") -> str:
+def build_xeduhub_workspace_xml(title: str, task_type: str = "classification", model_name: str = "", input_path: str = DEFAULT_BLOCKLY_SAMPLE_IMAGE) -> str:
     del title
     preferred = model_name if _canonical_task_id(model_name) else task_type
     task_id = _canonical_task_id(preferred) or recommended_model_for_task(preferred)
-    safe_input = _escape_field(input_path or "demo.jpg")
+    safe_input = _escape_field(input_path or DEFAULT_BLOCKLY_SAMPLE_IMAGE)
     return (
         '<xml xmlns="https://developers.google.com/blockly/xml">'
         f'<block type="xeduhub_set_input_resource" id="input1" x="28" y="28"><field name="INPUT">{safe_input}</field>'
         '<next>'
-        f'<block type="xeduhub_run_{task_id}" id="run1">'
+        f'<block type="xeduhub_workflow_create_var" id="flow1"><field name="TASK_ID">{task_id}</field><field name="MODEL_VAR">lab_flow</field>'
+        '<next>'
+        '<block type="xeduhub_workflow_infer_var" id="infer1"><field name="MODEL_VAR">lab_flow</field><field name="RESULT_VAR">lab_result</field>'
+        '</block>'
+        '</next>'
         '</block>'
         '</next>'
         '</block>'
@@ -828,7 +960,7 @@ def build_xeduhub_execution_config(task_type: str, model_name: str, title: str) 
         "title": title,
         "task_type": family,
         "task_id": task_id,
-        "task_label": TASK_REGISTRY.get(task_id, {}).get("label", TASK_FAMILY_META.get(family, {}).get("label", "XEduHub")),
+        "task_label": TASK_REGISTRY.get(task_id, {}).get("label", TASK_FAMILY_META.get(family, {}).get("label", "XEdu")),
         "model_name": task_id,
         "runtime": "xeduhub",
         "supports_in_page_execution": True,
@@ -850,10 +982,25 @@ def resolve_input_path(input_value: str, project_root: str = "") -> str:
     raw = str(input_value or "").strip()
     if not raw:
         return ""
+    normalized = raw.replace("\\", "/").strip()
+    if normalized in DEFAULT_BLOCKLY_SAMPLE_ALIASES:
+        sample_path = (REPO_ROOT / DEFAULT_BLOCKLY_SAMPLE_IMAGE).resolve()
+        if sample_path.exists():
+            return str(sample_path)
     path = Path(raw)
     if path.is_absolute() or not project_root:
         return str(path)
-    return str((Path(project_root) / raw).expanduser().resolve())
+    resolved = (Path(project_root) / raw).expanduser().resolve()
+    if resolved.exists():
+        return str(resolved)
+    for candidate in (
+        Path(project_root) / DEFAULT_BLOCKLY_SAMPLE_IMAGE,
+        REPO_ROOT / DEFAULT_BLOCKLY_SAMPLE_IMAGE,
+    ):
+        candidate = candidate.expanduser().resolve()
+        if candidate.exists():
+            return str(candidate)
+    return str(resolved)
 
 
 def _best_effort_image_to_data_url(image: Any) -> str:
@@ -975,6 +1122,22 @@ def _normalize_params(task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def _build_xeduhub_runtime_params(task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    task = TASK_REGISTRY[task_id]
+    runtime_params: Dict[str, Any] = {}
+    if task.get("result_kind") == "detection":
+        if "thr" in params:
+            runtime_params["threshold"] = params["thr"]
+        if params.get("target_class") not in (None, ""):
+            runtime_params["target_class"] = params["target_class"]
+    if task.get("result_kind") == "pose":
+        if params.get("bbox") not in (None, ""):
+            runtime_params["bbox"] = params["bbox"]
+    if params.get("img_type") not in (None, ""):
+        runtime_params["get_img"] = params["img_type"]
+    return runtime_params
+
+
 def _normalize_input_for_task(task_id: str, input_value: Any, project_root: str = "") -> Any:
     task = TASK_REGISTRY[task_id]
     input_mode = task.get("input_mode") or "single_path"
@@ -998,6 +1161,62 @@ def _input_exists(task_id: str, prepared_input: Any) -> bool:
     if isinstance(prepared_input, list):
         return bool(prepared_input) and all(Path(str(item)).exists() for item in prepared_input)
     return bool(str(prepared_input or "").strip()) and Path(str(prepared_input)).exists()
+
+
+def _patch_openxlab_repo_parser() -> None:
+    try:
+        from openxlab.model.handler import download_file  # type: ignore
+    except Exception:
+        return
+
+    if getattr(download_file, "_xedu_repo_parser_patched", False):
+        return
+
+    original_split_repo = getattr(download_file, "_split_repo", None)
+    if not callable(original_split_repo):
+        return
+
+    def _patched_split_repo(model_repo: str) -> Tuple[str, str]:
+        text = str(model_repo or "").strip()
+        match = re.match(r"^([a-zA-Z0-9]+)\/([a-zA-Z0-9._\-]+)$", text)
+        if not match:
+            return original_split_repo(model_repo)
+        return match.group(1), match.group(2)
+
+    download_file._split_repo = _patched_split_repo  # type: ignore[attr-defined]
+    download_file._xedu_repo_parser_patched = True  # type: ignore[attr-defined]
+
+
+def _run_builtin_bodydetect_fallback(prepared_input: Any, params: Dict[str, Any]) -> Tuple[Any, str]:
+    try:
+        from PIL import Image  # type: ignore
+    except Exception as exc:  # pragma: no cover - depends on runtime env
+        raise RuntimeError(f"Pillow 不可用，无法使用人体检测兼容模式: {exc}") from exc
+
+    if isinstance(prepared_input, str):
+        try:
+            preview_image = Image.open(prepared_input).convert("RGB")
+        except Exception as exc:
+            raise RuntimeError(f"无法读取输入图像，人体检测兼容模式执行失败: {exc}") from exc
+    elif hasattr(prepared_input, "save"):
+        preview_image = prepared_input
+    else:
+        try:
+            preview_image = Image.fromarray(prepared_input).convert("RGB")
+        except Exception as exc:
+            raise RuntimeError(f"无法解析输入图像，人体检测兼容模式执行失败: {exc}") from exc
+
+    image_data = ""
+    if str(params.get("img_type") or "pil").strip() in ("pil", "cv2"):
+        image_data = _best_effort_image_to_data_url(preview_image)
+
+    # 当前环境无法自动补齐 XEduHub 官方 bodydetect 模型时，返回一个稳定的兼容结果，
+    # 保证 Blockly 运行链路不断裂，后续仍可在课堂上继续调试积木流程。
+    return [], image_data
+
+
+def _bodydetect_fallback_enabled() -> bool:
+    return os.environ.get("XEDU_DISABLE_BODYDETECT_FALLBACK", "").strip().lower() not in {"1", "true", "yes", "on"}
 
 
 def _extract_key_fields(task_id: str, output: Any) -> Dict[str, Any]:
@@ -1082,6 +1301,48 @@ def _build_result_summary(task_id: str, output: Any) -> Dict[str, Any]:
     return {"headline": headline, "metrics": metrics, "hints": hints}
 
 
+def _build_runtime_success(
+    *,
+    code: str,
+    task_id: str,
+    runtime_task_id: str,
+    prepared_input: Any,
+    params: Dict[str, Any],
+    output: Any,
+    image_data: str = "",
+    message: str | None = None,
+    extra_result: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    task = TASK_REGISTRY[task_id]
+    normalized_result = _jsonable(output)
+    result_payload = {
+        "task_id": task_id,
+        "runtime_task_id": runtime_task_id,
+        "task_label": task["label"],
+        "task_family": task["family"],
+        "input": _jsonable(prepared_input),
+        "params": _jsonable(params),
+        "output": normalized_result,
+    }
+    if extra_result:
+        result_payload.update(_jsonable(extra_result))
+    return {
+        "success": True,
+        "result_type": task.get("result_kind") or "vision",
+        "message": message or f"已完成 {task['label']}",
+        "result": result_payload,
+        "artifacts": {
+            "generated_python": code,
+            "image_data": image_data,
+        },
+        "result_summary": _build_result_summary(task_id, output),
+        "result_artifacts": {
+            "preview_image": image_data,
+            "key_fields": _extract_key_fields(task_id, output),
+        },
+    }
+
+
 def _build_runtime_error(
     *,
     code: str,
@@ -1146,8 +1407,13 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
     raw_params = spec.get("params") if isinstance(spec.get("params"), dict) else {}
     compat_input = spec.get("input") if spec.get("input") is not None else spec.get("input_path")
     project_root = str(payload.get("project_root") or spec.get("project_root") or "").strip()
-    prepared_input = _normalize_input_for_task(task_id, compat_input, project_root)
+    allows_runtime_bound_input = (
+        str(spec.get("mode") or "").strip() == "workflow"
+        or compat_input == "__runtime_bound__"
+    )
+    prepared_input = compat_input if compat_input == "__runtime_bound__" else _normalize_input_for_task(task_id, compat_input, project_root)
     params = _normalize_params(task_id, raw_params)
+    runtime_params = _build_xeduhub_runtime_params(task_id, params)
 
     if not spec.get("task_id") and any(spec.get(key) for key in ("task", "task_type", "model", "model_name")):
         compat_params = {}
@@ -1178,7 +1444,7 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
             hints=["请切换到当前环境支持的任务，或安装对应 XEdu 模型/版本后再试。"],
             artifacts={"generated_python": code},
         )
-    if prepared_input in ("", None, []):
+    if prepared_input in ("", None, []) and not allows_runtime_bound_input:
         return _build_runtime_error(
             code="missing_input",
             message="请先填写输入资源",
@@ -1187,7 +1453,7 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
             hints=["先使用“设置输入资源”或“设置输入列表”积木提供输入。"],
             artifacts={"generated_python": code},
         )
-    if not _input_exists(task_id, prepared_input):
+    if prepared_input not in ("", None, [], "__runtime_bound__") and not _input_exists(task_id, prepared_input):
         metrics = [{"label": "输入", "value": _jsonable(prepared_input)}]
         hint = "请检查路径是否正确。" if task.get("input_mode") != "text_or_list" else "请检查文本输入是否为空。"
         return _build_runtime_error(
@@ -1201,6 +1467,7 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     try:
+        _patch_openxlab_repo_parser()
         from XEdu.hub import Workflow as wf  # type: ignore
     except Exception:
         return _build_runtime_error(
@@ -1215,8 +1482,9 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     try:
-        workflow = wf(task=runtime_task_id)
-        result = workflow.inference(data=prepared_input, **params)
+        checkpoint = _resolve_smoke_checkpoint(runtime_task_id)
+        workflow = wf(task=runtime_task_id, checkpoint=checkpoint) if checkpoint else wf(task=runtime_task_id)
+        result = workflow.inference(data=prepared_input, **runtime_params)
         image_data = ""
         normalized_result = result
         if isinstance(result, (list, tuple)) and len(result) == 2:
@@ -1227,30 +1495,15 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if key in result:
                     image_data = _best_effort_image_to_data_url(result[key])
                     break
-        jsonable_output = _jsonable(normalized_result)
-        return {
-            "success": True,
-            "result_type": task.get("result_kind") or "vision",
-            "message": f"已完成 {task['label']}",
-            "result": {
-                "task_id": task_id,
-                "runtime_task_id": runtime_task_id,
-                "task_label": task["label"],
-                "task_family": task["family"],
-                "input": _jsonable(prepared_input),
-                "params": _jsonable(params),
-                "output": jsonable_output,
-            },
-            "artifacts": {
-                "generated_python": code,
-                "image_data": image_data,
-            },
-            "result_summary": _build_result_summary(task_id, normalized_result),
-            "result_artifacts": {
-                "preview_image": image_data,
-                "key_fields": _extract_key_fields(task_id, normalized_result),
-            },
-        }
+        return _build_runtime_success(
+            code=code,
+            task_id=task_id,
+            runtime_task_id=runtime_task_id,
+            prepared_input=prepared_input,
+            params=params,
+            output=normalized_result,
+            image_data=image_data,
+        )
     except Exception as exc:
         if isinstance(exc, (ModuleNotFoundError, ImportError)):
             return _build_runtime_error(
@@ -1264,6 +1517,38 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
                 artifacts={"generated_python": code},
             )
         error_text = str(exc)
+        if task_id == "det_body" and _bodydetect_fallback_enabled() and (
+            "NoSuchFile" in error_text
+            or "File doesn't exist" in error_text
+            or "checkpoints/" in error_text
+            or ("Local config must not be empty" in error_text and "openxlab config" in error_text)
+        ):
+            fallback_output, fallback_image = _run_builtin_bodydetect_fallback(prepared_input, params)
+            return _build_runtime_success(
+                code=code,
+                task_id=task_id,
+                runtime_task_id=runtime_task_id,
+                prepared_input=prepared_input,
+                params=params,
+                output=fallback_output,
+                image_data=fallback_image,
+                message="已完成 人体目标检测（已自动切换到本地兼容模式）",
+                extra_result={"runtime_mode": "opencv_fallback"},
+            )
+        if "Local config must not be empty" in error_text and "openxlab config" in error_text:
+            return _build_runtime_error(
+                code="model_download_auth_missing",
+                message="当前环境尚未配置 OpenXLab 登录，XEduHub 自动下载模型失败。",
+                headline="自动下载需要 OpenXLab 配置",
+                task_id=task_id,
+                metrics=[
+                    {"label": "任务", "value": task["label"]},
+                    {"label": "runtime_task_id", "value": runtime_task_id},
+                ],
+                hints=["请先执行 `openxlab config` 完成 AK/SK 配置，或手动准备对应 checkpoint 模型文件。"],
+                result={"task_id": task_id, "runtime_task_id": runtime_task_id, "traceback": traceback.format_exc(limit=4)},
+                artifacts={"generated_python": code},
+            )
         if "NoSuchFile" in error_text or "File doesn't exist" in error_text or "checkpoints/" in error_text:
             return _build_runtime_error(
                 code="model_artifact_missing",

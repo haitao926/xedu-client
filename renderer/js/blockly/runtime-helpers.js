@@ -1,4 +1,4 @@
-const DEFAULT_PYTHON_PLACEHOLDER = "# 在左侧拖入积木开始编程\nlab_input = 'demo.jpg'";
+const DEFAULT_PYTHON_PLACEHOLDER = "# 在左侧拖入积木开始编程\nlab_input = 'courses/blockly-smoke/demo.jpg'";
 
 function getPythonCodeForWorkspace(workspace, pythonGenerator, fallback = DEFAULT_PYTHON_PLACEHOLDER) {
   if (!workspace || !pythonGenerator || typeof pythonGenerator.workspaceToCode !== 'function') {
@@ -97,6 +97,42 @@ function readBlockFieldText(block, fieldName) {
   return rawValue;
 }
 
+function getInputTargetBlock(block, inputName) {
+  if (!block || !inputName) {
+    return null;
+  }
+  if (typeof block.getInputTargetBlock === 'function') {
+    return block.getInputTargetBlock(inputName);
+  }
+  const input = block.inputs?.[inputName];
+  if (input?.block) {
+    return input.block;
+  }
+  if (input?.shadow) {
+    return input.shadow;
+  }
+  return null;
+}
+
+function hasConnectedInputBlock(block, inputName) {
+  return Boolean(getInputTargetBlock(block, inputName));
+}
+
+function readLiteralValueFromConnectedBlock(block, inputName) {
+  const connectedBlock = getInputTargetBlock(block, inputName);
+  if (!connectedBlock) {
+    return '';
+  }
+  const connectedType = String(connectedBlock?.type || '');
+  if (connectedType === 'text') {
+    return readBlockFieldValue(connectedBlock, 'TEXT') || '';
+  }
+  if (connectedType === 'math_number') {
+    return readBlockFieldValue(connectedBlock, 'NUM');
+  }
+  return '';
+}
+
 function lookupWorkspaceVariableName(workspace, variableId) {
   const variableMap = typeof workspace?.getVariableMap === 'function' ? workspace.getVariableMap() : null;
   if (!variableMap || !variableId || typeof variableMap.getVariableById !== 'function') {
@@ -155,6 +191,14 @@ function collectXEduHubSpecFromBlocks(blocks, adapters) {
       const task = typeof getTaskById === 'function' ? getTaskById(taskId) : null;
       spec.task_id = taskId;
       spec.mode = 'preset';
+      if (spec.input === undefined || spec.input === null || spec.input === '') {
+        const directInput = readLiteralValueFromConnectedBlock(block, 'INPUT_DATA');
+        if (directInput !== undefined && directInput !== null && directInput !== '') {
+          spec.input = directInput;
+        } else if (hasConnectedInputBlock(block, 'INPUT_DATA')) {
+          spec.input = '__runtime_bound__';
+        }
+      }
       spec.params = spec.params || {};
       (task?.params || []).forEach((param) => {
         const value = readBlockFieldValue(block, typeof getParamFieldName === 'function' ? getParamFieldName(param.key) : '');
@@ -165,7 +209,7 @@ function collectXEduHubSpecFromBlocks(blocks, adapters) {
       });
       continue;
     }
-    if (blockType === 'xeduhub_workflow_create' || blockType === 'xeduhub_workflow_set_task') {
+    if (blockType === 'xeduhub_workflow_create' || blockType === 'xeduhub_workflow_set_task' || blockType === 'xeduhub_workflow_create_var') {
       spec.task_id = readBlockFieldValue(block, 'TASK_ID') || spec.task_id || '';
       spec.mode = 'workflow';
       continue;
@@ -173,6 +217,14 @@ function collectXEduHubSpecFromBlocks(blocks, adapters) {
     if (blockType === 'xeduhub_workflow_set_params' || blockType === 'xeduhub_workflow_infer') {
       const raw = String(readBlockFieldValue(block, 'PARAMS') || '').trim();
       spec.mode = 'workflow';
+      if (spec.input === undefined || spec.input === null || spec.input === '') {
+        const directInput = readLiteralValueFromConnectedBlock(block, 'INPUT_DATA');
+        if (directInput !== undefined && directInput !== null && directInput !== '') {
+          spec.input = directInput;
+        } else if (hasConnectedInputBlock(block, 'INPUT_DATA')) {
+          spec.input = '__runtime_bound__';
+        }
+      }
       if (!raw) {
         continue;
       }
@@ -180,6 +232,22 @@ function collectXEduHubSpecFromBlocks(blocks, adapters) {
         Object.assign(spec.params, JSON.parse(raw));
       } catch (_) {
         spec.params_json = raw;
+      }
+      continue;
+    }
+    if (blockType === 'xeduhub_workflow_infer_var' || blockType === 'xeduhub_workflow_infer_pair') {
+      spec.mode = 'workflow';
+      if (spec.input === undefined || spec.input === null || spec.input === '') {
+        const directInput = readLiteralValueFromConnectedBlock(block, 'INPUT_DATA');
+        if (directInput !== undefined && directInput !== null && directInput !== '') {
+          spec.input = directInput;
+        } else if (hasConnectedInputBlock(block, 'INPUT_DATA')) {
+          spec.input = '__runtime_bound__';
+        }
+      }
+      const bboxValue = readLiteralValueFromConnectedBlock(block, 'BBOX');
+      if (bboxValue !== undefined && bboxValue !== null && bboxValue !== '') {
+        spec.params.bbox = bboxValue;
       }
       continue;
     }

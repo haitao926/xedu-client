@@ -11,6 +11,7 @@ import * as libraryBlocks from 'blockly/blocks';
 import { pythonGenerator } from 'blockly/python';
 
 import {
+  DEFAULT_PYTHON_PLACEHOLDER,
   applyWorkspaceSnapshot,
   collectXEduHubSpecFromBlocks,
   getPythonCodeForWorkspace,
@@ -159,7 +160,7 @@ sys.modules['XEdu'] = XEdu
 sys.modules['XEdu.hub'] = XEdu_hub
 `;
 const PYTHON_STUB_ASSIGNMENTS = `
-lab_input = 'demo.jpg'
+lab_input = 'courses/blockly-smoke/demo.jpg'
 lab_result = {}
 lab_flow = _DummyWorkflow(task='stub')
 camera = _DummyCamera.camera()
@@ -502,7 +503,35 @@ function capturePythonStdoutOrSkip(source, label) {
 
 test('hello XML sample loads and exports through runtime helpers', () => {
   const workspace = new Blockly.Workspace();
-  const xmlText = readSample('hello_classroom.blockly.xml');
+  const xmlText = `
+<xml xmlns="https://developers.google.com/blockly/xml">
+  <block type="text_print" id="print_1" x="20" y="20">
+    <value name="TEXT">
+      <block type="text" id="text_1">
+        <field name="TEXT">你好，Blockly 课堂</field>
+      </block>
+    </value>
+    <next>
+      <block type="text_print" id="print_2">
+        <value name="TEXT">
+          <block type="text_join" id="join_1" inline="false">
+            <mutation items="2"></mutation>
+            <value name="ADD0">
+              <block type="text" id="text_2">
+                <field name="TEXT">今天的实验：</field>
+              </block>
+            </value>
+            <value name="ADD1">
+              <block type="text" id="text_3">
+                <field name="TEXT">认识输出</field>
+              </block>
+            </value>
+          </block>
+        </value>
+      </block>
+    </next>
+  </block>
+</xml>`;
 
   applyWorkspaceSnapshot(Blockly, workspace, { kind: 'xml', value: xmlText });
   const python = getPythonCodeForWorkspace(workspace, pythonGenerator);
@@ -516,7 +545,74 @@ test('hello XML sample loads and exports through runtime helpers', () => {
 
 test('JSON workspace sample survives load and export roundtrip', () => {
   const workspace = new Blockly.Workspace();
-  const rawJson = readSample('workspace_json_roundtrip.blockly.json');
+  const rawJson = JSON.stringify({
+    variables: [{ name: 'counter', id: 'var_counter' }],
+    blocks: {
+      languageVersion: 0,
+      blocks: [
+        {
+          type: 'variables_set',
+          id: 'set_counter',
+          fields: { VAR: { id: 'var_counter' } },
+          inputs: {
+            VALUE: {
+              block: {
+                type: 'math_number',
+                id: 'num_two',
+                fields: { NUM: 2 },
+              },
+            },
+          },
+          next: {
+            block: {
+              type: 'controls_repeat_ext',
+              id: 'repeat_1',
+              inputs: {
+                TIMES: {
+                  block: {
+                    type: 'math_number',
+                    id: 'num_repeat',
+                    fields: { NUM: 2 },
+                  },
+                },
+                DO: {
+                  block: {
+                    type: 'text_print',
+                    id: 'print_loop',
+                    inputs: {
+                      TEXT: {
+                        block: {
+                          type: 'text_join',
+                          id: 'join_loop',
+                          extraState: { itemCount: 2 },
+                          inputs: {
+                            ADD0: {
+                              block: {
+                                type: 'text',
+                                id: 'text_prefix',
+                                fields: { TEXT: '第几次：' },
+                              },
+                            },
+                            ADD1: {
+                              block: {
+                                type: 'variables_get',
+                                id: 'get_counter',
+                                fields: { VAR: { id: 'var_counter' } },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+  });
   const parsed = JSON.parse(rawJson);
 
   applyWorkspaceSnapshot(Blockly, workspace, { kind: 'json', value: rawJson });
@@ -623,6 +719,113 @@ test('collectXEduHubSpecFromBlocks extracts semantic task params', () => {
   });
 });
 
+test('resolveLegacyTaskId downgrades hidden large tasks to standard tasks', () => {
+  assert.equal(resolveLegacyTaskId('detection', 'det_body_l'), 'det_body');
+  assert.equal(resolveLegacyTaskId('pose', 'pose_body17_l'), 'pose_body17');
+});
+
+test('collectXEduHubSpecFromBlocks reads direct input connected to semantic run block', () => {
+  const fakeBlocks = [
+    {
+      type: 'xeduhub_run_det_body',
+      inputs: {
+        INPUT_DATA: {
+          block: {
+            type: 'text',
+            fields: { TEXT: 'demo.jpg' },
+          },
+        },
+      },
+      getFieldValue(name) {
+        return name === getParamFieldName('thr') ? '0.3' : '';
+      },
+    },
+  ];
+
+  const spec = collectXEduHubSpecFromBlocks(fakeBlocks, {
+    getParamFieldName,
+    getTaskById,
+    getTaskIdFromRunBlockType,
+    isSemanticRunBlockType,
+    projectRoot: '/tmp/project',
+    resolveLegacyTaskId,
+  });
+
+  assert.equal(spec.task_id, 'det_body');
+  assert.equal(spec.input, 'demo.jpg');
+  assert.deepEqual(spec.params, { thr: '0.3' });
+});
+
+test('collectXEduHubSpecFromBlocks marks variable-backed semantic inputs as runtime-bound', () => {
+  const fakeBlocks = [
+    {
+      type: 'xeduhub_run_det_body',
+      inputs: {
+        INPUT_DATA: {
+          block: {
+            type: 'variables_get',
+            fields: { VAR: { id: 'frame_var', name: 'frame' } },
+          },
+        },
+      },
+      getFieldValue(name) {
+        return name === getParamFieldName('thr') ? '0.3' : '';
+      },
+    },
+  ];
+
+  const spec = collectXEduHubSpecFromBlocks(fakeBlocks, {
+    getParamFieldName,
+    getTaskById,
+    getTaskIdFromRunBlockType,
+    isSemanticRunBlockType,
+    projectRoot: '/tmp/project',
+    resolveLegacyTaskId,
+  });
+
+  assert.equal(spec.task_id, 'det_body');
+  assert.equal(spec.input, '__runtime_bound__');
+  assert.deepEqual(spec.params, { thr: '0.3' });
+});
+
+test('collectXEduHubSpecFromBlocks treats workflow_create_var and workflow_infer_var as runnable core syntax', () => {
+  const fakeBlocks = [
+    {
+      type: 'xeduhub_set_input_resource',
+      getFieldValue(name) {
+        return name === 'INPUT' ? 'demo.jpg' : '';
+      },
+    },
+    {
+      type: 'xeduhub_workflow_create_var',
+      getFieldValue(name) {
+        return name === 'TASK_ID' ? 'det_body' : '';
+      },
+    },
+    {
+      type: 'xeduhub_workflow_infer_var',
+      getFieldValue() {
+        return '';
+      },
+      inputs: {},
+    },
+  ];
+
+  const spec = collectXEduHubSpecFromBlocks(fakeBlocks, {
+    getParamFieldName,
+    getTaskById,
+    getTaskIdFromRunBlockType,
+    isSemanticRunBlockType,
+    projectRoot: '/tmp/project',
+    resolveLegacyTaskId,
+  });
+
+  assert.equal(spec.task_id, 'det_body');
+  assert.equal(spec.mode, 'workflow');
+  assert.equal(spec.input, 'demo.jpg');
+  assert.deepEqual(spec.params, {});
+});
+
 test('validateWorkspaceBindingsForBlocks reports unbound camera variables', () => {
   const fakeBlocks = [
     {
@@ -653,8 +856,38 @@ test('validateWorkspaceBindingsForBlocks reports unbound camera variables', () =
 });
 
 test('toolbox fixtures validate and merge as expected', () => {
-  const customToolbox = JSON.parse(readSample('custom_toolbox.toolbox.json'));
-  const invalidToolbox = JSON.parse(readSample('invalid_toolbox.toolbox.json'));
+  const customToolbox = {
+    kind: 'categoryToolbox',
+    contents: [
+      {
+        kind: 'category',
+        name: '课堂任务',
+        contents: [{ kind: 'block', type: 'text_print' }],
+      },
+    ],
+  };
+  const invalidToolbox = {
+    kind: 'categoryToolbox',
+    contents: [
+      {
+        kind: 'category',
+        name: '文本',
+        contents: [
+          {
+            kind: 'block',
+            type: 'text_changeCase',
+            inputs: {
+              TEXT: {
+                kind: 'block',
+                type: 'text',
+                fields: { TEXT: 'abc' },
+              },
+            },
+          },
+        ],
+      },
+    ],
+  };
   const baseToolbox = {
     kind: 'categoryToolbox',
     contents: [
@@ -686,18 +919,19 @@ test('toolbox fixtures validate and merge as expected', () => {
 test('sample pack keeps human-readable python snapshots next to workspaces', () => {
   const workspaceFiles = getSampleWorkspaceFiles();
 
-  assert.ok(workspaceFiles.length >= 9);
+  assert.ok(workspaceFiles.length >= 5);
   for (const workspaceName of workspaceFiles) {
     const expectedPy = getExpectedPythonSnapshotName(workspaceName);
     assert.equal(fs.existsSync(path.join(SAMPLE_DIR, expectedPy)), true, `${expectedPy} should exist`);
     assert.notEqual(normalizeText(readSample(expectedPy)), '', `${expectedPy} should not be empty`);
+    assert.ok(workspaceName.includes('xeduhub') || workspaceName === 'vision_demo.blockly.xml', `${workspaceName} should be XEduHub-focused`);
   }
 });
 
 test('sample pack includes dedicated XEduHub Blockly workspaces', () => {
   const xeduWorkspaceFiles = getXEduHubSampleWorkspaceFiles();
 
-  assert.ok(xeduWorkspaceFiles.length >= 3, `expected at least 3 XEduHub workspace samples, got ${xeduWorkspaceFiles.length}`);
+  assert.ok(xeduWorkspaceFiles.length >= 5, `expected at least 5 XEduHub workspace samples, got ${xeduWorkspaceFiles.length}`);
   assert.ok(xeduWorkspaceFiles.includes('vision_demo.blockly.xml'));
   assert.ok(xeduWorkspaceFiles.includes('legacy_xeduhub.blockly.xml'));
   assert.ok(xeduWorkspaceFiles.includes('xeduhub_workflow_result.blockly.xml'));
@@ -705,10 +939,9 @@ test('sample pack includes dedicated XEduHub Blockly workspaces', () => {
 
 test('all sample Blockly workspaces roundtrip to the expected Python snapshots', () => {
   const workspace = new Blockly.Workspace();
-  const xeduWorkspaceFiles = new Set(getXEduHubSampleWorkspaceFiles());
-  const workspaceFiles = getSampleWorkspaceFiles().filter((name) => !xeduWorkspaceFiles.has(name));
+  const workspaceFiles = getSampleWorkspaceFiles();
 
-  assert.ok(workspaceFiles.length >= 9, 'expected a representative Blockly sample pack');
+  assert.ok(workspaceFiles.length >= 5, 'expected an XEduHub-focused Blockly sample pack');
 
   for (const workspaceName of workspaceFiles) {
     const rawText = readSample(workspaceName);
@@ -760,7 +993,8 @@ test('XEduHub sample workspaces keep runnable specs and executable Python after 
       expectedParams: {},
       migrationChanged: 0,
       expectedPythonPatterns: [
-        /lab_flow = wf\(task=lab_task_id\)/,
+        /xedu_flow_bodydetect = wf\(task="bodydetect", checkpoint=xedu_smoke_checkpoint\("bodydetect\.onnx"\)\)/,
+        /lab_flow = xedu_flow_bodydetect/,
         /lab_result = lab_flow\.inference\(data=lab_input(?:, \*\*lab_params)?\)/,
         /print\("人体检测结果", lab_result\)/,
       ],
@@ -773,7 +1007,8 @@ test('XEduHub sample workspaces keep runnable specs and executable Python after 
       expectedParams: {},
       migrationChanged: 2,
       expectedPythonPatterns: [
-        /lab_flow = wf\(task=lab_task_id\)/,
+        /xedu_flow_bodydetect = wf\(task="bodydetect", checkpoint=xedu_smoke_checkpoint\("bodydetect\.onnx"\)\)/,
+        /lab_flow = xedu_flow_bodydetect/,
         /lab_result = lab_flow\.inference\(data=lab_input(?:, \*\*lab_params)?\)/,
         /print\("Legacy 人体检测结果", lab_result\)/,
       ],
@@ -786,7 +1021,7 @@ test('XEduHub sample workspaces keep runnable specs and executable Python after 
       expectedParams: {},
       migrationChanged: 0,
       expectedPythonPatterns: [
-        /lab_task_id = "det_body"/,
+        /lab_task_id = "bodydetect"/,
         /lab_params = \{\}/,
         /face_result = lab_flow\.inference\(data=lab_input, \*\*lab_params\)/,
         /face_result\.get\("result_summary", ''\)/,
@@ -872,6 +1107,10 @@ test('custom XEduHub blocks execute successfully in a stubbed Python runtime', (
     const source = buildExecutableStubbedScript(blockType);
     executePythonOrSkip(source, blockType);
   }
+});
+
+test('default Python placeholder uses the repo sample image path', () => {
+  assert.match(DEFAULT_PYTHON_PLACEHOLDER, /courses\/blockly-smoke\/demo\.jpg/);
 });
 
 test('all XEduHub blocks execute from workspace-level scenarios', () => {

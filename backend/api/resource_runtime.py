@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -16,6 +17,7 @@ from services.gitea_service import build_single_course_entry, load_course_data_f
 from services.blockly_xeduhub_support import (
     build_xeduhub_toolbox_definition,
     execute_xeduhub_runtime,
+    get_xeduhub_frontend_registry,
 )
 
 
@@ -183,18 +185,33 @@ def derive_course_id_from_path(value: str) -> str:
 
 
 def resolve_blockly_runtime_asset_urls() -> Dict[str, str]:
-    vite_client_url = "http://127.0.0.1:3000/@vite/client"
-    try:
-        with urllib.request.urlopen(vite_client_url, timeout=0.35):
-            return {
-                "vite_client_url": vite_client_url,
-                "runtime_module_url": "http://127.0.0.1:3000/js/blockly-workspace.js",
-            }
-    except (urllib.error.URLError, TimeoutError, ValueError):
-        return {
-            "vite_client_url": "",
-            "runtime_module_url": "/api/resources/frontend-assets/assets/blockly-workspace.js",
-        }
+    renderer_port = int(os.environ.get("XEDU_RENDERER_PORT", "3002") or "3002")
+    vite_hosts = (
+        f"http://127.0.0.1:{renderer_port}",
+        "http://127.0.0.1:3002",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:3000",
+    )
+    for host in vite_hosts:
+        vite_client_url = f"{host}/@vite/client"
+        try:
+            with urllib.request.urlopen(vite_client_url, timeout=1.0) as response:
+                content_type = str(response.headers.get("content-type") or "").lower()
+                preview = response.read(512).decode("utf-8", "ignore")
+                if "javascript" not in content_type and "ecmascript" not in content_type:
+                    continue
+                if "vite" not in preview.lower():
+                    continue
+                return {
+                    "vite_client_url": vite_client_url,
+                    "runtime_module_url": f"{host}/js/blockly-workspace.js",
+                }
+        except (urllib.error.URLError, TimeoutError, ValueError):
+            continue
+    return {
+        "vite_client_url": "",
+        "runtime_module_url": "/api/resources/frontend-assets/assets/blockly-workspace.js",
+    }
 
 
 def get_frontend_build_dir() -> Path:
@@ -207,29 +224,47 @@ def build_blockly_playground_html(
     toolbox_url: str,
     generated_python_url: str,
     workspace_label: str,
+    role: str = "",
+    root_token: str = "",
+    workspace_rel: str = "",
+    toolbox_rel: str = "",
     project_root: str = "",
     xeduhub_execute_url: str = "/api/resources/blockly/xeduhub/execute",
     toolbox_validate_url: str = "/api/resources/blockly/validate-toolbox",
+    toolbox_save_url: str = "/api/resources/blockly/toolbox/save",
     practice_label: str = "",
     practice_kind: str = "",
     practice_url: str = "",
     practice_launch_url: str = "",
+    task_goal: str = "",
+    task_stage: str = "",
+    task_hint: str = "",
     toolbox_switch_enabled: bool = True,
 ) -> str:
     runtime_config = {
         "workspaceUrl": workspace_url or "",
         "toolboxUrl": toolbox_url or "",
         "generatedPythonUrl": generated_python_url or "",
-        "workspaceTitle": workspace_label or "Blockly 实验",
+        "workspaceTitle": workspace_label or "Blockly 课堂模式",
         "practiceLabel": practice_label or "",
         "practiceKind": practice_kind or "",
         "practiceUrl": practice_url or "",
         "practiceLaunchUrl": practice_launch_url or "",
+        "taskGoal": task_goal or "",
+        "taskStage": task_stage or "",
+        "taskHint": task_hint or "",
+        "userRole": role or "",
+        "rootToken": root_token or "",
+        "workspaceRelPath": workspace_rel or "",
+        "toolboxRelPath": toolbox_rel or "",
         "projectRoot": project_root or "",
         "toolboxSwitchEnabled": bool(toolbox_switch_enabled),
+        "toolboxImportEnabled": bool(toolbox_switch_enabled),
         "xeduhubExecuteUrl": xeduhub_execute_url or "",
         "toolboxValidateUrl": toolbox_validate_url or "",
+        "toolboxSaveUrl": toolbox_save_url or "",
         "defaultXEduHubToolbox": build_xeduhub_toolbox_definition("classification"),
+        "xeduhubTaskRegistry": get_xeduhub_frontend_registry(),
     }
     runtime_config_json = json.dumps(runtime_config, ensure_ascii=False).replace("</", "<\\/")
     asset_urls = resolve_blockly_runtime_asset_urls()
@@ -239,7 +274,7 @@ def build_blockly_playground_html(
         else ""
     )
     runtime_module_url = asset_urls["runtime_module_url"]
-    page_title = workspace_label or "Blockly 实验"
+    page_title = workspace_label or "Blockly 课堂模式"
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -253,29 +288,22 @@ def build_blockly_playground_html(
     <div class="topbar-left">
       <span class="title-dot" aria-hidden="true"></span>
       <div class="title-wrap">
-        <div class="title" id="workspaceLabel">XEdu Blockly 教学实验台</div>
-        <div class="title-sub">教学模式 · 可视化编程工作台</div>
+        <div class="title" id="workspaceLabel">Blockly 课堂模式</div>
+        <div class="title-sub" id="workspaceMetaLabel">任务驱动课堂工作台</div>
       </div>
     </div>
     <div class="topbar-center">
-      <button id="controlPanelToggleBtn" class="btn-ghost" type="button" aria-expanded="false">⚙ 积木控制台</button>
+      <button id="controlPanelToggleBtn" class="btn-ghost" type="button" aria-expanded="false">分类筛选</button>
       <div id="controlPanel" class="control-panel">
-        <div class="control-panel-title">积木控制台</div>
-        <div class="control-panel-section">
-          <div class="control-section-head">积木来源</div>
-          <div id="toolboxModeSwitch" class="toolbox-mode-switch" role="group" aria-label="工具箱来源">
-            <button id="toolboxOfficialBtn" class="toolbox-mode-btn active" type="button">官方积木</button>
-            <button id="toolboxCourseBtn" class="toolbox-mode-btn" type="button">课程包积木</button>
-          </div>
-        </div>
+        <div class="control-panel-title">分类与扩展</div>
         <div class="control-panel-section">
           <div class="control-section-head">分类显示</div>
           <div id="groupDrawerBody" class="group-list"></div>
         </div>
         <div id="toolboxPackPanel" class="control-panel-section toolbox-pack-panel">
           <div class="toolbox-pack-head">
-            <span>积木包列表</span>
-            <button id="addPackBtn" class="toolbox-pack-add" type="button">+ 增加</button>
+            <span>课程积木包</span>
+            <button id="addPackBtn" class="toolbox-pack-add" type="button">+ 导入</button>
             <input id="addPackInput" type="file" accept=".zip,.json,.toolbox.json" style="display:none;" />
           </div>
           <div id="toolboxPackList" class="toolbox-pack-list"></div>
@@ -283,70 +311,74 @@ def build_blockly_playground_html(
       </div>
     </div>
     <div class="topbar-right">
-      <button id="toggleCodePanelBtn" class="btn-ghost" type="button">查看代码</button>
       <button id="runXEduHubBtn" class="btn-primary">运行程序</button>
+      <div id="toolbarQuickActions" class="toolbar-quick-actions" aria-label="常用操作"></div>
       <div class="toolbar-more">
-        <button id="toolbarMoreBtn" class="btn-ghost" type="button" aria-expanded="false">导出 ▾</button>
+        <button id="toolbarMoreBtn" class="btn-ghost" type="button" aria-expanded="false">操作</button>
         <div id="toolbarMoreMenu" class="toolbar-more-menu">
-          <button id="downloadPythonBtn" class="toolbar-more-item" type="button">下载 Python</button>
-          <button id="downloadWorkspaceBtn" class="toolbar-more-item" type="button">下载工作区</button>
-          <button id="resetWorkspaceBtn" class="toolbar-more-item" type="button">重置工作区</button>
+          <button id="openWorkspaceBtn" class="toolbar-more-item" type="button">打开文件</button>
+          <button id="saveWorkspaceBtn" class="toolbar-more-item" type="button">保存文件</button>
+          <input id="openWorkspaceInput" type="file" accept=".blockly.json,.json,.blockly.xml,.xml,application/json,text/xml" style="display:none;" />
           <button id="copyPythonBtn" class="toolbar-more-item" type="button">复制 Python</button>
-          <button id="toggleDebugBtn" class="toolbar-more-item" type="button">切换调试区</button>
+          <button id="downloadPythonBtn" class="toolbar-more-item" type="button">下载 Python</button>
+          <button id="resetWorkspaceBtn" class="toolbar-more-item" type="button">重置工作区</button>
           <a id="practiceBtn" class="toolbar-more-item" href="#" target="_blank" rel="noopener" style="display:none;">在 Jupyter 打开关联代码</a>
         </div>
       </div>
     </div>
   </div>
-  <div class="layout">
-    <div class="panel canvas-panel">
-      <div id="blocklyDiv"></div>
-      <button id="blocklyExtendFab" class="blockly-extend-fab" type="button" title="增加积木包">
-        <span class="blockly-extend-fab-icon" aria-hidden="true">
+  <div id="blocklyLayout" class="layout">
+    <section class="workspace-shell">
+      <div class="workspace-canvas-card">
+        <aside id="blocklySideNav" class="blockly-side-nav" aria-label="积木分类导航">
+          <div id="blocklySideNavBody" class="blockly-side-nav-body"></div>
+        </aside>
+        <div id="blocklyDiv"></div>
+        <button id="blocklyExtendFab" class="blockly-extend-fab" type="button" title="增加积木包">
+          <span class="blockly-extend-fab-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 5v14M5 12h14M7 7h10v10H7z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </button>
+        <div class="meta" id="toolboxLabel" hidden></div>
+      </div>
+    </section>
+    <aside id="codeDock" class="workspace-sidecar">
+      <button id="codeDockToggleBtn" class="code-dock-toggle" type="button" aria-label="收起右侧工作栏" aria-expanded="true">
+        <span class="code-dock-toggle-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none">
-            <path d="M12 5v14M5 12h14M7 7h10v10H7z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="m14.8 6.8-5.4 5.2 5.4 5.2" stroke="currentColor" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
-        <span class="blockly-extend-fab-text">增加积木</span>
       </button>
-      <div class="meta" id="toolboxLabel">正在加载工作区…</div>
-    </div>
-    <div id="insightCard" class="panel insight-card">
-      <div class="insight-head">
-        <span>教学属性面板</span>
-        <span id="resultRunBadge" class="run-badge">等待运行</span>
+      <div class="workspace-sidecar-stack">
+        <section class="panel code-panel">
+          <div class="panel-head">
+            <div class="panel-head-copy">
+              <span>自动生成</span>
+              <small>当前积木对应的 Python 代码</small>
+            </div>
+          </div>
+          <div class="code-dock-body">
+            <pre id="pythonCode"># 正在等待 Blockly 初始化</pre>
+          </div>
+        </section>
+        <section id="outputPanel" class="panel output-panel side-output-panel">
+          <div class="panel-head panel-head-muted">
+            <div class="panel-head-copy">
+              <span>终端</span>
+              <small>显示本次运行输出与错误信息</small>
+            </div>
+            <span id="resultRunBadge" class="run-badge">未运行</span>
+          </div>
+          <div class="panel-subhead" hidden>实验证据</div>
+          <div id="resultBox" class="output-body" data-state="idle">
+            <div id="resultEvidence" class="result-evidence"></div>
+          </div>
+        </section>
       </div>
-      <section class="insight-section result-section">
-        <div class="section-head">运行结果卡</div>
-        <div class="result-box">
-          <div id="resultSummary" class="result-summary"><strong>等待运行</strong><small>拖入 XEduHub 积木后点击“运行程序”。</small></div>
-          <div id="resultMetrics" class="result-metrics"></div>
-          <div id="resultState" class="result-state">暂无结论</div>
-          <img id="resultImage" class="result-image" alt="XEduHub 结果预览">
-          <details id="resultDebugDetails" class="result-debug">
-            <summary>查看原始 JSON</summary>
-            <pre id="resultJson" class="result-json">{{}}</pre>
-          </details>
-        </div>
-        <div class="meta" id="practiceMeta"></div>
-      </section>
-    </div>
-  </div>
-  <div id="pythonOverlay" class="python-overlay">
-    <div class="python-overlay-card">
-      <div class="python-overlay-head">
-        <div>
-          <div class="python-overlay-title">Python 实时生成</div>
-          <div class="python-overlay-meta">只读代码视图，可用于课堂讲解、复制或导出</div>
-        </div>
-        <button id="closePythonOverlayBtn" class="btn-ghost" type="button">关闭代码</button>
-      </div>
-      <div class="python-overlay-body">
-        <div class="python-box">
-          <pre id="pythonCode"># 正在等待 Blockly 初始化</pre>
-        </div>
-      </div>
-    </div>
+    </aside>
   </div>
   <script>
     window.__XEDU_BLOCKLY_RUNTIME_CONFIG__ = {runtime_config_json};
