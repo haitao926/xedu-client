@@ -1,0 +1,3852 @@
+{
+  "meta": {
+    "source_file": "renderer/js/blockly/xeduhub-blocks.js",
+    "generated_by": "scripts/generate_xeduhub_block_audit.mjs",
+    "block_count": 88,
+    "runnable_block_count": 67,
+    "legacy_compat_count": 15,
+    "semantic_task_count": 20,
+    "registry_default_task_id": "det_body"
+  },
+  "summary": {
+    "conclusions": {
+      "一致": 34,
+      "废弃兼容": 15,
+      "弱一致": 39
+    },
+    "groups": {
+      "结果读取/计算类": 10,
+      "通信/设备/兼容类": 23,
+      "结果展示类": 5,
+      "图像与视频处理类": 19,
+      "输入类": 4,
+      "执行类": 27
+    },
+    "priority_findings": [
+      {
+        "id": "xeduhub_show_result_card",
+        "issue_level": "P1",
+        "conclusion": "弱一致",
+        "summary": "该块已经不再是 print；它会触发前端结果区渲染一张结果卡。"
+      },
+      {
+        "id": "xeduhub_show_result_image",
+        "issue_level": "P1",
+        "conclusion": "弱一致",
+        "summary": "该块已经不再是 print；它会触发前端结果区渲染图片证据卡。"
+      },
+      {
+        "id": "xeduhub_cv_decode_chunk",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：display_img，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_cv_draw_boxes",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：display_img，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_cv_loop_frames",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：camera、frame，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_cv_show_frame",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：video，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_get_result_field",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_http_iter_chunks",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：response、chunk，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_http_loop_stream_frames",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：frame、response，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_http_send_command",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：response，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_ocr_first_text",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_polyfit_quadratic",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：coeff，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_result_first_box",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_cls_imagenet",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_depth_anything",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_det_body",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_det_body_l",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_det_coco",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_det_coco_l",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_drive_perception",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_embedding_audio",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_embedding_image",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_embedding_text",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_gen_color",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_gen_style",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_ocr",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_pose_body17",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_pose_body17_l",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_pose_body26",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_pose_face106",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_pose_hand21",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_pose_wholebody133",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_segment_anything",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_servo_write_angle",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：servo，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_set_input_list",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_set_input_resource",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_workflow_create",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_workflow_infer",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_workflow_set_task",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_flow，用户界面没有完整解释这些状态契约。"
+      }
+    ]
+  },
+  "blocks": [
+    {
+      "id": "xeduhub_bbox_center_x",
+      "group": "结果读取/计算类",
+      "title": "框中心 X ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = xrt.xedu_bbox_center_x(None)",
+      "generated_python_summary": "__result = xrt.xedu_bbox_center_x(None)",
+      "hidden_globals": [],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照 + stubbed Python 执行",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_catch_error",
+      "group": "结果读取/计算类",
+      "title": "错误 lab_error 尝试 ?",
+      "user_visible_fields": [
+        "ERROR_VAR=lab_error"
+      ],
+      "tooltip": "",
+      "generated_python": "try:\n  pass\nexcept Exception as e:\n  lab_error = str(e)\n  print('运行失败:', lab_error)",
+      "generated_python_summary": "try: pass except Exception as e: lab_error = str(e) print('运行失败:', lab_error)",
+      "hidden_globals": [
+        "lab_error"
+      ],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "本地 Python 执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_chunk_over_size",
+      "group": "通信/设备/兼容类",
+      "title": "分块 ? 大于 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = (len(b\"\") > 100)",
+      "generated_python_summary": "__result = (len(b\"\") > 100)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_classify_run",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 分类 cls_imagenet",
+      "user_visible_fields": [
+        "MODEL=cls_imagenet"
+      ],
+      "tooltip": "",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_clear_result",
+      "group": "结果展示类",
+      "title": "清空结果区",
+      "user_visible_fields": [],
+      "tooltip": "清空当前运行结果与错误状态。",
+      "generated_python": "xrt.xedu_clear_result()\nlab_result = {}\nlab_error = ''",
+      "generated_python_summary": "xrt.xedu_clear_result() lab_result = {} lab_error = ''",
+      "hidden_globals": [
+        "lab_result",
+        "lab_error"
+      ],
+      "ui_behavior": "清空当前 Blockly 结果区的证据卡和运行态展示",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "前端结果区动作渲染 + Python 导出 helper 调用",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
+      "test_assertions": [
+        "断言运行后结果区行为与积木承诺一致或明确记录偏差。",
+        "断言隐藏状态变更不会脱离结果面板反馈。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "该块会直接清空右侧结果区展示，并把状态回退到已清空。"
+      ],
+      "remediation": [
+        "如需更细粒度清理，可后续区分“清空证据卡”和“重置整次运行状态”。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_create_flow",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 流程 classification 模型 cls_imagenet",
+      "user_visible_fields": [
+        "TASK=classification",
+        "MODEL=cls_imagenet"
+      ],
+      "tooltip": "",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_flow = None",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_flow = None",
+      "hidden_globals": [
+        "lab_flow"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_create_workflow",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 Workflow classification 模型 cls_imagenet",
+      "user_visible_fields": [
+        "TASK=classification",
+        "MODEL=cls_imagenet"
+      ],
+      "tooltip": "",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_flow = None",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_flow = None",
+      "hidden_globals": [
+        "lab_flow"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_canny",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 边缘检测 阈值1 ? 阈值2 ?",
+      "user_visible_fields": [],
+      "tooltip": "使用 cv2.Canny 提取图像边缘。",
+      "generated_python": "__result = cv2.Canny(None, 100, 200)",
+      "generated_python_summary": "__result = cv2.Canny(None, 100, 200)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_crop_image",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 裁剪 x ? y ? 宽 ? 高 ?",
+      "user_visible_fields": [],
+      "tooltip": "按 x、y、宽、高裁剪图像区域。",
+      "generated_python": "__result = xrt.xedu_cv_crop(None, 0, 0, 100, 100)",
+      "generated_python_summary": "__result = xrt.xedu_cv_crop(None, 0, 0, 100, 100)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_cvt_color",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 颜色转换 BGR 转灰度",
+      "user_visible_fields": [
+        "COLOR_CODE=BGR 转灰度"
+      ],
+      "tooltip": "使用 cv2.cvtColor 转换图像颜色空间。",
+      "generated_python": "__result = cv2.cvtColor(None, cv2.COLOR_BGR2GRAY)",
+      "generated_python_summary": "__result = cv2.cvtColor(None, cv2.COLOR_BGR2GRAY)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_decode_chunk",
+      "group": "图像与视频处理类",
+      "title": "分块转画面 ? 到 display_img",
+      "user_visible_fields": [
+        "IMAGE_VAR=display_img"
+      ],
+      "tooltip": "",
+      "generated_python": "display_img = xrt.xedu_decode_chunk_image(b\"\")",
+      "generated_python_summary": "display_img = xrt.xedu_decode_chunk_image(b\"\")",
+      "hidden_globals": [
+        "display_img"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：display_img，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_draw_boxes",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 画检测框 ? 输出到 display_img",
+      "user_visible_fields": [
+        "IMAGE_VAR=display_img"
+      ],
+      "tooltip": "",
+      "generated_python": "display_img = xrt.xedu_draw_boxes(None, [])",
+      "generated_python_summary": "display_img = xrt.xedu_draw_boxes(None, [])",
+      "hidden_globals": [
+        "display_img"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：display_img，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_flip_image",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 翻转 左右",
+      "user_visible_fields": [
+        "FLIP_CODE=左右"
+      ],
+      "tooltip": "使用 cv2.flip 翻转图像。",
+      "generated_python": "__result = cv2.flip(None, 1)",
+      "generated_python_summary": "__result = cv2.flip(None, 1)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_gaussian_blur",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 高斯模糊 核大小 6",
+      "user_visible_fields": [
+        "KSIZE=6"
+      ],
+      "tooltip": "使用 cv2.GaussianBlur 做平滑去噪。",
+      "generated_python": "__result = cv2.GaussianBlur(None, (7, 7), 0)",
+      "generated_python_summary": "__result = cv2.GaussianBlur(None, (7, 7), 0)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_loop_frames",
+      "group": "图像与视频处理类",
+      "title": "循环读取 camera 到 frame 按键 q 退出 延时 1 ms 执行 ?",
+      "user_visible_fields": [
+        "CAMERA_VAR=camera",
+        "FRAME_VAR=frame",
+        "QUIT_KEY=q",
+        "DELAY=1"
+      ],
+      "tooltip": "",
+      "generated_python": "try:\n  while camera.is_opened():\n    frame = camera.read()\n    if frame is None:\n      break\n    pass\n    if camera.should_quit(\"q\", delay=1):\n      break\nfinally:\n  camera.close()",
+      "generated_python_summary": "try: while camera.is_opened(): frame = camera.read() if frame is None: break pass if camera.should_quit(\"q\", delay=1): break finally: cam...",
+      "hidden_globals": [
+        "camera",
+        "frame"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 3 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：camera、frame，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_open_camera",
+      "group": "图像与视频处理类",
+      "title": "打开摄像头 0 记为 camera 窗口 video",
+      "user_visible_fields": [
+        "SOURCE=0",
+        "CAMERA_VAR=camera",
+        "WINDOW=video"
+      ],
+      "tooltip": "",
+      "generated_python": "camera = xrt.XEduCamera.camera(0, window_name=\"video\")",
+      "generated_python_summary": "camera = xrt.XEduCamera.camera(0, window_name=\"video\")",
+      "hidden_globals": [
+        "camera",
+        "video"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_cv_open_video",
+      "group": "图像与视频处理类",
+      "title": "打开视频 ? 记为 camera 窗口 video",
+      "user_visible_fields": [
+        "CAMERA_VAR=camera",
+        "WINDOW=video"
+      ],
+      "tooltip": "",
+      "generated_python": "camera = xrt.XEduCamera.video(\"demo.mp4\", window_name=\"video\")",
+      "generated_python_summary": "camera = xrt.XEduCamera.video(\"demo.mp4\", window_name=\"video\")",
+      "hidden_globals": [
+        "camera",
+        "video"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_cv_put_text",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 写字 XEdu x 20 y 40 大小 1 粗细 2",
+      "user_visible_fields": [
+        "TEXT=XEdu",
+        "TEXT_X=20",
+        "TEXT_Y=40",
+        "TEXT_SCALE=1",
+        "TEXT_THICKNESS=2"
+      ],
+      "tooltip": "使用 cv2.putText 在图像上绘制文字。",
+      "generated_python": "__result = cv2.putText(None, \"XEdu\", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)",
+      "generated_python_summary": "__result = cv2.putText(None, \"XEdu\", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_resize_image",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 缩放 宽 ? 高 ?",
+      "user_visible_fields": [],
+      "tooltip": "使用 cv2.resize 调整图像大小。",
+      "generated_python": "__result = cv2.resize(None, (int(640), int(480)))",
+      "generated_python_summary": "__result = cv2.resize(None, (int(640), int(480)))",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_rotate_image",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 旋转 顺时针 90°",
+      "user_visible_fields": [
+        "ROTATE_CODE=顺时针 90°"
+      ],
+      "tooltip": "使用 cv2.rotate 旋转图像。",
+      "generated_python": "__result = cv2.rotate(None, cv2.ROTATE_90_CLOCKWISE)",
+      "generated_python_summary": "__result = cv2.rotate(None, cv2.ROTATE_90_CLOCKWISE)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_save_image",
+      "group": "图像与视频处理类",
+      "title": "保存图片 ? 到 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "cv2.imwrite(\"output.jpg\", None)",
+      "generated_python_summary": "cv2.imwrite(\"output.jpg\", None)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_show_frame",
+      "group": "图像与视频处理类",
+      "title": "显示画面 ? 窗口 video",
+      "user_visible_fields": [
+        "WINDOW=video"
+      ],
+      "tooltip": "",
+      "generated_python": "cv2.imshow(\"video\", None)",
+      "generated_python_summary": "cv2.imshow(\"video\", None)",
+      "hidden_globals": [
+        "video"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：video，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_cv_threshold",
+      "group": "图像与视频处理类",
+      "title": "图像 ? 二值化 阈值 ? 最大值 ?",
+      "user_visible_fields": [],
+      "tooltip": "使用 cv2.threshold 对图像做二值化。",
+      "generated_python": "__result = cv2.threshold(None, 127, 255, cv2.THRESH_BINARY)[1]",
+      "generated_python_summary": "__result = cv2.threshold(None, 127, 255, cv2.THRESH_BINARY)[1]",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_debug_print",
+      "group": "结果展示类",
+      "title": "打印 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "print(lab_result)",
+      "generated_python_summary": "print(lab_result)",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "终端输出为主，不直接控制结果卡组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "前端结果区动作渲染 + Python 导出 helper 调用",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
+      "test_assertions": [
+        "断言运行后结果区行为与积木承诺一致或明确记录偏差。",
+        "断言隐藏状态变更不会脱离结果面板反馈。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_decode_chunk_image",
+      "group": "图像与视频处理类",
+      "title": "分块转画面 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = xrt.xedu_decode_chunk_image(b\"\")",
+      "generated_python_summary": "__result = xrt.xedu_decode_chunk_image(b\"\")",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 模拟依赖测试",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_detect_run",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 检测 cls_imagenet",
+      "user_visible_fields": [
+        "MODEL=cls_imagenet"
+      ],
+      "tooltip": "",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_draw_boxes_image",
+      "group": "图像与视频处理类",
+      "title": "给图像 ? 画检测框 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = xrt.xedu_draw_boxes(None, [])",
+      "generated_python_summary": "__result = xrt.xedu_draw_boxes(None, [])",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 模拟依赖测试",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_execute_workflow",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 执行 lab_result",
+      "user_visible_fields": [
+        "RESULT=lab_result"
+      ],
+      "tooltip": "",
+      "generated_python": "if lab_flow is None:\n  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')\nlab_result = lab_flow.inference(data=lab_input, **{})\nlab_result = lab_result",
+      "generated_python_summary": "if lab_flow is None: raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行') lab_result = lab_flow.inference(data=lab_input, **{}) lab_result = ...",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_flow_execute",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 执行 lab_result",
+      "user_visible_fields": [
+        "RESULT=lab_result"
+      ],
+      "tooltip": "",
+      "generated_python": "if lab_flow is None:\n  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')\nlab_result = lab_flow.inference(data=lab_input, **{})\nlab_result = lab_result",
+      "generated_python_summary": "if lab_flow is None: raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行') lab_result = lab_flow.inference(data=lab_input, **{}) lab_result = ...",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_flow_set_input",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 输入 demo.jpg",
+      "user_visible_fields": [
+        "INPUT=demo.jpg"
+      ],
+      "tooltip": "",
+      "generated_python": "lab_input = \"demo.jpg\"",
+      "generated_python_summary": "lab_input = \"demo.jpg\"",
+      "hidden_globals": [
+        "lab_input"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_get_result_field",
+      "group": "结果读取/计算类",
+      "title": "读取 ? result_summary",
+      "user_visible_fields": [
+        "FIELD=result_summary"
+      ],
+      "tooltip": "",
+      "generated_python": "__result = (lab_result.get(\"result_summary\", '') if isinstance(lab_result, dict) else '')",
+      "generated_python_summary": "__result = (lab_result.get(\"result_summary\", '') if isinstance(lab_result, dict) else '')",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + stubbed Python 执行",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_http_get",
+      "group": "通信/设备/兼容类",
+      "title": "GET ? 结果到 response",
+      "user_visible_fields": [
+        "RESPONSE_VAR=response"
+      ],
+      "tooltip": "",
+      "generated_python": "response = requests.get(\"http://127.0.0.1\")",
+      "generated_python_summary": "response = requests.get(\"http://127.0.0.1\")",
+      "hidden_globals": [
+        "response"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_http_iter_chunks",
+      "group": "通信/设备/兼容类",
+      "title": "遍历网络分块 response 到 chunk 大小 16384 执行 ?",
+      "user_visible_fields": [
+        "STREAM_VAR=response",
+        "CHUNK_VAR=chunk",
+        "CHUNK_SIZE=16384"
+      ],
+      "tooltip": "",
+      "generated_python": "try:\n  for chunk in response.iter_content(chunk_size=16384):\n    if not chunk:\n      continue\n  pass\nfinally:\n  try:\n    response.close()\n  except Exception:\n    pass",
+      "generated_python_summary": "try: for chunk in response.iter_content(chunk_size=16384): if not chunk: continue pass finally: try: response.close() except Exception: pass",
+      "hidden_globals": [
+        "response",
+        "chunk"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：response、chunk，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_http_loop_stream_frames",
+      "group": "通信/设备/兼容类",
+      "title": "循环读取流画面 response 到 frame 分块大小 16384 最小长度 100 执行 ?",
+      "user_visible_fields": [
+        "STREAM_VAR=response",
+        "FRAME_VAR=frame",
+        "CHUNK_SIZE=16384",
+        "MIN_SIZE=100"
+      ],
+      "tooltip": "",
+      "generated_python": "try:\n  for xedu_chunk in response.iter_content(chunk_size=16384):\n    if not xedu_chunk:\n      continue\n    if len(xedu_chunk) <= 100:\n      continue\n    try:\n      frame = xrt.xedu_decode_chunk_image(xedu_chunk)\n    except Exception:\n      continue\n    if frame is None:\n      continue\n  pass\nfinally:\n  try:\n    response.close()\n  except Exception:\n    pass",
+      "generated_python_summary": "try: for xedu_chunk in response.iter_content(chunk_size=16384): if not xedu_chunk: continue if len(xedu_chunk) <= 100: continue try: fram...",
+      "hidden_globals": [
+        "frame",
+        "response"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：frame、response，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_http_open_stream",
+      "group": "通信/设备/兼容类",
+      "title": "打开网络视频流 ? 记为 response",
+      "user_visible_fields": [
+        "STREAM_VAR=response"
+      ],
+      "tooltip": "",
+      "generated_python": "response = requests.get(\"http://127.0.0.1:81/stream\", stream=True)",
+      "generated_python_summary": "response = requests.get(\"http://127.0.0.1:81/stream\", stream=True)",
+      "hidden_globals": [
+        "response"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_http_send_command",
+      "group": "通信/设备/兼容类",
+      "title": "发送设备指令 ? 动作 ? 响应到 response 停止指令 S 延时 1 秒",
+      "user_visible_fields": [
+        "RESPONSE_VAR=response",
+        "STOP_CMD=S",
+        "DELAY=1"
+      ],
+      "tooltip": "",
+      "generated_python": "response = xrt.xedu_send_command(\"http://127.0.0.1/state?cmd=\", \"S\", stop_cmd=\"S\", delay=1)",
+      "generated_python_summary": "response = xrt.xedu_send_command(\"http://127.0.0.1/state?cmd=\", \"S\", stop_cmd=\"S\", delay=1)",
+      "hidden_globals": [
+        "response"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：response，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_input_image",
+      "group": "输入类",
+      "title": "图片路径 demo.jpg",
+      "user_visible_fields": [
+        "INPUT=demo.jpg"
+      ],
+      "tooltip": "点击路径会弹出文件选择，并返回单张图片路径。",
+      "generated_python": "__result = \"demo.jpg\"",
+      "generated_python_summary": "__result = \"demo.jpg\"",
+      "hidden_globals": [],
+      "ui_behavior": "通过可点击字段触发图片选择器；桌面端应桥接 Electron 文件对话框",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 4 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 运行时 spec 抽取与绑定验证",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_keypoint_axis",
+      "group": "结果读取/计算类",
+      "title": "关键点 ? 第 ? 个 X",
+      "user_visible_fields": [
+        "AXIS=X"
+      ],
+      "tooltip": "",
+      "generated_python": "__result = xrt.xedu_keypoint_axis([], 0, \"x\")",
+      "generated_python_summary": "__result = xrt.xedu_keypoint_axis([], 0, \"x\")",
+      "hidden_globals": [],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照 + stubbed Python 执行",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_load_image_to_var",
+      "group": "输入类",
+      "title": "读取图片 demo.jpg 赋值给 display_img",
+      "user_visible_fields": [
+        "INPUT=demo.jpg",
+        "IMAGE_VAR=display_img"
+      ],
+      "tooltip": "点击中间路径会弹出文件选择，并把读入的图片数据保存到变量。",
+      "generated_python": "display_img = cv2.imread(\"demo.jpg\")",
+      "generated_python_summary": "display_img = cv2.imread(\"demo.jpg\")",
+      "hidden_globals": [
+        "display_img"
+      ],
+      "ui_behavior": "通过可点击字段触发图片选择器；桌面端应桥接 Electron 文件对话框",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 6 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 24 次"
+        ]
+      },
+      "test_strategy": "浏览器/页面行为测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言点击路径字段会触发图片选择器桥接。",
+        "断言生成代码会把图片读入目标变量。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_math_distance",
+      "group": "结果读取/计算类",
+      "title": "两点距离 x1 ? y1 ? x2 ? y2 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = xrt.xedu_distance(0, 0, 0, 0)",
+      "generated_python_summary": "__result = xrt.xedu_distance(0, 0, 0, 0)",
+      "hidden_globals": [],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照 + stubbed Python 执行",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_media_frames_to_video",
+      "group": "图像与视频处理类",
+      "title": "图片目录 ? 合成视频 ? 帧率 30",
+      "user_visible_fields": [
+        "FPS=30"
+      ],
+      "tooltip": "",
+      "generated_python": "xrt.xedu_frames_to_video(\"output\", \"output_video.mp4\", fps=30)",
+      "generated_python_summary": "xrt.xedu_frames_to_video(\"output\", \"output_video.mp4\", fps=30)",
+      "hidden_globals": [],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_ocr_first_text",
+      "group": "结果读取/计算类",
+      "title": "第一段文字 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = xrt.xedu_first_text(lab_result)",
+      "generated_python_summary": "__result = xrt.xedu_first_text(lab_result)",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + stubbed Python 执行",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_ocr_run",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 OCR cls_imagenet",
+      "user_visible_fields": [
+        "MODEL=cls_imagenet"
+      ],
+      "tooltip": "",
+      "generated_python": "# 光学字符识别 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 光学字符识别 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_polyfit_quadratic",
+      "group": "结果读取/计算类",
+      "title": "拟合二次曲线 X ? Y ? 结果到 coeff",
+      "user_visible_fields": [
+        "COEFF_VAR=coeff"
+      ],
+      "tooltip": "",
+      "generated_python": "coeff = np.polyfit([], [], 2)",
+      "generated_python_summary": "coeff = np.polyfit([], [], 2)",
+      "hidden_globals": [
+        "coeff"
+      ],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "本地 Python 执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：coeff，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_print_status",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 打印",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "print('XEduHub workflow ready')",
+      "generated_python_summary": "print('XEduHub workflow ready')",
+      "hidden_globals": [],
+      "ui_behavior": "迁移后等价于 xeduhub_debug_print(VAR=lab_result)",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "兼容块名称仍然指向“状态”，但迁移后实际打印的是 lab_result。"
+      ],
+      "remediation": [
+        "继续仅作为迁移块保留，不应在新用户工具箱中暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_quadratic_eval",
+      "group": "结果读取/计算类",
+      "title": "二次曲线 ? 在 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = xrt.xedu_quadratic_eval([0, 0, 0], 0)",
+      "generated_python_summary": "__result = xrt.xedu_quadratic_eval([0, 0, 0], 0)",
+      "hidden_globals": [],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "代码生成快照 + stubbed Python 执行",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_quadratic_fit",
+      "group": "结果读取/计算类",
+      "title": "拟合二次曲线 X ? Y ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = np.polyfit([], [], 2)",
+      "generated_python_summary": "__result = np.polyfit([], [], 2)",
+      "hidden_globals": [],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + stubbed Python 执行",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_raw_create_workflow",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 底层 classification",
+      "user_visible_fields": [
+        "TASK=classification"
+      ],
+      "tooltip": "",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_flow = None",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_flow = None",
+      "hidden_globals": [
+        "lab_flow"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_raw_inference",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 推理 demo.jpg 模型 cls_imagenet",
+      "user_visible_fields": [
+        "INPUT=demo.jpg",
+        "MODEL=cls_imagenet"
+      ],
+      "tooltip": "",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_result_first_box",
+      "group": "结果读取/计算类",
+      "title": "第一个框 ?",
+      "user_visible_fields": [],
+      "tooltip": "",
+      "generated_python": "__result = xrt.xedu_first_box(lab_result)",
+      "generated_python_summary": "__result = xrt.xedu_first_box(lab_result)",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": false,
+      "runtime_entrypoint": "依附父块",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 2 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + stubbed Python 执行",
+      "test_assertions": [
+        "断言生成代码非空且可编译。",
+        "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_and_record",
+      "group": "结果展示类",
+      "title": "记录结论 ?",
+      "user_visible_fields": [],
+      "tooltip": "记录当前实验结论，便于课堂展示与复盘。",
+      "generated_python": "xrt.xedu_record_conclusion(\"教学结论已记录\", lab_result)",
+      "generated_python_summary": "xrt.xedu_record_conclusion(\"教学结论已记录\", lab_result)",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "在 Blockly 结果区追加结论备注卡，作为自动结果展示的补充说明",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "前端结果区动作渲染 + Python 导出 helper 调用",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
+      "test_assertions": [
+        "断言运行后结果区行为与积木承诺一致或明确记录偏差。",
+        "断言隐藏状态变更不会脱离结果面板反馈。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "该块会把备注内容追加到结果证据区，成为本次运行的补充结论。"
+      ],
+      "remediation": [
+        "如需跨运行持久化，可在后续接入课堂记录或日志存储链路。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_cls_imagenet",
+      "group": "执行类",
+      "title": "〔看图分类〕 · 分类 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "ImageNet 图像分类。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次",
+          "test_blockly_resources_api.py: 定向命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "cls_imagenet",
+      "semantic_task_label": "ImageNet 图像分类",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_depth_anything",
+      "group": "执行类",
+      "title": "〔看远近〕 · 深度 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "单目深度估计。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# 单目深度估计 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 单目深度估计 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "depth_anything",
+      "semantic_task_label": "单目深度估计",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_det_body",
+      "group": "执行类",
+      "title": "〔找人体〕 · 检测 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "人体目标检测。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
+      "generated_python": "lab_task_id = \"bodydetect\"\nlab_flow = xedu_flow_bodydetect\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"bodydetect\" lab_flow = xedu_flow_bodydetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 7 次",
+          "test_blockly_resources_api.py: 定向命中 2 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 8 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "det_body",
+      "semantic_task_label": "人体目标检测",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_det_body_l",
+      "group": "执行类",
+      "title": "〔找人体+〕 · 检测 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "人体目标检测 Large。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "lab_task_id = \"bodydetect\"\nlab_flow = xedu_flow_bodydetect\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"bodydetect\" lab_flow = xedu_flow_bodydetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "det_body_l",
+      "semantic_task_label": "人体目标检测 Large",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_det_coco",
+      "group": "执行类",
+      "title": "〔找物体〕 · 检测 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "COCO 目标检测。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
+      "generated_python": "lab_task_id = \"cocodetect\"\nlab_flow = xedu_flow_cocodetect\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"cocodetect\" lab_flow = xedu_flow_cocodetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 4 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "det_coco",
+      "semantic_task_label": "COCO 目标检测",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_det_coco_l",
+      "group": "执行类",
+      "title": "〔找物体+〕 · 检测 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "COCO 目标检测 Large。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "lab_task_id = \"cocodetect\"\nlab_flow = xedu_flow_cocodetect\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"cocodetect\" lab_flow = xedu_flow_cocodetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "det_coco_l",
+      "semantic_task_label": "COCO 目标检测 Large",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_drive_perception",
+      "group": "执行类",
+      "title": "〔驾驶感知〕 · 感知 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "全景驾驶感知。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# 全景驾驶感知 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 全景驾驶感知 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "drive_perception",
+      "semantic_task_label": "全景驾驶感知",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_embedding_audio",
+      "group": "执行类",
+      "title": "〔音频特征〕 · 特征 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "音频特征提取。对音频进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# 音频特征提取 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 音频特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "embedding_audio",
+      "semantic_task_label": "音频特征提取",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_embedding_image",
+      "group": "执行类",
+      "title": "〔图像特征〕 · 特征 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "图像特征提取。对输入资源进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# 图像特征提取 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 图像特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "embedding_image",
+      "semantic_task_label": "图像特征提取",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_embedding_text",
+      "group": "执行类",
+      "title": "〔文本特征〕 · 特征 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "文本特征提取。对文本进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# 文本特征提取 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 文本特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "embedding_text",
+      "semantic_task_label": "文本特征提取",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_gen_color",
+      "group": "执行类",
+      "title": "〔图像上色〕 · 生成 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "图像着色。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# 图像着色 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 图像着色 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "gen_color",
+      "semantic_task_label": "图像着色",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_gen_style",
+      "group": "执行类",
+      "title": "〔换风格〕 · 生成 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "图像风格迁移。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# 图像风格迁移 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 图像风格迁移 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "gen_style",
+      "semantic_task_label": "图像风格迁移",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_ocr",
+      "group": "执行类",
+      "title": "〔读文字〕 · 文字 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "光学字符识别。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# 光学字符识别 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# 光学字符识别 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "ocr",
+      "semantic_task_label": "光学字符识别",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_pose_body17",
+      "group": "执行类",
+      "title": "〔看动作〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "人体关键点 17。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
+      "generated_python": "lab_task_id = \"body17\"\nlab_flow = xedu_flow_body17\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"body17\" lab_flow = xedu_flow_body17 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 4 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "pose_body17",
+      "semantic_task_label": "人体关键点 17",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_pose_body17_l",
+      "group": "执行类",
+      "title": "〔看动作+〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "人体关键点 17 Large。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "lab_task_id = \"body17\"\nlab_flow = xedu_flow_body17\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"body17\" lab_flow = xedu_flow_body17 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "pose_body17_l",
+      "semantic_task_label": "人体关键点 17 Large",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_pose_body26",
+      "group": "执行类",
+      "title": "〔看动作26〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "人体关键点 26。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "lab_task_id = \"body26\"\nlab_flow = xedu_flow_body26\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"body26\" lab_flow = xedu_flow_body26 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "pose_body26",
+      "semantic_task_label": "人体关键点 26",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_pose_face106",
+      "group": "执行类",
+      "title": "〔看脸点〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "人脸关键点 106。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
+      "generated_python": "lab_task_id = \"face106\"\nlab_flow = xedu_flow_face106\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"face106\" lab_flow = xedu_flow_face106 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "pose_face106",
+      "semantic_task_label": "人脸关键点 106",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_pose_hand21",
+      "group": "执行类",
+      "title": "〔看手势〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "手部关键点 21。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
+      "generated_python": "lab_task_id = \"hand21\"\nlab_flow = xedu_flow_hand21\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"hand21\" lab_flow = xedu_flow_hand21 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "pose_hand21",
+      "semantic_task_label": "手部关键点 21",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_pose_wholebody133",
+      "group": "执行类",
+      "title": "〔看全身点〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "全身关键点 133。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "lab_task_id = \"wholebody133\"\nlab_flow = xedu_flow_wholebody133\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"wholebody133\" lab_flow = xedu_flow_wholebody133 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "pose_wholebody133",
+      "semantic_task_label": "全身关键点 133",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_segment_anything",
+      "group": "执行类",
+      "title": "〔圈区域〕 · 分割 对 ? 进行推理 结果保存到 lab_result",
+      "user_visible_fields": [
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "SAM 图像分割。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "generated_python": "# SAM 图像分割 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# SAM 图像分割 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_result，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "segment_anything",
+      "semantic_task_label": "SAM 图像分割",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_vision",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 运行 classification 模型 cls_imagenet 输入 demo.jpg",
+      "user_visible_fields": [
+        "TASK=classification",
+        "MODEL=cls_imagenet",
+        "INPUT=demo.jpg"
+      ],
+      "tooltip": "",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_result = {}",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 2 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_servo_setup",
+      "group": "通信/设备/兼容类",
+      "title": "初始化舵机 开发板 uno 引脚 D4 记为 servo",
+      "user_visible_fields": [
+        "BOARD=uno",
+        "PIN=D4",
+        "SERVO_VAR=servo"
+      ],
+      "tooltip": "",
+      "generated_python": "Board(\"uno\").begin()\nservo = Servo(Pin(Pin.D4))",
+      "generated_python_summary": "Board(\"uno\").begin() servo = Servo(Pin(Pin.D4))",
+      "hidden_globals": [
+        "servo"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 2 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_servo_write_angle",
+      "group": "通信/设备/兼容类",
+      "title": "舵机 servo 设置角度 ?",
+      "user_visible_fields": [
+        "SERVO_VAR=servo"
+      ],
+      "tooltip": "",
+      "generated_python": "servo.write_angle(90)",
+      "generated_python_summary": "servo.write_angle(90)",
+      "hidden_globals": [
+        "servo"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
+      "test_assertions": [
+        "断言在 stub/mock 依赖下生成代码可执行。",
+        "断言关键参数会进入目标 API/设备调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：servo，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_set_input",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 选图 demo.jpg",
+      "user_visible_fields": [
+        "INPUT=demo.jpg"
+      ],
+      "tooltip": "",
+      "generated_python": "lab_input = \"demo.jpg\"",
+      "generated_python_summary": "lab_input = \"demo.jpg\"",
+      "hidden_globals": [
+        "lab_input"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 6 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 4 次"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_set_input_list",
+      "group": "输入类",
+      "title": "输入序列 [\"demo1.jpg\",\"demo2.jpg\"]",
+      "user_visible_fields": [
+        "INPUTS=[\"demo1.jpg\",\"demo2.jpg\"]"
+      ],
+      "tooltip": "设置多张图像或多个资源，适合批量或多输入任务。",
+      "generated_python": "lab_input = [\"demo1.jpg\", \"demo2.jpg\"]",
+      "generated_python_summary": "lab_input = [\"demo1.jpg\", \"demo2.jpg\"]",
+      "hidden_globals": [
+        "lab_input"
+      ],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "本地 Python 执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_set_input_resource",
+      "group": "输入类",
+      "title": "设置输入路径 demo.jpg",
+      "user_visible_fields": [
+        "INPUT=demo.jpg"
+      ],
+      "tooltip": "兼容旧流程：设置单张图像或单个资源路径，供后续 XEduHub 任务使用。",
+      "generated_python": "lab_input = \"demo.jpg\"",
+      "generated_python_summary": "lab_input = \"demo.jpg\"",
+      "hidden_globals": [
+        "lab_input"
+      ],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 6 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 4 次"
+        ]
+      },
+      "test_strategy": "本地 Python 执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_set_model",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 模型 cls_imagenet",
+      "user_visible_fields": [
+        "MODEL=cls_imagenet"
+      ],
+      "tooltip": "",
+      "generated_python": "# ImageNet 图像分类 当前不可本地运行\n# 当前本地 XEdu 运行环境不支持该任务。\n# 需安装对应模型/版本后再试。\nlab_flow = None",
+      "generated_python_summary": "# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_flow = None",
+      "hidden_globals": [
+        "lab_flow"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（主要依赖全量 sweep）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_show_result",
+      "group": "通信/设备/兼容类",
+      "title": "兼容 结果 运行结果",
+      "user_visible_fields": [
+        "TITLE=运行结果"
+      ],
+      "tooltip": "",
+      "generated_python": "xrt.xedu_show_result_card(lab_result, title=\"运行结果\")",
+      "generated_python_summary": "xrt.xedu_show_result_card(lab_result, title=\"运行结果\")",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "执行副作用落在本地 Python 运行时，不直接控制页面组件",
+      "is_legacy_compat": true,
+      "is_runnable": true,
+      "runtime_entrypoint": "迁移后落入 /api/resources/blockly/xeduhub/execute 或 /api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 3 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 51 次"
+        ]
+      },
+      "test_strategy": "迁移验证 + 代码生成快照",
+      "test_assertions": [
+        "断言旧块可迁移到新块形态。",
+        "断言迁移后生成代码与新块语义一致。"
+      ],
+      "audit_conclusion": "废弃兼容",
+      "issue_level": "P3",
+      "findings": [
+        "该块仅用于兼容旧工作区迁移，不应作为新用户教学入口。"
+      ],
+      "remediation": [
+        "继续保留迁移支持，但应避免在默认教学工具箱暴露。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_show_result_card",
+      "group": "结果展示类",
+      "title": "结果显示 运行结果 结果 ?",
+      "user_visible_fields": [
+        "TITLE=运行结果"
+      ],
+      "tooltip": "把当前识别结果整理成一张易读的结果卡片。",
+      "generated_python": "xrt.xedu_show_result_card(lab_result, title=\"运行结果\")",
+      "generated_python_summary": "xrt.xedu_show_result_card(lab_result, title=\"运行结果\")",
+      "hidden_globals": [
+        "lab_result"
+      ],
+      "ui_behavior": "在 Blockly 结果区渲染结果卡；常见 runnable flow 由前端根据工作区动作和当前 payload 自动渲染",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "前端结果区动作渲染 + Python 导出 helper 调用",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 48 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
+      "test_assertions": [
+        "断言运行后结果区行为与积木承诺一致或明确记录偏差。",
+        "断言隐藏状态变更不会脱离结果面板反馈。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P1",
+      "findings": [
+        "该块已经不再是 print；它会触发前端结果区渲染一张结果卡。",
+        "当前结果卡主体仍然来自本次运行 payload，而不是严格消费连接进来的 RESULT 输入值。"
+      ],
+      "remediation": [
+        "后续如需完全显式数据流，应让 RESULT 输入真正决定卡片使用的数据源。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_show_result_image",
+      "group": "结果展示类",
+      "title": "显示结果图片 ?",
+      "user_visible_fields": [],
+      "tooltip": "显示当前任务返回的结果图片或标注图。",
+      "generated_python": "xrt.xedu_show_result_image(None)",
+      "generated_python_summary": "xrt.xedu_show_result_image(None)",
+      "hidden_globals": [],
+      "ui_behavior": "在 Blockly 结果区渲染结果图片区；常见 runnable flow 由前端根据工作区动作和当前 payload 自动渲染",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "前端结果区动作渲染 + Python 导出 helper 调用",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 2 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
+      "test_assertions": [
+        "断言运行后结果区行为与积木承诺一致或明确记录偏差。",
+        "断言隐藏状态变更不会脱离结果面板反馈。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P1",
+      "findings": [
+        "该块已经不再是 print；它会触发前端结果区渲染图片证据卡。",
+        "当前图片区默认使用本次运行 payload.preview_image，而不是严格消费连接进来的 IMAGE 输入值。"
+      ],
+      "remediation": [
+        "后续如需完全显式数据流，应让 IMAGE 输入真正决定图片来源，而不只使用当前运行 payload。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_workflow_create",
+      "group": "执行类",
+      "title": "初始化任务 人体目标检测 记为 lab_flow",
+      "user_visible_fields": [
+        "TASK_ID=人体目标检测",
+        "MODEL_VAR=lab_flow"
+      ],
+      "tooltip": "",
+      "generated_python": "lab_flow = wf(task=\"bodydetect\")",
+      "generated_python_summary": "lab_flow = wf(task=\"bodydetect\")",
+      "hidden_globals": [
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 5 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 25 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 运行时 spec 抽取与绑定验证",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_workflow_create_var",
+      "group": "执行类",
+      "title": "初始化任务 人体目标检测 记为 lab_flow",
+      "user_visible_fields": [
+        "TASK_ID=人体目标检测",
+        "MODEL_VAR=lab_flow"
+      ],
+      "tooltip": "",
+      "generated_python": "lab_flow = wf(task=\"bodydetect\")",
+      "generated_python_summary": "lab_flow = wf(task=\"bodydetect\")",
+      "hidden_globals": [
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 4 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 25 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 运行时 spec 抽取与绑定验证",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_workflow_infer",
+      "group": "执行类",
+      "title": "模型推理 lab_flow 输入 ? 结果保存到 lab_result 更多参数 {\"thr\": 0.5}",
+      "user_visible_fields": [
+        "MODEL_VAR=lab_flow",
+        "RESULT_VAR=lab_result",
+        "PARAMS={\"thr\": 0.5}"
+      ],
+      "tooltip": "",
+      "generated_python": "lab_params = {\"thr\": 0.5}\nlab_result = lab_flow.inference(data=lab_input, **lab_params)\nlab_result = lab_result",
+      "generated_python_summary": "lab_params = {\"thr\": 0.5} lab_result = lab_flow.inference(data=lab_input, **lab_params) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 6 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_workflow_infer_pair",
+      "group": "执行类",
+      "title": "模型推理 lab_flow 对 ? 进行推理 结果保存到 lab_result 图片保存到 display_img 可选检测框 ? 参数 {\"thr\": 0.5}",
+      "user_visible_fields": [
+        "MODEL_VAR=lab_flow",
+        "RESULT_VAR=lab_result",
+        "IMAGE_VAR=display_img",
+        "PARAMS={\"thr\": 0.5}"
+      ],
+      "tooltip": "",
+      "generated_python": "if lab_flow is None:\n  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')\nxedu_params = {\"thr\": 0.5}\nxedu_pair_value = lab_flow.inference(data=lab_input, **xedu_params)\nlab_result, display_img = xrt.xedu_split_result(xedu_pair_value)\nlab_result = lab_result",
+      "generated_python_summary": "if lab_flow is None: raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行') xedu_params = {\"thr\": 0.5} xedu_pair_value = lab_flow.inference(dat...",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow",
+        "display_img",
+        "xedu_pair_value",
+        "xedu_params"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_workflow_infer_var",
+      "group": "执行类",
+      "title": "模型推理 lab_flow 对 ? 进行推理 结果保存到 lab_result 可选检测框 ? 参数 {\"thr\": 0.5}",
+      "user_visible_fields": [
+        "MODEL_VAR=lab_flow",
+        "RESULT_VAR=lab_result",
+        "PARAMS={\"thr\": 0.5}"
+      ],
+      "tooltip": "",
+      "generated_python": "if lab_flow is None:\n  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')\nxedu_params = {\"thr\": 0.5}\nlab_result = lab_flow.inference(data=lab_input, **xedu_params)\nlab_result = lab_result",
+      "generated_python_summary": "if lab_flow is None: raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行') xedu_params = {\"thr\": 0.5} lab_result = lab_flow.inference(data=lab...",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow",
+        "xedu_params"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 4 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "当前实现与主要可见字段基本一致。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    },
+    {
+      "id": "xeduhub_workflow_set_params",
+      "group": "执行类",
+      "title": "更多参数 {\"thr\": 0.5}",
+      "user_visible_fields": [
+        "PARAMS={\"thr\": 0.5}"
+      ],
+      "tooltip": "",
+      "generated_python": "lab_params = {\"thr\": 0.5}",
+      "generated_python_summary": "lab_params = {\"thr\": 0.5}",
+      "hidden_globals": [],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 运行时 spec 抽取与绑定验证",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_workflow_set_task",
+      "group": "执行类",
+      "title": "让流程 lab_flow 切换到 人体目标检测",
+      "user_visible_fields": [
+        "MODEL_VAR=lab_flow",
+        "TASK_ID=人体目标检测"
+      ],
+      "tooltip": "",
+      "generated_python": "lab_flow = wf(task=\"bodydetect\")",
+      "generated_python_summary": "lab_flow = wf(task=\"bodydetect\")",
+      "hidden_globals": [
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+        ]
+      },
+      "test_strategy": "代码生成快照 + 运行时 spec 抽取与绑定验证",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": true
+    }
+  ]
+}

@@ -1,7 +1,11 @@
+import blocklyColorContract from '../../../config/blockly-colors.json' with { type: 'json' };
+
 const RUN_BLOCK_PREFIX = 'xeduhub_run_';
 const TASK_FIELD_NAME = 'TASK_ID';
 const PARAMS_FIELD_NAME = 'PARAMS';
 const DEFAULT_XEDUHUB_SAMPLE_INPUT = 'courses/blockly-smoke/demo.jpg';
+const XEDU_IMAGE_PICKER_REQUEST = 'xedu:select-image-file';
+const XEDU_IMAGE_PICKER_RESPONSE = 'xedu:select-image-file:response';
 const ADVANCED_PYTHON_BLOCK_TYPES = new Set([
   'xeduhub_workflow_create_var',
   'xeduhub_workflow_infer_var',
@@ -12,6 +16,15 @@ const ADVANCED_PYTHON_BLOCK_TYPES = new Set([
   'xeduhub_cv_show_frame',
   'xeduhub_cv_save_image',
   'xeduhub_cv_draw_boxes',
+  'xeduhub_cv_cvt_color',
+  'xeduhub_cv_resize_image',
+  'xeduhub_cv_crop_image',
+  'xeduhub_cv_flip_image',
+  'xeduhub_cv_rotate_image',
+  'xeduhub_cv_gaussian_blur',
+  'xeduhub_cv_canny',
+  'xeduhub_cv_threshold',
+  'xeduhub_cv_put_text',
   'xeduhub_media_frames_to_video',
   'xeduhub_http_get',
   'xeduhub_http_open_stream',
@@ -32,22 +45,22 @@ const ADVANCED_PYTHON_BLOCK_TYPES = new Set([
 ]);
 
 const XEDU_SEMANTIC_COLOURS = Object.freeze({
-  classification: '#3b82f6',
-  detection: '#f59e0b',
-  ocr: '#14b8a6',
-  pose: '#ec4899',
-  generation: '#8b5cf6',
-  segmentation: '#06b6d4',
-  depth: '#6366f1',
-  panoptic: '#7c3aed',
-  multimodal: '#2563eb',
-  workflow: '#8b5cf6',
-  input: '#3b82f6',
-  result: '#10b981',
-  video: '#0ea5e9',
-  communication: '#f97316',
-  math: '#5eead4',
-  debug: '#6366f1',
+  classification: blocklyColorContract.taskFamilies?.classification?.colour || '#5d99d8',
+  detection: blocklyColorContract.taskFamilies?.detection?.colour || '#eda94a',
+  ocr: blocklyColorContract.taskFamilies?.ocr?.colour || '#48b4a6',
+  pose: blocklyColorContract.taskFamilies?.pose?.colour || '#d46ca6',
+  generation: blocklyColorContract.taskFamilies?.generation?.colour || '#8d73df',
+  segmentation: blocklyColorContract.taskFamilies?.segmentation?.colour || '#50bbd3',
+  depth: blocklyColorContract.taskFamilies?.depth?.colour || '#6b82d8',
+  panoptic: blocklyColorContract.taskFamilies?.panoptic?.colour || '#8175c0',
+  multimodal: blocklyColorContract.taskFamilies?.multimodal?.colour || '#6b92c6',
+  workflow: blocklyColorContract.categoryPalette?.['AI流程'] || '#6b70e8',
+  input: blocklyColorContract.categoryPalette?.['图像与视频'] || '#6faadb',
+  result: blocklyColorContract.categoryPalette?.['结果处理'] || '#33af97',
+  video: blocklyColorContract.categoryPalette?.['媒体与设备'] || '#6faadb',
+  communication: blocklyColorContract.categoryPalette?.['通信控制'] || '#51ac98',
+  math: blocklyColorContract.categoryPalette?.['数学'] || '#6da4d9',
+  debug: blocklyColorContract.categoryPalette?.['调试与扩展'] || '#d29a57',
 });
 
 const BLOCK_COLOUR_REMAP = Object.freeze({
@@ -118,6 +131,11 @@ const PARAM_SHORT_LABELS = {
   提示: '提示点',
 };
 
+const SEMANTIC_PARAM_INLINE_TASK_IDS = new Set([
+  // Keep semantic quick blocks classroom-first by default.
+  // Advanced params can still be used through workflow/core syntax blocks.
+]);
+
 const TASK_FAMILY_SHORT_LABELS = {
   classification: '分类',
   detection: '检测',
@@ -128,18 +146,6 @@ const TASK_FAMILY_SHORT_LABELS = {
   depth: '深度',
   multimodal: '特征',
   panoptic: '感知',
-};
-
-const TASK_RESULT_CUES = {
-  classification: '输出分类结果',
-  detection: '输出检测框与标签',
-  pose: '输出关键点结果',
-  ocr: '输出文字内容',
-  generation: '输出生成后的图像',
-  segmentation: '输出分割结果',
-  depth: '输出深度结果',
-  multimodal: '输出特征向量',
-  panoptic: '输出场景感知结果',
 };
 
 const FRONTEND_RUNTIME_TASK_ID_MAP = Object.freeze({
@@ -203,6 +209,30 @@ function svgToDataUri(svg) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 }
+
+const BADGE_GLYPHS = Object.freeze({
+  input: '<rect x="6.2" y="7" width="11.6" height="10" rx="2.4" stroke="#F8FCFF" stroke-width="1.55"/><path d="m8.4 13.7 2.7-2.9 2.1 2.1 3-3.2" stroke="#F8FCFF" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.6" cy="10.1" r=".95" fill="#F8FCFF"/>',
+  result: '<path d="M8 12.6h2.5l1.4-1.8 2.2 3.2" stroke="#F8FCFF" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.7 9h6.6M7.7 15h8.1" stroke="#8FD3FF" stroke-width="1.15" stroke-linecap="round"/>',
+  resultImage: '<rect x="6.1" y="6.6" width="11.8" height="10.8" rx="2.4" stroke="#F8FCFF" stroke-width="1.55"/><path d="m8.5 14.4 2.4-2.5 1.9 1.9 2.8-3" stroke="#F8FCFF" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.8" cy="9.8" r=".95" fill="#F8FCFF"/>',
+  note: '<path d="M7.3 7.5h9.4a2 2 0 0 1 2 2v4.8a2 2 0 0 1-2 2h-4.5L9.4 18.3v-2H7.3a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2Z" stroke="#FCF8FF" stroke-width="1.5" stroke-linejoin="round"/><path d="M8.8 10.5h6.1M8.8 13h3.9" stroke="#FCF8FF" stroke-width="1.45" stroke-linecap="round"/>',
+  clear: '<path d="M7.5 8.1h9M9.7 8.1V6.9a1 1 0 0 1 1-1h2.6a1 1 0 0 1 1 1v1.2m-4.8 0 .7 7.7a1.2 1.2 0 0 0 1.2 1.1h2.4a1.2 1.2 0 0 0 1.2-1.1l.7-7.7" stroke="#FFF8F6" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/><path d="m9.4 10 5.2 5.2" stroke="#FFB39A" stroke-width="1.05" stroke-linecap="round" opacity=".95"/>',
+  workflow: '<rect x="6.1" y="6.1" width="4.3" height="4.3" rx="1.05" stroke="#FBF7FF" stroke-width="1.45"/><rect x="13.6" y="6.1" width="4.3" height="4.3" rx="1.05" stroke="#FBF7FF" stroke-width="1.45"/><rect x="9.85" y="13.6" width="4.3" height="4.3" rx="1.05" stroke="#FBF7FF" stroke-width="1.45"/><path d="M10.8 8.25h2.4M12 10.45v2.2" stroke="#FBF7FF" stroke-width="1.45" stroke-linecap="round"/>',
+  debug: '<path d="M9.2 6h5.6M10.1 18h3.8M6.1 10.4h1.3M16.6 10.4h1.3" stroke="#F9F8FF" stroke-width="1.45" stroke-linecap="round"/><rect x="7.2" y="7.6" width="9.6" height="8.2" rx="2.1" stroke="#F9F8FF" stroke-width="1.45"/><circle cx="12" cy="11.7" r=".9" fill="#C3B5FF"/>',
+  camera: '<rect x="5.9" y="8" width="8.8" height="7.4" rx="1.9" stroke="#F4FFFD" stroke-width="1.45"/><path d="M14.7 10.2 18 8.8v5.8l-3.3-1.4" stroke="#F4FFFD" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10.3" cy="11.7" r="1.7" stroke="#F4FFFD" stroke-width="1.35"/>',
+  video: '<rect x="5.8" y="7.4" width="12.4" height="8.4" rx="2.1" stroke="#F4FFFD" stroke-width="1.45"/><path d="m10.2 9.6 3.7 2-3.7 2V9.6Z" stroke="#F4FFFD" stroke-width="1.45" stroke-linejoin="round"/>',
+  http: '<rect x="6.2" y="6.5" width="11.6" height="11" rx="2.5" stroke="#FFFBEF" stroke-width="1.45"/><path d="M8.8 9.7h6.4M8.8 12h4.6M8.8 14.3h6.4" stroke="#FFFBEF" stroke-width="1.45" stroke-linecap="round"/>',
+  device: '<rect x="7.1" y="7.1" width="9.8" height="9.8" rx="2.3" stroke="#FFFBEF" stroke-width="1.45"/><path d="M9.4 5.9v1.2M14.6 5.9v1.2M9.4 16.9v1.2M14.6 16.9v1.2M5.9 9.4h1.2M16.9 9.4h1.2M5.9 14.6h1.2M16.9 14.6h1.2" stroke="#FFFBEF" stroke-width="1.3" stroke-linecap="round"/><circle cx="12" cy="12" r="1.05" fill="#FFC978"/>',
+  math: '<path d="M8.4 8.7h3.2M10 7.1v3.2M8.4 14.9h3.2M14.2 8.2l2.2 2.2M16.4 8.2 14.2 10.4M14.3 14.9h2.6" stroke="#F0FEFC" stroke-width="1.45" stroke-linecap="round"/>',
+  save: '<path d="M7.2 6.7h7.8l1.9 2v8.6a1.65 1.65 0 0 1-1.65 1.65H8.85A1.65 1.65 0 0 1 7.2 17.3V6.7Z" stroke="#F4FFFD" stroke-width="1.45" stroke-linejoin="round"/><path d="M9.2 7v3h4.5V7M9.7 14.5h4.5" stroke="#F4FFFD" stroke-width="1.35" stroke-linecap="round"/>',
+  classification: '<path d="M8.5 12.2 10.6 14.3 15 9.9" stroke="#F8FCFF" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.5 8.6h2.1M14.6 8.6h1.2" stroke="#8FD3FF" stroke-width="1.05" stroke-linecap="round"/>',
+  detection: '<rect x="7.2" y="7.2" width="9.6" height="9.6" rx="2.1" stroke="#FFFBEF" stroke-width="1.35" opacity="0.55"/><rect x="9.2" y="9.2" width="5.6" height="5.6" rx="1.25" stroke="#FFFBEF" stroke-width="1.55"/><path d="M12 7.8v1M12 15.2v1M7.8 12h1M15.2 12h1" stroke="#FFC978" stroke-width="1.05" stroke-linecap="round"/>',
+  ocr: '<path d="M7.4 8.8h6.1M7.4 11.9h4.3M7.4 15h6.1" stroke="#F4FFFD" stroke-width="1.45" stroke-linecap="round"/><rect x="14.1" y="8.2" width="2.6" height="7.4" rx="1.1" stroke="#F4FFFD" stroke-width="1.35"/>',
+  pose: '<circle cx="12" cy="7.2" r="1.2" fill="#FFF6F2"/><circle cx="8.8" cy="10.4" r=".9" fill="#FFF6F2"/><circle cx="15.2" cy="10.4" r=".9" fill="#FFF6F2"/><path d="M12 8.8v3.8M12 9.7 9.5 10.6M12 9.7l2.5.9M12 12.6l-1.7 1.9M12 12.6l1.7 1.9" stroke="#FFF6F2" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>',
+  generation: '<path d="M12 6.4 13.4 9.3l3.2.4-2.4 2 .7 3.1-2.9-1.6-2.9 1.6.7-3.1-2.4-2 3.2-.4L12 6.4Z" stroke="#FBF7FF" stroke-width="1.35" stroke-linejoin="round"/>',
+  segmentation: '<rect x="6.8" y="6.8" width="10.4" height="10.4" rx="2.2" stroke="#F0FEFC" stroke-width="1.45"/><path d="M9.4 9.6c1.1.2 1.9 1.1 2 2.2.1.9-.3 1.7-1 2.2m4-4.4c-1.1.2-1.9 1.1-2 2.2-.1.9.3 1.7 1 2.2" stroke="#F0FEFC" stroke-width="1.35" stroke-linecap="round"/>',
+  depth: '<path d="M7.1 8.2 12 5.7l4.9 2.5v6.4L12 17l-4.9-2.4V8.2Z" stroke="#F7F5FF" stroke-width="1.45" stroke-linejoin="round"/><path d="M12 5.8v11.1" stroke="#F7F5FF" stroke-width="1.35" stroke-linecap="round"/>',
+  default: '<path d="M12 6 16.6 8.4v5.2L12 16l-4.6-2.4V8.4L12 6Z" stroke="#F8FCFF" stroke-width="1.45" stroke-linejoin="round"/>',
+});
 
 const BADGE_PALETTES = Object.freeze({
   default: {
@@ -412,29 +442,9 @@ function makeBadgeIcon(innerSvg, paletteName = 'default') {
   );
 }
 
-const FIELD_BADGE_ICON_URIS = {
-  input: makeBadgeIcon('<rect x="6" y="6.5" width="12" height="11" rx="2.6" stroke="#F8FCFF" stroke-width="1.6"/><path d="m8.1 14.3 2.8-2.9 2 2 3-3.1" stroke="#F8FCFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.2" cy="9.8" r="1" fill="#F8FCFF"/>', BADGE_PALETTE_BY_ICON.input),
-  result: makeBadgeIcon('<rect x="6.2" y="6.2" width="11.6" height="11.6" rx="2.8" stroke="#F8FCFF" stroke-width="1.6"/><path d="M8.8 12.2h2.2l1.3-1.7 2.1 3.1" stroke="#F8FCFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="15.7" cy="14.7" r=".9" fill="#8FD3FF"/>', BADGE_PALETTE_BY_ICON.result),
-  resultImage: makeBadgeIcon('<rect x="6.1" y="6.1" width="11.8" height="11.8" rx="2.6" stroke="#F8FCFF" stroke-width="1.6"/><path d="m8.5 15 2.5-2.5 1.8 1.8 2.8-3" stroke="#F8FCFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.8" cy="9.4" r="1" fill="#F8FCFF"/><path d="M13.9 8.5h2.3" stroke="#8FD3FF" stroke-width="1.2" stroke-linecap="round"/>', BADGE_PALETTE_BY_ICON.resultImage),
-  note: makeBadgeIcon('<path d="M7 7.3h10a2.1 2.1 0 0 1 2.1 2.1v5.2A2.1 2.1 0 0 1 17 16.7h-4.8l-3 2.2v-2.2H7a2.1 2.1 0 0 1-2.1-2.1V9.4A2.1 2.1 0 0 1 7 7.3Z" stroke="#FCF8FF" stroke-width="1.5" stroke-linejoin="round"/><path d="M8.7 10.4h6.5M8.7 13h4.1" stroke="#FCF8FF" stroke-width="1.5" stroke-linecap="round"/><circle cx="16.5" cy="12.9" r=".8" fill="#C9ACFF"/>', BADGE_PALETTE_BY_ICON.note),
-  clear: makeBadgeIcon('<path d="M7.3 8.2h9.4M9.6 8.2V6.8a1 1 0 0 1 1-1h2.8a1 1 0 0 1 1 1v1.4m-5.2 0 .7 8.2a1.3 1.3 0 0 0 1.3 1.1h2.6a1.3 1.3 0 0 0 1.3-1.1l.7-8.2" stroke="#FFF8F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m9.1 9.8 5.8 5.8" stroke="#FFB39A" stroke-width="1.15" stroke-linecap="round" opacity=".95"/>', BADGE_PALETTE_BY_ICON.clear),
-  workflow: makeBadgeIcon('<rect x="6" y="6" width="4.6" height="4.6" rx="1.1" stroke="#FBF7FF" stroke-width="1.5"/><rect x="13.4" y="6" width="4.6" height="4.6" rx="1.1" stroke="#FBF7FF" stroke-width="1.5"/><rect x="9.7" y="13.4" width="4.6" height="4.6" rx="1.1" stroke="#FBF7FF" stroke-width="1.5"/><path d="M10.7 8.3h2.6M12 10.6v2.3" stroke="#FBF7FF" stroke-width="1.5" stroke-linecap="round"/><circle cx="16.3" cy="8.3" r=".75" fill="#C9ACFF"/>', BADGE_PALETTE_BY_ICON.workflow),
-  debug: makeBadgeIcon('<rect x="7.2" y="7.6" width="9.6" height="8.8" rx="2.2" stroke="#F9F8FF" stroke-width="1.5"/><path d="M9.2 5.9h5.6M9.8 18.1h4.4M5.8 10.2h1.4M16.8 10.2h1.4" stroke="#F9F8FF" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12.1" r=".95" fill="#C3B5FF"/>', BADGE_PALETTE_BY_ICON.debug),
-  camera: makeBadgeIcon('<rect x="5.8" y="7.8" width="8.8" height="7.8" rx="2" stroke="#F4FFFD" stroke-width="1.5"/><path d="M14.6 10.2 18 8.7v6.1l-3.4-1.5" stroke="#F4FFFD" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10.2" cy="11.7" r="1.8" stroke="#F4FFFD" stroke-width="1.4"/><circle cx="10.2" cy="11.7" r=".8" fill="#6DE7D8"/>', BADGE_PALETTE_BY_ICON.camera),
-  video: makeBadgeIcon('<rect x="5.8" y="7.2" width="12.4" height="8.8" rx="2.2" stroke="#F4FFFD" stroke-width="1.5"/><path d="m10 9.6 4 2.1-4 2.1V9.6Z" stroke="#F4FFFD" stroke-width="1.5" stroke-linejoin="round"/><path d="M15.6 8.9h1.4" stroke="#6DE7D8" stroke-width="1.15" stroke-linecap="round"/>', BADGE_PALETTE_BY_ICON.video),
-  http: makeBadgeIcon('<rect x="6.2" y="6.3" width="11.6" height="11.4" rx="2.6" stroke="#FFFBEF" stroke-width="1.5"/><path d="M8.8 9.6h6.4M8.8 12h4.5M8.8 14.4h6.4" stroke="#FFFBEF" stroke-width="1.5" stroke-linecap="round"/><path d="M14.7 8.6h2.1" stroke="#FFC978" stroke-width="1.2" stroke-linecap="round"/>', BADGE_PALETTE_BY_ICON.http),
-  device: makeBadgeIcon('<rect x="7.1" y="7.1" width="9.8" height="9.8" rx="2.4" stroke="#FFFBEF" stroke-width="1.5"/><path d="M9.4 5.8v1.3M14.6 5.8v1.3M9.4 16.9v1.3M14.6 16.9v1.3M5.8 9.4h1.3M16.9 9.4h1.3M5.8 14.6h1.3M16.9 14.6h1.3" stroke="#FFFBEF" stroke-width="1.4" stroke-linecap="round"/><circle cx="12" cy="12" r="1.1" fill="#FFC978"/>', BADGE_PALETTE_BY_ICON.device),
-  math: makeBadgeIcon('<path d="M8.2 8.7h3.6M10 6.9v3.6M8.2 15.1h3.6M14.5 8.1l2.4 2.4M16.9 8.1l-2.4 2.4M14.5 15.1h2.8" stroke="#F0FEFC" stroke-width="1.5" stroke-linecap="round"/><circle cx="16.7" cy="15.1" r=".8" fill="#8EF0E7"/>', BADGE_PALETTE_BY_ICON.math),
-  save: makeBadgeIcon('<path d="M7 6.5h8.1l2 2.1v8.9a1.7 1.7 0 0 1-1.7 1.7H8.7A1.7 1.7 0 0 1 7 17.5V6.5Z" stroke="#F4FFFD" stroke-width="1.5" stroke-linejoin="round"/><path d="M9 6.8v3.2h4.8V6.8M9.6 14.7h4.8" stroke="#F4FFFD" stroke-width="1.4" stroke-linecap="round"/><path d="M14.8 9.1h1.7" stroke="#6DE7D8" stroke-width="1.15" stroke-linecap="round"/>', BADGE_PALETTE_BY_ICON.save),
-  classification: makeBadgeIcon('<rect x="6.2" y="6.2" width="11.6" height="11.6" rx="2.6" stroke="#F8FCFF" stroke-width="1.5"/><path d="m8.8 12.1 2 2 4.4-4.4" stroke="#F8FCFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="15.6" cy="8.6" r=".85" fill="#8FD3FF"/>', BADGE_PALETTE_BY_ICON.classification),
-  detection: makeBadgeIcon('<rect x="6" y="6" width="12" height="12" rx="2.6" stroke="#FFFBEF" stroke-width="1.3" opacity="0.45"/><rect x="8.8" y="8.8" width="6.4" height="6.4" rx="1.4" stroke="#FFFBEF" stroke-width="1.6"/><path d="M12 7.3v1.1M12 15.6v1.1M7.3 12h1.1M15.6 12h1.1" stroke="#FFC978" stroke-width="1.05" stroke-linecap="round"/>', BADGE_PALETTE_BY_ICON.detection),
-  ocr: makeBadgeIcon('<path d="M7.4 8.7h6.3M7.4 12h4.6M7.4 15.3h6.3" stroke="#F4FFFD" stroke-width="1.5" stroke-linecap="round"/><rect x="14.2" y="8.1" width="2.8" height="7.8" rx="1.2" stroke="#F4FFFD" stroke-width="1.4"/><circle cx="15.6" cy="12" r=".75" fill="#6DE7D8"/>', BADGE_PALETTE_BY_ICON.ocr),
-  pose: makeBadgeIcon('<circle cx="12" cy="7.2" r="1.3" fill="#FFF6F2"/><circle cx="8.6" cy="10.4" r="1" fill="#FFF6F2"/><circle cx="15.4" cy="10.4" r="1" fill="#FFF6F2"/><path d="M12 8.8v4.2M12 9.8 9.4 10.6M12 9.8l2.6.8M12 13l-1.8 2M12 13l1.8 2" stroke="#FFF6F2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13.2" r=".75" fill="#FFB39A"/>', BADGE_PALETTE_BY_ICON.pose),
-  generation: makeBadgeIcon('<path d="M12 6.2 13.5 9.5l3.6.4-2.7 2.2.8 3.5-3.2-1.8-3.2 1.8.8-3.5-2.7-2.2 3.6-.4L12 6.2Z" stroke="#FBF7FF" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="12.1" r=".8" fill="#C9ACFF"/>', BADGE_PALETTE_BY_ICON.generation),
-  segmentation: makeBadgeIcon('<rect x="6.4" y="6.4" width="11.2" height="11.2" rx="2.4" stroke="#F0FEFC" stroke-width="1.5"/><path d="M9 9.2c1.3.2 2.2 1.2 2.4 2.5.1 1-.4 1.8-1.1 2.4m4.8-4.9c-1.3.2-2.2 1.2-2.4 2.5-.1 1 .4 1.8 1.1 2.4" stroke="#F0FEFC" stroke-width="1.4" stroke-linecap="round"/><path d="M12 7.9v1.5" stroke="#8EF0E7" stroke-width="1.1" stroke-linecap="round"/>', BADGE_PALETTE_BY_ICON.segmentation),
-  depth: makeBadgeIcon('<path d="M7 8.2 12 5.7l5 2.5v6.6L12 17.3l-5-2.5V8.2Z" stroke="#F7F5FF" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 5.8v11.4" stroke="#F7F5FF" stroke-width="1.4" stroke-linecap="round"/><path d="M8.7 9.6h6.6" stroke="#C3B5FF" stroke-width="1.05" stroke-linecap="round" opacity=".95"/>', BADGE_PALETTE_BY_ICON.depth),
-  default: makeBadgeIcon('<path d="M12 5.8 17 8.4v6.8L12 17.8 7 15.2V8.4L12 5.8Z" stroke="#F8FCFF" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11.8" r=".9" fill="#8FD3FF"/>', BADGE_PALETTE_BY_ICON.default),
-};
+const FIELD_BADGE_ICON_URIS = Object.fromEntries(
+  Object.entries(BADGE_GLYPHS).map(([iconKey, glyph]) => [iconKey, makeBadgeIcon(glyph, BADGE_PALETTE_BY_ICON[iconKey])]),
+);
 
 function buildIconField(iconKey) {
   return {
@@ -470,6 +480,30 @@ function getCompactTaskLabel(task) {
   return TASK_SHORT_LABELS[taskId] || String(task?.label || taskId || '运行');
 }
 
+function isTaskAvailable(task) {
+  return task?.available !== false;
+}
+
+function getTaskUnavailableComment(taskId) {
+  const task = getTaskById(taskId);
+  const label = String(task?.label || taskId || '当前任务').trim();
+  const reason = String(task?.support_reason || '当前本地 XEdu 运行环境不支持该任务。').trim();
+  const action = String(task?.recommended_action || '需安装对应模型/版本后再试。').trim();
+  return `# ${label} 当前不可本地运行\n# ${reason}\n# ${action}`;
+}
+
+function buildUnavailableTaskPython(taskId, trailingLine = 'lab_flow = None') {
+  return `${getTaskUnavailableComment(taskId)}\n${trailingLine}\n`;
+}
+
+function isTaskQuickEnabled(task) {
+  return task?.quick_block_enabled !== false;
+}
+
+function isExperimentalTask(task) {
+  return !isTaskAvailable(task) || !isTaskQuickEnabled(task);
+}
+
 function formatBlockTitle(label) {
   const text = String(label || '').trim();
   return text ? `〔${text}〕` : '';
@@ -483,6 +517,9 @@ function getCompactParamLabel(param) {
 function getVisibleTaskParams(task) {
   const taskId = String(task?.task_id || '').trim();
   const params = Array.isArray(task?.params) ? task.params : [];
+  if (!SEMANTIC_PARAM_INLINE_TASK_IDS.has(taskId)) {
+    return [];
+  }
   const visibleKeys = TASK_VISIBLE_PARAM_KEYS[taskId];
   if (!Array.isArray(visibleKeys)) {
     return params;
@@ -501,36 +538,34 @@ function getTaskFamilyCaption(task) {
   return TASK_FAMILY_SHORT_LABELS[familyId] || String(task?.family_label || familyId || '任务');
 }
 
-function getTaskInputCaption(task) {
+function getTaskInferenceTargetLabel(task) {
   const inputMode = String(task?.input_mode || 'single_path').trim();
   const taskId = String(task?.task_id || '').trim();
   if (inputMode === 'text_or_list') {
-    return '输入文本';
+    return '文本';
   }
   if (inputMode === 'path_or_list' && taskId.includes('audio')) {
-    return '输入音频';
+    return '音频';
   }
   if (inputMode === 'path_or_list') {
     return '输入资源';
   }
   if (taskId.includes('audio')) {
-    return '输入音频';
+    return '音频';
   }
-  return '输入图像';
-}
-
-function getTaskResultCaption(task) {
-  const familyId = String(task?.family || '').trim();
-  return TASK_RESULT_CUES[familyId] || '输出结果';
+  return '图片';
 }
 
 function getTaskTooltip(task) {
   const title = String(task?.label || task?.task_id || 'XEduHub 任务').trim();
   const params = getVisibleTaskParams(task);
   const paramText = params.length
-    ? `可调参数：${params.map((param) => String(param?.label || param?.key || '').trim()).filter(Boolean).join('、')}`
-    : '无需额外调参';
-  return `${title}。${getTaskInputCaption(task)}后运行，${paramText}。`;
+    ? `可微调：${params.map((param) => String(param?.label || param?.key || '').trim()).filter(Boolean).join('、')}`
+    : '默认可以直接运行';
+  const availabilityText = isExperimentalTask(task)
+    ? '当前本地环境默认不建议使用，可能无法运行。'
+    : '适合课堂里的标准演示与预演。';
+  return `${title}。对${getTaskInferenceTargetLabel(task)}进行推理，${paramText}。${availabilityText}`;
 }
 
 function getVariableName(block, fieldName, fallback = 'value') {
@@ -596,11 +631,17 @@ function maybePythonEnumArg(label, rawValue) {
 }
 
 const FALLBACK_REGISTRY = {
-  default_task_id: 'cls_imagenet',
+  default_task_id: 'det_body',
   families: [
     { id: 'classification', label: '图像分类', colour: XEDU_SEMANTIC_COLOURS.classification, description: '识别图像类别' },
     { id: 'detection', label: '目标检测', colour: XEDU_SEMANTIC_COLOURS.detection, description: '检测目标位置' },
     { id: 'ocr', label: 'OCR', colour: XEDU_SEMANTIC_COLOURS.ocr, description: '提取图像文字' },
+    { id: 'pose', label: '关键点识别', colour: XEDU_SEMANTIC_COLOURS.pose, description: '识别人脸、人体、手部和全身关键点' },
+    { id: 'generation', label: '内容生成', colour: XEDU_SEMANTIC_COLOURS.generation, description: '执行风格迁移与图像着色' },
+    { id: 'segmentation', label: '图像分割', colour: XEDU_SEMANTIC_COLOURS.segmentation, description: '执行图像区域分割' },
+    { id: 'depth', label: '深度估计', colour: XEDU_SEMANTIC_COLOURS.depth, description: '生成单目深度结果图' },
+    { id: 'multimodal', label: '多模态特征', colour: XEDU_SEMANTIC_COLOURS.multimodal, description: '提取图像、文本与音频向量' },
+    { id: 'panoptic', label: '全景感知', colour: XEDU_SEMANTIC_COLOURS.panoptic, description: '驾驶场景的检测与区域感知' },
   ],
   tasks: [
     {
@@ -608,9 +649,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'cls_imagenet',
       label: 'ImageNet 图像分类',
       family: 'classification',
+      family_label: '图像分类',
       colour: XEDU_SEMANTIC_COLOURS.classification,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
       input_mode: 'single_path',
       result_kind: 'classification',
+      result_shape: 'classification',
+      quick_block_enabled: true,
+      core_api_enabled: true,
       params: [],
     },
     {
@@ -618,9 +667,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'bodydetect',
       label: '人体目标检测',
       family: 'detection',
+      family_label: '目标检测',
       colour: XEDU_SEMANTIC_COLOURS.detection,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'detection',
+      result_shape: 'detection',
+      quick_block_enabled: true,
+      core_api_enabled: true,
       params: [{ key: 'thr', label: '阈值', field: 'number', default: 0.3 }],
     },
     {
@@ -628,9 +685,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'bodydetect',
       label: '人体目标检测 Large',
       family: 'detection',
+      family_label: '目标检测',
       colour: XEDU_SEMANTIC_COLOURS.detection,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'detection',
+      result_shape: 'detection',
+      quick_block_enabled: false,
+      core_api_enabled: true,
       params: [{ key: 'thr', label: '阈值', field: 'number', default: 0.3 }],
     },
     {
@@ -638,9 +703,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'cocodetect',
       label: 'COCO 目标检测',
       family: 'detection',
+      family_label: '目标检测',
       colour: XEDU_SEMANTIC_COLOURS.detection,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'detection',
+      result_shape: 'detection',
+      quick_block_enabled: true,
+      core_api_enabled: true,
       params: [
         { key: 'thr', label: '阈值', field: 'number', default: 0.3 },
         { key: 'target_class', label: '目标类', field: 'text', default: '' },
@@ -651,9 +724,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'cocodetect',
       label: 'COCO 目标检测 Large',
       family: 'detection',
+      family_label: '目标检测',
       colour: XEDU_SEMANTIC_COLOURS.detection,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'detection',
+      result_shape: 'detection',
+      quick_block_enabled: false,
+      core_api_enabled: true,
       params: [
         { key: 'thr', label: '阈值', field: 'number', default: 0.3 },
         { key: 'target_class', label: '目标类', field: 'text', default: '' },
@@ -664,9 +745,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'body17',
       label: '人体关键点 17',
       family: 'pose',
+      family_label: '关键点识别',
       colour: XEDU_SEMANTIC_COLOURS.pose,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'pose',
+      result_shape: 'pose',
+      quick_block_enabled: true,
+      core_api_enabled: true,
       params: [{ key: 'bbox', label: '检测框', field: 'text', default: '' }],
     },
     {
@@ -674,9 +763,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'body17',
       label: '人体关键点 17 Large',
       family: 'pose',
+      family_label: '关键点识别',
       colour: XEDU_SEMANTIC_COLOURS.pose,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'pose',
+      result_shape: 'pose',
+      quick_block_enabled: false,
+      core_api_enabled: true,
       params: [{ key: 'bbox', label: '检测框', field: 'text', default: '' }],
     },
     {
@@ -684,9 +781,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'body26',
       label: '人体关键点 26',
       family: 'pose',
+      family_label: '关键点识别',
       colour: XEDU_SEMANTIC_COLOURS.pose,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'pose',
+      result_shape: 'pose',
+      quick_block_enabled: false,
+      core_api_enabled: true,
       params: [{ key: 'bbox', label: '检测框', field: 'text', default: '' }],
     },
     {
@@ -694,9 +799,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'face106',
       label: '人脸关键点 106',
       family: 'pose',
+      family_label: '关键点识别',
       colour: XEDU_SEMANTIC_COLOURS.pose,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'pose',
+      result_shape: 'pose',
+      quick_block_enabled: true,
+      core_api_enabled: true,
       params: [{ key: 'bbox', label: '检测框', field: 'text', default: '' }],
     },
     {
@@ -704,9 +817,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'hand21',
       label: '手部关键点 21',
       family: 'pose',
+      family_label: '关键点识别',
       colour: XEDU_SEMANTIC_COLOURS.pose,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'pose',
+      result_shape: 'pose',
+      quick_block_enabled: true,
+      core_api_enabled: true,
       params: [{ key: 'bbox', label: '检测框', field: 'text', default: '' }],
     },
     {
@@ -714,9 +835,17 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'wholebody133',
       label: '全身关键点 133',
       family: 'pose',
+      family_label: '关键点识别',
       colour: XEDU_SEMANTIC_COLOURS.pose,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
       input_mode: 'single_path',
       result_kind: 'pose',
+      result_shape: 'pose',
+      quick_block_enabled: false,
+      core_api_enabled: true,
       params: [{ key: 'bbox', label: '检测框', field: 'text', default: '' }],
     },
     {
@@ -724,9 +853,161 @@ const FALLBACK_REGISTRY = {
       runtime_task_id: 'ocr',
       label: '光学字符识别',
       family: 'ocr',
+      family_label: 'OCR',
       colour: XEDU_SEMANTIC_COLOURS.ocr,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
       input_mode: 'single_path',
       result_kind: 'ocr',
+      result_shape: 'ocr',
+      quick_block_enabled: true,
+      core_api_enabled: true,
+      params: [],
+    },
+    {
+      task_id: 'gen_style',
+      runtime_task_id: 'gen_style',
+      label: '图像风格迁移',
+      family: 'generation',
+      family_label: '内容生成',
+      colour: XEDU_SEMANTIC_COLOURS.generation,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
+      input_mode: 'single_path',
+      result_kind: 'generation',
+      result_shape: 'image',
+      quick_block_enabled: true,
+      core_api_enabled: true,
+      params: [{ key: 'style', label: '风格', field: 'enum', default: 'mosaic', options: [['马赛克', 'mosaic']] }],
+    },
+    {
+      task_id: 'gen_color',
+      runtime_task_id: 'gen_color',
+      label: '图像着色',
+      family: 'generation',
+      family_label: '内容生成',
+      colour: XEDU_SEMANTIC_COLOURS.generation,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
+      input_mode: 'single_path',
+      result_kind: 'generation',
+      result_shape: 'image',
+      quick_block_enabled: true,
+      core_api_enabled: true,
+      params: [],
+    },
+    {
+      task_id: 'drive_perception',
+      runtime_task_id: 'drive_perception',
+      label: '全景驾驶感知',
+      family: 'panoptic',
+      family_label: '全景感知',
+      colour: XEDU_SEMANTIC_COLOURS.panoptic,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
+      input_mode: 'single_path',
+      result_kind: 'panoptic',
+      result_shape: 'panoptic',
+      quick_block_enabled: false,
+      core_api_enabled: true,
+      params: [{ key: 'thr', label: '阈值', field: 'number', default: 0.3 }],
+    },
+    {
+      task_id: 'embedding_image',
+      runtime_task_id: 'embedding_image',
+      label: '图像特征提取',
+      family: 'multimodal',
+      family_label: '多模态特征',
+      colour: XEDU_SEMANTIC_COLOURS.multimodal,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
+      input_mode: 'path_or_list',
+      result_kind: 'multimodal',
+      result_shape: 'multimodal',
+      quick_block_enabled: false,
+      core_api_enabled: true,
+      params: [],
+    },
+    {
+      task_id: 'embedding_text',
+      runtime_task_id: 'embedding_text',
+      label: '文本特征提取',
+      family: 'multimodal',
+      family_label: '多模态特征',
+      colour: XEDU_SEMANTIC_COLOURS.multimodal,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
+      input_mode: 'text_or_list',
+      result_kind: 'multimodal',
+      result_shape: 'multimodal',
+      quick_block_enabled: false,
+      core_api_enabled: true,
+      params: [],
+    },
+    {
+      task_id: 'embedding_audio',
+      runtime_task_id: 'embedding_audio',
+      label: '音频特征提取',
+      family: 'multimodal',
+      family_label: '多模态特征',
+      colour: XEDU_SEMANTIC_COLOURS.multimodal,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
+      input_mode: 'path_or_list',
+      result_kind: 'multimodal',
+      result_shape: 'multimodal',
+      quick_block_enabled: false,
+      core_api_enabled: true,
+      params: [],
+    },
+    {
+      task_id: 'segment_anything',
+      runtime_task_id: 'segment_anything',
+      label: 'SAM 图像分割',
+      family: 'segmentation',
+      family_label: '图像分割',
+      colour: XEDU_SEMANTIC_COLOURS.segmentation,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
+      input_mode: 'single_path',
+      result_kind: 'segmentation',
+      result_shape: 'segmentation',
+      quick_block_enabled: true,
+      core_api_enabled: true,
+      params: [{ key: 'mode', label: '模式', field: 'enum', default: 'point', options: [['点提示', 'point']] }],
+    },
+    {
+      task_id: 'depth_anything',
+      runtime_task_id: 'depth_anything',
+      label: '单目深度估计',
+      family: 'depth',
+      family_label: '深度估计',
+      colour: XEDU_SEMANTIC_COLOURS.depth,
+      available: false,
+      support_reason: '当前本地 XEdu 运行环境不支持该任务。',
+      support_source: 'unknown',
+      recommended_action: '需安装对应模型/版本后再试。',
+      input_mode: 'single_path',
+      result_kind: 'depth',
+      result_shape: 'image',
+      quick_block_enabled: true,
+      core_api_enabled: true,
       params: [],
     },
   ],
@@ -969,6 +1250,207 @@ function makeIconField(Blockly, iconKey) {
   return new Blockly.FieldImage(getIconUri(iconKey), 18, 18, '');
 }
 
+async function requestImageFilePath() {
+  if (globalThis.window?.electronAPI && typeof globalThis.window.electronAPI.invoke === 'function') {
+    return await globalThis.window.electronAPI.invoke('select-image-file');
+  }
+  if (globalThis.window?.parent && globalThis.window.parent !== globalThis.window) {
+    try {
+      return await requestImageFilePathFromParentWindow();
+    } catch (_) {
+      // Fall through to backend HTTP bridge when the parent window cannot serve the picker.
+    }
+  }
+  const response = await globalThis.fetch('/api/system/select-image-file', { method: 'POST' });
+  if (!response.ok) {
+    throw new Error(`select-image-file failed: ${response.status}`);
+  }
+  const payload = await response.json().catch(() => ({}));
+  return payload?.path || null;
+}
+
+function requestImageFilePathFromParentWindow(timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const parentWindow = globalThis.window?.parent;
+    if (!parentWindow || parentWindow === globalThis.window || typeof parentWindow.postMessage !== 'function') {
+      reject(new Error('parent-window-unavailable'));
+      return;
+    }
+
+    const requestId = `xedu-image-picker-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let settled = false;
+
+    const cleanup = () => {
+      globalThis.window?.removeEventListener('message', handleMessage);
+      globalThis.clearTimeout(timeoutId);
+    };
+
+    const finish = (callback, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+
+    const handleMessage = (event) => {
+      if (event.source !== parentWindow) {
+        return;
+      }
+      const payload = event.data;
+      if (!payload || payload.type !== XEDU_IMAGE_PICKER_RESPONSE || payload.requestId !== requestId) {
+        return;
+      }
+      if (payload.error) {
+        finish(reject, new Error(String(payload.error)));
+        return;
+      }
+      finish(resolve, payload.path || null);
+    };
+
+    const timeoutId = globalThis.setTimeout(() => {
+      finish(reject, new Error('parent-window-timeout'));
+    }, timeoutMs);
+
+    globalThis.window?.addEventListener('message', handleMessage);
+    parentWindow.postMessage({ type: XEDU_IMAGE_PICKER_REQUEST, requestId }, '*');
+  });
+}
+
+function registerImagePathField(Blockly) {
+  if (!Blockly?.fieldRegistry || Blockly.fieldRegistry.__xeduImagePathRegistered__) {
+    return;
+  }
+  class XEduImagePathField extends Blockly.FieldTextInput {
+    constructor(value = DEFAULT_XEDUHUB_SAMPLE_INPUT) {
+      super(String(value || DEFAULT_XEDUHUB_SAMPLE_INPUT));
+    }
+
+    showEditor_() {
+      void this.openPicker_();
+    }
+
+    async openPicker_() {
+      try {
+        const selectedPath = await requestImageFilePath();
+        if (selectedPath) {
+          this.setValue(String(selectedPath));
+        }
+      } catch (_) {
+        // Keep current path when picker is cancelled or unavailable.
+      }
+    }
+
+    static fromJson(options) {
+      return new this(options?.text || DEFAULT_XEDUHUB_SAMPLE_INPUT);
+    }
+  }
+  Blockly.fieldRegistry.register('field_xedu_image_path', XEduImagePathField);
+  Blockly.fieldRegistry.__xeduImagePathRegistered__ = true;
+}
+
+function buildImagePathFieldConfig() {
+  return { type: 'field_xedu_image_path', name: 'INPUT', text: DEFAULT_XEDUHUB_SAMPLE_INPUT };
+}
+
+const BUILTIN_BLOCK_ICON_FIELD_NAME = 'XEDU_TYPE_ICON';
+const BUILTIN_BLOCK_ICON_EXCLUDED_TYPES = new Set([
+  'controls_if_else',
+  'controls_if_elseif',
+  'controls_if_if',
+  'lists_create_with_container',
+  'lists_create_with_item',
+  'procedures_mutatorarg',
+  'procedures_mutatorcontainer',
+  'text_create_join_container',
+  'text_create_join_item',
+]);
+
+function getBuiltinBlockIconKey(blockType) {
+  const type = String(blockType || '').trim();
+  if (!type || type.startsWith('xeduhub_') || BUILTIN_BLOCK_ICON_EXCLUDED_TYPES.has(type)) {
+    return '';
+  }
+  if (type.startsWith('logic_') || type === 'controls_if') {
+    return 'debug';
+  }
+  if (
+    type === 'controls_repeat_ext'
+    || type === 'controls_whileUntil'
+    || type === 'controls_for'
+    || type === 'controls_forEach'
+    || type === 'controls_flow_statements'
+  ) {
+    return 'workflow';
+  }
+  if (type.startsWith('math_')) {
+    return 'math';
+  }
+  if (type.startsWith('text_') || type === 'text') {
+    return 'note';
+  }
+  if (type.startsWith('lists_')) {
+    return 'result';
+  }
+  if (type.startsWith('variables_')) {
+    return 'default';
+  }
+  if (
+    type === 'procedures_defnoreturn'
+    || type === 'procedures_defreturn'
+    || type === 'procedures_callnoreturn'
+    || type === 'procedures_callreturn'
+    || type === 'procedures_ifreturn'
+  ) {
+    return 'workflow';
+  }
+  return '';
+}
+
+function buildBadgeFieldImage(Blockly, iconKey) {
+  return new Blockly.FieldImage(
+    FIELD_BADGE_ICON_URIS[iconKey] || FIELD_BADGE_ICON_URIS.default,
+    20,
+    20,
+    '',
+  );
+}
+
+function pickBuiltinIconInput(block) {
+  if (!block || !Array.isArray(block.inputList)) {
+    return null;
+  }
+  return block.inputList.find((input) => typeof input?.insertFieldAt === 'function')
+    || null;
+}
+
+function prependBuiltinTypeIcon(block, Blockly, iconKey) {
+  if (!block || !Blockly || !iconKey || typeof block.getField === 'function' && block.getField(BUILTIN_BLOCK_ICON_FIELD_NAME)) {
+    return;
+  }
+  const targetInput = pickBuiltinIconInput(block);
+  if (!targetInput) {
+    return;
+  }
+  targetInput.insertFieldAt(0, buildBadgeFieldImage(Blockly, iconKey), BUILTIN_BLOCK_ICON_FIELD_NAME);
+}
+
+function decorateBuiltinBlocklyBlocksWithIcons(Blockly) {
+  Object.entries(Blockly?.Blocks || {}).forEach(([blockType, definition]) => {
+    const iconKey = getBuiltinBlockIconKey(blockType);
+    if (!iconKey || !definition || typeof definition.init !== 'function' || definition.__xeduTypeIconWrapped__) {
+      return;
+    }
+    const originalInit = definition.init;
+    definition.init = function wrappedBuiltinInit(...args) {
+      originalInit.apply(this, args);
+      prependBuiltinTypeIcon(this, Blockly, iconKey);
+    };
+    definition.__xeduTypeIconWrapped__ = true;
+  });
+}
+
 function getValueCode(block, name, pythonGenerator, fallback = 'None', order = pythonGenerator.ORDER_NONE) {
   const code = pythonGenerator.valueToCode(block, name, order);
   return code || fallback;
@@ -1014,6 +1496,16 @@ function getWorkflowVarNameForTask(taskId) {
 }
 
 function ensureWorkflowInstance(pythonGenerator, taskId) {
+  const task = getTaskById(taskId);
+  if (task?.available === false) {
+    const flowVar = getWorkflowVarNameForTask(taskId);
+    definePythonSnippet(
+      pythonGenerator,
+      `workflow_instance_unavailable_${flowVar}`,
+      `${getTaskUnavailableComment(taskId)}\n${flowVar} = None`,
+    );
+    return { flowVar, runtimeTaskId: String(getRuntimeTaskId(taskId) || taskId || '').trim(), unavailable: true };
+  }
   const runtimeTaskId = String(getRuntimeTaskId(taskId) || taskId || '').trim();
   const flowVar = getWorkflowVarNameForTask(taskId);
   const checkpointName = FRONTEND_SMOKE_CHECKPOINT_MAP[runtimeTaskId] || '';
@@ -1072,15 +1564,37 @@ function getPythonParamsObject(block, fieldName = 'PARAMS') {
 }
 
 function defineBaseBlocks(Blockly) {
+  registerImagePathField(Blockly);
   defineBlocksWithXEduPalette(Blockly, [
     {
       type: 'xeduhub_set_input_resource',
-      message0: '%1 输入图像 %2',
-      args0: [buildIconField('input'), { type: 'field_input', name: 'INPUT', text: DEFAULT_XEDUHUB_SAMPLE_INPUT }],
+      message0: '%1 设置输入路径 %2',
+      args0: [buildIconField('input'), buildImagePathFieldConfig()],
       previousStatement: null,
       nextStatement: null,
       colour: '#5A8DEE',
-      tooltip: '设置单张图像或单个资源路径，供后续 XEduHub 任务使用。',
+      tooltip: '兼容旧流程：设置单张图像或单个资源路径，供后续 XEduHub 任务使用。',
+    },
+    {
+      type: 'xeduhub_load_image_to_var',
+      message0: '%1 读取图片 %2 赋值给 %3',
+      args0: [
+        buildIconField('input'),
+        buildImagePathFieldConfig(),
+        { type: 'field_variable', name: 'IMAGE_VAR', variable: 'lab_input' },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#5A8DEE',
+      tooltip: '点击中间路径会弹出文件选择，并把读入的图片数据保存到变量。',
+    },
+    {
+      type: 'xeduhub_input_image',
+      message0: '%1 图片路径 %2',
+      args0: [buildIconField('input'), buildImagePathFieldConfig()],
+      output: 'String',
+      colour: '#5A8DEE',
+      tooltip: '点击路径会弹出文件选择，并返回单张图片路径。',
     },
     {
       type: 'xeduhub_set_input_list',
@@ -1093,26 +1607,28 @@ function defineBaseBlocks(Blockly) {
     },
     {
       type: 'xeduhub_show_result_card',
-      message0: '%1 结果卡片 %2',
+      message0: '%1 结果显示 %2',
       args0: [buildIconField('result'), { type: 'field_input', name: 'TITLE', text: '运行结果' }],
+      message1: '结果 %1',
+      args1: [{ type: 'input_value', name: 'RESULT' }],
       previousStatement: null,
       nextStatement: null,
       colour: '#5A8DEE',
-      tooltip: '把当前 XEduHub 结果展示为一张结果卡片。',
+      tooltip: '把当前识别结果整理成一张易读的结果卡片。',
     },
     {
       type: 'xeduhub_show_result_image',
-      message0: '%1 结果图像',
-      args0: [buildIconField('resultImage')],
+      message0: '%1 显示结果图片 %2',
+      args0: [buildIconField('resultImage'), { type: 'input_value', name: 'IMAGE' }],
       previousStatement: null,
       nextStatement: null,
       colour: '#5A8DEE',
-      tooltip: '显示当前任务返回的可视化结果图。',
+      tooltip: '显示当前任务返回的结果图片或标注图。',
     },
     {
       type: 'xeduhub_run_and_record',
-      message0: '%1 记录结论',
-      args0: [buildIconField('note')],
+      message0: '%1 记录结论 %2',
+      args0: [buildIconField('note'), { type: 'input_value', name: 'NOTE' }],
       previousStatement: null,
       nextStatement: null,
       colour: '#5A8DEE',
@@ -1129,23 +1645,31 @@ function defineBaseBlocks(Blockly) {
     },
     {
       type: 'xeduhub_workflow_create',
-      message0: '%1 Workflow %2',
-      args0: [buildIconField('workflow'), { type: 'field_dropdown', name: TASK_FIELD_NAME, options: getTaskOptions }],
+      message0: '%1 初始化任务 %2 记为 %3',
+      args0: [
+        buildIconField('workflow'),
+        { type: 'field_dropdown', name: TASK_FIELD_NAME, options: getTaskOptions },
+        { type: 'field_variable', name: 'MODEL_VAR', variable: 'lab_flow' },
+      ],
       previousStatement: null,
       nextStatement: null,
       colour: '#A596C9',
     },
     {
       type: 'xeduhub_workflow_set_task',
-      message0: '%1 任务 %2',
-      args0: [buildIconField('workflow'), { type: 'field_dropdown', name: TASK_FIELD_NAME, options: getTaskOptions }],
+      message0: '%1 让流程 %2 切换到 %3',
+      args0: [
+        buildIconField('workflow'),
+        { type: 'field_variable', name: 'MODEL_VAR', variable: 'lab_flow' },
+        { type: 'field_dropdown', name: TASK_FIELD_NAME, options: getTaskOptions },
+      ],
       previousStatement: null,
       nextStatement: null,
       colour: '#A596C9',
     },
     {
       type: 'xeduhub_workflow_set_params',
-      message0: '%1 参数 %2',
+      message0: '%1 更多参数 %2',
       args0: [buildIconField('workflow'), { type: 'field_input', name: PARAMS_FIELD_NAME, text: '{}' }],
       previousStatement: null,
       nextStatement: null,
@@ -1153,10 +1677,15 @@ function defineBaseBlocks(Blockly) {
     },
     {
       type: 'xeduhub_workflow_infer',
-      message0: '%1 运行 %2 高级参数 %3',
+      message0: '%1 模型推理 %2 输入 %3',
       args0: [
         buildIconField('workflow'),
-        { type: 'field_input', name: 'RESULT', text: 'lab_result' },
+        { type: 'field_variable', name: 'MODEL_VAR', variable: 'lab_flow' },
+        { type: 'input_value', name: 'INPUT_DATA' },
+      ],
+      message1: '结果保存到 %1 更多参数 %2',
+      args1: [
+        { type: 'field_variable', name: 'RESULT_VAR', variable: 'lab_result' },
         { type: 'field_input', name: PARAMS_FIELD_NAME, text: '{}' },
       ],
       previousStatement: null,
@@ -1168,7 +1697,7 @@ function defineBaseBlocks(Blockly) {
       message0: '%1 读取 %2 %3',
       args0: [
         buildIconField('result'),
-        { type: 'field_input', name: 'RESULT', text: 'lab_result' },
+        { type: 'input_value', name: 'RESULT' },
         {
           type: 'field_dropdown',
           name: 'FIELD',
@@ -1181,7 +1710,7 @@ function defineBaseBlocks(Blockly) {
     {
       type: 'xeduhub_debug_print',
       message0: '%1 打印 %2',
-      args0: [buildIconField('debug'), { type: 'field_input', name: 'VAR', text: 'lab_result' }],
+      args0: [buildIconField('debug'), { type: 'input_value', name: 'VALUE' }],
       previousStatement: null,
       nextStatement: null,
       colour: '#A596C9',
@@ -1347,16 +1876,17 @@ function defineSemanticRunBlocks(Blockly) {
     const visibleParams = getVisibleTaskParams(task);
     const args0 = [buildIconField(getTaskIconKey(task))];
     const args1 = [{ type: 'input_value', name: 'INPUT_DATA' }];
-    const args2 = [];
+    const args2 = [{ type: 'field_variable', name: 'RESULT_VAR', variable: 'lab_result' }];
+    const args3 = [];
     visibleParams.forEach((param) => {
       if (param.field === 'enum') {
-        args2.push({
+        args3.push({
           type: 'field_dropdown',
           name: getParamFieldName(param.key),
           options: () => (param.options || []).map(([label, value]) => [String(label), String(value)]),
         });
       } else {
-        args2.push({
+        args3.push({
           type: 'field_input',
           name: getParamFieldName(param.key),
           text: String(param.default ?? ''),
@@ -1368,7 +1898,7 @@ function defineSemanticRunBlocks(Blockly) {
       colour: task.colour || XEDU_SEMANTIC_COLOURS.input,
       message0: `%1 ${formatBlockTitle(getCompactTaskLabel(task))} · ${getTaskFamilyCaption(task)}`,
       args0,
-      message1: `${getTaskInputCaption(task)} %1`,
+      message1: `对%1进行推理`,
       args1,
       previousStatement: null,
       nextStatement: null,
@@ -1376,11 +1906,13 @@ function defineSemanticRunBlocks(Blockly) {
       tooltip: getTaskTooltip(task),
     };
     if (visibleParams.length > 0) {
-      blockDef.message2 = `调参  ${visibleParams.map((param, index) => `${getCompactParamLabel(param)} %${index + 1}`).join('  ')}`;
+      blockDef.message2 = '结果保存到 %1';
       blockDef.args2 = args2;
-      blockDef.message3 = getTaskResultCaption(task);
+      blockDef.message3 = `调参  ${visibleParams.map((param, index) => `${getCompactParamLabel(param)} %${index + 1}`).join('  ')}`;
+      blockDef.args3 = args3;
     } else {
-      blockDef.message2 = getTaskResultCaption(task);
+      blockDef.message2 = '结果保存到 %1';
+      blockDef.args2 = args2;
     }
     return blockDef;
   });
@@ -1393,7 +1925,7 @@ function defineAdvancedBlocks(Blockly) {
   defineBlocksWithXEduPalette(Blockly, [
     {
       type: 'xeduhub_workflow_create_var',
-      message0: '%1 创建模型 %2 到 %3',
+      message0: '%1 初始化任务 %2 记为 %3',
       args0: [
         buildIconField('workflow'),
         { type: 'field_dropdown', name: TASK_FIELD_NAME, options: getTaskOptions },
@@ -1405,31 +1937,37 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_workflow_infer_var',
-      message0: '%1 用模型 %2 输入 %3 结果到 %4',
+      message0: '%1 模型推理 %2',
       args0: [
         buildIconField('workflow'),
         { type: 'field_variable', name: 'MODEL_VAR', variable: 'lab_flow' },
-        { type: 'input_value', name: 'INPUT_DATA' },
-        { type: 'field_variable', name: 'RESULT_VAR', variable: 'lab_result' },
       ],
-      message1: '检测框 %1 更多参数 %2',
-      args1: [{ type: 'input_value', name: 'BBOX' }, { type: 'field_input', name: PARAMS_FIELD_NAME, text: '{}' }],
+      message1: '对%1进行推理',
+      args1: [{ type: 'input_value', name: 'INPUT_DATA' }],
+      message2: '结果保存到 %1',
+      args2: [{ type: 'field_variable', name: 'RESULT_VAR', variable: 'lab_result' }],
+      message3: '可选检测框 %1 参数 %2',
+      args3: [{ type: 'input_value', name: 'BBOX' }, { type: 'field_input', name: PARAMS_FIELD_NAME, text: '{}' }],
       previousStatement: null,
       nextStatement: null,
       colour: '#5A8DEE',
     },
     {
       type: 'xeduhub_workflow_infer_pair',
-      message0: '%1 用模型 %2 输入 %3 结果到 %4 图像到 %5',
+      message0: '%1 模型推理 %2',
       args0: [
         buildIconField('workflow'),
         { type: 'field_variable', name: 'MODEL_VAR', variable: 'lab_flow' },
-        { type: 'input_value', name: 'INPUT_DATA' },
+      ],
+      message1: '对%1进行推理',
+      args1: [{ type: 'input_value', name: 'INPUT_DATA' }],
+      message2: '结果保存到 %1 图片保存到 %2',
+      args2: [
         { type: 'field_variable', name: 'RESULT_VAR', variable: 'lab_result' },
         { type: 'field_variable', name: 'IMAGE_VAR', variable: 'display_img' },
       ],
-      message1: '检测框 %1 更多参数 %2',
-      args1: [{ type: 'input_value', name: 'BBOX' }, { type: 'field_input', name: PARAMS_FIELD_NAME, text: '{}' }],
+      message3: '可选检测框 %1 参数 %2',
+      args3: [{ type: 'input_value', name: 'BBOX' }, { type: 'field_input', name: PARAMS_FIELD_NAME, text: '{}' }],
       previousStatement: null,
       nextStatement: null,
       colour: '#5A8DEE',
@@ -1450,10 +1988,13 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_keypoint_axis',
-      message0: '%1 关键点 %2 第 %3 个 %4',
+      message0: '%1 关键点 %2',
       args0: [
         buildIconField('pose'),
         { type: 'input_value', name: 'POINTS' },
+      ],
+      message1: '第 %1 个 %2',
+      args1: [
         { type: 'input_value', name: 'INDEX' },
         { type: 'field_dropdown', name: 'AXIS', options: [['X', 'x'], ['Y', 'y']] },
       ],
@@ -1469,10 +2010,13 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_cv_open_camera',
-      message0: '%1 打开摄像头 %2 到 %3 窗口 %4',
+      message0: '%1 打开摄像头 %2',
       args0: [
         buildIconField('camera'),
         { type: 'field_number', name: 'SOURCE', value: 0, min: 0, precision: 1 },
+      ],
+      message1: '记为 %1 窗口 %2',
+      args1: [
         { type: 'field_variable', name: 'CAMERA_VAR', variable: 'camera' },
         { type: 'field_input', name: 'WINDOW', text: 'video' },
       ],
@@ -1482,10 +2026,13 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_cv_open_video',
-      message0: '%1 打开视频 %2 到 %3 窗口 %4',
+      message0: '%1 打开视频 %2',
       args0: [
         buildIconField('video'),
         { type: 'input_value', name: 'SOURCE' },
+      ],
+      message1: '记为 %1 窗口 %2',
+      args1: [
         { type: 'field_variable', name: 'CAMERA_VAR', variable: 'video' },
         { type: 'field_input', name: 'WINDOW', text: 'video' },
       ],
@@ -1526,16 +2073,181 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_cv_draw_boxes',
-      message0: '%1 给图像 %2 画检测框 %3 输出到 %4',
+      message0: '%1 图像 %2 画检测框 %3',
       args0: [
         buildIconField('resultImage'),
         { type: 'input_value', name: 'IMAGE' },
         { type: 'input_value', name: 'BOXES' },
+      ],
+      message1: '输出到 %1',
+      args1: [
         { type: 'field_variable', name: 'IMAGE_VAR', variable: 'display_img' },
       ],
       previousStatement: null,
       nextStatement: null,
       colour: '#2D9C8F',
+    },
+    {
+      type: 'xeduhub_draw_boxes_image',
+      message0: '%1 给图像 %2 画检测框 %3',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+        { type: 'input_value', name: 'BOXES' },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+    },
+    {
+      type: 'xeduhub_cv_cvt_color',
+      message0: '%1 图像 %2 颜色转换 %3',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+        {
+          type: 'field_dropdown',
+          name: 'COLOR_CODE',
+          options: [
+            ['BGR 转 RGB', 'COLOR_BGR2RGB'],
+            ['BGR 转灰度', 'COLOR_BGR2GRAY'],
+            ['RGB 转 BGR', 'COLOR_RGB2BGR'],
+            ['灰度转 BGR', 'COLOR_GRAY2BGR'],
+            ['BGR 转 HSV', 'COLOR_BGR2HSV'],
+          ],
+        },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '使用 cv2.cvtColor 转换图像颜色空间。',
+    },
+    {
+      type: 'xeduhub_cv_resize_image',
+      message0: '%1 图像 %2 缩放',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+      ],
+      message1: '宽 %1 高 %2',
+      args1: [
+        { type: 'input_value', name: 'WIDTH' },
+        { type: 'input_value', name: 'HEIGHT' },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '使用 cv2.resize 调整图像大小。',
+    },
+    {
+      type: 'xeduhub_cv_crop_image',
+      message0: '%1 图像 %2 裁剪',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+      ],
+      message1: 'x %1 y %2 宽 %3 高 %4',
+      args1: [
+        { type: 'input_value', name: 'CROP_X' },
+        { type: 'input_value', name: 'CROP_Y' },
+        { type: 'input_value', name: 'CROP_W' },
+        { type: 'input_value', name: 'CROP_H' },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '按 x、y、宽、高裁剪图像区域。',
+    },
+    {
+      type: 'xeduhub_cv_flip_image',
+      message0: '%1 图像 %2 翻转 %3',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+        { type: 'field_dropdown', name: 'FLIP_CODE', options: [['左右', '1'], ['上下', '0'], ['上下左右', '-1']] },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '使用 cv2.flip 翻转图像。',
+    },
+    {
+      type: 'xeduhub_cv_rotate_image',
+      message0: '%1 图像 %2 旋转 %3',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+        {
+          type: 'field_dropdown',
+          name: 'ROTATE_CODE',
+          options: [
+            ['顺时针 90°', 'ROTATE_90_CLOCKWISE'],
+            ['逆时针 90°', 'ROTATE_90_COUNTERCLOCKWISE'],
+            ['180°', 'ROTATE_180'],
+          ],
+        },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '使用 cv2.rotate 旋转图像。',
+    },
+    {
+      type: 'xeduhub_cv_gaussian_blur',
+      message0: '%1 图像 %2 高斯模糊 核大小 %3',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+        { type: 'field_number', name: 'KSIZE', value: 5, min: 1, precision: 2 },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '使用 cv2.GaussianBlur 做平滑去噪。',
+    },
+    {
+      type: 'xeduhub_cv_canny',
+      message0: '%1 图像 %2 边缘检测',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+      ],
+      message1: '阈值1 %1 阈值2 %2',
+      args1: [
+        { type: 'input_value', name: 'THRESHOLD1' },
+        { type: 'input_value', name: 'THRESHOLD2' },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '使用 cv2.Canny 提取图像边缘。',
+    },
+    {
+      type: 'xeduhub_cv_threshold',
+      message0: '%1 图像 %2 二值化',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+      ],
+      message1: '阈值 %1 最大值 %2',
+      args1: [
+        { type: 'input_value', name: 'THRESHOLD' },
+        { type: 'input_value', name: 'MAX_VALUE' },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '使用 cv2.threshold 对图像做二值化。',
+    },
+    {
+      type: 'xeduhub_cv_put_text',
+      message0: '%1 图像 %2 写字 %3',
+      args0: [
+        buildIconField('resultImage'),
+        { type: 'input_value', name: 'IMAGE' },
+        { type: 'field_input', name: 'TEXT', text: 'XEdu' },
+      ],
+      message1: 'x %1 y %2 大小 %3 粗细 %4',
+      args1: [
+        { type: 'field_number', name: 'TEXT_X', value: 20, min: 0, precision: 1 },
+        { type: 'field_number', name: 'TEXT_Y', value: 40, min: 0, precision: 1 },
+        { type: 'field_number', name: 'TEXT_SCALE', value: 1, min: 0.1, precision: 0.1 },
+        { type: 'field_number', name: 'TEXT_THICKNESS', value: 2, min: 1, precision: 1 },
+      ],
+      output: null,
+      colour: '#2D9C8F',
+      tooltip: '使用 cv2.putText 在图像上绘制文字。',
     },
     {
       type: 'xeduhub_cv_save_image',
@@ -1551,11 +2263,14 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_media_frames_to_video',
-      message0: '%1 图片目录 %2 合成视频 %3 帧率 %4',
+      message0: '%1 图片目录 %2 合成视频 %3',
       args0: [
         buildIconField('video'),
         { type: 'input_value', name: 'OUTPUT_DIR' },
         { type: 'input_value', name: 'OUTPUT_VIDEO' },
+      ],
+      message1: '帧率 %1',
+      args1: [
         { type: 'field_number', name: 'FPS', value: 30, min: 1, precision: 1 },
       ],
       previousStatement: null,
@@ -1564,10 +2279,13 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_http_get',
-      message0: '%1 GET %2 保存到 %3',
+      message0: '%1 GET %2',
       args0: [
         buildIconField('http'),
         { type: 'input_value', name: 'URL' },
+      ],
+      message1: '结果到 %1',
+      args1: [
         { type: 'field_variable', name: 'RESPONSE_VAR', variable: 'response' },
       ],
       previousStatement: null,
@@ -1576,10 +2294,13 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_http_open_stream',
-      message0: '%1 打开网络视频流 %2 到 %3',
+      message0: '%1 打开网络视频流 %2',
       args0: [
         buildIconField('http'),
         { type: 'input_value', name: 'URL' },
+      ],
+      message1: '记为 %1',
+      args1: [
         { type: 'field_variable', name: 'STREAM_VAR', variable: 'response' },
       ],
       previousStatement: null,
@@ -1607,15 +2328,18 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_http_iter_chunks',
-      message0: '%1 遍历网络分块 %2 到 %3 大小 %4',
+      message0: '%1 遍历网络分块 %2',
       args0: [
         buildIconField('http'),
         { type: 'field_variable', name: 'STREAM_VAR', variable: 'response' },
+      ],
+      message1: '到 %1 大小 %2',
+      args1: [
         { type: 'field_variable', name: 'CHUNK_VAR', variable: 'chunk' },
         { type: 'field_number', name: 'CHUNK_SIZE', value: 16384, min: 1, precision: 1 },
       ],
-      message1: '执行 %1',
-      args1: [{ type: 'input_statement', name: 'DO' }],
+      message2: '执行 %1',
+      args2: [{ type: 'input_statement', name: 'DO' }],
       previousStatement: null,
       nextStatement: null,
       colour: '#E38B54',
@@ -1644,16 +2368,29 @@ function defineAdvancedBlocks(Blockly) {
       colour: '#E38B54',
     },
     {
+      type: 'xeduhub_decode_chunk_image',
+      message0: '%1 分块转画面 %2',
+      args0: [
+        buildIconField('camera'),
+        { type: 'input_value', name: 'CHUNK' },
+      ],
+      output: null,
+      colour: '#E38B54',
+    },
+    {
       type: 'xeduhub_http_send_command',
-      message0: '%1 发送设备指令 %2 动作 %3 响应到 %4',
+      message0: '%1 发送设备指令 %2',
       args0: [
         buildIconField('device'),
         { type: 'input_value', name: 'BASE_URL' },
+      ],
+      message1: '动作 %1 响应到 %2',
+      args1: [
         { type: 'input_value', name: 'CMD' },
         { type: 'field_variable', name: 'RESPONSE_VAR', variable: 'response' },
       ],
-      message1: '停止指令 %1 延时 %2 秒',
-      args1: [
+      message2: '停止指令 %1 延时 %2 秒',
+      args2: [
         { type: 'field_input', name: 'STOP_CMD', text: 'S' },
         { type: 'field_number', name: 'DELAY', value: 0.3, min: 0, precision: 0.1 },
       ],
@@ -1663,9 +2400,12 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_servo_setup',
-      message0: '%1 初始化舵机 开发板 %2 引脚 %3 到 %4',
+      message0: '%1 初始化舵机',
       args0: [
         buildIconField('device'),
+      ],
+      message1: '开发板 %1 引脚 %2 记为 %3',
+      args1: [
         { type: 'field_input', name: 'BOARD', text: 'uno' },
         { type: 'field_input', name: 'PIN', text: 'D4' },
         { type: 'field_variable', name: 'SERVO_VAR', variable: 'servo' },
@@ -1688,15 +2428,35 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_polyfit_quadratic',
-      message0: '%1 拟合二次曲线 X %2 Y %3 到 %4',
+      message0: '%1 拟合二次曲线',
       args0: [
         buildIconField('math'),
+      ],
+      message1: 'X %1 Y %2',
+      args1: [
         { type: 'input_value', name: 'X_VALUES' },
         { type: 'input_value', name: 'Y_VALUES' },
+      ],
+      message2: '结果到 %1',
+      args2: [
         { type: 'field_variable', name: 'COEFF_VAR', variable: 'coeff' },
       ],
       previousStatement: null,
       nextStatement: null,
+      colour: '#56C7B7',
+    },
+    {
+      type: 'xeduhub_quadratic_fit',
+      message0: '%1 拟合二次曲线',
+      args0: [
+        buildIconField('math'),
+      ],
+      message1: 'X %1 Y %2',
+      args1: [
+        { type: 'input_value', name: 'X_VALUES' },
+        { type: 'input_value', name: 'Y_VALUES' },
+      ],
+      output: null,
       colour: '#56C7B7',
     },
     {
@@ -1712,11 +2472,17 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_math_distance',
-      message0: '%1 两点距离 x1 %2 y1 %3 x2 %4 y2 %5',
+      message0: '%1 两点距离',
       args0: [
         buildIconField('math'),
+      ],
+      message1: 'x1 %1 y1 %2',
+      args1: [
         { type: 'input_value', name: 'X1' },
         { type: 'input_value', name: 'Y1' },
+      ],
+      message2: 'x2 %1 y2 %2',
+      args2: [
         { type: 'input_value', name: 'X2' },
         { type: 'input_value', name: 'Y2' },
       ],
@@ -1728,45 +2494,91 @@ function defineAdvancedBlocks(Blockly) {
 
 function defineBaseGenerators(pythonGenerator) {
   pythonGenerator.forBlock.xeduhub_set_input_resource = (block) => `lab_input = ${JSON.stringify(block.getFieldValue('INPUT') || DEFAULT_XEDUHUB_SAMPLE_INPUT)}\n`;
+  pythonGenerator.forBlock.xeduhub_load_image_to_var = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageVar = getVariableName(block, 'IMAGE_VAR', 'lab_input');
+    return `${imageVar} = cv2.imread(${JSON.stringify(block.getFieldValue('INPUT') || DEFAULT_XEDUHUB_SAMPLE_INPUT)})\n`;
+  };
+  pythonGenerator.forBlock.xeduhub_input_image = (block) => [
+    JSON.stringify(block.getFieldValue('INPUT') || DEFAULT_XEDUHUB_SAMPLE_INPUT),
+    pythonGenerator.ORDER_ATOMIC,
+  ];
   pythonGenerator.forBlock.xeduhub_set_input_list = (block) => {
     const raw = block.getFieldValue('INPUTS') || '[]';
     const parsed = parseJsonish(raw, raw);
     return `lab_input = ${toPythonLiteral(parsed)}\n`;
   };
-  pythonGenerator.forBlock.xeduhub_show_result_card = (block) => `print(${JSON.stringify(block.getFieldValue('TITLE') || '推理结果')}, lab_result)\n`;
-  pythonGenerator.forBlock.xeduhub_show_result_image = () => "print('结果图将在 Blockly 结果区显示')\n";
-  pythonGenerator.forBlock.xeduhub_run_and_record = () => "print('教学结论已记录')\n";
-  pythonGenerator.forBlock.xeduhub_clear_result = () => "lab_result = {}\nlab_error = ''\n";
-  pythonGenerator.forBlock.xeduhub_workflow_create = (block) => [
-    `lab_task_id = ${JSON.stringify(ensureWorkflowInstance(pythonGenerator, block.getFieldValue(TASK_FIELD_NAME) || getXEduHubTaskRegistry().default_task_id || 'det_body').runtimeTaskId)}`,
-    `lab_flow = ${ensureWorkflowInstance(pythonGenerator, block.getFieldValue(TASK_FIELD_NAME) || getXEduHubTaskRegistry().default_task_id || 'det_body').flowVar}`,
-  ].join('\n') + '\n';
-  pythonGenerator.forBlock.xeduhub_workflow_set_task = (block) => [
-    `lab_task_id = ${JSON.stringify(ensureWorkflowInstance(pythonGenerator, block.getFieldValue(TASK_FIELD_NAME) || getXEduHubTaskRegistry().default_task_id || 'det_body').runtimeTaskId)}`,
-    `lab_flow = ${ensureWorkflowInstance(pythonGenerator, block.getFieldValue(TASK_FIELD_NAME) || getXEduHubTaskRegistry().default_task_id || 'det_body').flowVar}`,
-  ].join('\n') + '\n';
+  pythonGenerator.forBlock.xeduhub_show_result_card = (block) => {
+    ensureResultHelpers(pythonGenerator);
+    const titleCode = JSON.stringify(block.getFieldValue('TITLE') || '运行结果');
+    const legacyResultName = String(block.getFieldValue('RESULT') || '').trim();
+    const resultCode = getValueCode(block, 'RESULT', pythonGenerator, legacyResultName || 'lab_result', pythonGenerator.ORDER_NONE);
+    return `xrt.xedu_show_result_card(${resultCode}, title=${titleCode})\n`;
+  };
+  pythonGenerator.forBlock.xeduhub_show_result_image = (block) => {
+    ensureResultHelpers(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    return `xrt.xedu_show_result_image(${imageCode})\n`;
+  };
+  pythonGenerator.forBlock.xeduhub_run_and_record = (block) => {
+    ensureResultHelpers(pythonGenerator);
+    const legacyNote = String(block.getFieldValue('NOTE') || '').trim();
+    const noteCode = getValueCode(block, 'NOTE', pythonGenerator, JSON.stringify(legacyNote || '教学结论已记录'), pythonGenerator.ORDER_NONE);
+    return `xrt.xedu_record_conclusion(${noteCode}, lab_result)\n`;
+  };
+  pythonGenerator.forBlock.xeduhub_clear_result = () => {
+    ensureResultHelpers(pythonGenerator);
+    return "xrt.xedu_clear_result()\nlab_result = {}\nlab_error = ''\n";
+  };
+  pythonGenerator.forBlock.xeduhub_workflow_create = (block) => {
+    ensureWorkflowImport(pythonGenerator);
+    const modelVar = getVariableName(block, 'MODEL_VAR', 'lab_flow');
+    const taskId = getFieldText(block, TASK_FIELD_NAME, getXEduHubTaskRegistry().default_task_id || 'det_body');
+    const task = getTaskById(taskId);
+    if (task?.available === false) {
+      return `${getTaskUnavailableComment(taskId)}\n${modelVar} = None\n`;
+    }
+    return `${modelVar} = wf(task=${quotePythonString(getRuntimeTaskId(taskId))})\n`;
+  };
+  pythonGenerator.forBlock.xeduhub_workflow_set_task = (block) => {
+    ensureWorkflowImport(pythonGenerator);
+    const modelVar = getVariableName(block, 'MODEL_VAR', 'lab_flow');
+    const taskId = getFieldText(block, TASK_FIELD_NAME, getXEduHubTaskRegistry().default_task_id || 'det_body');
+    const task = getTaskById(taskId);
+    if (task?.available === false) {
+      return `${getTaskUnavailableComment(taskId)}\n${modelVar} = None\n`;
+    }
+    return `${modelVar} = wf(task=${quotePythonString(getRuntimeTaskId(taskId))})\n`;
+  };
   pythonGenerator.forBlock.xeduhub_workflow_set_params = (block) => {
     const params = parseJsonish(block.getFieldValue(PARAMS_FIELD_NAME) || '{}', {});
     return `lab_params = ${toPythonLiteral(params)}\n`;
   };
   pythonGenerator.forBlock.xeduhub_workflow_infer = (block) => {
-    const resultName = String(block.getFieldValue('RESULT') || 'lab_result').trim() || 'lab_result';
+    const modelVar = getVariableName(block, 'MODEL_VAR', 'lab_flow');
+    const resultName = getVariableName(block, 'RESULT_VAR', String(block.getFieldValue('RESULT') || 'lab_result').trim() || 'lab_result');
+    const inputCode = getValueCode(block, 'INPUT_DATA', pythonGenerator, 'lab_input', pythonGenerator.ORDER_NONE);
     const params = parseJsonish(block.getFieldValue(PARAMS_FIELD_NAME) || '{}', {});
     return [
       `lab_params = ${toPythonLiteral(params)}`,
-      `${resultName} = lab_flow.inference(data=lab_input, **lab_params)`,
+      `${resultName} = ${modelVar}.inference(data=${inputCode}, **lab_params)`,
       `lab_result = ${resultName}`,
     ].join('\n') + '\n';
   };
   pythonGenerator.forBlock.xeduhub_get_result_field = (block) => {
-    const resultName = String(block.getFieldValue('RESULT') || 'lab_result').trim() || 'lab_result';
+    const legacyResultName = String(block.getFieldValue('RESULT') || '').trim();
+    const resultName = getValueCode(block, 'RESULT', pythonGenerator, legacyResultName || 'lab_result', pythonGenerator.ORDER_NONE);
     const fieldName = String(block.getFieldValue('FIELD') || 'raw').trim() || 'raw';
     if (fieldName === 'raw') {
-      return [`str(${resultName})`, pythonGenerator.ORDER_ATOMIC];
+      return [resultName, pythonGenerator.ORDER_ATOMIC];
     }
     return [`(${resultName}.get(${JSON.stringify(fieldName)}, '') if isinstance(${resultName}, dict) else '')`, pythonGenerator.ORDER_ATOMIC];
   };
-  pythonGenerator.forBlock.xeduhub_debug_print = (block) => `print(${JSON.stringify(block.getFieldValue('VAR') || 'lab_result')})\n`;
+  pythonGenerator.forBlock.xeduhub_debug_print = (block) => {
+    const legacyValueName = String(block.getFieldValue('VAR') || '').trim();
+    const valueCode = getValueCode(block, 'VALUE', pythonGenerator, legacyValueName || 'lab_result', pythonGenerator.ORDER_NONE);
+    return `print(${valueCode})\n`;
+  };
   pythonGenerator.forBlock.xeduhub_catch_error = (block) => {
     const tryPart = pythonGenerator.statementToCode(block, 'TRY') || 'pass\n';
     const errVar = block.getFieldValue('ERROR_VAR') || 'lab_error';
@@ -1777,6 +2589,9 @@ function defineBaseGenerators(pythonGenerator) {
   pythonGenerator.forBlock.xeduhub_flow_set_input = (block) => pythonGenerator.forBlock.xeduhub_set_input_resource(block);
   pythonGenerator.forBlock.xeduhub_classify_run = (block) => {
     const task = getTaskById(resolveLegacyTaskId('classification', block.getFieldValue('MODEL') || '')) || getTaskById('cls_imagenet');
+    if (task?.available === false) {
+      return buildUnavailableTaskPython(task?.task_id || 'cls_imagenet', 'lab_result = {}');
+    }
     const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, task?.task_id || 'cls_imagenet');
     return [
       `lab_task_id = ${JSON.stringify(runtimeTaskId)}`,
@@ -1787,6 +2602,9 @@ function defineBaseGenerators(pythonGenerator) {
   };
   pythonGenerator.forBlock.xeduhub_detect_run = (block) => {
     const task = getTaskById(resolveLegacyTaskId('detection', block.getFieldValue('MODEL') || '')) || getTaskById('det_body');
+    if (task?.available === false) {
+      return buildUnavailableTaskPython(task?.task_id || 'det_body', 'lab_result = {}');
+    }
     const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, task?.task_id || 'det_body');
     return [
       `lab_task_id = ${JSON.stringify(runtimeTaskId)}`,
@@ -1797,6 +2615,9 @@ function defineBaseGenerators(pythonGenerator) {
   };
   pythonGenerator.forBlock.xeduhub_ocr_run = (block) => {
     const task = getTaskById(resolveLegacyTaskId('ocr', block.getFieldValue('MODEL') || '')) || getTaskById('ocr');
+    if (task?.available === false) {
+      return buildUnavailableTaskPython(task?.task_id || 'ocr', 'lab_result = {}');
+    }
     const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, task?.task_id || 'ocr');
     return [
       `lab_task_id = ${JSON.stringify(runtimeTaskId)}`,
@@ -1807,6 +2628,10 @@ function defineBaseGenerators(pythonGenerator) {
   };
   pythonGenerator.forBlock.xeduhub_run_vision = (block) => {
     const taskId = resolveLegacyTaskId(block.getFieldValue('TASK') || '', block.getFieldValue('MODEL') || '');
+    const task = getTaskById(taskId);
+    if (task?.available === false) {
+      return buildUnavailableTaskPython(taskId, 'lab_result = {}');
+    }
     const directInput = block.getFieldValue('INPUT') || DEFAULT_XEDUHUB_SAMPLE_INPUT;
     const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, taskId);
     return [
@@ -1819,6 +2644,10 @@ function defineBaseGenerators(pythonGenerator) {
   };
   pythonGenerator.forBlock.xeduhub_set_model = (block) => {
     const taskId = resolveLegacyTaskId('', block.getFieldValue('MODEL') || '');
+    const task = getTaskById(taskId);
+    if (task?.available === false) {
+      return buildUnavailableTaskPython(taskId);
+    }
     const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, taskId);
     return [
       `lab_task_id = ${JSON.stringify(runtimeTaskId)}`,
@@ -1827,6 +2656,10 @@ function defineBaseGenerators(pythonGenerator) {
   };
   pythonGenerator.forBlock.xeduhub_create_flow = (block) => {
     const taskId = resolveLegacyTaskId(block.getFieldValue('TASK') || '', block.getFieldValue('MODEL') || '');
+    const task = getTaskById(taskId);
+    if (task?.available === false) {
+      return buildUnavailableTaskPython(taskId);
+    }
     const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, taskId);
     return [
       `lab_task_id = ${JSON.stringify(runtimeTaskId)}`,
@@ -1836,11 +2669,15 @@ function defineBaseGenerators(pythonGenerator) {
   pythonGenerator.forBlock.xeduhub_create_workflow = (block) => pythonGenerator.forBlock.xeduhub_create_flow(block);
   pythonGenerator.forBlock.xeduhub_execute_workflow = (block) => {
     const resultName = String(block.getFieldValue('RESULT') || 'lab_result').trim() || 'lab_result';
-    return `${resultName} = lab_flow.inference(data=lab_input, **{})\nlab_result = ${resultName}\n`;
+    return `if lab_flow is None:\n  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')\n${resultName} = lab_flow.inference(data=lab_input, **{})\nlab_result = ${resultName}\n`;
   };
   pythonGenerator.forBlock.xeduhub_flow_execute = (block) => pythonGenerator.forBlock.xeduhub_execute_workflow(block);
   pythonGenerator.forBlock.xeduhub_raw_create_workflow = (block) => {
     const taskId = resolveLegacyTaskId(block.getFieldValue('TASK') || '', '');
+    const task = getTaskById(taskId);
+    if (task?.available === false) {
+      return buildUnavailableTaskPython(taskId);
+    }
     const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, taskId);
     return [
       `lab_task_id = ${JSON.stringify(runtimeTaskId)}`,
@@ -1849,6 +2686,10 @@ function defineBaseGenerators(pythonGenerator) {
   };
   pythonGenerator.forBlock.xeduhub_raw_inference = (block) => {
     const taskId = resolveLegacyTaskId('', block.getFieldValue('MODEL') || '');
+    const task = getTaskById(taskId);
+    if (task?.available === false) {
+      return buildUnavailableTaskPython(taskId, 'lab_result = {}');
+    }
     const inputValue = block.getFieldValue('INPUT') || DEFAULT_XEDUHUB_SAMPLE_INPUT;
     const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, taskId);
     return [
@@ -1858,22 +2699,30 @@ function defineBaseGenerators(pythonGenerator) {
       'lab_result = lab_flow.inference(data=lab_input, **{})',
     ].join('\n') + '\n';
   };
-  pythonGenerator.forBlock.xeduhub_show_result = (block) => pythonGenerator.forBlock.xeduhub_show_result_card(block);
+  pythonGenerator.forBlock.xeduhub_show_result = (block) => {
+    ensureResultHelpers(pythonGenerator);
+    return `xrt.xedu_show_result_card(lab_result, title=${JSON.stringify(block.getFieldValue('TITLE') || '推理结果')})\n`;
+  };
   pythonGenerator.forBlock.xeduhub_print_status = () => "print('XEduHub workflow ready')\n";
 }
 
 function defineSemanticRunGenerators(pythonGenerator) {
   (getXEduHubTaskRegistry().tasks || []).forEach((task) => {
     pythonGenerator.forBlock[getSemanticRunBlockType(task.task_id)] = (block) => {
+      if (task?.available === false) {
+        return buildUnavailableTaskPython(task.task_id, 'lab_result = {}');
+      }
       const { flowVar, runtimeTaskId } = ensureWorkflowInstance(pythonGenerator, task.task_id);
       const paramLines = buildParamPythonLines(task, block);
       const inputCode = getValueCode(block, 'INPUT_DATA', pythonGenerator, 'lab_input', pythonGenerator.ORDER_NONE);
+      const resultVar = getVariableName(block, 'RESULT_VAR', 'lab_result');
       const extraArgs = paramLines.length ? ', **lab_params' : '';
       return [
         `lab_task_id = ${JSON.stringify(runtimeTaskId)}`,
         `lab_flow = ${flowVar}`,
         ...paramLines,
-        `lab_result = lab_flow.inference(data=${inputCode}${extraArgs})`,
+        `${resultVar} = lab_flow.inference(data=${inputCode}${extraArgs})`,
+        `lab_result = ${resultVar}`,
       ].join('\n') + '\n';
     };
   });
@@ -1899,6 +2748,10 @@ function defineAdvancedGenerators(pythonGenerator) {
     ensureWorkflowImport(pythonGenerator);
     const modelVar = getVariableName(block, 'MODEL_VAR', 'lab_flow');
     const taskId = getFieldText(block, TASK_FIELD_NAME, getXEduHubTaskRegistry().default_task_id || 'det_body');
+    const task = getTaskById(taskId);
+    if (task?.available === false) {
+      return `${getTaskUnavailableComment(taskId)}\n${modelVar} = None\n`;
+    }
     return `${modelVar} = wf(task=${quotePythonString(getRuntimeTaskId(taskId))})\n`;
   };
 
@@ -1908,6 +2761,8 @@ function defineAdvancedGenerators(pythonGenerator) {
     const inputCode = getValueCode(block, 'INPUT_DATA', pythonGenerator, 'lab_input', pythonGenerator.ORDER_NONE);
     const lines = buildInferParamsLines(block, pythonGenerator);
     const extraArgs = lines.length ? ', **xedu_params' : '';
+    lines.unshift(`if ${modelVar} is None:`);
+    lines.splice(1, 0, "  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')");
     lines.push(`${resultVar} = ${modelVar}.inference(data=${inputCode}${extraArgs})`);
     lines.push(`lab_result = ${resultVar}`);
     return `${lines.join('\n')}\n`;
@@ -1921,6 +2776,8 @@ function defineAdvancedGenerators(pythonGenerator) {
     const inputCode = getValueCode(block, 'INPUT_DATA', pythonGenerator, 'lab_input', pythonGenerator.ORDER_NONE);
     const lines = buildInferParamsLines(block, pythonGenerator);
     const extraArgs = lines.length ? ', **xedu_params' : '';
+    lines.unshift(`if ${modelVar} is None:`);
+    lines.splice(1, 0, "  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')");
     lines.push(`xedu_pair_value = ${modelVar}.inference(data=${inputCode}${extraArgs})`);
     lines.push(`${resultVar}, ${imageVar} = xrt.xedu_split_result(xedu_pair_value)`);
     lines.push(`lab_result = ${resultVar}`);
@@ -1976,7 +2833,7 @@ function defineAdvancedGenerators(pythonGenerator) {
     const quitKey = getFieldText(block, 'QUIT_KEY', 'q') || 'q';
     const delay = getNumberField(block, 'DELAY', '1');
     const branch = pythonGenerator.statementToCode(block, 'DO') || 'pass\n';
-    const body = pythonGenerator.prefixLines(branch, '  ');
+    const body = pythonGenerator.prefixLines(branch || 'pass\n', '    ');
     return [
       'try:',
       `  while ${cameraVar}.is_opened():`,
@@ -2004,6 +2861,87 @@ function defineAdvancedGenerators(pythonGenerator) {
     const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
     const boxesCode = getValueCode(block, 'BOXES', pythonGenerator, '[]', pythonGenerator.ORDER_NONE);
     return `${imageVar} = xrt.xedu_draw_boxes(${imageCode}, ${boxesCode})\n`;
+  };
+
+  pythonGenerator.forBlock.xeduhub_draw_boxes_image = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const boxesCode = getValueCode(block, 'BOXES', pythonGenerator, '[]', pythonGenerator.ORDER_NONE);
+    return [`xrt.xedu_draw_boxes(${imageCode}, ${boxesCode})`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_cvt_color = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const colorCode = getFieldText(block, 'COLOR_CODE', 'COLOR_BGR2RGB');
+    return [`cv2.cvtColor(${imageCode}, cv2.${colorCode})`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_resize_image = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const widthCode = getValueCode(block, 'WIDTH', pythonGenerator, '640', pythonGenerator.ORDER_NONE);
+    const heightCode = getValueCode(block, 'HEIGHT', pythonGenerator, '480', pythonGenerator.ORDER_NONE);
+    return [`cv2.resize(${imageCode}, (int(${widthCode}), int(${heightCode})))`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_crop_image = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const xCode = getValueCode(block, 'CROP_X', pythonGenerator, '0', pythonGenerator.ORDER_NONE);
+    const yCode = getValueCode(block, 'CROP_Y', pythonGenerator, '0', pythonGenerator.ORDER_NONE);
+    const widthCode = getValueCode(block, 'CROP_W', pythonGenerator, '100', pythonGenerator.ORDER_NONE);
+    const heightCode = getValueCode(block, 'CROP_H', pythonGenerator, '100', pythonGenerator.ORDER_NONE);
+    return [`xrt.xedu_cv_crop(${imageCode}, ${xCode}, ${yCode}, ${widthCode}, ${heightCode})`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_flip_image = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const flipCode = getFieldText(block, 'FLIP_CODE', '1');
+    return [`cv2.flip(${imageCode}, ${flipCode})`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_rotate_image = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const rotateCode = getFieldText(block, 'ROTATE_CODE', 'ROTATE_90_CLOCKWISE');
+    return [`cv2.rotate(${imageCode}, cv2.${rotateCode})`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_gaussian_blur = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const size = Math.max(1, Number(getNumberField(block, 'KSIZE', '5')) || 5);
+    const oddSize = size % 2 === 0 ? size + 1 : size;
+    return [`cv2.GaussianBlur(${imageCode}, (${oddSize}, ${oddSize}), 0)`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_canny = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const threshold1Code = getValueCode(block, 'THRESHOLD1', pythonGenerator, '100', pythonGenerator.ORDER_NONE);
+    const threshold2Code = getValueCode(block, 'THRESHOLD2', pythonGenerator, '200', pythonGenerator.ORDER_NONE);
+    return [`cv2.Canny(${imageCode}, ${threshold1Code}, ${threshold2Code})`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_threshold = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const thresholdCode = getValueCode(block, 'THRESHOLD', pythonGenerator, '127', pythonGenerator.ORDER_NONE);
+    const maxValueCode = getValueCode(block, 'MAX_VALUE', pythonGenerator, '255', pythonGenerator.ORDER_NONE);
+    return [`cv2.threshold(${imageCode}, ${thresholdCode}, ${maxValueCode}, cv2.THRESH_BINARY)[1]`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock.xeduhub_cv_put_text = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const imageCode = getValueCode(block, 'IMAGE', pythonGenerator, 'None', pythonGenerator.ORDER_NONE);
+    const text = getFieldText(block, 'TEXT', 'XEdu');
+    const x = getNumberField(block, 'TEXT_X', '20');
+    const y = getNumberField(block, 'TEXT_Y', '40');
+    const scale = getNumberField(block, 'TEXT_SCALE', '1');
+    const thickness = getNumberField(block, 'TEXT_THICKNESS', '2');
+    return [`cv2.putText(${imageCode}, ${quotePythonString(text)}, (${x}, ${y}), cv2.FONT_HERSHEY_SIMPLEX, ${scale}, (0, 255, 0), ${thickness})`, pythonGenerator.ORDER_FUNCTION_CALL];
   };
 
   pythonGenerator.forBlock.xeduhub_cv_save_image = (block) => {
@@ -2098,6 +3036,12 @@ function defineAdvancedGenerators(pythonGenerator) {
     return `${imageVar} = xrt.xedu_decode_chunk_image(${chunkCode})\n`;
   };
 
+  pythonGenerator.forBlock.xeduhub_decode_chunk_image = (block) => {
+    ensureCvSupport(pythonGenerator);
+    const chunkCode = getValueCode(block, 'CHUNK', pythonGenerator, 'b""', pythonGenerator.ORDER_NONE);
+    return [`xrt.xedu_decode_chunk_image(${chunkCode})`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
   pythonGenerator.forBlock.xeduhub_http_send_command = (block) => {
     ensureRequestSupport(pythonGenerator);
     const responseVar = getVariableName(block, 'RESPONSE_VAR', 'response');
@@ -2133,6 +3077,13 @@ function defineAdvancedGenerators(pythonGenerator) {
     return `${coeffVar} = np.polyfit(${xCode}, ${yCode}, 2)\n`;
   };
 
+  pythonGenerator.forBlock.xeduhub_quadratic_fit = (block) => {
+    ensureMathSupport(pythonGenerator);
+    const xCode = getValueCode(block, 'X_VALUES', pythonGenerator, '[]', pythonGenerator.ORDER_NONE);
+    const yCode = getValueCode(block, 'Y_VALUES', pythonGenerator, '[]', pythonGenerator.ORDER_NONE);
+    return [`np.polyfit(${xCode}, ${yCode}, 2)`, pythonGenerator.ORDER_FUNCTION_CALL];
+  };
+
   pythonGenerator.forBlock.xeduhub_quadratic_eval = (block) => {
     ensureResultHelpers(pythonGenerator);
     const coeffCode = getValueCode(block, 'COEFFS', pythonGenerator, '[0, 0, 0]', pythonGenerator.ORDER_NONE);
@@ -2151,6 +3102,7 @@ function defineAdvancedGenerators(pythonGenerator) {
 }
 
 function defineXEduHubBlocks(Blockly, pythonGenerator) {
+  decorateBuiltinBlocklyBlocksWithIcons(Blockly);
   defineBaseBlocks(Blockly);
   defineLegacyCompatibilityBlocks(Blockly);
   defineSemanticRunBlocks(Blockly);

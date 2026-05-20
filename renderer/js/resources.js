@@ -1,5 +1,45 @@
 // 课程资源库页面
 import apiClient from "./api.js";
+import {
+    getExperimentProgress,
+    setExperimentProgress,
+    getLastLearning,
+    buildExperimentStateKey,
+} from "./resources/learning-progress.js";
+import {
+    normalizeText,
+    generateCourseId,
+    escapeAttr,
+    parseTags,
+    normalizeTagsInput,
+    getBaseName,
+    deriveTitleFromPath,
+    deriveTitleFromUrl,
+    isPackageUrl,
+} from "./resources/text-utils.js";
+import {
+    normalizeResourceSourceInput,
+    sourceSignature,
+    dedupeResourceSources,
+    parseRepoUrlParts,
+} from "./resources/source-utils.js";
+import {
+    buildExperimentPathHint,
+    buildExperimentFilesCard,
+    buildCourseDirectoryCard,
+} from "./resources/detail-renderer.js";
+import {
+    getInspectionExperiment,
+    mapRemoteExperimentToLocalCourse,
+    pickAutoTestEntry,
+} from "./resources/course-inspection-utils.js";
+import {
+    computeAutoCourseId,
+    buildDefaultTemplate,
+    buildQuickCoursePayload,
+    buildCourseFromFormPayload,
+} from "./resources/course-create-utils.js";
+import { getExperienceMode, getTeacherToggleLabel } from "./experience-config.js";
 
 let resourcesCache = [];
 let resourcesMeta = {};
@@ -60,6 +100,13 @@ let detailMoreMenuBound = false;
 let createEntryMenuBound = false;
 let resourcesSearchExpanded = false;
 let resourcesPageReady = false;
+const courseInspectionState = {
+    courseId: "",
+    loading: false,
+    error: "",
+    summary: null,
+    inspection: null,
+};
 const teacherModeKey = "xedu_teacher_mode";
 const teacherModeCodeKey = "xedu_teacher_mode_code";
 let teacherModeReady = false;
@@ -109,83 +156,6 @@ const mockResourcesIndex = {
 const localCoursesKey = "xedu_local_courses";
 const classroomSelectionKey = "xedu_classroom_selection";
 const clearDemoCourseBindingMigrationKey = "xedu_clear_demo_course_binding_v1";
-const learningProgressKey = "xedu_learning_progress_v1";
-
-function loadLearningProgressMap() {
-    try {
-        const raw = localStorage.getItem(learningProgressKey);
-        if (!raw) return {};
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object") {
-            return parsed;
-        }
-    } catch (error) {
-        console.warn("读取学习进度失败:", error);
-    }
-    return {};
-}
-
-function saveLearningProgressMap(map) {
-    try {
-        localStorage.setItem(learningProgressKey, JSON.stringify(map || {}));
-    } catch (error) {
-        console.warn("保存学习进度失败:", error);
-    }
-}
-
-function getCourseProgress(resource) {
-    const courseId = (resource?.id || "").toString().trim();
-    if (!courseId) return null;
-    const map = loadLearningProgressMap();
-    const progress = map[courseId];
-    if (!progress || typeof progress !== "object") return null;
-    return progress;
-}
-
-function getExperimentProgress(resource, sectionIndex, expIndex) {
-    const progress = getCourseProgress(resource);
-    if (!progress || !progress.experiments || typeof progress.experiments !== "object") {
-        return "";
-    }
-    const key = `${sectionIndex}:${expIndex}`;
-    const status = (progress.experiments[key] || "").toString();
-    return status === "done" || status === "in_progress" ? status : "";
-}
-
-function setExperimentProgress(resource, sectionIndex, expIndex, status = "in_progress") {
-    const courseId = (resource?.id || "").toString().trim();
-    if (!courseId) return;
-    const map = loadLearningProgressMap();
-    const progress = map[courseId] && typeof map[courseId] === "object" ? map[courseId] : {};
-    const experiments = progress.experiments && typeof progress.experiments === "object" ? progress.experiments : {};
-    const key = `${sectionIndex}:${expIndex}`;
-    if (status === "done" || status === "in_progress") {
-        experiments[key] = status;
-    } else {
-        delete experiments[key];
-    }
-    progress.experiments = experiments;
-    progress.last_section_index = sectionIndex;
-    progress.last_experiment_index = expIndex;
-    progress.updated_at = new Date().toISOString();
-    map[courseId] = progress;
-    saveLearningProgressMap(map);
-}
-
-function getLastLearning(resource) {
-    const progress = getCourseProgress(resource);
-    if (!progress) return null;
-    const sectionIndex = Number(progress.last_section_index);
-    const expIndex = Number(progress.last_experiment_index);
-    if (Number.isNaN(sectionIndex) || Number.isNaN(expIndex)) return null;
-    return { sectionIndex, expIndex };
-}
-
-function buildExperimentStateKey(resource, sectionIndex, expIndex) {
-    const courseId = (resource?.id || "").toString().trim();
-    if (!courseId) return "";
-    return `${courseId}:${sectionIndex}:${expIndex}`;
-}
 
 const filterState = {
     query: "",
@@ -526,41 +496,19 @@ async function applyCoverFile(file) {
     }
 }
 
-function normalizeText(value) {
-    return (value || "").toString().toLowerCase();
-}
-
-function hashString(value) {
-    let hash = 0;
-    for (let i = 0; i < value.length; i += 1) {
-        hash = (hash << 5) - hash + value.charCodeAt(i);
-        hash |= 0;
-    }
-    return Math.abs(hash).toString(16);
-}
-
-function generateCourseId(title) {
-    const base = (title || "").toString().trim().toLowerCase();
-    const slug = base
-        .replace(/[\s_]+/g, "-")
-        .replace(/[^a-z0-9-]/g, "")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "");
-    if (slug) return slug;
-    const digest = hashString(base || "course").slice(0, 8);
-    return `course-${digest}`;
-}
-
 function maybeAutoFillCourseId() {
     const idInput = document.getElementById("resources-create-id");
     if (!idInput || idInput.value.trim()) return;
-    if (scannedCourse && scannedCourse.id) {
-        idInput.value = scannedCourse.id;
-        return;
-    }
     const title = document.getElementById("resources-create-title")?.value.trim();
-    if (!title) return;
-    idInput.value = generateCourseId(title);
+    const nextId = computeAutoCourseId({
+        currentValue: idInput.value,
+        scannedCourseId: scannedCourse?.id || "",
+        title,
+        generateCourseId,
+    });
+    if (nextId) {
+        idInput.value = nextId;
+    }
 }
 
 function getCreateMetaFromForm() {
@@ -652,66 +600,11 @@ function countExperimentsInSections(sections) {
     return sections.reduce((sum, section) => sum + ((section?.experiments || []).length || 0), 0);
 }
 
-function normalizeResourceSourceInput(source = {}, fallbackName = "", fallbackId = "") {
-    const name = (source.name || fallbackName || "").trim();
-    const base_url = (source.base_url || "").trim().replace(/\/+$/, "");
-    const repo = (source.repo || "").trim().replace(/^\/+|\/+$/g, "");
-    const branch = (source.branch || "main").trim() || "main";
-    const index_path = (source.index_path || "index.json").trim().replace(/^\/+/, "") || "index.json";
-    const enabled = source.enabled !== false && source.enabled !== "false";
-    const id = (source.id || fallbackId || "").toString().trim();
-    return {
-        id,
-        name,
-        base_url,
-        repo,
-        branch,
-        index_path,
-        enabled
-    };
-}
-
-function sourceSignature(source = {}) {
-    const normalized = normalizeResourceSourceInput(source);
-    return [
-        normalized.base_url.toLowerCase(),
-        normalized.repo.toLowerCase(),
-        normalized.branch,
-        normalized.index_path
-    ].join("|");
-}
-
-function escapeAttr(value = "") {
-    return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
-}
-
 function setCloudSourcesStatus(message, isError = false) {
     const status = document.getElementById("resources-sources-status");
     if (!status) return;
     status.textContent = message || "";
     status.classList.toggle("error", Boolean(isError));
-}
-
-function dedupeResourceSources(sources = []) {
-    const deduped = [];
-    const seen = new Set();
-    sources.forEach((item, index) => {
-        const normalized = normalizeResourceSourceInput(item, item.name || `课程源${index + 1}`, item.id || `source-${index + 1}`);
-        if (!normalized.base_url || !normalized.repo) return;
-        const signature = sourceSignature(normalized);
-        if (seen.has(signature)) return;
-        seen.add(signature);
-        deduped.push({
-            ...normalized,
-            id: normalized.id || `source-${deduped.length + 1}`
-        });
-    });
-    return deduped;
 }
 
 function renderResourceSourcesList(sources = cloudSourceRows) {
@@ -898,22 +791,6 @@ function normalizeCloudCourseOptions(indexData) {
         .filter((item) => item.package_url || item.course_url);
 }
 
-function parseRepoUrlParts(repoUrl = "") {
-    const raw = (repoUrl || "").toString().trim();
-    if (!raw) {
-        return { base_url: "", repo: "" };
-    }
-    try {
-        const parsed = new URL(raw);
-        return {
-            base_url: `${parsed.protocol}//${parsed.host}`,
-            repo: parsed.pathname.replace(/^\/+/, "").replace(/\/+$/, ""),
-        };
-    } catch (_) {
-        return { base_url: "", repo: "" };
-    }
-}
-
 function buildSourceOverrideFromCourseMeta(courseLike = {}) {
     const { base_url, repo } = parseRepoUrlParts(courseLike.source_repo_url || courseLike._source_repo_url || "");
     return normalizeOrigin({
@@ -979,7 +856,7 @@ function renderLocalPathSummary() {
     if (!localPath) {
         summary.innerHTML = isCloud
             ? "导入时再选择本地目录。"
-            : "可先选目录，也可先搭课节结构。";
+            : "这里选择的是整门课程根目录；没有 course.json 也可以先选目录再初始化。";
         return;
     }
 
@@ -987,7 +864,7 @@ function renderLocalPathSummary() {
     const name = parts[parts.length - 1] || localPath;
     summary.innerHTML = isCloud
         ? `将导入到 <strong>${escapeAttr(name)}</strong> 目录。`
-        : `当前课程目录：<strong>${escapeAttr(name)}</strong>`;
+        : `当前课程根目录：<strong>${escapeAttr(name)}</strong>。后续每个实验再单独选择材料文件夹。`;
 }
 
 function renderLocalStructureSummary() {
@@ -1007,18 +884,18 @@ function renderLocalStructureSummary() {
     intro.style.display = "block";
     if (!localPath) {
         intro.innerHTML = `
-            <div class="resources-local-structure-intro-title">先选课程目录</div>
-            <div class="resources-local-structure-intro-text">选好后再开始搭第一节课。</div>
+            <div class="resources-local-structure-intro-title">先选课程根目录</div>
+            <div class="resources-local-structure-intro-text">先选整门课程根目录；如果没有 course.json，系统会在初始化时补上。</div>
         `;
     } else if (!initialized) {
         intro.innerHTML = `
             <div class="resources-local-structure-intro-title">准备创建第一节课</div>
-            <div class="resources-local-structure-intro-text">目录已选，下一步开始补课节和实验。</div>
+            <div class="resources-local-structure-intro-text">课程根目录已选，下一步开始补课节和实验结构。</div>
         `;
     } else {
         intro.innerHTML = `
             <div class="resources-local-structure-intro-title">设计你的第一节课</div>
-            <div class="resources-local-structure-intro-text">先列出这一节的实验，材料后面再补。</div>
+            <div class="resources-local-structure-intro-text">先列出这一节的实验，之后再为每个实验绑定自己的材料文件夹。</div>
         `;
     }
     summary.style.display = "grid";
@@ -1070,7 +947,7 @@ function updateCreateStep3UI() {
         if (stepLabel2) stepLabel2.textContent = "1 云端导入";
         if (stepLabel3) stepLabel3.style.display = "none";
         if (mainTitle) mainTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>课程内容`;
-        if (mainHint) mainHint.textContent = "当前仓库课程会按现有文件结构导入到所选目录，无需在这里上传材料。";
+        if (mainHint) mainHint.textContent = "当前仓库课程会按现有文件结构导入到所选目录，无需在这里重新上传材料文件夹。";
         if (structureTitle) structureTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>导入结构`;
         if (actionTitle) actionTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>导入到本地`;
         if (publishBtn) publishBtn.style.display = "none";
@@ -1088,10 +965,10 @@ function updateCreateStep3UI() {
         stepLabel3.style.display = "";
         stepLabel3.textContent = "3 材料整理";
     }
-    if (mainTitle) mainTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>材料整理`;
-    if (mainHint) mainHint.textContent = "一个实验一个实验补充材料；未准备好可先留空，后续再补。";
+    if (mainTitle) mainTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>材料文件夹`;
+    if (mainHint) mainHint.textContent = "一个实验对应一个材料文件夹；未准备好可先留空，后续再补。";
     if (structureTitle) structureTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>结构预览`;
-    if (actionTitle) actionTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>发布到 Gitea（创建 PR）`;
+    if (actionTitle) actionTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>发布当前课程目录`;
     if (publishBtn) publishBtn.style.display = "";
     if (saveBtn) saveBtn.textContent = editingCourseId ? "保存修改" : "保存为本地课程";
     if (statusEl && publishStatus === "idle") statusEl.textContent = "准备发布";
@@ -1446,7 +1323,7 @@ function renderCreateGuide() {
         } else if (scanError) {
             note.textContent = `读取失败：${scanError}`;
         } else {
-            note.textContent = "输入课程仓库地址，读取 course.json 后直接导入到本地。";
+            note.textContent = "输入课程仓库地址，读取 course.json 后直接导入为本地课程目录。";
         }
         guideBody.appendChild(note);
         return;
@@ -1497,8 +1374,8 @@ function renderCreateGuide() {
         }
         if (createEntryMode === "local-import") {
             items.push({ done: true, text: "导入本地课程模式无需手工填写课程信息" });
-            notes.push("课程信息将在选择本地课程目录后自动读取并填充。");
-            notes.push("下一步选择本地课程目录并完成读取。");
+            notes.push("课程信息将在选择整门课程根目录后自动读取并填充。");
+            notes.push("目录里至少应有 course.json；如果缺失请先用“创建新课程”初始化。");
             items.forEach((item) => {
                 const row = document.createElement("div");
                 row.className = `resources-guide-item${item.done ? " is-done" : ""}`;
@@ -1531,7 +1408,7 @@ function renderCreateGuide() {
     } else if (createStep === 2) {
         if (createSource !== "cloud") {
             if (createEntryMode === "local-import") {
-                items.push({ done: Boolean(localPath), text: "选择本地课程目录" });
+                items.push({ done: Boolean(localPath), text: "选择本地课程根目录" });
                 items.push({ done: Boolean(scannedCourse && !scanError), text: "读取课程结构与元信息" });
                 items.push({ done: Boolean(scannedCourse && localPath), text: "继续到下一步保存到课程列表" });
                 if (scanError) {
@@ -1539,15 +1416,15 @@ function renderCreateGuide() {
                 } else if (scannedCourse) {
                     notes.push(`已读取 ${sectionCount} 课 / ${experimentCount} 个实验。可继续下一步保存。`);
                 } else {
-                    notes.push("点击“选择”并选中本地课程目录后，系统会自动读取课程。");
+                    notes.push("点击“选择目录”并选中整门课程根目录后，系统会自动读取 course.json 和课程结构。");
                 }
             } else {
-                items.push({ done: Boolean(localPath), text: "选择课程目录" });
+                items.push({ done: Boolean(localPath), text: "选择课程根目录" });
                 items.push({ done: draftSections.length > 0, text: "按需添加课节与实验" });
                 if (draftSections.length > 0) {
                     notes.push(`当前已配置 ${sectionCount} 课 / ${experimentCount} 个实验。`);
                 } else {
-                    notes.push("本步可直接跳过，保存时会自动补 1 课 1 实验。");
+                    notes.push("本步可直接跳过；保存时会自动补 1 课 1 实验，并写入 course.json。");
                 }
             }
         }
@@ -1555,7 +1432,7 @@ function renderCreateGuide() {
         items.push({ done: isStep1Complete(), text: "课程信息已完善" });
         items.push({
             done: isStep2Complete(),
-            text: createSource === "cloud" ? "课程结构已读取" : "本地目录已选择（结构可后补）"
+            text: createSource === "cloud" ? "课程结构已读取" : "课程根目录已选择（结构可后补）"
         });
         items.push({
             done: isStep1Complete() && isStep2Complete(),
@@ -1567,7 +1444,7 @@ function renderCreateGuide() {
             notes.push("本地课程已读取后可直接保存到课程列表，再按需编辑或发布。");
         } else {
             notes.push("可以一个实验一个实验添加：点击每课下方“添加实验”。");
-            notes.push("每个实验至少包含 1 个 Notebook 或 HTML，便于学生进入实验。");
+            notes.push("每个实验建议关联一个材料文件夹，可包含 Notebook、HTML、Blockly、图片和数据文件。");
             notes.push("若未配置结构，保存时会自动生成 1 课 1 实验。");
         }
     }
@@ -1981,6 +1858,11 @@ function renderMaterialList() {
 
     const readOnly = createSource === "cloud" && cloudImported;
 
+    const intro = document.createElement("div");
+    intro.className = "resources-create-hint";
+    intro.textContent = "每个实验对应一个材料文件夹。材料文件夹必须位于当前课程根目录内，可包含 ipynb、py、html、.blockly.xml、.blockly.json、图片和数据文件。";
+    container.appendChild(intro);
+
     sections.forEach((section, sectionIndex) => {
         const sectionBlock = document.createElement("div");
         sectionBlock.className = "resources-material-section";
@@ -2002,7 +1884,7 @@ function renderMaterialList() {
             const fileCount = exp.files && exp.files.length ? exp.files.length : 0;
             const expMeta = document.createElement("div");
             expMeta.className = "resources-material-meta";
-            expMeta.textContent = fileCount ? `${fileCount} 个文件` : "未选择材料";
+            expMeta.textContent = fileCount ? `${fileCount} 个文件` : "未选择材料文件夹";
             info.appendChild(expTitle);
             info.appendChild(expMeta);
             item.appendChild(info);
@@ -2808,16 +2690,16 @@ function updateTeacherModeUI() {
         if (teacherMode.unlocked) {
             btn.classList.add("is-active");
             if (label) {
-                label.textContent = "教师模式已开启";
+                label.textContent = getTeacherToggleLabel(true);
             } else {
-                btn.textContent = "教师模式已开启";
+                btn.textContent = getTeacherToggleLabel(true);
             }
         } else {
             btn.classList.remove("is-active");
             if (label) {
-                label.textContent = "教师登录";
+                label.textContent = getTeacherToggleLabel(false);
             } else {
-                btn.textContent = "教师登录";
+                btn.textContent = getTeacherToggleLabel(false);
             }
         }
     });
@@ -3488,6 +3370,36 @@ function canEditResource(resource) {
     return Boolean(resource && resource.source === "local");
 }
 
+function getResourceIdentity(resource) {
+    if (!resource) return "";
+    return [
+        resource.source || "",
+        resource.id || "",
+        resource.local_path || "",
+        resource.course_url || "",
+        resource.package_url || "",
+    ].join("|");
+}
+
+function resetCourseInspectionState(resource = null) {
+    courseInspectionState.courseId = resource ? getResourceIdentity(resource) : "";
+    courseInspectionState.loading = false;
+    courseInspectionState.error = "";
+    courseInspectionState.summary = null;
+    courseInspectionState.inspection = null;
+}
+
+function ensureCourseInspectionIdentity(resource) {
+    const identity = getResourceIdentity(resource);
+    if (courseInspectionState.courseId !== identity) {
+        resetCourseInspectionState(resource);
+    }
+}
+
+function getCourseInspectionStatus(sectionIndex, expIndex) {
+    return getInspectionExperiment(courseInspectionState.inspection, sectionIndex, expIndex);
+}
+
 function getMutableSections(resource) {
     if (!resource) return null;
     if (Array.isArray(resource.sections)) return resource.sections;
@@ -4104,6 +4016,10 @@ function renderResources(list) {
         card.className = "resource-card";
         card.dataset.resourceIndex = index.toString();
 
+        if (isActiveCourse(resource)) {
+            card.classList.add("is-active-experiment");
+        }
+
         const cover = document.createElement("div");
         cover.className = "resource-card-cover";
         const coverUrl = getCoverUrl(resource);
@@ -4121,17 +4037,27 @@ function renderResources(list) {
         const title = document.createElement("div");
         title.className = "resource-card-title";
         title.textContent = getText(resource, "title", "未命名课程");
-        title.style.fontSize = "16px";
-        title.style.fontWeight = "700";
         header.appendChild(title);
 
         const badgeText = getText(resource, "grade", "").trim() || getText(resource, "subject", "").trim() || "课程";
         const badge = document.createElement("div");
         badge.className = "resource-card-badge";
         badge.textContent = badgeText;
-        badge.style.background = "#3b82f6";
-        badge.style.color = "#ffffff";
-        badge.style.borderRadius = "999px";
+        
+        const lowerText = badgeText.toLowerCase();
+        let badgeClass = "badge-default";
+        if (lowerText.includes("7") || lowerText.includes("七")) {
+            badgeClass = "badge-grade-7";
+        } else if (lowerText.includes("8") || lowerText.includes("八")) {
+            badgeClass = "badge-grade-8";
+        } else if (lowerText.includes("9") || lowerText.includes("九")) {
+            badgeClass = "badge-grade-9";
+        } else if (lowerText.includes("ai") || lowerText.includes("人工智能") || lowerText.includes("智能")) {
+            badgeClass = "badge-subject-ai";
+        } else if (lowerText.includes("python") || lowerText.includes("编程") || lowerText.includes("代码")) {
+            badgeClass = "badge-subject-python";
+        }
+        badge.classList.add(badgeClass);
         header.appendChild(badge);
 
         card.appendChild(header);
@@ -4149,7 +4075,7 @@ function renderResources(list) {
         );
         const experimentCountLabel = document.createElement("div");
         experimentCountLabel.className = "resource-card-experiment-count";
-        experimentCountLabel.textContent = `🧪 ${experimentCount} 个实验`;
+        experimentCountLabel.innerHTML = `<span class="experiment-count-icon">🧪</span><span class="experiment-count-num">${experimentCount}</span> 个实验`;
         card.appendChild(experimentCountLabel);
 
         if (resource.source !== "local" && resource._source_name) {
@@ -4250,6 +4176,7 @@ function showDetailView(resource) {
     if (listView) listView.style.display = "none";
     if (detailView) detailView.style.display = "flex";
     currentResource = resource;
+    resetCourseInspectionState(resource);
     sectionDetailMode = false;
     if (isActiveCourse(resource) && classroomState.activeSectionIndex !== null) {
         activeSectionIndex = classroomState.activeSectionIndex;
@@ -4269,29 +4196,12 @@ function showDetailView(resource) {
     renderResourceDetail(resource);
 }
 
-function getFileDisplayKind(file) {
-    if (isDirectory(file)) return "folder";
-    if (isBlocklyFile(file)) return "blockly";
-    if (isNotebookFile(file)) return "notebook";
-    if (isHtmlFile(file)) return "html";
-    if (isPythonScriptFile(file)) return "python";
-    const ext = getFileExtension(file?.path || file?.name || "");
-    if (CODE_FILE_EXTENSIONS.has(ext)) return "code";
-    return "file";
-}
-
-function getFileDisplayIcon(kind) {
-    if (kind === "folder") return "📁";
-    if (kind === "blockly") return "🧱";
-    if (kind === "notebook") return "📓";
-    if (kind === "html") return "🌐";
-    if (kind === "python") return "🐍";
-    if (kind === "code") return "🧩";
-    return "📄";
-}
-
 function renderResourceDetailSplitContent(resource, contentEl) {
     contentEl.innerHTML = "";
+    ensureCourseInspectionIdentity(resource);
+    if (teacherMode.unlocked) {
+        contentEl.appendChild(renderCourseInspectionCard(resource));
+    }
     const sections = normalizeSections(resource);
     if (!sections.length) {
         const empty = document.createElement("div");
@@ -4409,6 +4319,20 @@ function renderResourceDetailSplitContent(resource, contentEl) {
             text.textContent = exp.title || `实验 ${expIndex + 1}`;
             expNode.appendChild(text);
 
+            const inspectionStatus = getCourseInspectionStatus(sectionIndex, expIndex);
+            if (inspectionStatus) {
+                const inspectBadge = document.createElement("span");
+                inspectBadge.className = `resources-inspection-badge is-${inspectionStatus.status || "unknown"}`;
+                inspectBadge.textContent =
+                    inspectionStatus.status === "ready"
+                        ? "可测"
+                        : inspectionStatus.status === "partial"
+                            ? "待补"
+                            : "异常";
+                inspectBadge.title = (inspectionStatus.issues || []).join("；");
+                expNode.appendChild(inspectBadge);
+            }
+
             const stateKey = buildExperimentStateKey(resource, sectionIndex, expIndex);
             if (stateKey && stateKey === runningExperimentKey) {
                 const running = document.createElement("span");
@@ -4483,6 +4407,29 @@ function renderResourceDetailSplitContent(resource, contentEl) {
     const primaryPythonFile = overview.primaryPythonFile;
     const primaryBlocklyFile = overview.primaryBlocklyFile;
     let hasPrimaryAction = false;
+    if (teacherMode.unlocked) {
+        const inspectBtn = document.createElement("button");
+        inspectBtn.className = "btn btn-secondary";
+        inspectBtn.textContent = courseInspectionState.loading ? "巡检中..." : "课程巡检";
+        inspectBtn.disabled = courseInspectionState.loading;
+        inspectBtn.addEventListener("click", async () => {
+            await inspectCourseResource(resource);
+        });
+        quickActions.appendChild(inspectBtn);
+
+        const testBtn = document.createElement("button");
+        testBtn.className = "btn btn-primary";
+        testBtn.textContent = resource.source === "local" ? "测试当前实验" : "导入并测试当前实验";
+        testBtn.addEventListener("click", async () => {
+            if (resource.source === "local") {
+                await testCurrentExperiment(resource);
+            } else {
+                await importRemoteCourseForTesting(resource);
+            }
+        });
+        quickActions.appendChild(testBtn);
+        hasPrimaryAction = true;
+    }
     if (overview.htmlFiles[0]) {
         const htmlBtn = document.createElement("button");
         htmlBtn.className = "btn btn-primary";
@@ -4587,225 +4534,48 @@ function renderResourceDetailSplitContent(resource, contentEl) {
     }
     expCard.appendChild(quickActions);
 
-    const pathHint = document.createElement("div");
-    pathHint.className = "resource-card-desc resources-experiment-pathway";
-    const pythonLabel = primaryPythonFile?.name || primaryPythonFile?.path || "代码实践文件";
-    if (primaryBlocklyFile && primaryPythonFile) {
-        pathHint.textContent = `学习路径：先看讲解，再用 Blockly 理解逻辑，最后进入 ${pythonLabel} 做代码实践。`;
-    } else if (primaryBlocklyFile) {
-        pathHint.textContent = "学习路径：先看讲解，再用 Blockly 做可视化编程练习。";
-    } else if (primaryPythonFile) {
-        pathHint.textContent = `学习路径：先看讲解，再进入 ${pythonLabel} 做代码实践。`;
-    } else {
-        pathHint.textContent = "学习路径：先看讲解，再进入实验文件完成实践。";
-    }
-    expCard.appendChild(pathHint);
+    expCard.appendChild(buildExperimentPathHint({
+        primaryBlocklyFile,
+        primaryPythonFile,
+    }));
     mainPane.appendChild(expCard);
 
-    const filesCard = document.createElement("div");
-    filesCard.className = "resource-card";
-    const filesHeader = document.createElement("div");
-    filesHeader.className = "resource-card-header";
-    const filesTitle = document.createElement("div");
-    filesTitle.className = "resource-card-title";
-    filesTitle.textContent = "实验文件";
-    filesHeader.appendChild(filesTitle);
-    const filesBadge = document.createElement("div");
-    filesBadge.className = "resource-card-badge";
-    filesBadge.textContent = `${overview.allFiles.length} 项`;
-    filesHeader.appendChild(filesBadge);
-    filesCard.appendChild(filesHeader);
-
-    const table = document.createElement("div");
-    table.className = "resources-file-table";
-    const selectedRows = new Set();
-    const rows = overview.allFiles.length ? overview.allFiles : [];
-    if (!rows.length) {
-        const empty = document.createElement("div");
-        empty.className = "resources-create-hint";
-        empty.textContent = "该实验尚未配置文件。";
-        filesCard.appendChild(empty);
-    } else {
-        rows.forEach((file, fileIndex) => {
-            const kind = getFileDisplayKind(file);
-            const row = document.createElement("div");
-            row.className = "resources-file-row";
-
-            const checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.className = "resources-file-checkbox";
-            checkbox.addEventListener("change", () => {
-                if (checkbox.checked) {
-                    selectedRows.add(fileIndex);
-                } else {
-                    selectedRows.delete(fileIndex);
+    mainPane.appendChild(buildExperimentFilesCard({
+        overview,
+        onOpenFile: async (file) => {
+            await openExperimentEntry(
+                file,
+                getEntryKindForFile(file),
+                {
+                    resource,
+                    sectionIndex: activeSectionIndex,
+                    expIndex: activeExperimentIndex,
+                    experimentOverview: overview,
                 }
-            });
-            row.appendChild(checkbox);
+            );
+        },
+    }));
 
-            const icon = document.createElement("span");
-            icon.className = "resources-file-kind-icon";
-            icon.textContent = getFileDisplayIcon(kind);
-            row.appendChild(icon);
-
-            const name = document.createElement("span");
-            name.className = "resources-file-name";
-            name.textContent = file.name || file.path || "未命名";
-            row.appendChild(name);
-
-            const type = document.createElement("span");
-            type.className = "resources-file-type";
-            type.textContent = kind === "blockly" ? "Blockly" : kind === "notebook" ? "Notebook" : kind === "html" ? "HTML" : kind === "python" ? "Python" : kind === "folder" ? "目录" : kind === "code" ? "代码" : "文件";
-            row.appendChild(type);
-
-            const openBtn = document.createElement("button");
-            openBtn.className = "btn btn-secondary btn-sm";
-            openBtn.textContent = "打开";
-            openBtn.addEventListener("click", async () => {
-                await openExperimentEntry(
-                    file,
-                    getEntryKindForFile(file),
-                    {
-                        resource,
-                        sectionIndex: activeSectionIndex,
-                        expIndex: activeExperimentIndex,
-                        experimentOverview: overview,
-                    }
-                );
-            });
-            row.appendChild(openBtn);
-            table.appendChild(row);
-        });
-
-        const tableActions = document.createElement("div");
-        tableActions.className = "resource-card-actions";
-        const openSelectedBtn = document.createElement("button");
-        openSelectedBtn.className = "btn btn-secondary";
-        openSelectedBtn.textContent = "打开选中文件";
-        openSelectedBtn.addEventListener("click", async () => {
-            const indexes = Array.from(selectedRows.values());
-            if (!indexes.length) return;
-            for (const idx of indexes.slice(0, 5)) {
-                const file = rows[idx];
-                const kind = getFileDisplayKind(file);
-                await openExperimentEntry(
-                    file,
-                    getEntryKindForFile(file),
-                    {
-                        resource,
-                        sectionIndex: activeSectionIndex,
-                        expIndex: activeExperimentIndex,
-                        experimentOverview: overview,
-                    }
-                );
-            }
-        });
-        tableActions.appendChild(openSelectedBtn);
-        filesCard.appendChild(tableActions);
-    }
-    filesCard.appendChild(table);
-    mainPane.appendChild(filesCard);
-
-    const courseDirectoryCard = document.createElement("div");
-    courseDirectoryCard.className = "resource-card";
-    const courseDirHeader = document.createElement("div");
-    courseDirHeader.className = "resource-card-header";
-    const courseDirTitle = document.createElement("div");
-    courseDirTitle.className = "resource-card-title";
-    courseDirTitle.textContent = "整门课程目录";
-    courseDirHeader.appendChild(courseDirTitle);
-    const totalExperimentCount = sections.reduce((sum, section) => {
-        const list = Array.isArray(section?.experiments) ? section.experiments : [];
-        return sum + list.length;
-    }, 0);
-    const courseDirBadge = document.createElement("div");
-    courseDirBadge.className = "resource-card-badge";
-    courseDirBadge.textContent = `${sections.length} 课 / ${totalExperimentCount} 个实验`;
-    courseDirHeader.appendChild(courseDirBadge);
-    courseDirectoryCard.appendChild(courseDirHeader);
-
-    const courseDirectoryList = document.createElement("div");
-    courseDirectoryList.className = "resources-course-directory-list";
-
-    sections.forEach((section, sectionIndex) => {
-        const sectionBlock = document.createElement("div");
-        sectionBlock.className = "resources-course-directory-section";
-
-        const sectionTitle = document.createElement("div");
-        sectionTitle.className = "resources-course-directory-section-title";
-        sectionTitle.textContent = section.title || `第 ${sectionIndex + 1} 课`;
-        sectionBlock.appendChild(sectionTitle);
-
-        const sectionExperiments = Array.isArray(section?.experiments) ? section.experiments : [];
-        if (!sectionExperiments.length) {
-            const emptyExp = document.createElement("div");
-            emptyExp.className = "resources-create-hint";
-            emptyExp.textContent = "该课节暂无实验。";
-            sectionBlock.appendChild(emptyExp);
-            courseDirectoryList.appendChild(sectionBlock);
-            return;
-        }
-
-        sectionExperiments.forEach((exp, expIndex) => {
-            const details = document.createElement("details");
-            details.className = "resources-course-directory-exp";
-            const isActive = sectionIndex === activeSectionIndex && expIndex === activeExperimentIndex;
-            details.open = isActive;
-
-            const summary = document.createElement("summary");
-            summary.className = "resources-course-directory-exp-summary";
-            const expName = exp.title || `实验 ${expIndex + 1}`;
-            const overview = getExperimentFileOverview(exp);
-            summary.textContent = `${expName}（${overview.allFiles.length} 个文件）`;
-            details.appendChild(summary);
-
-            const body = document.createElement("div");
-            body.className = "resources-course-directory-exp-body";
-
-            const actions = document.createElement("div");
-            actions.className = "resource-card-actions";
-            const jumpBtn = document.createElement("button");
-            jumpBtn.className = "btn btn-secondary btn-sm";
-            jumpBtn.textContent = isActive ? "当前实验" : "切换到此实验";
-            jumpBtn.disabled = isActive;
-            jumpBtn.addEventListener("click", () => {
-                activeSectionIndex = sectionIndex;
-                activeExperimentIndex = expIndex;
-                renderResourceDetail(resource);
-            });
-            actions.appendChild(jumpBtn);
-            body.appendChild(actions);
-
-            const expFiles = Array.isArray(exp?.files) ? sortFiles(exp.files) : [];
-            if (!expFiles.length) {
-                const emptyFiles = document.createElement("div");
-                emptyFiles.className = "resources-create-hint";
-                emptyFiles.textContent = "该实验暂无目录文件。";
-                body.appendChild(emptyFiles);
-            } else {
-                const tree = document.createElement("div");
-                tree.className = "resources-course-directory-tree";
-                expFiles.forEach((file) => {
-                    tree.appendChild(renderFileItem(file, 0));
-                });
-                body.appendChild(tree);
-            }
-
-            details.appendChild(body);
-            sectionBlock.appendChild(details);
-        });
-
-        courseDirectoryList.appendChild(sectionBlock);
-    });
-
-    courseDirectoryCard.appendChild(courseDirectoryList);
-    mainPane.appendChild(courseDirectoryCard);
+    mainPane.appendChild(buildCourseDirectoryCard({
+        sections,
+        activeSectionIndex,
+        activeExperimentIndex,
+        getExperimentFileOverview,
+        sortFiles,
+        renderFileItem: (file, depth) => renderFileItem(file, depth),
+        onJumpToExperiment: (sectionIndex, expIndex) => {
+            activeSectionIndex = sectionIndex;
+            activeExperimentIndex = expIndex;
+            renderResourceDetail(resource);
+        },
+    }));
 
     split.appendChild(mainPane);
     contentEl.appendChild(split);
 }
 
 function renderResourceDetail(resource) {
+    ensureCourseInspectionIdentity(resource);
     const detailView = document.getElementById("resources-detail-view");
     if (detailView) {
         detailView.classList.toggle("is-section-detail", sectionDetailMode);
@@ -5000,6 +4770,13 @@ function renderResourceDetail(resource) {
 
     if (!contentEl) return;
     renderResourceDetailSplitContent(resource, contentEl);
+    if (shouldAutoInspectRemoteCourse(resource)) {
+        window.setTimeout(() => {
+            if (currentResource === resource) {
+                inspectCourseResource(resource, { silent: true });
+            }
+        }, 0);
+    }
 }
 
 async function editExperiment(resource, mutableSections, sectionIndex, expIndex) {
@@ -5761,7 +5538,7 @@ function setCreateSource(source) {
     if (switchRow) switchRow.style.display = source === "local" && !localImportMode && !newCourseMode ? "flex" : "none";
     if (step2ModeHint) {
         step2ModeHint.style.display = source === "cloud" || newCourseMode ? "none" : "block";
-        step2ModeHint.textContent = localImportMode ? "选择本地课程目录" : "课程目录与结构（可跳过）";
+        step2ModeHint.textContent = localImportMode ? "选择本地课程根目录" : "课程目录与结构（先选整门课程根目录，再补课节结构）";
     }
     if (sourceTitleText) {
         sourceTitleText.textContent = source === "cloud" ? "云端课程导入" : localImportMode ? "导入本地课程" : "课程目录";
@@ -5776,8 +5553,8 @@ function setCreateSource(source) {
             source === "cloud"
                 ? ""
                 : localImportMode
-                    ? "选择已有课程目录后，系统会自动读取内容。"
-                    : "先选课程目录，再按需添加课节和实验。";
+                    ? "选择已有课程根目录后，系统会自动读取内容。"
+                    : "先选整门课程根目录，再按需添加课节和实验。";
         sourceHint.style.display = source === "cloud" || newCourseMode ? "none" : "block";
     }
     if (localPathLabel) {
@@ -6086,13 +5863,6 @@ function updateCreateFormState() {
 
 function prepareTemplate() {
     // 模板输入已移除
-}
-
-function buildDefaultTemplate(title) {
-    return {
-        title,
-        sections: []
-    };
 }
 
 function fillCreateFormFromCourse(course, fillEmptyOnly = true) {
@@ -6421,135 +6191,39 @@ async function quickAddCloudCourse() {
     addCourse(course);
 }
 
-function parseTags(tagsInput) {
-    if (!tagsInput) return [];
-    return tagsInput
-        .split(/,|，/)
-        .map((tag) => tag.trim())
-        .filter(Boolean);
-}
-
-function normalizeTagsInput(value) {
-    if (!value) return [];
-    if (Array.isArray(value)) {
-        return value.filter(Boolean).map((tag) => tag.toString());
-    }
-    if (typeof value === "string") {
-        return parseTags(value);
-    }
-    return [];
-}
-
-function getBaseName(value) {
-    if (!value) return "";
-    const cleaned = value.toString().replace(/[\\/]+$/, "");
-    const parts = cleaned.split(/[\\/]/).filter(Boolean);
-    return parts[parts.length - 1] || "";
-}
-
-function deriveTitleFromPath(path) {
-    return getBaseName(path) || "未命名课程";
-}
-
-function deriveTitleFromUrl(url) {
-    if (!url) return "云端课程";
-    try {
-        const parsed = new URL(url);
-        const name = getBaseName(parsed.pathname);
-        if (name) {
-            return decodeURIComponent(name.replace(/\.[^/.]+$/, ""));
-        }
-        return parsed.hostname || "云端课程";
-    } catch (error) {
-        return getBaseName(url) || "云端课程";
-    }
-}
-
-function isPackageUrl(url) {
-    if (!url) return false;
-    return /\.(zip|rar|7z|tar|gz|tgz|bz2)$/i.test(url);
-}
-
 function buildQuickCourse({ title, localPath = "", cloudUrl = "", templateData = null }) {
-    const finalTitle = title || "未命名课程";
-    const payload = templateData && typeof templateData === "object" ? templateData : {};
-    const sections =
-        payload.sections ||
-        payload.lessons ||
-        payload.modules ||
-        buildDefaultTemplate(finalTitle).sections;
-
-    return {
-        id: `local-${Date.now()}`,
-        title: payload.title || finalTitle,
-        description: payload.description || "",
-        grade: payload.grade || "",
-        subject: payload.subject || "",
-        tags: normalizeTagsInput(payload.tags || payload.tag || []),
-        cover: payload.cover || payload.cover_url || payload.image || "",
-        author: payload.author || payload.teacher || "",
-        version: payload.version || payload.course_version || "",
-        package_url:
-            payload.package_url || payload.package || (isPackageUrl(cloudUrl) ? cloudUrl : ""),
-        local_path: localPath,
-        cloud_url: cloudUrl,
-        updated_at: new Date().toISOString().slice(0, 10),
-        source: cloudUrl ? "cloud" : "local",
-        sections,
-        quickform_defaults: normalizeCourseQuickFormDefaults(payload.quickform_defaults || {})
-    };
+    return buildQuickCoursePayload({
+        title,
+        localPath,
+        cloudUrl,
+        templateData,
+        normalizeTagsInput,
+        isPackageUrl,
+        normalizeCourseQuickFormDefaults,
+    });
 }
 
 function buildCourseFromForm(baseCourse = null) {
-    const title = document.getElementById("resources-create-title")?.value.trim() || "未命名课程";
-    const description = document.getElementById("resources-create-desc")?.value.trim() || "";
-    const grade = document.getElementById("resources-create-grade")?.value.trim() || "";
-    const subject = document.getElementById("resources-create-subject")?.value.trim() || "";
-    const author = document.getElementById("resources-create-author")?.value.trim() || "";
-    const version = document.getElementById("resources-create-version")?.value.trim() || "";
-    const courseId = document.getElementById("resources-create-id")?.value.trim() || "";
-    const tags = parseTags(document.getElementById("resources-create-tags")?.value || "");
-    const cover = document.getElementById("resources-create-cover")?.value.trim() || "";
-    const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
-    const quickFormEnabled = document.getElementById("resources-create-quickform-enabled")?.checked ?? false;
-    const quickFormHtmlPath = document.getElementById("resources-create-quickform-html-path")?.value.trim() || "";
-    const base = baseCourse || {};
-    const sections =
-        (scannedCourse && scannedCourse.sections) ||
-        base.sections ||
-        base.lessons ||
-        base.modules ||
-        buildDefaultTemplate(title).sections;
-    const origin = normalizeOrigin(
-        (scannedCourse && scannedCourse.origin) ||
-        base.origin ||
-        {}
-    );
-
-    return {
-        id: courseId || base.id || `local-${Date.now()}`,
-        title,
-        description,
-        grade,
-        subject,
-        tags,
-        cover: cover || base.cover || "",
-        author: author || base.author || "",
-        version: version || base.version || "",
-        package_url: base.package_url || "",
-        local_path: localPath || base.local_path || "",
-        cloud_url: base.cloud_url || "",
-        updated_at: new Date().toISOString().slice(0, 10),
-        source: "local",
-        sections,
-        quickform_defaults: {
-            ...normalizeCourseQuickFormDefaults(base.quickform_defaults || {}),
-            enabled: quickFormEnabled,
-            html_path: quickFormHtmlPath,
+    return buildCourseFromFormPayload({
+        formValues: {
+            title: document.getElementById("resources-create-title")?.value.trim() || "未命名课程",
+            description: document.getElementById("resources-create-desc")?.value.trim() || "",
+            grade: document.getElementById("resources-create-grade")?.value.trim() || "",
+            subject: document.getElementById("resources-create-subject")?.value.trim() || "",
+            author: document.getElementById("resources-create-author")?.value.trim() || "",
+            version: document.getElementById("resources-create-version")?.value.trim() || "",
+            courseId: document.getElementById("resources-create-id")?.value.trim() || "",
+            tags: parseTags(document.getElementById("resources-create-tags")?.value || ""),
+            cover: document.getElementById("resources-create-cover")?.value.trim() || "",
+            localPath: document.getElementById("resources-create-local-path")?.value.trim() || "",
+            quickFormEnabled: document.getElementById("resources-create-quickform-enabled")?.checked ?? false,
+            quickFormHtmlPath: document.getElementById("resources-create-quickform-html-path")?.value.trim() || "",
         },
-        origin: origin || base.origin || undefined,
-        sync: base.sync || undefined,
-    };
+        baseCourse,
+        scannedCourse,
+        normalizeOrigin,
+        normalizeCourseQuickFormDefaults,
+    });
 }
 
 function addCourse(course, options = {}) {
@@ -6677,6 +6351,191 @@ function updateCourse(course) {
     editingCourseId = null;
     showDetailView(normalizedCourse);
     notifyCourseUpdated(normalizedCourse);
+}
+
+function buildInspectCoursePayload(resource) {
+    if (!resource) return null;
+    if (resource.source === "local") {
+        if (!resource.local_path) return null;
+        return { local_path: resource.local_path };
+    }
+    const origin = getCourseOrigin(resource) || buildSourceOverrideFromCourseMeta(resource);
+    if (!origin) return null;
+    return {
+        source_id: origin.source_id || resource._source_id || "",
+        source_override: {
+            id: origin.source_id || resource._source_id || "override",
+            ...origin,
+        },
+        course_id: origin.course_id || resource.id || "",
+        course_url: origin.course_url || resource.course_url || "",
+        package_url: origin.package_url || resource.package_url || "",
+        token_override: origin.source_id === "override" ? cloudTempToken || undefined : undefined,
+    };
+}
+
+function mergeInspectionCourse(resource, response) {
+    const course = response?.course || {};
+    if (!course || typeof course !== "object") return resource;
+    return {
+        ...(resource || {}),
+        ...course,
+        source: resource?.source || course.source || "remote",
+        _source_id: course._source_id || resource?._source_id || "",
+        _source_name: course._source_name || resource?._source_name || "",
+        _source_repo_url: course._source_repo_url || resource?._source_repo_url || "",
+        _source_raw_base_url: course._source_raw_base_url || resource?._source_raw_base_url || "",
+        _source_branch: course._source_branch || resource?._source_branch || "",
+        course_url: course.course_url || resource?.course_url || "",
+        package_url: course.package_url || resource?.package_url || "",
+        single_course_repo: Boolean(course.single_course_repo || resource?.single_course_repo),
+    };
+}
+
+async function inspectCourseResource(resource, { silent = false } = {}) {
+    if (!resource) return null;
+    ensureCourseInspectionIdentity(resource);
+    const payload = buildInspectCoursePayload(resource);
+    if (!payload) {
+        courseInspectionState.error = "缺少课程路径或资源库配置，无法巡检";
+        renderResourceDetail(resource);
+        return null;
+    }
+    courseInspectionState.loading = true;
+    courseInspectionState.error = "";
+    renderResourceDetail(resource);
+    try {
+        const response = await apiClient.post("/api/resources/inspect-course", payload);
+        if (!response?.success) {
+            throw new Error(response?.message || "课程巡检失败");
+        }
+        const merged = mergeInspectionCourse(resource, response);
+        courseInspectionState.courseId = getResourceIdentity(merged);
+        courseInspectionState.summary = response.summary || null;
+        courseInspectionState.inspection = response.inspection || null;
+        courseInspectionState.loading = false;
+        courseInspectionState.error = "";
+        if (currentResource === resource || getResourceIdentity(currentResource) === getResourceIdentity(resource)) {
+            currentResource = merged;
+        }
+        renderResourceDetail(merged);
+        return { response, resource: merged };
+    } catch (error) {
+        courseInspectionState.loading = false;
+        courseInspectionState.error = extractApiErrorMessage(error, "课程巡检失败");
+        renderResourceDetail(resource);
+        if (!silent) {
+            alert(courseInspectionState.error);
+        }
+        return null;
+    }
+}
+
+function shouldAutoInspectRemoteCourse(resource) {
+    return Boolean(
+        teacherMode.unlocked &&
+        resource &&
+        resource.source !== "local" &&
+        (!Array.isArray(resource.sections) || !resource.sections.length) &&
+        !courseInspectionState.loading &&
+        !courseInspectionState.inspection &&
+        !courseInspectionState.error
+    );
+}
+
+function renderCourseInspectionCard(resource) {
+    ensureCourseInspectionIdentity(resource);
+    const card = document.createElement("div");
+    card.className = "resource-card resources-inspection-card";
+    const header = document.createElement("div");
+    header.className = "resource-card-header";
+    const title = document.createElement("div");
+    title.className = "resource-card-title";
+    title.textContent = "课程巡检";
+    header.appendChild(title);
+    const badge = document.createElement("div");
+    badge.className = "resource-card-badge";
+    badge.textContent = courseInspectionState.loading
+        ? "巡检中"
+        : courseInspectionState.error
+            ? "需处理"
+            : courseInspectionState.inspection
+                ? "已完成"
+                : "未巡检";
+    header.appendChild(badge);
+    card.appendChild(header);
+
+    const summary = courseInspectionState.summary || {};
+    const stats = document.createElement("div");
+    stats.className = "resources-inspection-stats";
+    const statItems = [
+        ["课节", summary.section_count ?? "-"],
+        ["实验", summary.experiment_count ?? "-"],
+        ["文件", summary.file_count ?? "-"],
+        ["可测", summary.ready_count ?? 0],
+        ["待补", summary.partial_count ?? 0],
+        ["异常", summary.broken_count ?? 0],
+    ];
+    statItems.forEach(([label, value]) => {
+        const item = document.createElement("div");
+        item.className = "resources-inspection-stat";
+        const strong = document.createElement("strong");
+        strong.textContent = String(value);
+        const span = document.createElement("span");
+        span.textContent = label;
+        item.appendChild(strong);
+        item.appendChild(span);
+        stats.appendChild(item);
+    });
+    card.appendChild(stats);
+
+    const message = document.createElement("div");
+    message.className = courseInspectionState.error ? "resources-scan-status error" : "resource-card-desc";
+    message.textContent = courseInspectionState.loading
+        ? "正在读取课程结构并检查实验入口..."
+        : courseInspectionState.error
+            ? courseInspectionState.error
+            : courseInspectionState.inspection
+                ? "已完成整课只读巡检，异常实验会在大纲中标记。"
+                : "点击课程巡检，检查整门课程的实验入口与缺失文件。";
+    card.appendChild(message);
+
+    return card;
+}
+
+async function testCurrentExperiment(resource = currentResource) {
+    if (!resource) return;
+    const sections = normalizeSections(resource);
+    const section = sections[activeSectionIndex] || sections[0] || null;
+    const experiments = Array.isArray(section?.experiments) ? section.experiments : [];
+    const experiment = experiments[activeExperimentIndex] || experiments[0] || null;
+    const entry = pickAutoTestEntry(experiment || {});
+    if (!entry) {
+        alert("当前实验没有可测试入口。");
+        return;
+    }
+    await openExperimentEntry(entry.file, entry.kind, {
+        resource,
+        sectionIndex: activeSectionIndex,
+        expIndex: activeExperimentIndex,
+        experimentOverview: getExperimentFileOverview(experiment || {}),
+    });
+}
+
+async function importRemoteCourseForTesting(resource) {
+    let imported = null;
+    try {
+        imported = await importRemoteCourse(resource, { silent: true });
+    } catch (error) {
+        alert(extractApiErrorMessage(error, "导入失败"));
+        return;
+    }
+    if (!imported) return;
+    const mapped = mapRemoteExperimentToLocalCourse(imported, activeSectionIndex, activeExperimentIndex);
+    activeSectionIndex = mapped.sectionIndex;
+    activeExperimentIndex = mapped.experimentIndex;
+    showDetailView(imported);
+    await testCurrentExperiment(imported);
 }
 
 function notifyCourseUpdated(course) {
@@ -7052,7 +6911,7 @@ async function pullLatestForLocalCourse(resource) {
     showDetailView(syncedCourse);
 }
 
-async function importRemoteCourse(resource) {
+async function importRemoteCourse(resource, options = {}) {
     if (!resource) return;
     const courseUrl = resource.course_url || "";
     const packageUrl = resource.package_url || "";
@@ -7106,9 +6965,17 @@ async function importRemoteCourse(resource) {
         };
         const syncedCourse = withCourseSyncFingerprint(localCourse);
         const updated = addCourse(syncedCourse, { silent: true });
-        alert(updated ? "课程已更新到本地。" : "课程已导入到本地。");
+        if (!options.silent) {
+            alert(updated ? "课程已更新到本地。" : "课程已导入到本地。");
+        }
+        return syncedCourse;
     } catch (error) {
-        alert(extractApiErrorMessage(error, "导入失败"));
+        if (!options.silent) {
+            alert(extractApiErrorMessage(error, "导入失败"));
+        } else {
+            throw error;
+        }
+        return null;
     }
 }
 
@@ -8080,6 +7947,7 @@ export async function connectStudentClassroomByCode(code, options = {}) {
 
 export function getChatContext() {
     return {
+        experience_mode: getExperienceMode(Boolean(teacherMode.unlocked)),
         teacher_mode: {
             unlocked: Boolean(teacherMode.unlocked),
             code: teacherMode.code || "",

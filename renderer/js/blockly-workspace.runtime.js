@@ -1,8 +1,9 @@
-import * as Blockly from 'blockly/core';
+import * as Blockly from 'blockly';
 import * as libraryBlocks from 'blockly/blocks';
 import { pythonGenerator } from 'blockly/python';
 import * as ZhHans from 'blockly/msg/zh-hans';
 import JSZip from 'jszip';
+import blocklyColorContract from '../../config/blockly-colors.json';
 import cssText from '../styles/blockly-workspace.css?raw';
 import {
   RUNNABLE_BLOCK_TYPES,
@@ -15,6 +16,8 @@ import {
 import {
   applyWorkspaceSnapshot,
   collectXEduHubSpecFromBlocks,
+  collectXEduHubTasksFromBlocks,
+  collectXEduHubPresentationActionsFromBlocks,
   DEFAULT_PYTHON_PLACEHOLDER,
   getBlockVariableName as getRuntimeBlockVariableName,
   getPythonCodeForWorkspace,
@@ -29,6 +32,7 @@ import {
   getParamFieldName,
   getTaskById,
   getTaskIdFromRunBlockType,
+  getXEduHubTaskRegistry,
   isSemanticRunBlockType,
   migrateXEduHubSerialized,
   migrateXEduHubXmlText,
@@ -49,13 +53,26 @@ const CLASSROOM_DEFAULTS = Object.freeze({
   codePanelVisible: true,
   resultIdleText: '尚未运行',
   resultRunningText: '正在执行当前流程，请稍候…',
+  resultBlockedText: '当前流程暂未执行',
 });
+
+const CODE_DOCK_WIDTH_STORAGE_KEY = 'xedu-blockly-code-dock-width';
+const CODE_DOCK_WIDTH_MIN = 320;
+const CODE_DOCK_WIDTH_MAX = 760;
+const CODE_DOCK_WIDTH_FALLBACK = 420;
+const DEFAULT_CATEGORY_COLOUR = blocklyColorContract.brand?.primary || '#5f6792';
+
+function resolveBlocklyMediaPath() {
+  const configured = String(getConfigValue('blocklyMediaUrl', '')).trim();
+  if (configured) {
+    return configured.endsWith('/') ? configured : `${configured}/`;
+  }
+  return `${window.location.origin}/blockly/media/`;
+}
 
 const STUDENT_QUICK_ACTION_IDS = Object.freeze([
   'openWorkspaceBtn',
   'saveWorkspaceBtn',
-  'copyPythonBtn',
-  'downloadPythonBtn',
 ]);
 
 const BLOCKLY_DEBUG_ENABLED = (() => {
@@ -117,55 +134,85 @@ const state = {
   lastFlyoutButtonInvoke: { key: '', at: 0 },
   createVariableFallback: null,
   variableNameDialog: { resolve: null, visible: false },
+  resultImageDialog: { visible: false, lastSrc: '' },
   codePanelResizeTimer: null,
+  codeDockWidth: CODE_DOCK_WIDTH_FALLBACK,
+  codeDockResizing: null,
   toolboxSelectionSyncing: false,
   sideNavCollapsed: {},
 };
 
-const CATEGORY_ICON_SVGS = {
-  基础编程: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="5.2" height="5.2" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="10.3" y="2.5" width="5.2" height="5.2" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="6.4" y="10.3" width="5.2" height="5.2" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M7.7 5.1h2.6M9 7.7v2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
-  XEdu: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 2.6 13.8 5v5.2L9 12.6 4.2 10.2V5L9 2.6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 5.5.9 1.8 2 .3-1.5 1.4.4 1.9L9 10l-1.8.9.4-1.9L6 7.6l2-.3L9 5.5Z" fill="currentColor" opacity=".18" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
-  'XEdu Hub': '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 2.6 13.8 5v5.2L9 12.6 4.2 10.2V5L9 2.6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 5.5.9 1.8 2 .3-1.5 1.4.4 1.9L9 10l-1.8.9.4-1.9L6 7.6l2-.3L9 5.5Z" fill="currentColor" opacity=".18" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
-  '媒体与设备': '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M3.4 8.7a5.6 5.6 0 0 1 11.2 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6.2 8.9v2.6M11.8 8.9v2.6M9 2.9v2.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="5.5" y="11.2" width="7" height="3.2" rx="1.4" stroke="currentColor" stroke-width="1.5"/></svg>',
-  '调试与扩展': '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" fill="currentColor" opacity=".1"/><path d="m6.9 9.4 1.3 1.3 3-3.2M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  扩展工具: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M3.4 8.7a5.6 5.6 0 0 1 11.2 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6.2 8.9v2.6M11.8 8.9v2.6M9 2.9v2.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="5.5" y="11.2" width="7" height="3.2" rx="1.4" stroke="currentColor" stroke-width="1.5"/></svg>',
-  逻辑: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 2.8 13.3 6 9 9.2 4.7 6 9 2.8Z" fill="currentColor" opacity=".18"/><path d="M9 9.4v2.2m0 0H6.8m2.2 0h2.2" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/><rect x="3.2" y="11.4" width="4.1" height="3.2" rx="1.2" fill="currentColor" opacity=".12"/><rect x="10.7" y="11.4" width="4.1" height="3.2" rx="1.2" fill="currentColor" opacity=".12"/></svg>',
-  循环: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M6 4.8H3.8v2.2M12 13.2h2.2V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.1 6.1A4.8 4.8 0 0 1 13 4.8M13.9 11.9A4.8 4.8 0 0 1 5 13.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="9" r="1.1" fill="currentColor"/></svg>',
-  数学: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.1" y="3.1" width="11.8" height="11.8" rx="3.1" fill="currentColor" opacity=".12"/><path d="M6.2 7.1h3.2m-1.6-1.6v3.2m-.9 4h3.4m1.5-5.1 2.1 2.1m0-2.1-2.1 2.1" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  文本: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.3" y="3.3" width="11.4" height="11.4" rx="2.8" stroke="currentColor" opacity=".28"/><path d="M5.8 6.2h6.4M9 6.2v5.8M7 12h4" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  列表: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.1" y="3.4" width="11.8" height="11.2" rx="2.8" fill="currentColor" opacity=".11"/><circle cx="5.8" cy="6.4" r=".8" fill="currentColor"/><circle cx="5.8" cy="9" r=".8" fill="currentColor"/><circle cx="5.8" cy="11.6" r=".8" fill="currentColor"/><path d="M8.1 6.4h4.4M8.1 9h5M8.1 11.6h3.6" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
-  变量: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 2.8 13.5 5.2v4.9L9 12.6 4.5 10.1V5.2L9 2.8Z" fill="currentColor" opacity=".14"/><path d="M9 2.8 13.5 5.2v4.9L9 12.6 4.5 10.1V5.2L9 2.8Zm0 3.1v3.7m-1.8-1.9h3.6" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  函数: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M6.6 4.6c-1.5 1.2-1.5 7.6 0 8.8M11.4 4.6c1.5 1.2 1.5 7.6 0 8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M7.8 11.1c.6-1.8 1.8-3.1 3.4-4m-3 1.2h3.7" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  图像分类: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.2" y="3.2" width="11.6" height="11.6" rx="2.8" fill="currentColor" opacity=".12"/><path d="M5.8 11.8 8 9.6l1.8 1.7 2.5-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.8" cy="6.6" r="1" fill="currentColor"/></svg>',
-  目标检测: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.8" y="3.8" width="10.4" height="10.4" rx="2.4" stroke="currentColor" stroke-width="1.4" opacity=".36"/><rect x="6.2" y="6.2" width="5.6" height="5.6" rx="1.4" stroke="currentColor" stroke-width="1.5"/><path d="M9 2.8v1.8M9 13.4v1.8M2.8 9h1.8M13.4 9h1.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
-  关键点识别: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="5.3" r="1.1" fill="currentColor"/><circle cx="6" cy="8.3" r="1" fill="currentColor" opacity=".88"/><circle cx="12" cy="8.3" r="1" fill="currentColor" opacity=".88"/><circle cx="7" cy="12.3" r=".9" fill="currentColor" opacity=".78"/><circle cx="11" cy="12.3" r=".9" fill="currentColor" opacity=".78"/><path d="M9 6.5v3.4M9 7.5 7 8.3M9 7.5l2 .8M9 9.9l-1.5 1.6M9 9.9l1.5 1.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  OCR: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.4" y="3.4" width="11.2" height="11.2" rx="2.8" stroke="currentColor" opacity=".3"/><path d="M5.8 6.3h6.4M5.8 8.9h4.7M5.8 11.5h6.4" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/><path d="M11.8 13.2h2.1" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
-  内容生成: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.3 10.3 6l3 .3-2.2 1.9.7 3-2.8-1.5-2.8 1.5.7-3-2.2-1.9 3-.3L9 3.3Z" fill="currentColor" opacity=".14"/><path d="M9 5.3v2.4m0 0 1.7 1M9 7.7l-1.7 1" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  图像分割: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.6" y="3.8" width="10.8" height="10.4" rx="2.4" fill="currentColor" opacity=".1"/><path d="M6 6.5c1.2.1 2.1 1 2.3 2.2.1 1-.4 1.9-1.2 2.5m4.9-4.7c-1.2.1-2.1 1-2.3 2.2-.1 1 .4 1.9 1.2 2.5" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
-  深度估计: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.5 5.8 9 3.4l4.5 2.4v5.6L9 14 4.5 11.4V5.8Z" fill="currentColor" opacity=".12"/><path d="M9 3.4V14M4.5 5.8 9 8.4l4.5-2.6" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  图像视频: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.6" y="5" width="8.6" height="6.6" rx="1.6" fill="currentColor" opacity=".12"/><path d="M12.2 7.2 14.5 6v4.2l-2.3-1.2" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7.7" cy="8.3" r="1.4" stroke="currentColor" stroke-width="1.3"/><path d="M5.1 13.7h7.8" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
-  通信控制: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.6" y="3.8" width="8.2" height="10.4" rx="2.2" fill="currentColor" opacity=".12"/><path d="M6.1 6.7h3.5M6.1 9h3.5M6.1 11.3h2.4M12.4 7h2M13.4 6v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="13.6" cy="11.8" r="1.5" stroke="currentColor" stroke-width="1.35"/></svg>',
-  核心语法: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.2 5.1h4.1v2.6H4.2zm5.5 2.8h4.1v2.6H9.7zM6.3 10.9h4.1v2.6H6.3z" fill="currentColor" opacity=".16"/><path d="M8.3 6.4h1.1c.7 0 1.3.6 1.3 1.3v.2M8.4 12.2h-.8c-.7 0-1.3-.6-1.3-1.3v-.1M10.8 10.7v.2c0 .7-.6 1.3-1.3 1.3H9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
-  结果处理: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.2" y="3.2" width="11.6" height="11.6" rx="2.8" fill="currentColor" opacity=".12"/><path d="M5.8 11.8 8 9.6l1.8 1.7 2.5-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.8" cy="6.6" r="1" fill="currentColor"/></svg>',
-  调试扩展: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" fill="currentColor" opacity=".1"/><path d="m6.9 9.4 1.3 1.3 3-3.2M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  进阶调试: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" fill="currentColor" opacity=".1"/><path d="m6.9 9.4 1.3 1.3 3-3.2M9 3.7 4.8 6.1v5.6L9 14l4.2-2.3V6.1L9 3.7Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  AI流程: '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.2 5.1h4.1v2.6H4.2zm5.5 2.8h4.1v2.6H9.7zM6.3 10.9h4.1v2.6H6.3z" fill="currentColor" opacity=".16"/><path d="M8.3 6.4h1.1c.7 0 1.3.6 1.3 1.3v.2M8.4 12.2h-.8c-.7 0-1.3-.6-1.3-1.3v-.1M10.8 10.7v.2c0 .7-.6 1.3-1.3 1.3H9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
-};
+function makeCategoryIconSvg(innerMarkup, { strokeWidth = 1.8, scale = 1.14 } = {}) {
+  const inner = String(innerMarkup || '')
+    .replace(/^<svg[^>]*>/, '')
+    .replace(/<\/svg>\s*$/, '');
+  const offset = ((18 - (18 * scale)) / 2).toFixed(2);
+  return `<svg viewBox="0 0 18 18" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(${offset} ${offset}) scale(${scale})">${inner}</g></svg>`;
+}
 
-const DEFAULT_CATEGORY_ICON_SVG = '<svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3.2" y="3.4" width="5.1" height="5.1" rx="1.5" fill="currentColor" opacity=".16"/><rect x="9.7" y="3.4" width="5.1" height="5.1" rx="1.5" fill="currentColor" opacity=".16"/><rect x="6.4" y="9.7" width="5.1" height="5.1" rx="1.5" fill="currentColor" opacity=".16"/><path d="M5.8 8.5v1.2c0 .7.6 1.3 1.3 1.3h.2M12.2 8.5v1.2c0 .7-.6 1.3-1.3 1.3h-.2" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>';
-
-const TASK_FIRST_CATEGORY_META = Object.freeze({
-  基础编程: { colour: '#6366f1', description: '逻辑、循环、数学、文本和变量等基础积木。' },
-  XEdu: { colour: '#3b82f6', description: 'XEdu 平台的核心语法、快捷任务和结果处理积木。' },
-  'XEdu Hub': { colour: '#3b82f6', description: '和 XEdu Hub 实验相关的输入、任务、结果与常用语义积木。' },
-  '媒体与设备': { colour: '#0ea5e9', description: '摄像头、视频流、显示、保存与设备控制积木。' },
-  '调试与扩展': { colour: '#6366f1', description: '流程调试、异常保护和扩展积木。' },
-  扩展工具: { colour: '#f97316', description: '媒体处理、通信控制和更多扩展能力。' },
-  扩展包与调试: { colour: '#f97316', description: '教师侧调试、兼容旧流程和扩展能力。' },
+const ICON_CLUSTER = Object.freeze({
+  blocks: makeCategoryIconSvg('<rect x="2.5" y="2.8" width="4.2" height="4.2" rx="1.1"/><rect x="11.3" y="2.8" width="4.2" height="4.2" rx="1.1"/><rect x="6.9" y="10.8" width="4.2" height="4.2" rx="1.1"/><path d="M7 5h4M9 3v4M8 9.2l1 1 1.8-1.8"/>', { strokeWidth: 1.55, scale: 1.18 }),
+  spark: makeCategoryIconSvg('<path d="M9 2.7 10.6 6l3.7.4-2.7 2.4.7 3.6L9 10.7 5.7 12.4l.7-3.6-2.7-2.4 3.7-.4L9 2.7Z"/>', { strokeWidth: 1.55, scale: 1.24 }),
+  layers: makeCategoryIconSvg('<path d="M9 2.8 14.4 5.9 9 9 3.6 5.9 9 2.8Z"/><path d="M4.4 9.1 9 11.8l4.6-2.7"/><path d="M4.4 11.8 9 14.5l4.6-2.7"/>', { scale: 1.18 }),
+  media: makeCategoryIconSvg('<rect x="3.1" y="4.4" width="8.4" height="6.8" rx="1.8"/><path d="M11.7 6.2 14.7 4.8v6.1l-3-1.4"/><circle cx="7.2" cy="7.7" r="1.1"/><path d="M4.8 12.9h7.7"/>', { scale: 1.18 }),
+  detect: makeCategoryIconSvg('<rect x="4.3" y="4.3" width="9.4" height="9.4" rx="2.1"/><path d="M9 2.9v2M9 13.1v2M2.9 9h2M13.1 9h2"/><rect x="6.6" y="6.6" width="4.8" height="4.8" rx="1.2"/>', { scale: 1.18 }),
+  nodes: makeCategoryIconSvg('<circle cx="9" cy="4.6" r="1.1"/><circle cx="5.5" cy="8.5" r="1"/><circle cx="12.5" cy="8.5" r="1"/><circle cx="7.1" cy="12.6" r=".95"/><circle cx="10.9" cy="12.6" r=".95"/><path d="M9 5.9v2.1M8.3 8.1 6.4 8.8M9.7 8.1l1.9.7M8.7 9.6l-1.1 1.6M9.3 9.6l1.1 1.6"/>', { strokeWidth: 1.5, scale: 1.18 }),
+  text: makeCategoryIconSvg('<path d="M4.7 5.3h8.6M9 5.3v7.2M6.9 12.5h4.2"/>', { scale: 1.18 }),
+  list: makeCategoryIconSvg('<circle cx="5" cy="5.5" r=".9"/><circle cx="5" cy="9" r=".9"/><circle cx="5" cy="12.5" r=".9"/><path d="M7.6 5.5h5.5M7.6 9h6M7.6 12.5h4.5"/>', { scale: 1.18 }),
+  variable: makeCategoryIconSvg('<path d="M4.2 5.3h9.6v7.4H4.2z"/><path d="M9 5.3v7.4M6.2 9h5.6"/>', { scale: 1.18 }),
+  function: makeCategoryIconSvg('<path d="M6.5 3.9c-1.5 1.2-1.5 8.9 0 10.2M11.5 3.9c1.5 1.2 1.5 8.9 0 10.2"/><path d="M8 10.7c.5-1.7 1.5-3 3.1-4M8.2 8.8h3.1"/>', { scale: 1.16 }),
+  math: makeCategoryIconSvg('<path d="M5.4 6.2h4M7.4 4.2v4M5.7 11.9h3.4M11.4 5.4l2.2 2.2M13.6 5.4l-2.2 2.2"/>', { scale: 1.18 }),
+  flow: makeCategoryIconSvg('<rect x="3.5" y="4" width="4.2" height="3" rx="1"/><rect x="10.3" y="7.5" width="4.2" height="3" rx="1"/><rect x="6.9" y="11" width="4.2" height="3" rx="1"/><path d="M7.7 5.5h2c.8 0 1.4.6 1.4 1.4v.3M8.8 12.5h-.7c-.8 0-1.4-.6-1.4-1.4v-.2M11 10.6v.5c0 .8-.6 1.4-1.4 1.4H9"/>', { strokeWidth: 1.55, scale: 1.2 }),
+  result: makeCategoryIconSvg('<path d="M4.4 9.6 7.6 12.1 13.6 5.9"/><path d="M4.4 4.8h4.1M4.4 7.1h2.8"/><path d="M10.6 12.4h3"/>', { strokeWidth: 1.7, scale: 1.26 }),
+  debug: makeCategoryIconSvg('<path d="M9 2.8 14 5.5v5L9 13.2 4 10.5v-5L9 2.8Z"/><path d="m6.9 8.8 1.5 1.5 2.8-3.2"/><path d="M9 13.2v2"/>', { strokeWidth: 1.55, scale: 1.18 }),
+  comms: makeCategoryIconSvg('<path d="M5.3 4.2h5.8a1.8 1.8 0 0 1 1.8 1.8v5.8H7.1l-2.9 2.1v-2.1H5.3A1.8 1.8 0 0 1 3.5 10V6a1.8 1.8 0 0 1 1.8-1.8Z"/><path d="M6.1 7.5h4.2M6.1 9.6h2.8"/>', { scale: 1.18 }),
+  depth: makeCategoryIconSvg('<path d="M4.7 5.5 9 3.3l4.3 2.2v5.3L9 13l-4.3-2.2V5.5Z"/><path d="M9 3.4v9.3M4.8 5.6 9 7.8l4.2-2.2"/>', { scale: 1.18 }),
 });
 
+const CATEGORY_ICON_SVGS = Object.freeze({
+  基础编程: ICON_CLUSTER.blocks,
+  逻辑: ICON_CLUSTER.blocks,
+  循环: ICON_CLUSTER.flow,
+  数学: ICON_CLUSTER.math,
+  文本: ICON_CLUSTER.text,
+  列表: ICON_CLUSTER.list,
+  变量: ICON_CLUSTER.variable,
+  函数: ICON_CLUSTER.function,
+  XEdu: ICON_CLUSTER.spark,
+  'XEdu Hub': ICON_CLUSTER.spark,
+  核心语法: ICON_CLUSTER.flow,
+  AI流程: ICON_CLUSTER.flow,
+  结果处理: ICON_CLUSTER.result,
+  '媒体与设备': ICON_CLUSTER.media,
+  图像视频: ICON_CLUSTER.media,
+  图像与视频: ICON_CLUSTER.media,
+  图像分类: ICON_CLUSTER.result,
+  目标检测: ICON_CLUSTER.detect,
+  关键点识别: ICON_CLUSTER.nodes,
+  OCR: ICON_CLUSTER.text,
+  内容生成: ICON_CLUSTER.spark,
+  图像分割: ICON_CLUSTER.layers,
+  深度估计: ICON_CLUSTER.depth,
+  通信控制: ICON_CLUSTER.comms,
+  '调试与扩展': ICON_CLUSTER.debug,
+  调试扩展: ICON_CLUSTER.debug,
+  进阶调试: ICON_CLUSTER.debug,
+  扩展工具: ICON_CLUSTER.comms,
+});
+
+const DEFAULT_CATEGORY_ICON_SVG = ICON_CLUSTER.blocks;
+
+const CATEGORY_COLOR_PALETTE = Object.freeze(blocklyColorContract.categoryPalette);
+
+function resolveCategoryColour(name, fallback = DEFAULT_CATEGORY_COLOUR) {
+  const normalized = String(name || '').trim();
+  return CATEGORY_COLOR_PALETTE[normalized] || fallback;
+}
+
+const TASK_FIRST_CATEGORY_META = Object.freeze(blocklyColorContract.taskFirstCategories);
+
 const BASIC_PROGRAM_CATEGORY_NAMES = new Set(['逻辑', '循环', '数学', '文本', '列表', '变量', '函数']);
-const ADVANCED_CATEGORY_NAMES = new Set(['图像视频', '通信控制', '进阶调试', '底层与调试', '扩展包']);
+const ADVANCED_CATEGORY_NAMES = new Set(['图像与视频', '图像视频', '通信控制', '进阶调试', '底层与调试', '扩展包']);
 const DEFAULT_INPUT_RESOURCE = 'courses/blockly-smoke/demo.jpg';
 const DEFAULT_INPUT_SEQUENCE = '["courses/blockly-smoke/demo.jpg","courses/blockly-smoke/demo.jpg"]';
 
@@ -284,6 +331,80 @@ function requestVariableName({ title = '创建变量', subtitle = '请输入变�
   });
 }
 
+function ensureResultImageDialog() {
+  let overlay = document.getElementById('xeduResultImageOverlay');
+  if (overlay) {
+    return overlay;
+  }
+  overlay = document.createElement('div');
+  overlay.id = 'xeduResultImageOverlay';
+  overlay.className = 'xedu-result-image-overlay';
+  overlay.innerHTML = `
+    <div class="xedu-result-image-dialog" role="dialog" aria-modal="true" aria-labelledby="xeduResultImageTitle">
+      <div class="xedu-result-image-head">
+        <div>
+          <div id="xeduResultImageTitle" class="xedu-result-image-title">结果图片</div>
+          <div id="xeduResultImageMeta" class="xedu-result-image-meta">运行返回的图片结果</div>
+        </div>
+        <button id="xeduResultImageClose" type="button" class="btn-ghost">关闭</button>
+      </div>
+      <div class="xedu-result-image-body">
+        <img id="xeduResultImagePreview" class="xedu-result-image-preview" alt="结果图片">
+      </div>
+    </div>
+  `;
+  const closeDialog = () => {
+    overlay.classList.remove('open');
+    state.resultImageDialog.visible = false;
+  };
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeDialog();
+    }
+  });
+  overlay.querySelector('#xeduResultImageClose')?.addEventListener('click', closeDialog);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && state.resultImageDialog.visible) {
+      closeDialog();
+    }
+  });
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function openResultImageDialog(src, title = '结果图片') {
+  const normalizedSrc = String(src || '').trim();
+  if (!normalizedSrc) {
+    return false;
+  }
+  const overlay = ensureResultImageDialog();
+  const image = overlay.querySelector('#xeduResultImagePreview');
+  const titleEl = overlay.querySelector('#xeduResultImageTitle');
+  const metaEl = overlay.querySelector('#xeduResultImageMeta');
+  if (image) {
+    image.src = normalizedSrc;
+    image.alt = String(title || '结果图片');
+  }
+  if (titleEl) {
+    titleEl.textContent = String(title || '结果图片');
+  }
+  if (metaEl) {
+    metaEl.textContent = '图片已在弹窗中打开，不占用运行反馈终端。';
+  }
+  state.resultImageDialog.visible = true;
+  state.resultImageDialog.lastSrc = normalizedSrc;
+  overlay.classList.add('open');
+  return true;
+}
+
+function closeResultImageDialog() {
+  const overlay = document.getElementById('xeduResultImageOverlay');
+  if (overlay) {
+    overlay.classList.remove('open');
+  }
+  state.resultImageDialog.visible = false;
+}
+
 async function validateToolboxWithApi(toolbox) {
   const check = validateToolboxPayload(toolbox);
   if (!check.valid) {
@@ -311,61 +432,8 @@ async function validateToolboxWithApi(toolbox) {
 
 const scratchLikeTheme = Blockly.Theme.defineTheme('xedu_refined_classroom', {
   base: Blockly.Themes.Classic,
-  blockStyles: {
-    logic_blocks: {
-      colourPrimary: '#a5b4fc',
-      colourSecondary: '#818cf8',
-      colourTertiary: '#6366f1',
-    },
-    loop_blocks: {
-      colourPrimary: '#fbbf24',
-      colourSecondary: '#f59e0b',
-      colourTertiary: '#d97706',
-    },
-    math_blocks: {
-      colourPrimary: '#60a5fa',
-      colourSecondary: '#3b82f6',
-      colourTertiary: '#2563eb',
-    },
-    text_blocks: {
-      colourPrimary: '#f9a8d4',
-      colourSecondary: '#f472b6',
-      colourTertiary: '#ec4899',
-    },
-    list_blocks: {
-      colourPrimary: '#5eead4',
-      colourSecondary: '#14b8a6',
-      colourTertiary: '#0d9488',
-    },
-    variable_blocks: {
-      colourPrimary: '#fb7185',
-      colourSecondary: '#f43f5e',
-      colourTertiary: '#e11d48',
-    },
-    variable_dynamic_blocks: {
-      colourPrimary: '#fb7185',
-      colourSecondary: '#f43f5e',
-      colourTertiary: '#e11d48',
-    },
-    procedure_blocks: {
-      colourPrimary: '#c4b5fd',
-      colourSecondary: '#a78bfa',
-      colourTertiary: '#8b5cf6',
-    },
-  },
-  componentStyles: {
-    workspaceBackgroundColour: '#fcfeff',
-    toolboxBackgroundColour: '#ffffff',
-    toolboxForegroundColour: '#334155',
-    flyoutBackgroundColour: '#ffffff',
-    flyoutForegroundColour: '#334155',
-    flyoutOpacity: 1,
-    scrollbarColour: '#b8c7db',
-    insertionMarkerColour: '#6366f1',
-    insertionMarkerOpacity: 0.4,
-    markerColour: '#6366f1',
-    cursorColour: '#6366f1',
-  },
+  blockStyles: blocklyColorContract.basicBlockStyles,
+  componentStyles: blocklyColorContract.componentStyles,
   fontStyle: {
     family: "'Avenir Next', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
     weight: '700',
@@ -375,7 +443,7 @@ const scratchLikeTheme = Blockly.Theme.defineTheme('xedu_refined_classroom', {
 });
 
 function getDefaultTaskId() {
-  return String(getConfigValue('xeduhubTaskRegistry', {})?.default_task_id || 'cls_imagenet').trim() || 'cls_imagenet';
+  return String(getConfigValue('xeduhubTaskRegistry', {})?.default_task_id || 'det_body').trim() || 'det_body';
 }
 
 function makeBlock(type, { fields, inputs, ...rest } = {}) {
@@ -389,6 +457,33 @@ function makeBlock(type, { fields, inputs, ...rest } = {}) {
   return block;
 }
 
+function makeVariableInput(name) {
+  return { kind: 'block', type: 'variables_get', fields: { VAR: String(name || '').trim() || 'value' } };
+}
+
+function makeTextInput(text) {
+  return { kind: 'block', type: 'text', fields: { TEXT: String(text || '').trim() || '' } };
+}
+
+function filterTaskCategoryForStudent(category) {
+  if (!category || category.kind !== 'category') {
+    return null;
+  }
+  const nextCategory = clone(category);
+  nextCategory.contents = (nextCategory.contents || []).filter((item) => {
+    if (!item || item.kind !== 'block') {
+      return Boolean(item);
+    }
+    const taskId = getTaskIdFromRunBlockType(String(item.type || '').trim());
+    if (!taskId) {
+      return true;
+    }
+    const task = getTaskById(taskId);
+    return Boolean(task && task.available !== false && task.quick_block_enabled !== false);
+  });
+  return nextCategory.contents.length > 0 ? nextCategory : null;
+}
+
 function getRawSourceToolbox() {
   return state.toolboxVariants?.course
     || state.toolboxVariants?.official
@@ -399,11 +494,18 @@ function buildDefaultWorkspaceSerialized() {
   const defaultTaskId = getDefaultTaskId();
   const xmlText = [
     '<xml xmlns="https://developers.google.com/blockly/xml">',
-    `<block type="xeduhub_set_input_resource" id="input1" x="28" y="28"><field name="INPUT">${DEFAULT_INPUT_RESOURCE}</field>`,
+    '<variables><variable id="lab_input_var">lab_input</variable><variable id="lab_result_var">lab_result</variable></variables>',
+    `<block type="xeduhub_workflow_create_var" id="flow1" x="42" y="42"><field name="TASK_ID">${defaultTaskId}</field><field name="MODEL_VAR">lab_flow</field>`,
     '<next>',
-    `<block type="xeduhub_workflow_create_var" id="flow1"><field name="TASK_ID">${defaultTaskId}</field><field name="MODEL_VAR">lab_flow</field>`,
+    '<block type="xeduhub_load_image_to_var" id="input1"><field name="INPUT">',
+    DEFAULT_INPUT_RESOURCE,
+    '</field><field name="IMAGE_VAR" id="lab_input_var">lab_input</field>',
     '<next>',
-    '<block type="xeduhub_workflow_infer_var" id="infer1"><field name="MODEL_VAR">lab_flow</field><field name="RESULT_VAR">lab_result</field></block>',
+    '<block type="xeduhub_workflow_infer_var" id="infer1"><field name="MODEL_VAR">lab_flow</field><field name="RESULT_VAR">lab_result</field><value name="INPUT_DATA"><block type="variables_get" id="input_get1"><field name="VAR" id="lab_input_var">lab_input</field></block></value>',
+    '<next>',
+    '<block type="xeduhub_show_result_card" id="result1"><field name="TITLE">识别结果</field><value name="RESULT"><block type="variables_get" id="result_get1"><field name="VAR" id="lab_result_var">lab_result</field></block></value></block>',
+    '</next>',
+    '</block>',
     '</next>',
     '</block>',
     '</next>',
@@ -498,16 +600,20 @@ function buildTaskFirstToolbox(rawToolbox) {
   const xeduCategory = categoryMap.get('XEdu') || categoryMap.get('XEduHub');
   const mediaCategory = categoryMap.get('媒体与设备');
   const debugCategory = categoryMap.get('调试与扩展');
+  const showDebugToolbox = Boolean(getConfigValue('showDebugToolbox', false));
 
-  if (xeduCategory && mediaCategory && debugCategory) {
+  if (xeduCategory && mediaCategory) {
+    const topLevelContents = [
+      clone(categoryMap.get('基础编程')),
+      clone(xeduCategory),
+      clone(mediaCategory),
+    ];
+    if (showDebugToolbox && debugCategory) {
+      topLevelContents.push(clone(debugCategory));
+    }
     return normalizeCategoryMeta({
       ...rawToolbox,
-      contents: [
-        clone(categoryMap.get('基础编程')),
-        clone(xeduCategory),
-        clone(mediaCategory),
-        clone(debugCategory),
-      ].filter(Boolean),
+      contents: topLevelContents.filter(Boolean),
     });
   }
 
@@ -519,7 +625,7 @@ function buildTaskFirstToolbox(rawToolbox) {
   );
   const quickTaskNames = ['图像分类', '目标检测', '关键点识别', 'OCR', '内容生成', '图像分割', '深度估计'];
   const basicNames = ['逻辑', '循环', '数学', '文本', '变量', '列表', '函数'];
-  const mediaNames = ['图像视频', '通信控制'];
+  const mediaNames = ['图像与视频', '图像视频', '通信控制'];
 
   const contents = [];
 
@@ -539,49 +645,56 @@ function buildTaskFirstToolbox(rawToolbox) {
   const xeduPlatformContents = [
     {
       kind: 'category',
-      name: '核心语法',
-      colour: '#8b5cf6',
-      description: '创建任务、执行推理与串联流程。',
+      name: 'AI流程',
+      colour: resolveCategoryColour('AI流程'),
+      description: '只保留初始化任务、模型推理、结果显示三个核心步骤。',
       contents: dedupeToolboxContents([
-        makeBlock('xeduhub_set_input_resource', { fields: { INPUT: DEFAULT_INPUT_RESOURCE } }),
-        makeBlock('xeduhub_set_input_list', { fields: { INPUTS: DEFAULT_INPUT_SEQUENCE } }),
-        makeBlock('xeduhub_workflow_create_var', {
-          fields: {
-            TASK_ID: getDefaultTaskId(),
-            MODEL_VAR: 'lab_flow',
-          },
-        }),
-        makeBlock('xeduhub_workflow_infer_var', {
-          fields: {
-            MODEL_VAR: 'lab_flow',
-            RESULT_VAR: 'lab_result',
-          },
-        }),
-        makeBlock('xeduhub_workflow_infer_pair', {
-          fields: {
-            MODEL_VAR: 'lab_flow',
-            RESULT_VAR: 'lab_result',
-            IMAGE_VAR: 'display_img',
-          },
-        }),
+        {
+          kind: 'category',
+          name: '初始化任务',
+          colour: resolveCategoryColour('AI流程'),
+          contents: [
+            makeBlock('xeduhub_workflow_create_var', {
+              fields: {
+                TASK_ID: getDefaultTaskId(),
+                MODEL_VAR: 'lab_flow',
+              },
+            }),
+          ],
+        },
+        {
+          kind: 'category',
+          name: '模型推理',
+          colour: resolveCategoryColour('AI流程'),
+          contents: [
+            makeBlock('xeduhub_workflow_infer_var', {
+              fields: {
+                MODEL_VAR: 'lab_flow',
+                RESULT_VAR: 'lab_result',
+              },
+            }),
+            makeBlock('xeduhub_workflow_infer_pair', {
+              fields: {
+                MODEL_VAR: 'lab_flow',
+                RESULT_VAR: 'lab_result',
+                IMAGE_VAR: 'display_img',
+              },
+            }),
+          ],
+        },
+        {
+          kind: 'category',
+          name: '结果显示',
+          colour: resolveCategoryColour('结果显示'),
+          contents: [
+            makeBlock('xeduhub_show_result_card', {
+              fields: { TITLE: '运行结果' },
+              inputs: { RESULT: makeVariableInput('lab_result') },
+            }),
+          ],
+        },
       ]),
     },
-    {
-      kind: 'category',
-      name: '结果处理',
-      colour: '#10b981',
-      description: '提取结果里的框、关键点、文本和结果图。',
-      contents: dedupeToolboxContents([
-        makeBlock('xeduhub_result_first_box'),
-        makeBlock('xeduhub_bbox_center_x'),
-        makeBlock('xeduhub_keypoint_axis', { fields: { AXIS: 'x' } }),
-        makeBlock('xeduhub_ocr_first_text'),
-        makeBlock('xeduhub_show_result_card', { fields: { TITLE: '运行结果' } }),
-        makeBlock('xeduhub_show_result_image'),
-        makeBlock('xeduhub_clear_result'),
-      ]),
-    },
-    ...quickTaskNames.map((name) => xeduCategoryMap.get(name)).filter(Boolean).map((item) => clone(item)),
   ];
 
   if (xeduPlatformContents.length > 0) {
@@ -599,7 +712,37 @@ function buildTaskFirstToolbox(rawToolbox) {
   const mediaContents = mediaNames
     .map((name) => categoryMap.get(name))
     .filter(Boolean)
-    .map((item) => clone(item));
+    .map((item) => {
+      const cloned = clone(item);
+      if (cloned?.name === '图像视频') {
+        cloned.name = '图像与视频';
+      }
+      return cloned;
+    });
+  const imageVideoCategory = mediaContents.find((item) => item?.kind === 'category' && (item?.name === '图像与视频' || item?.name === '图像视频'));
+  if (imageVideoCategory && Array.isArray(imageVideoCategory.contents)) {
+    const studentCuratedImageVideo = [
+      makeBlock('xeduhub_load_image_to_var', { fields: { INPUT: DEFAULT_INPUT_RESOURCE, IMAGE_VAR: 'lab_input' } }),
+      makeBlock('xeduhub_cv_open_camera', { fields: { SOURCE: 0, CAMERA_VAR: 'camera', WINDOW: 'video' } }),
+      makeBlock('xeduhub_cv_loop_frames', { fields: { CAMERA_VAR: 'camera', FRAME_VAR: 'frame', QUIT_KEY: 'q', DELAY: 1 } }),
+      makeBlock('xeduhub_cv_show_frame', { fields: { WINDOW: 'video' } }),
+      makeBlock('xeduhub_cv_open_video', { fields: { CAMERA_VAR: 'video', WINDOW: 'video' } }),
+      makeBlock('xeduhub_show_result_image', { inputs: { IMAGE: makeVariableInput('display_img') } }),
+      makeBlock('xeduhub_cv_save_image'),
+      makeBlock('xeduhub_cv_resize_image'),
+      makeBlock('xeduhub_cv_crop_image'),
+      makeBlock('xeduhub_cv_cvt_color'),
+      makeBlock('xeduhub_cv_put_text'),
+    ];
+    imageVideoCategory.contents = dedupeToolboxContents(
+      isTeacherMode()
+        ? [
+          ...studentCuratedImageVideo,
+          ...imageVideoCategory.contents,
+        ]
+        : studentCuratedImageVideo,
+    );
+  }
   if (mediaContents.length > 0) {
     contents.push({
       kind: 'category',
@@ -613,25 +756,35 @@ function buildTaskFirstToolbox(rawToolbox) {
   }
 
   const debugContents = dedupeToolboxContents([
-    makeBlock('xeduhub_debug_print', { fields: { VAR: 'lab_result' } }),
+    makeBlock('xeduhub_debug_print', { inputs: { VALUE: makeVariableInput('lab_result') } }),
     makeBlock('xeduhub_catch_error', { fields: { ERROR_VAR: 'lab_error' } }),
-    makeBlock('xeduhub_run_and_record'),
+    makeBlock('xeduhub_run_and_record', { inputs: { NOTE: makeTextInput('本次实验结论') } }),
+    makeBlock('xeduhub_get_result_field', {
+      fields: { FIELD: 'result_summary' },
+      inputs: { RESULT: makeVariableInput('lab_result') },
+    }),
   ]);
-  if (debugContents.length > 0) {
+  const experimentalCategory = xeduCategoryMap.get('实验性任务');
+  if (showDebugToolbox && debugContents.length > 0) {
+    const debugGroups = [{
+      kind: 'category',
+      name: '调试扩展',
+      colour: resolveCategoryColour('调试扩展'),
+      visible_by_default: false,
+      description: '记录结果、打印调试信息并对流程做异常保护。',
+      contents: debugContents,
+    }];
+    if (isTeacherMode() && experimentalCategory) {
+      debugGroups.push(clone(experimentalCategory));
+    }
     contents.push({
       kind: 'category',
       name: '调试与扩展',
       colour: TASK_FIRST_CATEGORY_META['调试与扩展'].colour,
       description: TASK_FIRST_CATEGORY_META['调试与扩展'].description,
-      visible_by_default: true,
-      expanded: true,
-      contents: [{
-        kind: 'category',
-        name: '调试扩展',
-        colour: '#6366f1',
-        description: '记录结果、打印调试信息并对流程做异常保护。',
-        contents: debugContents,
-      }],
+      visible_by_default: false,
+      expanded: false,
+      contents: debugGroups,
     });
   }
 
@@ -645,6 +798,9 @@ function getSourceToolbox() {
 function collectLeafToolboxCategories(items, result = []) {
   (Array.isArray(items) ? items : []).forEach((item) => {
     if (!item || item.kind !== 'category') {
+      return;
+    }
+    if (!isTeacherMode() && item.teacher_only) {
       return;
     }
     const children = Array.isArray(item.contents)
@@ -746,22 +902,15 @@ function resetCategoryVisibility(toolbox) {
   const nextVisibility = {};
   state.categoryColors = {};
   state.categoryNotes = {};
-  (toolbox?.contents || []).forEach((item) => {
-    if (item && item.kind === 'category' && item.name) {
-      const name = String(item.name).trim();
-      nextVisibility[name] = name in state.categoryVisibility
-        ? state.categoryVisibility[name]
-        : (typeof item.visible_by_default === 'boolean' ? item.visible_by_default : true);
-    }
-  });
   walkToolboxItems(toolbox?.contents || [], (item) => {
     if (item?.kind !== 'category' || !item.name) {
       return;
     }
     const name = String(item.name).trim();
-    if (item.colour) {
-      state.categoryColors[name] = item.colour;
-    }
+    nextVisibility[name] = name in state.categoryVisibility
+      ? state.categoryVisibility[name]
+      : (typeof item.visible_by_default === 'boolean' ? item.visible_by_default : true);
+    state.categoryColors[name] = resolveCategoryColour(name, item.colour || state.categoryColors[name] || DEFAULT_CATEGORY_COLOUR);
     if (item.description) {
       state.categoryNotes[name] = item.description;
     }
@@ -779,7 +928,7 @@ function renderGroupDrawer() {
   body.innerHTML = names.map((name, index) => {
     const checked = state.categoryVisibility[name] !== false ? 'checked' : '';
     const note = state.categoryNotes[name] || '当前工作区工具分组';
-    const color = state.categoryColors[name] || '#3F76CF';
+    const color = resolveCategoryColour(name, state.categoryColors[name] || '#3F76CF');
     const inputId = `group-item-${index}`;
     return `
       <label class="group-item" for="${inputId}" style="--xedu-category-color:${color}">
@@ -886,6 +1035,112 @@ function setCodePanelVisible(visible) {
     button.classList.toggle('is-collapsed', !state.codePanelVisible);
   }
   queueBlocklyResize();
+}
+
+function clampCodeDockWidth(width) {
+  const numeric = Number(width);
+  if (!Number.isFinite(numeric)) {
+    return CODE_DOCK_WIDTH_FALLBACK;
+  }
+  return Math.min(CODE_DOCK_WIDTH_MAX, Math.max(CODE_DOCK_WIDTH_MIN, Math.round(numeric)));
+}
+
+function readPersistedCodeDockWidth() {
+  try {
+    const raw = window.localStorage?.getItem(CODE_DOCK_WIDTH_STORAGE_KEY);
+    return raw ? clampCodeDockWidth(raw) : CODE_DOCK_WIDTH_FALLBACK;
+  } catch (_) {
+    return CODE_DOCK_WIDTH_FALLBACK;
+  }
+}
+
+function persistCodeDockWidth(width) {
+  try {
+    window.localStorage?.setItem(CODE_DOCK_WIDTH_STORAGE_KEY, String(clampCodeDockWidth(width)));
+  } catch (_) {
+    // ignore storage failures
+  }
+}
+
+function applyCodeDockWidth(width, { persist = false } = {}) {
+  const nextWidth = clampCodeDockWidth(width);
+  state.codeDockWidth = nextWidth;
+  document.documentElement.style.setProperty('--code-dock-open-width', `${nextWidth}px`);
+  const handle = document.getElementById('codeDockResizeHandle');
+  if (handle) {
+    handle.setAttribute('aria-valuemin', String(CODE_DOCK_WIDTH_MIN));
+    handle.setAttribute('aria-valuemax', String(CODE_DOCK_WIDTH_MAX));
+    handle.setAttribute('aria-valuenow', String(nextWidth));
+  }
+  if (persist) {
+    persistCodeDockWidth(nextWidth);
+  }
+}
+
+function bindCodeDockResize() {
+  const handle = document.getElementById('codeDockResizeHandle');
+  const codeDock = document.getElementById('codeDock');
+  const layout = document.getElementById('blocklyLayout');
+  if (!handle || !codeDock || !layout) {
+    return;
+  }
+
+  handle.addEventListener('pointerdown', (event) => {
+    if (!state.codePanelVisible) {
+      return;
+    }
+    event.preventDefault();
+    const pointerId = event.pointerId;
+    const layoutRect = layout.getBoundingClientRect();
+    state.codeDockResizing = {
+      pointerId,
+      layoutLeft: layoutRect.left,
+      layoutWidth: layoutRect.width,
+    };
+    codeDock.classList.add('is-resizing');
+    handle.setPointerCapture(pointerId);
+  });
+
+  handle.addEventListener('pointermove', (event) => {
+    if (!state.codeDockResizing || state.codeDockResizing.pointerId !== event.pointerId || !state.codePanelVisible) {
+      return;
+    }
+    event.preventDefault();
+    const nextWidth = state.codeDockResizing.layoutWidth - (event.clientX - state.codeDockResizing.layoutLeft);
+    applyCodeDockWidth(nextWidth);
+    queueBlocklyResize();
+  });
+
+  const stopResize = (event) => {
+    if (!state.codeDockResizing || state.codeDockResizing.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    codeDock.classList.remove('is-resizing');
+    try {
+      handle.releasePointerCapture(event.pointerId);
+    } catch (_) {
+      // ignore release failures
+    }
+    persistCodeDockWidth(state.codeDockWidth);
+    state.codeDockResizing = null;
+    queueBlocklyResize();
+  };
+
+  handle.addEventListener('pointerup', stopResize);
+  handle.addEventListener('pointercancel', stopResize);
+  handle.addEventListener('keydown', (event) => {
+    if (!state.codePanelVisible) {
+      return;
+    }
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+    event.preventDefault();
+    const delta = event.key === 'ArrowLeft' ? 24 : -24;
+    applyCodeDockWidth(state.codeDockWidth + delta, { persist: true });
+    queueBlocklyResize();
+  });
 }
 
 function queueBlocklyResize() {
@@ -1013,11 +1268,31 @@ function alignToolboxFlyout() {
   });
 }
 
+function resetToolboxFlyoutScroll() {
+  const flyout = state.workspace?.getFlyout?.();
+  if (flyout && typeof flyout.scrollToStart === 'function') {
+    flyout.scrollToStart();
+    return;
+  }
+  document.querySelectorAll('.blocklyFlyoutScrollbar, .blocklyScrollbarVertical').forEach((node) => {
+    if (typeof node.scrollTo === 'function') {
+      node.scrollTo({ top: 0, left: 0 });
+    }
+  });
+}
+
+function alignDropdownFieldArrows() {
+  // Keep Blockly dropdown rendering native. Rewriting dropdown text nodes
+  // breaks symbol-based fields such as the built-in arithmetic operators.
+  return;
+}
+
 function queueToolboxRowStyling() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       styleToolboxCategoryRows();
       alignToolboxFlyout();
+      alignDropdownFieldArrows();
     });
   });
 }
@@ -1051,10 +1326,10 @@ function switchToolboxMode(mode) {
 function getToolboxItemColour(item, fallbackName = '') {
   const itemColour = String(item?.toolboxItemDef_?.colour || '').trim();
   if (itemColour) {
-    return itemColour;
+    return resolveCategoryColour(fallbackName, itemColour);
   }
   const fallback = state.categoryColors[String(fallbackName || '').trim()];
-  return fallback || '#6366f1';
+  return resolveCategoryColour(fallbackName, fallback || DEFAULT_CATEGORY_COLOUR);
 }
 
 function selectToolboxItem(item) {
@@ -1063,6 +1338,9 @@ function selectToolboxItem(item) {
     return;
   }
   toolbox.setSelectedItem(item);
+  queueMicrotask(() => {
+    resetToolboxFlyoutScroll();
+  });
 }
 
 function buildSideNavModel() {
@@ -1079,7 +1357,7 @@ function buildSideNavModel() {
       return {
         item: children.length > 0 ? liveItemsByName.get(String(children[0].name || '').trim()) : liveItemsByName.get(name),
         name,
-        colour: section.colour || state.categoryColors[name] || '#6366f1',
+        colour: resolveCategoryColour(name, section.colour || state.categoryColors[name] || DEFAULT_CATEGORY_COLOUR),
         children: children
           .map((child) => {
             const childName = String(child.name || '').trim();
@@ -1122,6 +1400,8 @@ function renderCustomSideNav() {
   }
   const sections = buildSideNavModel();
   const selectedName = String(getSelectedToolboxCategoryMeta().name || '').trim();
+  const taskRegistry = getXEduHubTaskRegistry();
+  const tasksByFamilyLabel = new Map((taskRegistry.tasks || []).map((task) => [String(task?.family_label || '').trim(), task]));
   root.innerHTML = '';
 
   sections.forEach((section) => {
@@ -1156,15 +1436,27 @@ function renderCustomSideNav() {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'blockly-side-leaf';
+      const task = tasksByFamilyLabel.get(child.name);
+      const unavailable = Boolean(task && task.available === false);
       if (child.name === selectedName) {
         button.classList.add('is-active');
+      }
+      if (unavailable) {
+        button.classList.add('is-unavailable');
+        button.title = String(task?.support_reason || '当前本地 XEdu 运行环境不支持该任务');
       }
       button.style.setProperty('--xedu-leaf-color', child.colour);
       button.innerHTML = `
         <span class="blockly-side-leaf-icon">${getCategoryIconSvg(child.name)}</span>
         <span class="blockly-side-leaf-label">${child.name}</span>
       `;
-      button.addEventListener('click', () => selectToolboxItem(child.item));
+      button.addEventListener('click', () => {
+        if (unavailable) {
+          setResultWarningView(buildExperimentalTaskPreflight([task], { blocked: true }));
+          return;
+        }
+        selectToolboxItem(child.item);
+      });
       list.appendChild(button);
     });
     sectionEl.appendChild(list);
@@ -1237,15 +1529,13 @@ function ensureInitialToolboxSelection() {
 }
 
 function renderResultTerminal(text) {
-  const container = document.getElementById('resultEvidence');
-  if (!container) {
+  const terminal = document.getElementById('resultTerminal');
+  if (!terminal) {
     return;
   }
-  container.innerHTML = `<pre id="resultTerminal" class="result-terminal"></pre>`;
-  const terminal = document.getElementById('resultTerminal');
-  if (terminal) {
-    terminal.textContent = String(text || '').trim() || '$ ';
-  }
+  const normalized = String(text || '').trim();
+  terminal.textContent = normalized || '没有原始终端输出';
+  terminal.dataset.empty = normalized ? 'false' : 'true';
 }
 
 function getResultHint(payload) {
@@ -1401,7 +1691,7 @@ function setResultBadge(text, tone = '') {
   if (!runBadge) {
     return;
   }
-  runBadge.classList.remove('is-success', 'is-error', 'is-running');
+  runBadge.classList.remove('is-success', 'is-error', 'is-running', 'is-warning');
   if (tone) {
     runBadge.classList.add(tone);
   }
@@ -1487,6 +1777,56 @@ function appendTerminalText(lines, text) {
   normalized.split('\n').forEach((line) => lines.push(line));
 }
 
+function appendTerminalSection(lines, title, value) {
+  const before = lines.length;
+  appendTerminalText(lines, value);
+  if (lines.length === before) {
+    return;
+  }
+  if (title) {
+    lines.splice(before, 0, title);
+  }
+}
+
+function summarizeTerminalObject(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (_) {
+    return String(value);
+  }
+}
+
+function getPayloadPreviewImage(payload) {
+  return String(
+    payload?.result_artifacts?.preview_image
+    || payload?.artifacts?.image_data
+    || payload?.result?.image
+    || payload?.result?.result_image
+    || payload?.result?.visualization
+    || '',
+  ).trim();
+}
+
+function isDisplayableImageSource(src) {
+  const value = String(src || '').trim();
+  if (!value) {
+    return false;
+  }
+  if (/^(data:image\/|blob:|https?:\/\/|file:\/\/|\/)/i.test(value)) {
+    return true;
+  }
+  return /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(value);
+}
+
 function buildTerminalOutput(payload) {
   const lines = [];
   const stdout = String(payload?.result?.stdout || payload?.output || '').replace(/\r\n/g, '\n').trim();
@@ -1499,6 +1839,43 @@ function buildTerminalOutput(payload) {
   ).replace(/\r\n/g, '\n').trim();
 
   appendTerminalText(lines, stdout);
+  const message = String(payload?.message || '').trim();
+  const headline = String(payload?.result_summary?.headline || '').trim();
+  const output = payload?.result?.output;
+  if (!stdout && message) {
+    appendTerminalText(lines, message);
+  }
+  if (!stdout && !message && headline) {
+    appendTerminalText(lines, headline);
+  }
+  if (!stdout && output !== undefined && output !== null && output !== '') {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    appendTerminalSection(lines, '运行结果:', summarizeTerminalObject(output));
+  }
+  const metrics = Array.isArray(payload?.result_summary?.metrics) ? payload.result_summary.metrics : [];
+  const metricLines = metrics
+    .map((metric) => {
+      const label = String(metric?.label || '').trim();
+      const value = formatTerminalValue(metric?.value);
+      return label ? `${label}: ${value}` : '';
+    })
+    .filter(Boolean);
+  if (metricLines.length > 0) {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    lines.push(...metricLines);
+  }
+  const hints = Array.isArray(payload?.result_summary?.hints) ? payload.result_summary.hints : [];
+  const hintLines = hints.map((hint) => String(hint || '').trim()).filter(Boolean);
+  if (hintLines.length > 0) {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    lines.push(...hintLines.map((hint) => `提示: ${hint}`));
+  }
   if (stderr) {
     if (lines.length > 0) {
       lines.push('');
@@ -1506,49 +1883,29 @@ function buildTerminalOutput(payload) {
     appendTerminalText(lines, stderr);
   }
 
-  if (lines.length === 0) {
-    const summary = payload?.result_summary || {};
-    const headline = String(summary?.headline || payload?.message || '').trim();
-    const metrics = Array.isArray(summary?.metrics) ? summary.metrics : [];
-    const keyFields = payload?.result_artifacts?.key_fields && typeof payload.result_artifacts.key_fields === 'object'
-      ? Object.entries(payload.result_artifacts.key_fields).map(([label, value]) => ({ label, value }))
-      : [];
-    const hints = Array.isArray(summary?.hints) ? summary.hints : [];
-
-    if (headline) {
-      lines.push(headline);
-    }
-
-    const rows = keyFields.length > 0 ? keyFields : metrics;
-    rows.slice(0, 6).forEach((row) => {
-      lines.push(`${row?.label || 'result'}: ${formatTerminalValue(row?.value)}`);
-    });
-
-    if (lines.length === 0) {
-      lines.push(payload?.success ? '[done]' : '[failed]');
-    }
-
-    if (hints[0]) {
-      lines.push('');
-      lines.push(`# ${hints[0]}`);
-    }
-  }
-
   const returnCode = payload?.result?.return_code ?? payload?.return_code;
-  if (typeof returnCode === 'number' && (returnCode !== 0 || lines.length === 0 || !stdout)) {
+  if (typeof returnCode === 'number' && (returnCode !== 0 || lines.length > 0)) {
     if (lines.length > 0) {
       lines.push('');
     }
     lines.push(`[exit code ${returnCode}]`);
   }
 
-  return lines.join('\n').trim() || '$ 等待运行';
+  if (isDisplayableImageSource(getPayloadPreviewImage(payload))) {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    lines.push('[图片结果已弹窗显示]');
+  }
+
+  return lines.join('\n').trim() || '';
 }
 
 function setResultIdleView() {
   setResultMode('idle');
   setResultBadge('未运行');
   state.resultRunState = { hasRun: false, lastPayload: null, lastTone: 'idle' };
+  closeResultImageDialog();
   renderResultTerminal(CLASSROOM_DEFAULTS.resultIdleText);
   resetDebugDetails({ payload: {}, open: false });
   updateTaskContext();
@@ -1560,6 +1917,19 @@ function setResultRunningView() {
   state.resultRunState = { hasRun: true, lastPayload: { status: 'running' }, lastTone: 'running' };
   renderResultTerminal(CLASSROOM_DEFAULTS.resultRunningText);
   resetDebugDetails({ payload: { status: 'running' }, open: false });
+  updateTaskContext();
+}
+
+function setResultWarningView(payload) {
+  setResultMode('warning');
+  setResultBadge(payload?.blocked ? '未执行' : '提醒', 'is-warning');
+  state.resultRunState = {
+    hasRun: true,
+    lastPayload: payload || { status: 'warning' },
+    lastTone: payload?.blocked ? 'blocked' : 'warning',
+  };
+  renderResultTerminal(buildTerminalOutput(payload || { message: CLASSROOM_DEFAULTS.resultBlockedText }));
+  resetDebugDetails({ payload: payload || { status: 'warning' }, open: false });
   updateTaskContext();
 }
 
@@ -1611,6 +1981,7 @@ async function openWorkspaceFile(file) {
   resetDebugDetails({ payload: {}, open: false });
   if (migrationReport && ((migrationReport.changed || []).length || (migrationReport.failed || []).length)) {
     renderMigrationReport(migrationReport);
+    maybeWarnExperimentalWorkspace('已打开并自动迁移实验性任务工作区');
   } else {
     updateResultView({
       success: true,
@@ -1618,6 +1989,7 @@ async function openWorkspaceFile(file) {
       result: { stdout: '', stderr: '', return_code: 0 },
       artifacts: {},
     });
+    maybeWarnExperimentalWorkspace('已打开包含实验性任务的工作区');
   }
   updateTaskContext();
 }
@@ -1683,6 +2055,18 @@ function extractXEduHubSpec() {
     getTaskIdFromRunBlockType,
     isSemanticRunBlockType,
     projectRoot: String(getConfigValue('projectRoot', '')),
+    resolveLegacyTaskId,
+  });
+}
+
+function collectWorkspaceTasks() {
+  if (!state.workspace) {
+    return [];
+  }
+  return collectXEduHubTasksFromBlocks(state.workspace.getAllBlocks(false), {
+    getTaskById,
+    getTaskIdFromRunBlockType,
+    isSemanticRunBlockType,
     resolveLegacyTaskId,
   });
 }
@@ -1769,6 +2153,19 @@ function renderMigrationReport(report) {
   blocklyDebugLog('工作区迁移报告', report);
 }
 
+function maybeWarnExperimentalWorkspace(reason = '已加载包含实验性任务的工作区') {
+  const tasks = collectWorkspaceTasks().filter((task) => task?.available === false);
+  if (tasks.length === 0) {
+    return;
+  }
+  const payload = buildExperimentalTaskPreflight(tasks, { blocked: false });
+  payload.success = true;
+  payload.message = reason;
+  payload.result_summary.headline = reason;
+  payload.result_summary.hints = ['这些任务会兼容保留，但默认不会出现在新的快捷任务分类里。'];
+  setResultWarningView(payload);
+}
+
 function syncWorkspaceTaskContext() {
   updateTaskContext();
   if (state.workspace && typeof state.workspace.getAllBlocks === 'function') {
@@ -1794,17 +2191,80 @@ function validateRunnableSpec(spec) {
   return null;
 }
 
+function buildExperimentalTaskPreflight(tasks, { blocked = false } = {}) {
+  const names = tasks.map((task) => String(task?.label || task?.task_id || '').trim()).filter(Boolean);
+  const joined = names.join('、');
+  const firstAction = String(tasks[0]?.recommended_action || '').trim();
+  return {
+    success: false,
+    blocked,
+    result_type: 'error',
+    error_code: blocked ? 'runtime_task_hidden_for_student' : 'runtime_task_experimental',
+    message: blocked
+      ? `当前流程包含本地暂不支持的实验性任务：${joined}`
+      : `当前流程包含实验性任务：${joined}`,
+    result: {},
+    artifacts: {},
+    result_summary: {
+      headline: blocked ? '学生模式下已阻止执行实验性任务' : '检测到实验性任务',
+      metrics: names.length > 0 ? [{ label: '任务数量', value: names.length }] : [],
+      hints: [
+        blocked
+          ? '请改用默认可运行的任务块，或让老师在教师模式下检查该流程。'
+          : (firstAction || '这些任务当前本地环境不支持，请安装对应模型/版本后再试。'),
+      ],
+    },
+    result_artifacts: { preview_image: '', key_fields: names.length > 0 ? { 实验性任务: joined } : {} },
+    result_error: { code: blocked ? 'runtime_task_hidden_for_student' : 'runtime_task_experimental' },
+  };
+}
+
+function collectPresentationActionsFromWorkspace() {
+  if (!state.workspace) {
+    return [];
+  }
+  return collectXEduHubPresentationActionsFromBlocks(state.workspace);
+}
+
+function decoratePayloadWithResultActions(payload) {
+  const nextPayload = payload && typeof payload === 'object' ? payload : {};
+  const actions = collectPresentationActionsFromWorkspace();
+  nextPayload.__xeduPresentationActions = actions;
+  nextPayload.__xeduPresentationCleared = actions.some((action) => action?.type === 'clear_result');
+  return nextPayload;
+}
+
+function getRequestedResultImage(actions, payload) {
+  const imageAction = (actions || []).find((action) => action?.type === 'result_image');
+  const explicitImage = String(imageAction?.image?.value || '').trim();
+  return {
+    src: [getPayloadPreviewImage(payload), explicitImage].find(isDisplayableImageSource) || '',
+    title: String(imageAction?.title || '结果图片').trim() || '结果图片',
+  };
+}
+
 function updateResultView(payload) {
-  const success = Boolean(payload && payload.success);
+  const nextPayload = decoratePayloadWithResultActions(payload || {});
+  const success = Boolean(nextPayload && nextPayload.success);
+  const clearedOnly = Boolean(nextPayload?.__xeduPresentationCleared);
   state.resultRunState.hasRun = true;
-  state.resultRunState.lastPayload = payload || {};
-  state.resultRunState.lastTone = success ? 'success' : 'error';
-  setResultMode(success ? 'success' : 'error');
-  setResultBadge(success ? '完成' : '异常', success ? 'is-success' : 'is-error');
-  renderResultTerminal(buildTerminalOutput(payload || {}));
+  state.resultRunState.lastPayload = nextPayload;
+  state.resultRunState.lastTone = clearedOnly ? 'idle' : success ? 'success' : 'error';
+  if (clearedOnly) {
+    setResultMode('idle');
+    setResultBadge('已清空');
+    closeResultImageDialog();
+    renderResultTerminal('已清空运行反馈');
+  } else {
+    setResultMode(success ? 'success' : 'error');
+    setResultBadge(success ? '完成' : '异常', success ? 'is-success' : 'is-error');
+    renderResultTerminal(buildTerminalOutput(nextPayload));
+    const imageResult = getRequestedResultImage(nextPayload.__xeduPresentationActions, nextPayload);
+    openResultImageDialog(imageResult.src, imageResult.title);
+  }
   resetDebugDetails({
-    payload: payload?.result ?? payload ?? {},
-    open: !success && Boolean(payload?.result && Object.keys(payload.result).length > 0),
+    payload: nextPayload?.result ?? nextPayload ?? {},
+    open: !success && Boolean(nextPayload?.result && Object.keys(nextPayload.result).length > 0),
   });
   updateTaskContext();
 }
@@ -1830,10 +2290,20 @@ async function executeXEduHub() {
 
     if (hasRunnableFlow()) {
       const spec = extractXEduHubSpec();
+      const workspaceTasks = collectWorkspaceTasks();
+      const experimentalTasks = workspaceTasks.filter((task) => task?.available === false);
       const specError = validateRunnableSpec(spec);
       if (specError) {
         updateResultView(specError);
         return;
+      }
+      if (experimentalTasks.length > 0) {
+        const payload = buildExperimentalTaskPreflight(experimentalTasks, { blocked: !isTeacherMode() });
+        if (!isTeacherMode()) {
+          setResultWarningView(payload);
+          return;
+        }
+        setResultWarningView(payload);
       }
       if (hasRuntimeBoundInputSpec(spec)) {
         const response = await fetch(String(getConfigValue('pythonRunUrl', '/api/python/run')), {
@@ -2336,6 +2806,7 @@ function bindUI() {
 
 async function init() {
   ensureRuntimeStyles();
+  applyCodeDockWidth(readPersistedCodeDockWidth());
   blocklyDebugLog('Blockly 运行时初始化开始', {
     debugEnabled: BLOCKLY_DEBUG_ENABLED,
     role: String(getConfigValue('userRole', '')),
@@ -2343,6 +2814,7 @@ async function init() {
   });
   defineXEduHubBlocks(Blockly, pythonGenerator);
   bindUI();
+  bindCodeDockResize();
   state.toolboxVariants = await loadToolboxes();
   logDynamicCategorySnapshot(state.toolboxVariants?.course || state.toolboxVariants?.official || {}, 'loadToolboxes');
   resetCategoryVisibility(getSourceToolbox());
@@ -2351,10 +2823,16 @@ async function init() {
   state.workspace = Blockly.inject('blocklyDiv', {
     toolbox: getActiveToolbox(),
     renderer: 'zelos',
+    media: resolveBlocklyMediaPath(),
     sounds: false,
     rendererOverrides: {
       ADD_START_HATS: true,
       CORNER_RADIUS: 7,
+      MEDIUM_PADDING: 7,
+      LARGE_PADDING: 13,
+      MIN_BLOCK_HEIGHT: 40,
+      EMPTY_INLINE_INPUT_HEIGHT: 36,
+      FIELD_DROPDOWN_SVG_ARROW: false,
       NOTCH_HEIGHT: 4,
       NOTCH_WIDTH: 14,
       STATEMENT_INPUT_NOTCH_OFFSET: 16,
@@ -2400,6 +2878,7 @@ async function init() {
     }
     if (migrationReport && ((migrationReport.changed || []).length || (migrationReport.failed || []).length)) {
       renderMigrationReport(migrationReport);
+      maybeWarnExperimentalWorkspace('已自动迁移并保留实验性任务工作区');
     }
   } else {
     state.initialSerialized = buildDefaultWorkspaceSerialized();
@@ -2422,6 +2901,9 @@ async function init() {
       normalizeSelectedToolboxItem();
       renderCustomSideNav();
       queueToolboxRowStyling();
+      queueMicrotask(() => {
+        resetToolboxFlyoutScroll();
+      });
     }
     alignToolboxFlyout();
     syncWorkspaceTaskContext();
