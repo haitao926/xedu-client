@@ -4660,6 +4660,18 @@ body.focus-mode {
     min-height: 0;
     overflow-y: auto;
 }
+
+/* Make Project Path and Jupyter Control card layouts more spacious and breathing */
+.dashboard-left-col .card-body {
+    padding: 26px 26px 30px 26px; /* Slightly more spacious padding */
+}
+.dashboard-left-col .card-body .input-row {
+    margin-bottom: 22px; /* Increase gap between input row and buttons */
+    gap: 12px;           /* Slightly more space between input field and folder button */
+}
+.dashboard-left-col .card-body .action-row {
+    gap: 12px;           /* Slightly more space between Confirm and Clear buttons */
+}
 /* --- 资源模块按钮样式瘦身与极简优化 --- */
 .resources-detail-content .btn, .resources-section-actions .btn, .resources-experiment-actions .btn, .resources-file-chip .btn { padding: 4px 10px !important; font-size: 12px !important; height: 28px !important; line-height: 1.2 !important; border-radius: 6px !important; }
 .resources-experiment-actions .btn { min-width: 0 !important; }
