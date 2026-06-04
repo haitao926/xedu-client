@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张高级手绘工具箱支撑信息图底图，横向16:9，用于正式申报报告。主题是 XEduHub 工具箱同时支撑 Blockly 与 Jupyter。画面中心是一个打开的智能工具箱，工具箱周围有四个空白能力卡片，分别位于上、下、左上、右上方向；左侧是一块空白积木流程屏幕，右侧是一块空白代码 Notebook 屏幕，工具箱用箭头连接两侧。底部有一个空白课程样例卡片。高级教育科技白皮书风格，精致墨线，轻水彩质感，浅暖白背景，蓝绿主色，少量橙色强调，结构清楚。不要生成任何文字、字母、数字、logo、乱码、水印、二维码、网址、人物照片。所有标签位置必须为空白，方便后期叠加清晰中文。",
+  "original_prompt": "生成一张高级手绘工具箱支撑信息图底图，横向16:9，用于正式申报报告。主题是 XEduHub 工具箱同时支撑 Blockly 与 Jupyter。画面中心是一个打开的智能工具箱，工具箱周围有四个空白能力卡片，分别位于上、下、左上、右上方向；左侧是一块空白积木流程屏幕，右侧是一块空白代码 Notebook 屏幕，工具箱用箭头连接两侧。底部有一个空白课程样例卡片。高级教育科技白皮书风格，精致墨线，轻水彩质感，浅暖白背景，蓝绿主色，少量橙色强调，结构清楚。不要生成任何文字、字母、数字、logo、乱码、水印、二维码、网址、人物照片。所有标签位置必须为空白，方便后期叠加清晰中文。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/142ca2f6-a8f1-4c3e-a469-016a97556cac.png",
+  "output_path": "docs/case-application-2026/assets/figures/gpt-image-2-redraw/figure_4_xeduhub_toolbox_base.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

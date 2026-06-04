@@ -1,9 +1,13 @@
 import blocklyColorContract from '../../../config/blockly-colors.json' with { type: 'json' };
+import {
+  DEFAULT_BLOCKLY_IMAGE_INPUT,
+  DEFAULT_BLOCKLY_VIDEO_INPUT,
+} from './sample-assets.js';
 
 const RUN_BLOCK_PREFIX = 'xeduhub_run_';
 const TASK_FIELD_NAME = 'TASK_ID';
 const PARAMS_FIELD_NAME = 'PARAMS';
-const DEFAULT_XEDUHUB_SAMPLE_INPUT = 'courses/blockly-smoke/demo.jpg';
+const DEFAULT_XEDUHUB_SAMPLE_INPUT = DEFAULT_BLOCKLY_IMAGE_INPUT;
 const XEDU_IMAGE_PICKER_REQUEST = 'xedu:select-image-file';
 const XEDU_IMAGE_PICKER_RESPONSE = 'xedu:select-image-file:response';
 const ADVANCED_PYTHON_BLOCK_TYPES = new Set([
@@ -161,22 +165,13 @@ const FRONTEND_RUNTIME_TASK_ID_MAP = Object.freeze({
   pose_wholebody133: 'wholebody133',
 });
 
-const FRONTEND_SMOKE_CHECKPOINT_MAP = Object.freeze({
-  bodydetect: 'bodydetect.onnx',
-  cocodetect: 'cocodetect.onnx',
-  body17: 'body17.onnx',
-  body26: 'body26.onnx',
-  wholebody133: 'whole133.onnx',
-  face106: 'face106.onnx',
-  hand21: 'hand21.onnx',
-});
+const STREAM_VIDEO_SUFFIX_RE = /\.(mp4|mov|m4v|avi|mkv|webm)$/i;
+const STREAM_URL_RE = /^(rtsp|rtsps|rtmp|http|https):\/\//i;
 
 const HIDDEN_TASK_FALLBACKS = Object.freeze({
   det_body_l: 'det_body',
-  det_coco_l: 'det_coco',
   pose_body17_l: 'pose_body17',
   pose_body26: 'pose_body17',
-  pose_wholebody133: 'pose_body17',
 });
 
 const TASK_VISIBLE_PARAM_KEYS = {
@@ -236,92 +231,92 @@ const BADGE_GLYPHS = Object.freeze({
 
 const BADGE_PALETTES = Object.freeze({
   default: {
-    surfaceTop: '#1e293b',
-    surfaceBottom: '#3b82f6',
-    accent: '#bfdbfe',
-    accentSoft: '#F5F8FC',
-    glow: '#60a5fa',
-    rim: '#dbeafe',
+    surfaceTop: '#1d2936',
+    surfaceBottom: '#41556f',
+    accent: '#b7c8dc',
+    accentSoft: '#f4f8fb',
+    glow: '#7a95b7',
+    rim: '#d7e1ec',
   },
   ocean: {
-    surfaceTop: '#1e3a8a',
-    surfaceBottom: '#3b82f6',
-    accent: '#bfdbfe',
-    accentSoft: '#F5F8FC',
-    glow: '#60a5fa',
-    rim: '#dbeafe',
+    surfaceTop: '#234562',
+    surfaceBottom: '#4f7ca8',
+    accent: '#c5d8ea',
+    accentSoft: '#f4f8fb',
+    glow: '#7ca8d1',
+    rim: '#dbe8f3',
   },
   teal: {
-    surfaceTop: '#134e4a',
-    surfaceBottom: '#14b8a6',
-    accent: '#99f6e4',
-    accentSoft: '#F4FBFA',
-    glow: '#5eead4',
-    rim: '#ccfbf1',
+    surfaceTop: '#1f5d57',
+    surfaceBottom: '#3f9a8f',
+    accent: '#bde3dc',
+    accentSoft: '#f2faf8',
+    glow: '#69b8ad',
+    rim: '#d8eeea',
   },
   amber: {
-    surfaceTop: '#78350f',
-    surfaceBottom: '#f59e0b',
-    accent: '#fde68a',
-    accentSoft: '#FCF8F2',
-    glow: '#fbbf24',
-    rim: '#fef3c7',
+    surfaceTop: '#6a4722',
+    surfaceBottom: '#c88a43',
+    accent: '#e8cfab',
+    accentSoft: '#fff9f1',
+    glow: '#d9a25f',
+    rim: '#f2e2cb',
   },
   violet: {
-    surfaceTop: '#312e81',
-    surfaceBottom: '#8b5cf6',
-    accent: '#ddd6fe',
-    accentSoft: '#FAF8FD',
-    glow: '#a78bfa',
-    rim: '#ede9fe',
+    surfaceTop: '#4f457d',
+    surfaceBottom: '#7662c9',
+    accent: '#d5cdf0',
+    accentSoft: '#f7f4fe',
+    glow: '#a496dd',
+    rim: '#e9e3fa',
   },
   coral: {
-    surfaceTop: '#831843',
-    surfaceBottom: '#ec4899',
-    accent: '#fbcfe8',
-    accentSoft: '#FCF8F6',
-    glow: '#f472b6',
-    rim: '#fce7f3',
+    surfaceTop: '#6f4355',
+    surfaceBottom: '#b7648f',
+    accent: '#ecd0dc',
+    accentSoft: '#fff6f8',
+    glow: '#d08eab',
+    rim: '#f4e0e8',
   },
   plum: {
-    surfaceTop: '#3730a3',
-    surfaceBottom: '#6366f1',
-    accent: '#c7d2fe',
-    accentSoft: '#F8F7FB',
-    glow: '#818cf8',
-    rim: '#e0e7ff',
+    surfaceTop: '#594f81',
+    surfaceBottom: '#8f7fbe',
+    accent: '#ddd6f3',
+    accentSoft: '#faf8ff',
+    glow: '#b5a8da',
+    rim: '#ece8f8',
   },
   mint: {
-    surfaceTop: '#164e63',
-    surfaceBottom: '#06b6d4',
-    accent: '#a5f3fc',
-    accentSoft: '#F4FBFB',
-    glow: '#22d3ee',
-    rim: '#cffafe',
+    surfaceTop: '#295c67',
+    surfaceBottom: '#4398b2',
+    accent: '#cae7ef',
+    accentSoft: '#f2fbfd',
+    glow: '#7dc2d6',
+    rim: '#dff2f7',
   },
   green: {
-    surfaceTop: '#065f46',
-    surfaceBottom: '#10b981',
-    accent: '#a7f3d0',
-    accentSoft: '#f0fdf4',
-    glow: '#34d399',
-    rim: '#d1fae5',
+    surfaceTop: '#23584b',
+    surfaceBottom: '#2e8f7c',
+    accent: '#c8e7df',
+    accentSoft: '#f4fbf8',
+    glow: '#63b4a3',
+    rim: '#ddf0ea',
   },
   sky: {
-    surfaceTop: '#075985',
-    surfaceBottom: '#0ea5e9',
-    accent: '#bae6fd',
-    accentSoft: '#f0f9ff',
-    glow: '#38bdf8',
-    rim: '#e0f2fe',
+    surfaceTop: '#2d5373',
+    surfaceBottom: '#5c8fb8',
+    accent: '#cedff0',
+    accentSoft: '#f5f9fd',
+    glow: '#89afd1',
+    rim: '#e2ebf5',
   },
   orange: {
-    surfaceTop: '#7c2d12',
-    surfaceBottom: '#f97316',
-    accent: '#fed7aa',
-    accentSoft: '#fff7ed',
-    glow: '#fb923c',
-    rim: '#ffedd5',
+    surfaceTop: '#6b4a2f',
+    surfaceBottom: '#b07d48',
+    accent: '#ead4bb',
+    accentSoft: '#fff8f1',
+    glow: '#c49b6c',
+    rim: '#f3e4d3',
   },
 });
 
@@ -424,18 +419,18 @@ function makeBadgeIcon(innerSvg, paletteName = 'default') {
           <stop offset="1" stop-color="rgba(255,255,255,0)"/>
         </linearGradient>
         <filter id="badgeShadow" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
-          <feDropShadow dx="0" dy="1.2" stdDeviation="1.2" flood-color="#020617" flood-opacity=".26"/>
+          <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#0f172a" flood-opacity=".18"/>
         </filter>
       </defs>
       <g filter="url(#badgeShadow)">
-        <rect x="1.5" y="1.5" width="21" height="21" rx="6.4" fill="url(#badgeSurface)"/>
-        <rect x="1.5" y="1.5" width="21" height="21" rx="6.4" fill="url(#badgeGlass)" opacity=".92"/>
-        <rect x="1.5" y="1.5" width="21" height="21" rx="6.4" stroke="url(#badgeRim)" stroke-width=".95"/>
-        <circle cx="17.6" cy="6.3" r="5.8" fill="url(#badgeGlow)" opacity=".92"/>
-        <path d="M5.4 5.6h7.1" stroke="${palette.accentSoft}" stroke-width=".9" stroke-linecap="round" opacity=".22"/>
-        <path d="M5.5 18.1h4.4" stroke="${palette.accent}" stroke-width=".95" stroke-linecap="round" opacity=".3"/>
-        <circle cx="17.65" cy="6.25" r="1.18" fill="${palette.accent}"/>
-        <circle cx="17.65" cy="6.25" r=".5" fill="${palette.accentSoft}" opacity=".9"/>
+        <rect x="1.5" y="1.5" width="21" height="21" rx="5.8" fill="url(#badgeSurface)"/>
+        <rect x="1.5" y="1.5" width="21" height="21" rx="5.8" fill="url(#badgeGlass)" opacity=".78"/>
+        <rect x="1.5" y="1.5" width="21" height="21" rx="5.8" stroke="url(#badgeRim)" stroke-width=".8"/>
+        <circle cx="17.6" cy="6.3" r="5.3" fill="url(#badgeGlow)" opacity=".42"/>
+        <path d="M5.6 5.8h6.2" stroke="${palette.accentSoft}" stroke-width=".82" stroke-linecap="round" opacity=".16"/>
+        <path d="M5.9 17.7h3.6" stroke="${palette.accent}" stroke-width=".85" stroke-linecap="round" opacity=".2"/>
+        <path d="M4.4 18.2h15.2" stroke="#0f172a" stroke-opacity=".08" stroke-width="1.1" stroke-linecap="round"/>
+        <path d="M4.6 4.8h7" stroke="#ffffff" stroke-opacity=".76" stroke-width=".9" stroke-linecap="round"/>
       </g>
       ${innerSvg}
     </svg>`,
@@ -446,12 +441,80 @@ const FIELD_BADGE_ICON_URIS = Object.fromEntries(
   Object.entries(BADGE_GLYPHS).map(([iconKey, glyph]) => [iconKey, makeBadgeIcon(glyph, BADGE_PALETTE_BY_ICON[iconKey])]),
 );
 
+const THREE_D_TASK_ICON_URIS = Object.freeze({
+  classification: '/api/resources/frontend-assets/assets/3dicons-transparent/picture.png',
+  detection: '/api/resources/frontend-assets/assets/3dicons-transparent/target.png',
+  ocr: '/api/resources/frontend-assets/assets/3dicons-transparent/text.png',
+  pose: '/api/resources/frontend-assets/assets/3dicons-transparent/thumb-up.png',
+  generation: '/api/resources/frontend-assets/assets/3dicons-transparent/magic-trick.png',
+  segmentation: '/api/resources/frontend-assets/assets/3dicons-transparent/picture.png',
+  depth: '/api/resources/frontend-assets/assets/3dicons-transparent/cube.png',
+  multimodal: '/api/resources/frontend-assets/assets/3dicons-transparent/computer.png',
+  panoptic: '/api/resources/frontend-assets/assets/3dicons-transparent/camera.png',
+  workflow: '/api/resources/frontend-assets/assets/3dicons-transparent/setting.png',
+  input: '/api/resources/frontend-assets/assets/3dicons-transparent/camera.png',
+  result: '/api/resources/frontend-assets/assets/3dicons-transparent/tick.png',
+  resultImage: '/api/resources/frontend-assets/assets/3dicons-transparent/picture.png',
+  note: '/api/resources/frontend-assets/assets/3dicons-transparent/text.png',
+  clear: '/api/resources/frontend-assets/assets/3dicons-transparent/setting.png',
+  debug: '/api/resources/frontend-assets/assets/3dicons-transparent/setting.png',
+  default: '/api/resources/frontend-assets/assets/3dicons-transparent/setting.png',
+});
+
+const THREE_D_TASK_ID_ICON_URIS = Object.freeze({
+  cls_imagenet: '/api/resources/frontend-assets/assets/3dicons-transparent/picture.png',
+  det_body: '/api/resources/frontend-assets/assets/3dicons-transparent/gym.png',
+  det_body_l: '/api/resources/frontend-assets/assets/3dicons-transparent/gym.png',
+  det_face: '/api/resources/frontend-assets/assets/3dicons-transparent/shield.png',
+  det_hand: '/api/resources/frontend-assets/assets/3dicons-transparent/thumb-up.png',
+  det_coco: '/api/resources/frontend-assets/assets/3dicons-transparent/target.png',
+  det_coco_l: '/api/resources/frontend-assets/assets/3dicons-transparent/target.png',
+  pose_body17: '/api/resources/frontend-assets/assets/3dicons-transparent/play.png',
+  pose_body17_l: '/api/resources/frontend-assets/assets/3dicons-transparent/play.png',
+  pose_body26: '/api/resources/frontend-assets/assets/3dicons-transparent/play.png',
+  pose_face106: '/api/resources/frontend-assets/assets/3dicons-transparent/heart.png',
+  pose_hand21: '/api/resources/frontend-assets/assets/3dicons-transparent/thumb-up.png',
+  pose_wholebody133: '/api/resources/frontend-assets/assets/3dicons-transparent/play.png',
+  ocr: '/api/resources/frontend-assets/assets/3dicons-transparent/text.png',
+  gen_style: '/api/resources/frontend-assets/assets/3dicons-transparent/magic-trick.png',
+  gen_color: '/api/resources/frontend-assets/assets/3dicons-transparent/pencil.png',
+  drive_perception: '/api/resources/frontend-assets/assets/3dicons-transparent/camera.png',
+  embedding_image: '/api/resources/frontend-assets/assets/3dicons-transparent/picture.png',
+  embedding_text: '/api/resources/frontend-assets/assets/3dicons-transparent/file-text.png',
+  embedding_audio: '/api/resources/frontend-assets/assets/3dicons-transparent/mic.png',
+  segment_anything: '/api/resources/frontend-assets/assets/3dicons-transparent/picture.png',
+  depth_anything: '/api/resources/frontend-assets/assets/3dicons-transparent/cube.png',
+});
+
 function buildIconField(iconKey) {
   return {
     type: 'field_image',
-    src: FIELD_BADGE_ICON_URIS[iconKey] || FIELD_BADGE_ICON_URIS.default,
-    width: 20,
-    height: 20,
+    src: THREE_D_TASK_ICON_URIS[iconKey] || FIELD_BADGE_ICON_URIS[iconKey] || FIELD_BADGE_ICON_URIS.default,
+    width: 28,
+    height: 28,
+    alt: 'icon',
+  };
+}
+
+function buildHeroIconField(iconKey, size = 28) {
+  return {
+    type: 'field_image',
+    src: THREE_D_TASK_ICON_URIS[iconKey] || FIELD_BADGE_ICON_URIS[iconKey] || FIELD_BADGE_ICON_URIS.default,
+    width: size,
+    height: size,
+    alt: 'icon',
+  };
+}
+
+function buildTaskIconField(taskId) {
+  const iconKey = String(taskId || '').trim();
+  const task = getTaskById(iconKey);
+  const semanticIconKey = String(task?.family || '').trim() || 'default';
+  return {
+    type: 'field_image',
+    src: THREE_D_TASK_ID_ICON_URIS[iconKey] || THREE_D_TASK_ICON_URIS[semanticIconKey] || THREE_D_TASK_ICON_URIS.default,
+    width: 30,
+    height: 30,
     alt: 'icon',
   };
 }
@@ -472,6 +535,15 @@ function buildDirectIconField(iconKey) {
     width: 20,
     height: 20,
     alt: 'icon',
+  };
+}
+
+function buildTitleField(text) {
+  const label = String(text || '').trim() || '任务';
+  return {
+    type: 'field_label_serializable',
+    name: 'TASK_LABEL',
+    text: label,
   };
 }
 
@@ -506,7 +578,7 @@ function isExperimentalTask(task) {
 
 function formatBlockTitle(label) {
   const text = String(label || '').trim();
-  return text ? `〔${text}〕` : '';
+  return text ? `【${text}】` : '';
 }
 
 function getCompactParamLabel(param) {
@@ -699,6 +771,47 @@ const FALLBACK_REGISTRY = {
       params: [{ key: 'thr', label: '阈值', field: 'number', default: 0.3 }],
     },
     {
+      task_id: 'det_face',
+      runtime_task_id: 'det_face',
+      label: '人脸目标检测',
+      family: 'detection',
+      family_label: '目标检测',
+      colour: XEDU_SEMANTIC_COLOURS.detection,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
+      input_mode: 'single_path',
+      result_kind: 'detection',
+      result_shape: 'detection',
+      quick_block_enabled: true,
+      core_api_enabled: true,
+      params: [
+        { key: 'minSize', label: '最小尺寸', field: 'text', default: '[50,50]' },
+        { key: 'maxSize', label: '最大尺寸', field: 'text', default: '' },
+        { key: 'scaleFactor', label: '缩放比', field: 'number', default: 1.1 },
+        { key: 'minNeighbors', label: '邻域数', field: 'number', default: 5 },
+      ],
+    },
+    {
+      task_id: 'det_hand',
+      runtime_task_id: 'det_hand',
+      label: '手部目标检测',
+      family: 'detection',
+      family_label: '目标检测',
+      colour: XEDU_SEMANTIC_COLOURS.detection,
+      available: true,
+      support_reason: '当前本地环境支持该任务。',
+      support_source: 'runtime',
+      recommended_action: '',
+      input_mode: 'single_path',
+      result_kind: 'detection',
+      result_shape: 'detection',
+      quick_block_enabled: true,
+      core_api_enabled: true,
+      params: [{ key: 'thr', label: '阈值', field: 'number', default: 0.3 }],
+    },
+    {
       task_id: 'det_coco',
       runtime_task_id: 'cocodetect',
       label: 'COCO 目标检测',
@@ -733,7 +846,7 @@ const FALLBACK_REGISTRY = {
       input_mode: 'single_path',
       result_kind: 'detection',
       result_shape: 'detection',
-      quick_block_enabled: false,
+      quick_block_enabled: true,
       core_api_enabled: true,
       params: [
         { key: 'thr', label: '阈值', field: 'number', default: 0.3 },
@@ -844,7 +957,7 @@ const FALLBACK_REGISTRY = {
       input_mode: 'single_path',
       result_kind: 'pose',
       result_shape: 'pose',
-      quick_block_enabled: false,
+      quick_block_enabled: true,
       core_api_enabled: true,
       params: [{ key: 'bbox', label: '检测框', field: 'text', default: '' }],
     },
@@ -1261,12 +1374,88 @@ async function requestImageFilePath() {
       // Fall through to backend HTTP bridge when the parent window cannot serve the picker.
     }
   }
-  const response = await globalThis.fetch('/api/system/select-image-file', { method: 'POST' });
-  if (!response.ok) {
-    throw new Error(`select-image-file failed: ${response.status}`);
-  }
-  const payload = await response.json().catch(() => ({}));
-  return payload?.path || null;
+  return await requestImageFilePathFromBrowser();
+}
+
+function requestImageFilePathFromBrowser() {
+  return new Promise((resolve, reject) => {
+    const doc = globalThis.document;
+    if (!doc?.createElement || !doc.body) {
+      reject(new Error('browser-file-picker-unavailable'));
+      return;
+    }
+
+    const input = doc.createElement('input');
+    input.type = 'file';
+    input.accept = '.png,.jpg,.jpeg,.bmp,.webp,.gif,image/png,image/jpeg,image/bmp,image/webp,image/gif';
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.opacity = '0';
+
+    let settled = false;
+    const cleanup = () => {
+      input.removeEventListener('change', handleChange);
+      input.removeEventListener('cancel', handleCancel);
+      globalThis.removeEventListener?.('focus', handleFocusBack);
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const importBrowserFile = async (file) => {
+      if (!file) return null;
+      if (typeof file.path === 'string' && file.path.trim()) {
+        return file.path;
+      }
+      try {
+        const form = new FormData();
+        form.append('file', file, file.name || 'blockly-input-image.png');
+        const response = await fetch('/api/system/import-image-file', {
+          method: 'POST',
+          body: form,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.success || !payload?.path) {
+          throw new Error(payload?.message || 'import-image-file-failed');
+        }
+        return String(payload.path);
+      } catch (error) {
+        throw new Error(`browser-file-import-failed: ${error?.message || error}`);
+      }
+    };
+    const handleChange = async () => {
+      const file = input.files && input.files[0];
+      try {
+        finish(resolve, await importBrowserFile(file));
+      } catch (error) {
+        finish(reject, error);
+      }
+    };
+    const handleCancel = () => finish(resolve, null);
+    const handleFocusBack = () => {
+      globalThis.setTimeout(() => {
+        if (!settled) {
+          finish(resolve, null);
+        }
+      }, 500);
+    };
+
+    input.addEventListener('change', handleChange, { once: true });
+    input.addEventListener('cancel', handleCancel, { once: true });
+    globalThis.addEventListener?.('focus', handleFocusBack, { once: true });
+    doc.body.appendChild(input);
+
+    try {
+      input.click();
+    } catch (error) {
+      finish(reject, error);
+    }
+  });
 }
 
 function requestImageFilePathFromParentWindow(timeoutMs = 10000) {
@@ -1337,8 +1526,10 @@ function registerImagePathField(Blockly) {
         if (selectedPath) {
           this.setValue(String(selectedPath));
         }
-      } catch (_) {
-        // Keep current path when picker is cancelled or unavailable.
+      } catch (error) {
+        console.error('XEdu image import failed:', error);
+        this.setValue('');
+        globalThis.alert?.('图片导入失败：未能获得可用于后端推理的本地路径，请重试。');
       }
     }
 
@@ -1471,22 +1662,6 @@ function ensureWorkflowImport(pythonGenerator) {
   definePythonSnippet(pythonGenerator, 'import_xedu_workflow', 'from XEdu.hub import Workflow as wf');
 }
 
-function ensureCheckpointSupport(pythonGenerator) {
-  definePythonSnippet(pythonGenerator, 'import_pathlib_path', 'from pathlib import Path');
-  definePythonSnippet(
-    pythonGenerator,
-    'xedu_checkpoint_helper',
-    [
-      'def xedu_smoke_checkpoint(name):',
-      '    for root in (Path.cwd(), *Path.cwd().parents):',
-      '        candidate = root / "courses" / "blockly-smoke" / "checkpoints" / name',
-      '        if candidate.exists():',
-      '            return str(candidate)',
-      '    return ""',
-    ].join('\n'),
-  );
-}
-
 function getWorkflowVarNameForTask(taskId) {
   const runtimeTaskId = String(getRuntimeTaskId(taskId) || taskId || 'lab_flow').trim();
   const sanitized = runtimeTaskId
@@ -1508,17 +1683,11 @@ function ensureWorkflowInstance(pythonGenerator, taskId) {
   }
   const runtimeTaskId = String(getRuntimeTaskId(taskId) || taskId || '').trim();
   const flowVar = getWorkflowVarNameForTask(taskId);
-  const checkpointName = FRONTEND_SMOKE_CHECKPOINT_MAP[runtimeTaskId] || '';
   ensureWorkflowImport(pythonGenerator);
-  if (checkpointName) {
-    ensureCheckpointSupport(pythonGenerator);
-  }
   definePythonSnippet(
     pythonGenerator,
     `workflow_instance_${flowVar}`,
-    checkpointName
-      ? `${flowVar} = wf(task=${quotePythonString(runtimeTaskId)}, checkpoint=xedu_smoke_checkpoint(${quotePythonString(checkpointName)}))`
-      : `${flowVar} = wf(task=${quotePythonString(runtimeTaskId)})`,
+    `${flowVar} = wf(task=${quotePythonString(runtimeTaskId)})`,
   );
   return { flowVar, runtimeTaskId };
 }
@@ -1527,14 +1696,14 @@ function ensureCvSupport(pythonGenerator) {
   definePythonSnippet(pythonGenerator, 'import_cv2', 'import cv2');
   definePythonSnippet(
     pythonGenerator,
-    'import_xedu_blockly_cv_runtime',
+    'import_xedu_blockly_runtime',
     'from runtime import blockly_runtime as xrt',
   );
 }
 
 function ensureRequestSupport(pythonGenerator) {
   definePythonSnippet(pythonGenerator, 'import_requests', 'import requests');
-  definePythonSnippet(pythonGenerator, 'import_xedu_blockly_request_runtime', 'from runtime import blockly_runtime as xrt');
+  definePythonSnippet(pythonGenerator, 'import_xedu_blockly_runtime', 'from runtime import blockly_runtime as xrt');
 }
 
 function ensureMathSupport(pythonGenerator) {
@@ -1549,9 +1718,120 @@ function ensureServoSupport(pythonGenerator) {
 function ensureResultHelpers(pythonGenerator) {
   definePythonSnippet(
     pythonGenerator,
-    'import_xedu_blockly_result_runtime',
+    'import_xedu_blockly_runtime',
     'from runtime import blockly_runtime as xrt',
   );
+}
+
+function getConnectedInputBlock(block, inputName) {
+  if (!block || typeof block.getInputTargetBlock !== 'function') {
+    return null;
+  }
+  return block.getInputTargetBlock(inputName);
+}
+
+function getConnectedLiteralInput(block, inputName) {
+  const connectedBlock = getConnectedInputBlock(block, inputName);
+  if (!connectedBlock) {
+    return { kind: '', value: '' };
+  }
+  const connectedType = String(connectedBlock.type || '').trim();
+  if (connectedType === 'text') {
+    return { kind: 'text', value: String(connectedBlock.getFieldValue('TEXT') ?? '').trim() };
+  }
+  if (connectedType === 'math_number') {
+    return { kind: 'number', value: String(connectedBlock.getFieldValue('NUM') ?? '').trim() };
+  }
+  if (connectedType === 'xeduhub_input_image') {
+    return { kind: 'image-path', value: String(connectedBlock.getFieldValue('INPUT') ?? '').trim() };
+  }
+  return { kind: '', value: '' };
+}
+
+function isCameraInputLiteral(value) {
+  return /^\d+$/.test(String(value ?? '').trim());
+}
+
+function isVideoStreamLiteral(value) {
+  const text = String(value ?? '').trim();
+  return STREAM_VIDEO_SUFFIX_RE.test(text) || STREAM_URL_RE.test(text);
+}
+
+function resolveStreamInputSpec(block, inputName, pythonGenerator, fallbackCode = 'lab_input') {
+  const literal = getConnectedLiteralInput(block, inputName);
+  if (!literal.value) {
+    return null;
+  }
+  if (literal.kind === 'number' || isCameraInputLiteral(literal.value)) {
+    return {
+      mode: 'camera',
+      sourceCode: String(literal.value),
+    };
+  }
+  if (isVideoStreamLiteral(literal.value)) {
+    return {
+      mode: 'video',
+      sourceCode: getValueCode(block, inputName, pythonGenerator, fallbackCode, pythonGenerator.ORDER_NONE),
+    };
+  }
+  return null;
+}
+
+function buildStreamInferenceLines({
+  block,
+  pythonGenerator,
+  modelVar,
+  resultVar = 'lab_result',
+  imageVar = 'xedu_stream_preview',
+  inputName = 'INPUT_DATA',
+  paramsLines = [],
+  extraArgs = '',
+  taskRuntimeId = '',
+  windowName = 'xedu-stream',
+}) {
+  const streamSpec = resolveStreamInputSpec(block, inputName, pythonGenerator, 'lab_input');
+  if (!streamSpec) {
+    return null;
+  }
+  ensureCvSupport(pythonGenerator);
+  ensureResultHelpers(pythonGenerator);
+  const streamVar = streamSpec.mode === 'camera' ? 'xedu_camera_stream' : 'xedu_video_stream';
+  const frameVar = 'xedu_stream_frame';
+  const valueVar = 'xedu_stream_value';
+  const previewVar = imageVar || 'xedu_stream_preview';
+  const lines = [];
+  if (taskRuntimeId) {
+    lines.push(`lab_task_id = ${quotePythonString(taskRuntimeId)}`);
+  }
+  lines.push(`lab_flow = ${modelVar}`);
+  lines.push(...paramsLines);
+  lines.push(`if ${modelVar} is None:`);
+  lines.push("  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')");
+  if (streamSpec.mode === 'camera') {
+    lines.push(`${streamVar} = xrt.XEduCamera.camera(${streamSpec.sourceCode}, window_name=${quotePythonString(windowName)})`);
+  } else {
+    lines.push(`${streamVar} = xrt.XEduCamera.video(${streamSpec.sourceCode}, window_name=${quotePythonString(windowName)})`);
+  }
+  lines.push('try:');
+  lines.push(`  print("视频流已启动: ${windowName}")`);
+  lines.push(`  while ${streamVar}.is_opened():`);
+  lines.push(`    ${frameVar} = ${streamVar}.read()`);
+  lines.push(`    if ${frameVar} is None:`);
+  lines.push('      break');
+  lines.push(`    ${valueVar} = ${modelVar}.inference(data=${frameVar}${extraArgs})`);
+  lines.push(`    ${resultVar}, ${previewVar} = xrt.xedu_split_result(${valueVar})`);
+  lines.push(`    lab_result = ${resultVar}`);
+  lines.push(`    xrt.xedu_emit_runtime_event("stream_result", result=${resultVar})`);
+  lines.push(`    ${streamVar}.show(${previewVar} if ${previewVar} is not None else ${frameVar})`);
+  lines.push(`    if ${streamVar}.should_quit("q", delay=1):`);
+  lines.push('      break');
+  lines.push('  print("视频流已结束")');
+  lines.push('except xrt.XEduStreamError as stream_error:');
+  lines.push('  xrt.xedu_emit_runtime_event("stream_error", code=getattr(stream_error, "code", "stream_error"), message=str(stream_error), stream_kind=getattr(stream_error, "stream_kind", ""))');
+  lines.push('  print(str(stream_error))');
+  lines.push('finally:');
+  lines.push(`  ${streamVar}.close()`);
+  return lines;
 }
 
 function getPythonParamsObject(block, fieldName = 'PARAMS') {
@@ -1874,7 +2154,7 @@ function defineSemanticRunBlocks(Blockly) {
   const tasks = getXEduHubTaskRegistry().tasks || [];
   const blockDefs = tasks.map((task) => {
     const visibleParams = getVisibleTaskParams(task);
-    const args0 = [buildIconField(getTaskIconKey(task))];
+    const args0 = [buildTaskIconField(task.task_id), buildTitleField(getCompactTaskLabel(task))];
     const args1 = [{ type: 'input_value', name: 'INPUT_DATA' }];
     const args2 = [{ type: 'field_variable', name: 'RESULT_VAR', variable: 'lab_result' }];
     const args3 = [];
@@ -1896,9 +2176,9 @@ function defineSemanticRunBlocks(Blockly) {
     const blockDef = {
       type: getSemanticRunBlockType(task.task_id),
       colour: task.colour || XEDU_SEMANTIC_COLOURS.input,
-      message0: `%1 ${formatBlockTitle(getCompactTaskLabel(task))} · ${getTaskFamilyCaption(task)}`,
+      message0: '%1 %2',
       args0,
-      message1: `对%1进行推理`,
+      message1: `${getTaskFamilyCaption(task)} · 输入 %1`,
       args1,
       previousStatement: null,
       nextStatement: null,
@@ -1906,12 +2186,12 @@ function defineSemanticRunBlocks(Blockly) {
       tooltip: getTaskTooltip(task),
     };
     if (visibleParams.length > 0) {
-      blockDef.message2 = '结果保存到 %1';
+      blockDef.message2 = '输出 %1';
       blockDef.args2 = args2;
       blockDef.message3 = `调参  ${visibleParams.map((param, index) => `${getCompactParamLabel(param)} %${index + 1}`).join('  ')}`;
       blockDef.args3 = args3;
     } else {
-      blockDef.message2 = '结果保存到 %1';
+      blockDef.message2 = '输出 %1';
       blockDef.args2 = args2;
     }
     return blockDef;
@@ -1925,9 +2205,9 @@ function defineAdvancedBlocks(Blockly) {
   defineBlocksWithXEduPalette(Blockly, [
     {
       type: 'xeduhub_workflow_create_var',
-      message0: '%1 初始化任务 %2 记为 %3',
+      message0: '%1 新建任务 %2 记为 %3',
       args0: [
-        buildIconField('workflow'),
+        buildHeroIconField('workflow', 30),
         { type: 'field_dropdown', name: TASK_FIELD_NAME, options: getTaskOptions },
         { type: 'field_variable', name: 'MODEL_VAR', variable: 'lab_flow' },
       ],
@@ -1937,16 +2217,16 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_workflow_infer_var',
-      message0: '%1 模型推理 %2',
+      message0: '%1 识别流程 %2',
       args0: [
-        buildIconField('workflow'),
+        buildHeroIconField('workflow', 30),
         { type: 'field_variable', name: 'MODEL_VAR', variable: 'lab_flow' },
       ],
-      message1: '对%1进行推理',
+      message1: '输入 %1',
       args1: [{ type: 'input_value', name: 'INPUT_DATA' }],
-      message2: '结果保存到 %1',
+      message2: '输出到 %1',
       args2: [{ type: 'field_variable', name: 'RESULT_VAR', variable: 'lab_result' }],
-      message3: '可选检测框 %1 参数 %2',
+      message3: '检测框 %1 参数 %2',
       args3: [{ type: 'input_value', name: 'BBOX' }, { type: 'field_input', name: PARAMS_FIELD_NAME, text: '{}' }],
       previousStatement: null,
       nextStatement: null,
@@ -1954,9 +2234,9 @@ function defineAdvancedBlocks(Blockly) {
     },
     {
       type: 'xeduhub_workflow_infer_pair',
-      message0: '%1 模型推理 %2',
+      message0: '%1 识别流程 %2',
       args0: [
-        buildIconField('workflow'),
+        buildHeroIconField('workflow', 30),
         { type: 'field_variable', name: 'MODEL_VAR', variable: 'lab_flow' },
       ],
       message1: '对%1进行推理',
@@ -2717,6 +2997,19 @@ function defineSemanticRunGenerators(pythonGenerator) {
       const inputCode = getValueCode(block, 'INPUT_DATA', pythonGenerator, 'lab_input', pythonGenerator.ORDER_NONE);
       const resultVar = getVariableName(block, 'RESULT_VAR', 'lab_result');
       const extraArgs = paramLines.length ? ', **lab_params' : '';
+      const streamLines = buildStreamInferenceLines({
+        block,
+        pythonGenerator,
+        modelVar: flowVar,
+        resultVar,
+        paramsLines: [...paramLines],
+        extraArgs,
+        taskRuntimeId: runtimeTaskId,
+        windowName: `${task.label || runtimeTaskId} 视频流`,
+      });
+      if (streamLines) {
+        return `${streamLines.join('\n')}\n`;
+      }
       return [
         `lab_task_id = ${JSON.stringify(runtimeTaskId)}`,
         `lab_flow = ${flowVar}`,
@@ -2761,6 +3054,18 @@ function defineAdvancedGenerators(pythonGenerator) {
     const inputCode = getValueCode(block, 'INPUT_DATA', pythonGenerator, 'lab_input', pythonGenerator.ORDER_NONE);
     const lines = buildInferParamsLines(block, pythonGenerator);
     const extraArgs = lines.length ? ', **xedu_params' : '';
+    const streamLines = buildStreamInferenceLines({
+      block,
+      pythonGenerator,
+      modelVar,
+      resultVar,
+      paramsLines: [...lines],
+      extraArgs,
+      windowName: 'xedu-stream',
+    });
+    if (streamLines) {
+      return `${streamLines.join('\n')}\n`;
+    }
     lines.unshift(`if ${modelVar} is None:`);
     lines.splice(1, 0, "  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')");
     lines.push(`${resultVar} = ${modelVar}.inference(data=${inputCode}${extraArgs})`);
@@ -2776,6 +3081,19 @@ function defineAdvancedGenerators(pythonGenerator) {
     const inputCode = getValueCode(block, 'INPUT_DATA', pythonGenerator, 'lab_input', pythonGenerator.ORDER_NONE);
     const lines = buildInferParamsLines(block, pythonGenerator);
     const extraArgs = lines.length ? ', **xedu_params' : '';
+    const streamLines = buildStreamInferenceLines({
+      block,
+      pythonGenerator,
+      modelVar,
+      resultVar,
+      imageVar,
+      paramsLines: [...lines],
+      extraArgs,
+      windowName: 'xedu-stream',
+    });
+    if (streamLines) {
+      return `${streamLines.join('\n')}\n`;
+    }
     lines.unshift(`if ${modelVar} is None:`);
     lines.splice(1, 0, "  raise RuntimeError('当前工作区包含本地不支持的 XEdu 任务，无法执行')");
     lines.push(`xedu_pair_value = ${modelVar}.inference(data=${inputCode}${extraArgs})`);
@@ -2821,7 +3139,7 @@ function defineAdvancedGenerators(pythonGenerator) {
   pythonGenerator.forBlock.xeduhub_cv_open_video = (block) => {
     ensureCvSupport(pythonGenerator);
     const cameraVar = getVariableName(block, 'CAMERA_VAR', 'video');
-    const sourceCode = getValueCode(block, 'SOURCE', pythonGenerator, quotePythonString('demo.mp4'), pythonGenerator.ORDER_NONE);
+    const sourceCode = getValueCode(block, 'SOURCE', pythonGenerator, quotePythonString(DEFAULT_BLOCKLY_VIDEO_INPUT), pythonGenerator.ORDER_NONE);
     const windowName = getFieldText(block, 'WINDOW', 'video');
     return `${cameraVar} = xrt.XEduCamera.video(${sourceCode}, window_name=${quotePythonString(windowName)})\n`;
   };

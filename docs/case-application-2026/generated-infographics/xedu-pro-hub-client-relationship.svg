@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">XEduPro、XEduHub 与 XEdu Client 的关系</title>
+  <desc id="desc">XEduPro 是人工智能学习与开发工具体系，XEduHub 是其中的深度学习模型推理与任务执行工具库，XEdu Client 将 XEduHub 能力接入课堂实验。</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f9fb; }
+      .panel { fill: #ffffff; stroke: #d8e0e8; stroke-width: 2; }
+      .panel-soft { fill: #f0f7f6; stroke: #c7dddd; stroke-width: 2; }
+      .panel-warm { fill: #fff5e8; stroke: #efd6b3; stroke-width: 2; }
+      .panel-blue { fill: #edf4ff; stroke: #cad9ef; stroke-width: 2; }
+      .title { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 42px; font-weight: 700; fill: #1d3557; }
+      .subtitle { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 22px; fill: #526070; }
+      .label { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 30px; font-weight: 700; fill: #18324a; }
+      .body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 21px; fill: #33475b; }
+      .small { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 18px; fill: #5f6f7e; }
+      .tag { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 18px; font-weight: 600; fill: #ffffff; }
+      .mono { font-family: "SFMono-Regular", Consolas, monospace; font-size: 19px; fill: #25445f; }
+      .arrow { stroke: #54718c; stroke-width: 3.5; fill: none; marker-end: url(#arrowhead); }
+      .thin { stroke: #b9c7d4; stroke-width: 2; fill: none; }
+      .accent-teal { fill: #0f766e; }
+      .accent-blue { fill: #2f5f98; }
+      .accent-orange { fill: #d9822b; }
+      .accent-slate { fill: #54718c; }
+    </style>
+    <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#54718c" />
+    </marker>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#17324d" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" width="1600" height="900" />
+
+  <text x="100" y="86" class="title">XEduPro、XEduHub 与 XEdu Client 的关系</text>
+  <text x="100" y="126" class="subtitle">从官方工具体系到课堂实验落地：能力库不是平行产品，而是被客户端接入到教学场景中。</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="100" y="180" width="1400" height="170" rx="18" class="panel" />
+    <rect x="124" y="210" width="150" height="42" rx="21" class="accent-blue" />
+    <text x="151" y="238" class="tag">工具体系</text>
+    <text x="124" y="294" class="label">XEduPro</text>
+    <text x="360" y="232" class="body">面向人工智能学习与开发的一套开箱即用工具体系</text>
+    <text x="360" y="274" class="small">提供适合初学者与教学场景使用的 AI 学习、开发与实践工具组合。</text>
+    <g>
+      <rect x="1048" y="216" width="112" height="44" rx="8" class="panel-blue" />
+      <text x="1072" y="245" class="small">MMEdu</text>
+      <rect x="1178" y="216" width="112" height="44" rx="8" class="panel-blue" />
+      <text x="1202" y="245" class="small">BaseML</text>
+      <rect x="1308" y="216" width="112" height="44" rx="8" class="panel-blue" />
+      <text x="1332" y="245" class="small">BaseNN</text>
+      <rect x="1048" y="276" width="372" height="44" rx="8" class="panel-soft" />
+      <text x="1146" y="305" class="small">XEduHub 等工具库</text>
+    </g>
+  </g>
+
+  <path d="M800 355 L800 410" class="arrow" />
+
+  <g filter="url(#softShadow)">
+    <rect x="235" y="410" width="1130" height="180" rx="18" class="panel-soft" />
+    <rect x="260" y="440" width="150" height="42" rx="21" class="accent-teal" />
+    <text x="287" y="468" class="tag">能力工具库</text>
+    <text x="260" y="526" class="label">XEduHub</text>
+    <text x="500" y="455" class="body">XEduPro 中负责深度学习模型推理与任务执行的核心工具库</text>
+    <text x="500" y="497" class="small">将输入资源、模型选择、推理执行与结果输出封装成可复用能力，降低 AI 实验门槛。</text>
+    <g>
+      <rect x="508" y="528" width="128" height="38" rx="8" fill="#ffffff" stroke="#bfd6d2" stroke-width="2"/>
+      <text x="540" y="553" class="mono">输入</text>
+      <rect x="662" y="528" width="128" height="38" rx="8" fill="#ffffff" stroke="#bfd6d2" stroke-width="2"/>
+      <text x="694" y="553" class="mono">模型</text>
+      <rect x="816" y="528" width="128" height="38" rx="8" fill="#ffffff" stroke="#bfd6d2" stroke-width="2"/>
+      <text x="848" y="553" class="mono">推理</text>
+      <rect x="970" y="528" width="128" height="38" rx="8" fill="#ffffff" stroke="#bfd6d2" stroke-width="2"/>
+      <text x="1002" y="553" class="mono">结果</text>
+    </g>
+  </g>
+
+  <path d="M800 595 L800 650" class="arrow" />
+
+  <g filter="url(#softShadow)">
+    <rect x="100" y="650" width="1400" height="170" rx="18" class="panel-warm" />
+    <rect x="124" y="680" width="150" height="42" rx="21" class="accent-orange" />
+    <text x="151" y="708" class="tag">课堂落地端</text>
+    <text x="124" y="766" class="label">XEdu Client</text>
+    <text x="360" y="693" class="body">面向课堂实验的桌面客户端，把 XEduHub 能力接入教学工作台</text>
+    <text x="360" y="735" class="small">围绕同一课程任务组织讲解页、Blockly、Jupyter 与结果复盘，服务真实课堂实施。</text>
+    <g>
+      <rect x="870" y="690" width="124" height="46" rx="9" fill="#ffffff" stroke="#efd6b3" stroke-width="2"/>
+      <text x="899" y="720" class="mono">HTML</text>
+      <rect x="1016" y="690" width="144" height="46" rx="9" fill="#ffffff" stroke="#efd6b3" stroke-width="2"/>
+      <text x="1046" y="720" class="mono">Blockly</text>
+      <rect x="1182" y="690" width="144" height="46" rx="9" fill="#ffffff" stroke="#efd6b3" stroke-width="2"/>
+      <text x="1212" y="720" class="mono">Jupyter</text>
+      <rect x="1040" y="755" width="190" height="42" rx="9" fill="#ffffff" stroke="#efd6b3" stroke-width="2"/>
+      <text x="1080" y="783" class="small">结果复盘</text>
+    </g>
+  </g>
+
+  <path d="M305 590 C190 625 190 680 300 705" class="thin" />
+  <path d="M1295 590 C1410 625 1410 680 1300 705" class="thin" />
+  <text x="156" y="628" class="small">能力被接入</text>
+  <text x="1310" y="628" class="small">面向课堂使用</text>
+</svg>

@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张严格论文风格的中文双泳道流程图，主题为“典型课堂应用流程”。\n\n用途：用于说明教师侧与学生侧在课前、课中、课后的使用过程。\n\n图形结构：横向 16:9，白色背景。上下两条泳道，上方为教师侧，下方为学生侧。横向时间轴分为课前、课中、课后。教师侧三个节点，学生侧四个节点。节点之间用箭头连接，教师侧和学生侧之间用少量垂直连接线表示平台衔接。不要插画、不要人物、不要复杂背景。\n\n图内文字必须且只包含：\n标题：典型课堂应用流程\n泳道：教师侧、学生侧\n阶段：课前、课中、课后\n教师节点：教师备课、开启课堂、课后更新\n学生节点：进入实验、Blockly理解、Jupyter实践、结果复盘\n连接模块：XEdu Client\n\n排版要求：流程方向清楚，泳道边界明确，适合论文流程图。",
+  "original_prompt": "生成一张严格论文风格的中文双泳道流程图，主题为“典型课堂应用流程”。\n\n用途：用于说明教师侧与学生侧在课前、课中、课后的使用过程。\n\n图形结构：横向 16:9，白色背景。上下两条泳道，上方为教师侧，下方为学生侧。横向时间轴分为课前、课中、课后。教师侧三个节点，学生侧四个节点。节点之间用箭头连接，教师侧和学生侧之间用少量垂直连接线表示平台衔接。不要插画、不要人物、不要复杂背景。\n\n图内文字必须且只包含：\n标题：典型课堂应用流程\n泳道：教师侧、学生侧\n阶段：课前、课中、课后\n教师节点：教师备课、开启课堂、课后更新\n学生节点：进入实验、Blockly理解、Jupyter实践、结果复盘\n连接模块：XEdu Client\n\n排版要求：流程方向清楚，泳道边界明确，适合论文流程图。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/b773d9df-0219-423e-ae70-259d7ce8f703.png",
+  "output_path": "docs/case-application-2026/assets/figures/paper-roil/figure_6_classroom_flow.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

@@ -4,18 +4,23 @@
   "description": "专业的 Jupyter Notebook 桌面管理工具 - 重构版本",
   "main": "electron/main/main.js",
   "scripts": {
-    "dev": "npx vite",
+    "dev": "concurrently -k -n api,renderer -c blue,green \"python3 scripts/dev_api_server.py\" \"npm run dev:renderer\"",
+    "dev:renderer": "npx vite",
     "build": "npx vite build",
+    "check:python-syntax": "python3 -m py_compile backend/backend_main.py backend/api/*.py backend/api/routes/*.py backend/services/*.py backend/runtime/*.py backend/models/*.py backend/utils/*.py",
+    "check:renderer-syntax": "node --check electron/main/main.js",
     "check:bundle": "node scripts/check_bundle_size.js",
-    "test:blockly-runtime": "node --test renderer/js/blockly/runtime-helpers.test.js",
-    "test:blockly-real": "python3 scripts/blockly_real_runtime_audit.py",
+    "test:blockly-runtime": "npm run seed:xedu-smoke && node --test renderer/js/blockly/runtime-helpers.test.js renderer/js/blockly/xeduhub-audit.test.js",
+    "seed:xedu-smoke": "python3 scripts/seed_xedu_smoke_assets.py && python3 scripts/seed_xedu_smoke_models.py && python3 scripts/seed_xedu_task_samples.py",
+    "test:blockly-real": "npm run seed:xedu-smoke && python3 scripts/blockly_real_runtime_audit.py",
     "preview": "npx vite preview",
     "clean": "rimraf build",
     "full-build": "npm run clean && build.bat",
     "start-api": "python3 backend/backend_main.py || python backend/backend_main.py",
     "test-api": "curl http://127.0.0.1:5123/api/health",
+    "test:resources-inspection": "node --test renderer/js/resources/course-inspection-utils.test.js renderer/js/resources/course-create-utils.test.js",
     "electron": "electron .",
-    "electron:dev": "concurrently \"npm run dev\" \"electron .\"",
+    "electron:dev": "concurrently -k -n renderer,electron -c green,magenta \"npm run dev:renderer\" \"electron .\"",
     "electron:build": "npm run build && electron-builder",
     "electron:pack": "npm run build && electron-builder --dir"
   },
@@ -48,12 +53,20 @@
     ],
     "extraResources": [
       {
+        "from": "build",
+        "to": "build"
+      },
+      {
         "from": "backend",
         "to": "backend"
       },
       {
         "from": "config",
         "to": "config"
+      },
+      {
+        "from": "checkpoint",
+        "to": "checkpoint"
       },
       {
         "from": "docs",

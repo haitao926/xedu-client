@@ -21,12 +21,14 @@ from models.config import JupyterConfig, JupyterStatus
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+_JUPYTER_MANAGER_ATEXIT_REGISTERED = False
 
 
 class JupyterManager:
     """Jupyter Notebook/Lab 管理器"""
 
     def __init__(self, config: JupyterConfig):
+        global _JUPYTER_MANAGER_ATEXIT_REGISTERED
         self.config = config
         self.process: Optional[subprocess.Popen] = None
         self.managed_pid: Optional[int] = None  # 我们启动的进程PID
@@ -57,9 +59,11 @@ class JupyterManager:
         self._http_failure_threshold = 30
         self._log_handles: Dict[str, Any] = {}
 
-        # 注册退出处理器
-        import atexit
-        atexit.register(self.cleanup_all_jupyter_processes)
+        # 注册退出处理器。只注册一次，避免多次 create_app/test client 初始化时堆积清理回调。
+        if not _JUPYTER_MANAGER_ATEXIT_REGISTERED:
+            import atexit
+            atexit.register(self.cleanup_all_jupyter_processes)
+            _JUPYTER_MANAGER_ATEXIT_REGISTERED = True
 
         logger.info(f"JupyterManager initialized with config: port={config.port}")
 
@@ -722,6 +726,7 @@ class JupyterManager:
                 )
 
             self.managed_pid = self.process.pid
+            self._all_jupyter_pids.add(self.managed_pid)
             self.start_time = time.time()
             self.restart_count = 0
 
@@ -808,19 +813,16 @@ class JupyterManager:
                 work_dir = str(work_path.absolute())
                 logger.info(f"使用工作目录: {work_dir}")
 
+        remote_access_enabled = bool(getattr(config, "allow_remote_access", False))
+        bind_ip = "0.0.0.0" if remote_access_enabled else "127.0.0.1"
+
         # 构建基础命令 - 优化参数以提升启动速度
         cmd = [
             python_exe, "-m", module_name,
             f"--port={config.port}",
             "--no-browser",
             "--allow-root",
-            "--ServerApp.ip=0.0.0.0",
-            "--ServerApp.token=",  # 关闭 token
-            "--ServerApp.password=",
-            "--ServerApp.password_required=False",
-            "--IdentityProvider.token=",  # Jupyter Server 2.x 关闭 token
-            "--IdentityProvider.password_required=False",
-            "--ServerApp.disable_check_xsrf=True",  # 禁用CSRF检查以提升速度
+            f"--ServerApp.ip={bind_ip}",
             "--ServerApp.open_browser=False",  # 明确禁用浏览器
             "--LabApp.default_url=/lab",  # 直接打开lab界面，跳过选择页面
             "--LabApp.core_mode=False",  # 禁用core_mode以提升速度
@@ -831,13 +833,20 @@ class JupyterManager:
             # 生产环境建议启用必要的安全措施
         ]
 
-        # 针对经典 Notebook 的兼容参数，确保无 token/密码
-        cmd.extend([
-            "--NotebookApp.token=",
-            "--NotebookApp.password=",
-            "--NotebookApp.password_required=False",
-            "--NotebookApp.disable_check_xsrf=True"
-        ])
+        # 仅在本地回环访问场景下允许无鉴权模式。
+        if not remote_access_enabled:
+            cmd.extend([
+                "--ServerApp.token=",
+                "--ServerApp.password=",
+                "--ServerApp.password_required=False",
+                "--IdentityProvider.token=",
+                "--IdentityProvider.password_required=False",
+                "--ServerApp.disable_check_xsrf=True",
+                "--NotebookApp.token=",
+                "--NotebookApp.password=",
+                "--NotebookApp.password_required=False",
+                "--NotebookApp.disable_check_xsrf=True"
+            ])
 
         # 只有在工作目录不为空时才添加目录参数
         if work_dir:
@@ -1245,11 +1254,13 @@ env
 
                 # 额外清理：检查是否还有相关进程
                 self._cleanup_related_processes(pid)
+                self._all_jupyter_pids.discard(pid)
 
                 return True
 
             except psutil.NoSuchProcess:
                 logger.debug(f"Process {pid} no longer exists")
+                self._all_jupyter_pids.discard(pid)
                 return True
 
         except Exception as e:
@@ -1259,23 +1270,12 @@ env
     def _cleanup_related_processes(self, parent_pid: int):
         """清理可能相关的Jupyter进程"""
         try:
-            # 查找所有可能的Jupyter相关进程
+            # 仅清理 parent_pid 的子进程，避免误杀外部实例
             for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'ppid']):
                 try:
-                    # 检查是否是子进程或相关进程
                     if proc.info['ppid'] == parent_pid:
                         logger.info(f"Found related process: PID {proc.pid}, terminating...")
                         proc.terminate()
-                    # 检查命令行是否包含jupyter且可能相关
-                    elif proc.info['cmdline'] and any('jupyter' in str(cmd).lower() for cmd in proc.info['cmdline']):
-                        # 检查是否在短时间内启动的（可能是我们的进程）
-                        try:
-                            create_time = proc.create_time()
-                            if time.time() - create_time < 300:  # 5分钟内启动的
-                                logger.info(f"Found recent Jupyter process: PID {proc.pid}, terminating...")
-                                proc.terminate()
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            pass
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
         except Exception as e:
@@ -1285,11 +1285,18 @@ env
         """强制释放指定端口"""
         try:
             logger.info(f"Force releasing port {port}...")
-            # 查找占用端口的进程并终止
+            tracked = {self.managed_pid, self.external_pid} | set(self._all_jupyter_pids)
+            tracked.discard(None)
+            # 仅终止 tracked PID 对应进程
             for proc in psutil.process_iter(['pid', 'name', 'connections']):
                 try:
                     for conn in proc.info['connections'] or []:
                         if conn.laddr.port == port and conn.status == 'LISTEN':
+                            if proc.info['pid'] not in tracked:
+                                logger.warning(
+                                    f"Port {port} occupied by untracked PID {proc.info['pid']}, skip force kill"
+                                )
+                                continue
                             logger.info(f"Found process occupying port {port}: PID {proc.info['pid']}, terminating...")
                             proc.terminate()
                             # 等待一下让进程释放端口

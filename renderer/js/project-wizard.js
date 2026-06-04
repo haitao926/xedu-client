@@ -1,3 +1,15 @@
+import iconFolderUrl from '../assets/icon-folder.svg';
+import experimentCoverUrl from '../assets/experiment-cover-16x9.svg';
+
+const TEMPLATE_ICON_URLS = Object.freeze({
+    'icon-folder.svg': iconFolderUrl,
+    'experiment-cover-16x9.svg': experimentCoverUrl,
+});
+
+function resolveTemplateIconUrl(iconName = '') {
+    return TEMPLATE_ICON_URLS[String(iconName || '').trim()] || iconFolderUrl;
+}
+
 export class ProjectWizard {
     constructor(apiService) {
         this.api = apiService;
@@ -64,7 +76,7 @@ export class ProjectWizard {
             const isSelected = this.selectedTemplateId === t.id;
             div.className = `wizard-template-card ${isSelected ? 'selected' : ''}`;
             
-            const iconPath = t.icon ? `assets/${t.icon}` : 'assets/icon-folder.svg';
+            const iconPath = resolveTemplateIconUrl(t.icon);
             div.innerHTML = `
                 <div class="wizard-template-icon">
                     <img src="${iconPath}" alt="${t.name}">

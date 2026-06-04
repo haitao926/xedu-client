@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张严格论文风格的中文能力支撑模型图，主题为“XEduHub 能力支撑模型”。\n\n用途：用于说明 XEduHub 是平台能力底座，同时支撑 Blockly 和 Jupyter。\n\n图形结构：横向 16:9，白色背景。中心为大模块“XEduHub工具箱”。左侧模块为“Blockly实践”，右侧模块为“Jupyter应用创新”。中心上方和下方分布四个能力模块，用连线连接到中心，再由中心连接左右两侧。不要手绘、不要水彩、不要插画人物。\n\n图内文字必须且只包含：\n标题：XEduHub 能力支撑模型\n中心：XEduHub工具箱\n左右：Blockly实践、Jupyter应用创新\n四项能力：图像输入、模型调用、流程执行、结果反馈\n底部：课程实验样例\n\n排版要求：中心辐射结构，连线简洁，模块边界清楚，适合论文图。",
+  "original_prompt": "生成一张严格论文风格的中文能力支撑模型图，主题为“XEduHub 能力支撑模型”。\n\n用途：用于说明 XEduHub 是平台能力底座，同时支撑 Blockly 和 Jupyter。\n\n图形结构：横向 16:9，白色背景。中心为大模块“XEduHub工具箱”。左侧模块为“Blockly实践”，右侧模块为“Jupyter应用创新”。中心上方和下方分布四个能力模块，用连线连接到中心，再由中心连接左右两侧。不要手绘、不要水彩、不要插画人物。\n\n图内文字必须且只包含：\n标题：XEduHub 能力支撑模型\n中心：XEduHub工具箱\n左右：Blockly实践、Jupyter应用创新\n四项能力：图像输入、模型调用、流程执行、结果反馈\n底部：课程实验样例\n\n排版要求：中心辐射结构，连线简洁，模块边界清楚，适合论文图。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/ed3bd5d3-0696-427f-85e2-bed46150de48.png",
+  "output_path": "docs/case-application-2026/assets/figures/paper-roil/figure_4_xeduhub.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

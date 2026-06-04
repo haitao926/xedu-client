@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // 文件夹选择
     selectFolder: () => ipcRenderer.invoke('select-folder'),
+    selectCoursePackage: () => ipcRenderer.invoke('select-course-package'),
 
     // 打开外部链接
     openExternal: (url) => ipcRenderer.invoke('open-external', url),

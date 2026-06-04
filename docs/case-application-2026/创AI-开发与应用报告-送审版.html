@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XEdu Client：面向人工智能课堂的一体化实验学习平台 - 开发与应用报告</title>
+    <style>
+        /* Modern Design Variables & Color Palette */
+        :root {
+            --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+            --sidebar-bg: rgba(255, 255, 255, 0.85);
+            --card-bg: #ffffff;
+            --text-primary: #2c3e50;
+            --text-secondary: #5a6c7d;
+            --accent-color: #3498db;
+            --accent-hover: #2980b9;
+            --border-color: rgba(0, 0, 0, 0.08);
+            --shadow-primary: 0 10px 30px rgba(0, 0, 0, 0.05), 0 1px 8px rgba(0, 0, 0, 0.03);
+            --shadow-hover: 0 15px 35px rgba(0, 0, 0, 0.08), 0 3px 10px rgba(0, 0, 0, 0.04);
+            --transition-speed: 0.25s;
+            
+            /* Font size adjustments */
+            --doc-font-size: 15px;
+            --doc-line-height: 1.6;
+        }
+
+        /* Eye Protection Theme */
+        body.theme-eye {
+            --bg-gradient: linear-gradient(135deg, #f4ecd8 0%, #e7dcbe 100%);
+            --sidebar-bg: rgba(250, 245, 230, 0.9);
+            --card-bg: #fdfaf2;
+            --text-primary: #4a3c31;
+            --text-secondary: #6e5e50;
+            --accent-color: #8c6b4f;
+            --accent-hover: #6e5038;
+            --border-color: rgba(74, 60, 49, 0.1);
+        }
+
+        /* Dark Theme */
+        body.theme-dark {
+            --bg-gradient: linear-gradient(135deg, #1e2022 0%, #121214 100%);
+            --sidebar-bg: rgba(30, 32, 34, 0.9);
+            --card-bg: #1a1c1e;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --accent-color: #38bdf8;
+            --accent-hover: #0284c7;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --shadow-primary: 0 10px 30px rgba(0, 0, 0, 0.3), 0 1px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Basic Layout & Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            transition: background var(--transition-speed);
+        }
+
+        /* Main Container layout */
+        .app-container {
+            display: flex;
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        /* Glassmorphic Sidebar */
+        .sidebar {
+            width: 320px;
+            background: var(--sidebar-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-right: 1px solid var(--border-color);
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            padding: 30px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+            z-index: 100;
+            transition: background var(--transition-speed), border var(--transition-speed);
+        }
+
+        .brand-section {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 20px;
+        }
+
+        .brand-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.3;
+        }
+
+        .brand-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Controls / Toggles */
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            background: rgba(0, 0, 0, 0.02);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        body.theme-dark .control-panel {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .control-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+        }
+
+        .control-select {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            outline: none;
+            transition: border var(--transition-speed);
+        }
+
+        .control-select:focus {
+            border-color: var(--accent-color);
+        }
+
+        /* Dynamic Table of Contents (TOC) */
+        .toc-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .toc-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+        }
+
+        .toc-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            overflow-y: auto;
+            max-height: calc(100vh - 480px);
+            padding-right: 4px;
+        }
+
+        .toc-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .toc-list::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 2px;
+        }
+
+        .toc-item {
+            font-size: 13px;
+            line-height: 1.4;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .toc-item a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            display: block;
+            padding: 8px 12px;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .toc-item.toc-h2 {
+            font-weight: 600;
+        }
+
+        .toc-item.toc-h3 {
+            padding-left: 12px;
+            font-size: 12.5px;
+        }
+
+        .toc-item:hover a {
+            color: var(--accent-color);
+            background: rgba(52, 152, 219, 0.05);
+        }
+
+        .toc-item.active {
+            background: var(--accent-color) !important;
+        }
+
+        .toc-item.active a {
+            color: #ffffff !important;
+        }
+
+        /* Document Viewer Main Frame */
+        .document-viewer {
+            flex: 1;
+            margin-left: 320px;
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            overflow-y: auto;
+            transition: padding var(--transition-speed);
+        }
+
+        /* simulated A4 Document Page */
+        .document-page {
+            width: 210mm;
+            min-height: 297mm;
+            background: var(--card-bg);
+            box-shadow: var(--shadow-primary);
+            border-radius: 4px;
+            padding: 25.4mm 31.8mm; /* Standard Word Margins: 2.54cm top/bottom, 3.18cm left/right */
+            box-sizing: border-box;
+            position: relative;
+            transition: all var(--transition-speed);
+        }
+
+        .document-page:hover {
+            box-shadow: var(--shadow-hover);
+        }
+
+        /* Continuous web viewing view overlay */
+        .document-page.web-view {
+            width: 100%;
+            max-width: 900px;
+            min-height: auto;
+            padding: 40px 60px;
+            margin-bottom: 0;
+            border-radius: 12px;
+        }
+
+        /* Document Body Styles */
+        .document-body {
+            color: var(--text-primary);
+            font-size: var(--doc-font-size);
+            line-height: var(--doc-line-height);
+        }
+
+        /* Font Family Sets */
+        .document-body.sans-font {
+            font-family: "PingFang SC", "Microsoft YaHei", "Heiti SC", sans-serif;
+        }
+
+        .document-body.serif-font {
+            font-family: "SimSun", "STSong", "Songti SC", Georgia, serif;
+        }
+
+        /* Paragraph Indentation Toggle based on fonts */
+        .document-body.serif-font p {
+            text-indent: 2em;
+            text-align: justify;
+        }
+        .document-body.sans-font p {
+            text-indent: 0;
+            margin-bottom: 16px;
+        }
+
+        /* Spacing control classes */
+        .spacing-1-5 {
+            --doc-line-height: 1.6;
+        }
+        .spacing-2 {
+            --doc-line-height: 2.0;
+        }
+
+        /* Size control classes */
+        .size-small {
+            --doc-font-size: 13.5px;
+        }
+        .size-medium {
+            --doc-font-size: 15px;
+        }
+        .size-large {
+            --doc-font-size: 16.5px;
+        }
+
+        /* Chinese Formal Word Styles Mapping */
+        .document-body h1 {
+            font-size: 26px;
+            text-align: center;
+            margin-bottom: 24px;
+            font-weight: 700;
+            line-height: 1.3;
+            color: var(--text-primary);
+        }
+
+        .document-body h2 {
+            font-size: 18px;
+            margin-top: 36px;
+            margin-bottom: 16px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid var(--accent-color);
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .document-body h3 {
+            font-size: 15px;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .document-body p {
+            margin-bottom: 12px;
+            line-height: inherit;
+        }
+
+        .document-body strong {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .document-body code {
+            font-family: Consolas, Monaco, monospace;
+            background: rgba(0, 0, 0, 0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        body.theme-dark .document-body code {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Custom Document Header/Footer info cards */
+        .doc-header-card {
+            background: rgba(52, 152, 219, 0.04);
+            border-left: 4px solid var(--accent-color);
+            padding: 20px;
+            border-radius: 0 12px 12px 0;
+            margin-bottom: 35px;
+        }
+
+        body.theme-dark .doc-header-card {
+            background: rgba(56, 189, 248, 0.03);
+        }
+
+        .doc-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .doc-meta-item {
+            font-size: 13.5px;
+            color: var(--text-secondary);
+        }
+
+        .doc-meta-item strong {
+            color: var(--text-primary);
+        }
+
+        /* Lists formatting */
+        .document-body ul, .document-body ol {
+            margin-bottom: 16px;
+            padding-left: 28px;
+        }
+
+        .document-body li {
+            margin-bottom: 6px;
+            line-height: inherit;
+        }
+
+        /* Callout Boxes (Highlights) */
+        .highlight-box {
+            background: rgba(0, 0, 0, 0.02);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 18px 0;
+            border: 1px dashed var(--border-color);
+        }
+
+        body.theme-dark .highlight-box {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .highlight-box p {
+            text-indent: 0 !important;
+            margin-bottom: 0 !important;
+            font-size: 0.95em;
+            color: var(--text-secondary);
+        }
+
+        /* Monospace Code Block Styles */
+        .code-container {
+            position: relative;
+            margin: 18px 0;
+        }
+
+        .code-block {
+            font-family: Consolas, Menlo, Monaco, monospace;
+            background: #1e1e24;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.5;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #2d2d34;
+            padding: 6px 16px;
+            border-radius: 8px 8px 0 0;
+            font-size: 11px;
+            color: #a0a0a8;
+            font-family: sans-serif;
+            border-bottom: 1px solid #3d3d44;
+            margin-bottom: -8px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .code-block-inner {
+            border-radius: 0 0 8px 8px;
+        }
+
+        .copy-btn {
+            background: rgba(255, 255, 255, 0.08);
+            color: #a0a0a8;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+        }
+
+        /* Responsive Mobile Breakpoint */
+        @media (max-width: 1024px) {
+            .sidebar {
+                display: none; /* Hide sidebar on mobile */
+            }
+            .document-viewer {
+                margin-left: 0;
+                padding: 16px;
+            }
+            .document-page {
+                width: 100%;
+                padding: 30px 20px;
+                min-height: auto;
+            }
+        }
+
+        /* Official Print Style Sheet */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            .sidebar {
+                display: none !important;
+            }
+            .document-viewer {
+                margin-left: 0 !important;
+                padding: 0 !important;
+            }
+            .document-page {
+                width: 100% !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                margin-bottom: 0 !important;
+            }
+            .document-body {
+                color: black !important;
+                font-family: "SimSun", "STSong", "Songti SC", serif !important;
+            }
+            .document-body p {
+                text-indent: 2em !important;
+            }
+            .document-body h2 {
+                border-bottom: none !important;
+                page-break-after: avoid;
+            }
+            .code-block {
+                background: #f5f5f5 !important;
+                color: black !important;
+                border: 1px solid #ccc !important;
+                box-shadow: none !important;
+                page-break-inside: avoid;
+            }
+            .copy-btn, .code-header {
+                display: none !important;
+            }
+            .highlight-box {
+                border: 1px solid #999 !important;
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body class="theme-light">
+    <div class="app-container">
+        <!-- Interactive Sidebar -->
+        <aside class="sidebar">
+            <div class="brand-section">
+                <h1 class="brand-title">创AI案例应用报告</h1>
+                <p class="brand-subtitle">XEdu Client 桌面实验学习平台</p>
+            </div>
+            
+            <!-- Controls Panels -->
+            <div class="control-panel">
+                <div class="control-group">
+                    <label class="control-label" for="viewMode">视图模式</label>
+                    <select id="viewMode" class="control-select">
+                        <option value="page">页面视图 (A4纸张)</option>
+                        <option value="web">网页视图 (宽屏流式)</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label class="control-label" for="fontFamily">正文字体</label>
+                    <select id="fontFamily" class="control-select">
+                        <option value="serif">经典宋体 (Word打印款)</option>
+                        <option value="sans" selected>现代黑体 (屏幕阅读款)</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label class="control-label" for="fontSize">字号大小</label>
+                    <select id="fontSize" class="control-select">
+                        <option value="small">小号字 (小四偏小)</option>
+                        <option value="medium" selected>中号字 (小四/15px)</option>
+                        <option value="large">大号字 (四号)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label" for="lineSpacing">单行行距</label>
+                    <select id="lineSpacing" class="control-select">
+                        <option value="1-5" selected>1.5 倍行距</option>
+                        <option value="2">2.0 倍行距 (宽空隙)</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label class="control-label" for="themeSelect">界面主题</label>
+                    <select id="themeSelect" class="control-select">
+                        <option value="light">明亮白 (纸张光感)</option>
+                        <option value="eye">护眼绿 (宣纸微黄)</option>
+                        <option value="dark">深邃黑 (暗光阅读)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Dynamic TOC Container -->
+            <div class="toc-section">
+                <h2 class="toc-title">文档目录</h2>
+                <ul class="toc-list">
+                    <!-- Javascript generated items -->
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Document Viewer Frame -->
+        <main class="document-viewer">
+            <!-- Simulated A4 sheet -->
+            <article class="document-page">
+                <div class="document-body sans-font spacing-1-5 size-medium">
+                    <h1>XEdu Client：面向人工智能课堂的一体化实验学习平台</h1>
+                    
+                    <!-- Cover Card -->
+                    <div class="doc-header-card">
+                        <strong>案例申报附加信息：</strong>
+                        <div class="doc-meta-grid">
+                            <div class="doc-meta-item">案例作者：<strong>王海涛</strong></div>
+                            <div class="doc-meta-item">工作单位：<strong>上海科技大学附属学校</strong></div>
+                            <div class="doc-meta-item">参评方向：<strong>创AI (教育软件微开发)</strong></div>
+                            <div class="doc-meta-item">文档状态：<strong>送审版 (排版优化稿)</strong></div>
+                        </div>
+                    </div>
+
+                    <h2>一、开发背景</h2>
+                    <p>随着人工智能课程逐步进入基础教育课堂，学校在开展相关教学时面临的主要困难，已经不只是“有没有实验内容”，而是“能不能稳定、连续、可复用地组织课堂实验”。在真实教学中，教师往往需要同时准备讲解材料、实验素材、可视化流程、代码环境、运行结果和课堂展示内容；学生则需要在任务理解、流程观察、代码实践和结果复盘之间不断切换。如果这些环节分散在不同软件和不同目录中，就容易出现环境配置复杂、课堂切换频繁、学习路径割裂、课程资源难以沉淀等问题。</p>
+                    <p>从学生学习过程看，人工智能课程既需要低门槛入口，也需要逐步过渡到真实的代码实验。仅使用静态课件或结果演示，学生容易停留在“看到了效果”而没有真正理解任务流程；直接进入完整代码环境，又容易因文件路径、依赖环境和运行报错耗费大量课堂时间。在传统的机房环境中，由于各台学生电脑的软硬件配置不尽相同，环境部署与调试经常占用大量教学时间。尤其在初中阶段，学生更需要一个能够承接“先理解任务，再观察流程，最后进入代码实践”的连续学习空间。</p>
+                    <p>从教师实施过程看，人工智能课程资源也不应停留在一次性文件层面。一节课通常会涉及 HTML 讲解页、Blockly 工作区、Jupyter Notebook、Python 脚本、图片素材、结果文件等多类资源。若缺少统一工作台和结构化资源组织方式，教师每次上课都需要重复整理入口、说明路径和排查环境问题，优质课程也难以在不同班级、不同教师之间持续复用与更新。</p>
+                    <p>基于上述课堂需求，我们开发了 `XEdu Client`。该项目以桌面端工作台为统一入口，整合课程资源管理、Blockly 可视化理解、Jupyter 代码实践、本地运行支撑以及内置 AI 教学助理等能力，帮助学生在同一任务情境中连续完成体验、理解、实践和复盘，也帮助教师降低课堂组织成本，提高人工智能实验课程的稳定性与复用效率。</p>
+                    <p>在开发与材料整理过程中，团队积极探索了<strong>“教师主导、AI 协同”的教育软件微开发范式</strong>。在基础教育一线教学中，教师往往因为没有完整的专业软件工程团队，难以将教学痛点转化为个性化、定制化的教学系统。本案例中，团队引入国产生成式人工智能工具 `DeepSeek` 扮演“协同程序员”与“虚拟架构师”，辅助攻克了 Electron 跨平台桌面端编排、本地 Flask 服务路由装配、Blockly 运行时沙箱路径安全校验等技术难关。这种人机协同模式将研发效率提升了数倍，为基层教师自主定制场景化的教育工具提供了新路径。生成式人工智能在此承担的是强力技术赋能角色，而最终的教学法判断、功能取舍和申报表述仍由教师团队结合真实课堂需求主导完成。</p>
+
+                    <h2>二、设计与开发</h2>
+                    
+                    <h3>（一）平台/技术选择</h3>
+                    <p>`XEdu Client` 采用“桌面端入口 + 本地服务支撑 + 课程资源结构化管理”的总体技术路线。桌面端基于 `Electron` 构建统一工作台，前端使用 `Vite` 与原生 `HTML/CSS/JavaScript` 组织界面交互，后端使用 `Flask + Python` 提供资源读取、运行装配、接口服务与 Jupyter 管理能力。代码实践部分由 `Jupyter Notebook` 承接，可视化理解部分基于 `Blockly` 组织课堂流程，课程实验能力则结合 `XEduHub` 等工具进行调用和扩展。</p>
+                    <p>这种技术选择并不是对现有工具的简单拼接，而是围绕课堂实验链路进行重组。项目希望解决的不是某一项单点能力，而是学生如何在统一工作台中从“看到任务”逐步走向“理解流程”和“继续代码实验”，教师如何把分散的教学资源组织成可进入、可复用、可维护的课程包。因此，项目特别强调本地部署、低网络依赖和课程资源结构化管理，适合学校机房、普通教室和校本人工智能课程场景使用。</p>
+                    <p>从仓库实现看，项目已形成较清晰的分层结构：`electron/main/main.js` 负责桌面宿主与进程编排，`renderer/` 负责前端交互与学习入口，`backend/api/app.py` 与各路由模块负责接口装配，`backend/services/jupyter_service.py`、`backend/services/blockly_xeduhub_support.py` 等服务模块负责核心业务能力。这种结构为后续课程扩展、运行维护和课堂应用提供了稳定基础。</p>
+
+                    <h3>（二）开发过程</h3>
+                    <p>项目开发首先从真实课堂问题出发，明确平台不是单纯的 Notebook 启动器，也不是单独的 Blockly 页面，而是服务人工智能课堂连续实施的实验学习平台。团队围绕“学生进入课堂后继续完成实验”这一核心目标，逐步梳理出平台需要支撑的四类能力：统一实验入口、连续学习路径、课堂运行稳定性和课程资源复用机制。</p>
+                    <p>在学习路径设计上，项目采用“讲解体验 - 流程理解 - 代码实践 - 结果复盘”的组织思路。以仓库中的 `courses/ai-showcase-exam-2025/01_目标检测与细粒度分类/` 样例为例，学生可以先打开 `index.html` 理解任务场景，再通过 Blockly 观察“检测 - 裁剪 - 分类”的流程，最后进入 `detection_and_classification.ipynb` 或对应 Python 脚本继续代码实验。这样，学生看到的不再是孤立文件，而是一条可连续推进的课堂任务链路。</p>
+                    <p>在课程资源建设上，项目把 HTML 页面、Notebook、Python、Blockly 工作区、图片素材等内容组织为结构化课程目录，便于教师围绕同一主题持续维护课程。根据仓库文档与测试说明，系统已支持课程创建、导入、资源读取、课堂接入、课程上传与拉取更新等流程，说明该项目已超出单次演示程序范畴，具备平台化资源管理特征。</p>
+                    <p>在开发质量保障方面，项目通过脚本与测试对高风险能力进行验证。例如，仓库中提供了 `npm run test:blockly-runtime`、`npm run build` 等前端验证命令，也包含 `backend/tests/test_blockly_resources_api.py`、`backend/tests/test_blockly_xeduhub_support.py`、`backend/tests/test_ai_routing_api.py` 等测试文件，用于检查 Blockly 运行时、资源接口和 AI 路由等关键能力。这些实现与文档共同说明，项目在开发阶段已关注课堂稳定性、资源加载和运行安全等问题。<strong>在开发质量保障机制中，AI 输出的代码均配合了由其辅助生成的测试用例，并在本地经过完整的单元测试，证明了人机协同开发的可行性与高可靠性。</strong></p>
+                    <p>在 AI 辅助开发方面，团队采用“问题明确、约束清晰、结果可落地”的方式使用 `DeepSeek`。例如，在问题分析与测试整理阶段，可通过提示词要求 AI 从课堂稳定性、资源加载、学生操作路径等角度输出风险项与检查清单；在申报材料整理阶段，则要求 AI 保持原意、不夸大事实、突出课堂连续性与工具一体化。AI 输出仅作为辅助草案，教师团队会结合真实项目结构、课堂目标和申报规则进行筛选、改写与校正。</p>
+
+                    <div class="highlight-box">
+                        <p><strong>💡 教师微开发实践成果：关键代码展示</strong></p>
+                    </div>
+
+                    <div class="code-container">
+                        <div class="code-header">
+                            <span>Python / 课程路径安全沙箱校验</span>
+                            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                        </div>
+                        <pre class="code-block"><code class="code-block-inner">def resolve_local_course_file(base_path, relpath):
+    base = Path(base_path).expanduser().resolve()
+    target = (base / (relpath or "")).resolve()
+    # 路径防越界沙箱限制，保障课堂学生机房安全
+    if base != target and base not in target.parents:
+        raise ValueError("非法访问外部文件路径")
+    return target</code></pre>
+                    </div>
+
+                    <div class="code-container">
+                        <div class="code-header">
+                            <span>Python / Blockly 与 Jupyter 关联逻辑</span>
+                            <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                        </div>
+                        <pre class="code-block"><code class="code-block-inner">def guess_blockly_notebook_path(workspace_path):
+    rel = str(workspace_path or "").strip().lstrip("/")
+    path = Path(rel)
+    name = path.name
+    # 自动关联同名的 IPYNB 实验代码
+    if name.endswith(".blockly.xml"):
+        return str(path.with_name(name[:-12] + ".ipynb")).replace("\\", "/")</code></pre>
+                    </div>
+
+                    <h3>（三）功能架构</h3>
+                    <p>围绕课堂实验全过程，项目当前形成了六个相互支撑的功能模块：</p>
+                    <ul>
+                        <li><strong>第一，统一学习入口模块</strong>。平台以桌面端工作台为入口，学生和教师可以从同一界面进入课程资源、Blockly 实验和 Jupyter Notebook，减少课堂中反复查找文件、切换软件和确认路径的时间成本。</li>
+                        <li><strong>第二，讲解体验与任务导入模块</strong>。课程中的 HTML 页面用于承载任务情境、实验说明和学习引导，帮助学生先理解“本节课要解决什么问题”，为后续可视化流程观察和代码实践建立背景。</li>
+                        <li><strong>第三，Blockly 可视化理解模块</strong>。学生通过积木化方式观察人工智能实验的主要流程，理解输入、处理、模型调用、结果输出之间的关系。该模块尤其适合初学者建立对 AI 任务链条的整体认识。</li>
+                        <li><strong>第四，Jupyter 代码实践模块</strong>。学生在理解任务情境和流程后，可以进入 Notebook 运行、阅读和修改代码，进一步观察参数变化、结果反馈和实验逻辑，从而把可视化理解过渡到真实代码实践。</li>
+                        <li><strong>第五，内置 AI 教学助理模块</strong>。平台客户端中集成了基于大语言模型的 AI 助手面板，支持 Bring Your Own Key (BYOK) 机制。该模块专为教学设计了“提示词思维链优化（CoT）”策略，引导学生输入学科限制规则进行自主探究，同时能解答 Blockly 积木拼搭逻辑及 Python 代码报错，实现随堂“AI 助教”功能。</li>
+                        <li><strong>第六，课程资源管理与共享模块</strong>。教师可以围绕一门课组织讲解页、Notebook、Blockly 文件、脚本和素材，并通过导入、本地保存、课堂接入、上传与拉取更新等能力，逐步形成可沉淀、可复用、可共享的课程资源包。</li>
+                    </ul>
+                    <p>这六个模块共同服务于同一教学目标：让学生在统一任务情境中持续学习，让教师在稳定工具环境中组织课堂，让课程资源在真实教学中不断积累和迭代。</p>
+
+                    <h2>三、应用过程与效果</h2>
+                    
+                    <h3>（一）应用场景与实施方式</h3>
+                    <p>`XEdu Client` 的应用场景主要集中在学校人工智能通识课程、项目式学习活动、校本实验课程和教师教研共建等场合。对于课堂教学而言，它既可以作为单节课的实验工作台使用，也可以作为系列课程的资源承载平台使用；对于教研活动而言，它又可以把一次次课堂中形成的讲解页、Blockly 工作区、Notebook、脚本、素材和结果文件沉淀为可持续维护的课程资源包。</p>
+                    <p>在实施方式上，平台采用本地部署模式，以桌面端为统一入口，由本地服务负责课程资源解析、Jupyter 启动和课堂接入支撑。这样可以减少对外部网络和在线环境的依赖，适用于机房、普通教室和校本课程等多种使用场景。教师课前可在本地整理和导入课程，课中通过同一工作台组织实验，课后再根据课堂反馈调整课程内容并继续共享更新。</p>
+
+                    <h3>（二）典型应用过程</h3>
+                    <p>本项目的典型应用过程可以概括为“课程准备 - 课堂进入 - 流程理解 - 代码实践 - 结果复盘 - 资源沉淀”六个环节。首先，教师在课程资源平台中创建或导入课程，将讲解页、Blockly 文件、Notebook、Python 脚本和素材文件组织到同一课程结构中。随后，在课堂开始前，教师可从课程资源页直接进入对应实验，确认讲解内容、实验入口和课堂节次设置。</p>
+                    <p>课堂实施时，学生进入平台后，先通过讲解体验页理解本节课的问题情境和任务目标，再通过 Blockly 观察实验流程和主要步骤，最后进入 Jupyter Notebook 阅读、运行和修改代码，实现从任务体验到代码实践的过渡。课堂结束后，教师还可以围绕输出结果进行展示、比较和复盘，并把课堂中修正后的材料继续保留在课程包中，为下一次使用做准备。</p>
+                    <p>以仓库中的 `01_目标检测与细粒度分类` 样例为例，学生先通过 `index.html` 了解图像识别任务情境，再在 Blockly 中理解“目标检测 - 图像裁剪 - 细粒度分类”的流程关系，最后进入 `detection_and_classification.ipynb` 继续代码实验。这样，同一实验不再分散在多个工具和多个目录中，而是被组织为一条连续的学习路径，更符合初中人工智能课堂“先看懂，再动手，再理解”的学习节奏。</p>
+
+                    <h3>（三）实验平台的应用效果</h3>
+                    <p>作为实验平台，`XEdu Client` 的核心价值在于把实验入口、流程理解和代码实践放到同一工作台中。</p>
+                    <p><strong>1. 教学准备效率的跨越式提升</strong><br>
+                    在传统的初中机房环境下，为了让 40-50 名学生顺利开启一次人工智能实验，教师通常需要花费数天时间手动在每台机器上安装 Python/pip、配置复杂的虚拟环境依赖，并逐一拷贝数百兆的深度学习模型权重文件。课堂中，学生仅通过命令行激活虚拟环境、开启 Jupyter Notebook 服务、匹配相对文件路径并处理各种偶发的库冲突报错，就需要耗费 <strong>15 至 20 分钟</strong>（几乎占去整节课的一半时间），且极易因为路径配置错误导致实验运行失败。而在使用 `XEdu Client` 平台后，学生只需在统一客户端中一键点击进入课堂，底层的本地 Flask 服务和 Electron 运行时会自动在后台进行端口探测、自动拉起 Jupyter 并挂载资源，整个环境准备过程被压缩至 <strong>30秒</strong> 内，教师无需在课前或课中做任何手动的环境维护，实现了“机房零配置、即开即用”。</p>
+                    <p><strong>2. 学习体验的连续性与层次化</strong><br>
+                    从学习过程看，平台通过“讲解体验页 - Blockly - Jupyter”的组织方式，为不同基础的学生提供了层次化入口。基础较弱的学生可以先在讲解页与 Blockly 层面完成任务理解和流程观察；基础较好的学生则可以进一步进入 Notebook 修改参数、阅读代码和完成拓展任务。这种渐进式实验设计，有助于避免学生一开始就被完整代码和复杂环境劝退，也能帮助他们逐步建立对人工智能任务链路的整体认识。同时，<strong>平台支持局域网匿名作业提交与展示墙展示</strong>，学生一键上传实验结果，系统自动剔除敏感身份信息在教师端大屏呈现，既保护了初中学生的隐私，又极大激发了课堂复盘与讨论的互动性。</p>
+                    <p><strong>3. 课堂实施的本地化高稳定性</strong><br>
+                    从课堂稳定性看，本地运行与本地服务支撑降低了对在线平台和网络环境的依赖。对于设备条件不完全一致或网络质量不稳定的教学场景，这种实现方式更适合常态化课堂实施。</p>
+
+                    <h3>（四）课程资源共享平台的应用效果</h3>
+                    <p>作为课程资源共享平台，`XEdu Client` 不仅关注“怎么做实验”，也关注“怎么沉淀课程”。项目已经具备课程创建、导入、结构化组织、资源扫描、课程上传、拉取更新和课堂分发等能力，这意味着课程资源不再只是教师个人电脑中的零散文件，而是可以被整理为相对稳定、可复制、可共享的课程包。</p>
+                    <p>这一点对于人工智能课程尤其重要。因为人工智能课程往往同时包含讲解页、实验脚本、数据文件、积木工作区和运行结果，如果缺少平台承载，课程每次复用都要重新整理。通过课程资源平台，教师可以把课程作为一个整体进行保存、共享和更新；其他教师则可以直接导入、使用、修改，并继续拉取更新。这种机制使课程资源从“单次使用”转向“持续迭代”，有利于形成校内共享、教研组共建乃至跨校推广的课程生态。</p>
+                    <p>结合项目知识结构可以看出，课程资源共享平台已经不仅是前端页面上的“资源列表”，而是贯通了资源组织、仓库交互、课程检查和课堂分发的完整链路。对申报材料而言，这也是本案例区别于一般实验演示程序的重要地方：它不仅服务一次实验，更服务课程资源的建设、沉淀与共享。</p>
+
+                    <h3>（五）推广应用价值</h3>
+                    <p>从推广角度看，`XEdu Client` 的应用价值不仅是“某一门课可以上得更顺”，而是为基础教育人工智能课程常态化实施提供了更稳定的工具基础和资源组织方式：一方面，它为基础教育课堂提供了一体化的实验运行与多入口路径，适合兼顾低门槛流程体验和代码创新的教学；另一方面，它通过课程发布与拉取机制，帮助学校将零散的教学资源逐步发展为可持续演进的教研资产，有利于形成跨区域、跨学校的 AI 课程共建共享生态。</p>
+
+                    <h2>四、创新与反思</h2>
+                    
+                    <h3>（一）项目创新点</h3>
+                    <p>本案例的创新可以概括为以下四个方面：</p>
+                    <ol>
+                        <li><strong>学习主线的认知支架创新</strong>：平台首次将 HTML 体验、Blockly 可视化理解与 Jupyter 代码实践整合在同一桌面工作台内。这打破了传统教学中课件、积木、代码工具彼此割裂的局面，为初中生从直观认知向代码实践过渡搭建了连续的递进式支架。</li>
+                        <li><strong>内置 AI 助教的自主探究创新</strong>：平台内置双入口 AI 助教面板，引入针对基础教育优化的“思维链提示词优化引擎”，通过人机交互启发学生自主完善算法限制与逻辑设计，支持随堂代码纠错，把大模型切实转化为促进课堂自主学习的工具。</li>
+                        <li><strong>课程资源的平台化迭代创新</strong>：项目构建了“创建-扫描-发布-拉取更新”的课程包循环机制，使人工智能实验材料不再是教师本地的静态文件，而是成为可以被整个教研组、多名教师协同修改、版本同步演进的“活”资产。</li>
+                        <li><strong>人机协同的“教师微开发”范式创新</strong>：在“创AI”理念下，本案例践行了“教师主导、AI 协同”的研发模式。借助国产大模型攻克了底层多进程管理和文件安全沙箱校验等技术难关，证明了基层教师直接利用自然语言将真实课堂需求快速转化为实用教育工具的可行性。</li>
+                    </ol>
+
+                    <h3>（二）应用价值与长远意义</h3>
+                    <p>本项目的应用价值主要体现在课堂教学、课程建设和教研推广三个方面。课堂教学层面，它以“机房零配置、即开即用”降低了实验门槛，减少了课堂切换，提高了学习路径的连续性；课程建设层面，它使实验材料能够按统一课程结构沉淀，减少了重复整理成本；教研推广层面，它为课程共享、更新和共建提供了明确的平台支撑。</p>
+                    <p>从人工智能教育发展的角度看，这种平台化尝试还有一个更长远的价值：它使人工智能课程不再依赖单个教师的个人文件整理能力，而是逐渐形成可复制、可继承、可持续完善的课程资源体系。对于基础教育人工智能课程常态化实施而言，这一点比单次课堂效果更具长期意义。</p>
+
+                    <h3>（三）存在问题</h3>
+                    <p>尽管项目已经形成了较完整的平台雏形，但仍存在需要进一步完善的地方。首先，真实应用数据与证据链仍需持续丰富，特别是在大规模多班级试用下的量化成效、学生作品质量对比等方面，需要更系统的质性与量化证明。其次，由于不同学校的硬件设备和网络条件差异显著，普通教师在首次配置、多平台打包和运行维护上仍存在一定的上手门槛。再次，在首轮评审中若遇到盲审规则，如何确保导出的报告和系统视频彻底抹去学校与个人标识（如标题栏、特定文件路径），也是提交前必须解决的合规细节问题。</p>
+
+                    <h3>（四）后续改进方向</h3>
+                    <p>后续改进将主要从三个方向推进：一是扩充真实应用样本，收集多学校、多学段下的学生作品反馈与课堂对比数据；二是优化一键部署与运行诊断功能，进一步降低非技术背景教师的独立运维门槛；三是丰富平台自带的标准课程样例库，吸引更多教师加入协同共建，最终形成一个常态化、低门槛、可共享的人工智能实验平台生态。</p>
+                    <p>总体来看，`XEdu Client` 既回应了课堂中“实验怎么做”的效率和体验问题，也回应了课程建设中“资源怎么沉淀、怎么共享、怎么持续改进”的长效机制问题，具有较明确的应用价值和推广意义。</p>
+                </div>
+            </article>
+        </main>
+    </div>
+
+    <!-- Script controls for Interactivity -->
+    <script>
+        // Copy Code Helper
+        function copyCode(button) {
+            const container = button.closest('.code-container');
+            const code = container.querySelector('.code-block-inner').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const originalText = button.textContent;
+                button.textContent = "已复制!";
+                button.style.background = "#27ae60";
+                button.style.color = "#fff";
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = "";
+                    button.style.color = "";
+                }, 2000);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const docBody = document.querySelector('.document-body');
+            const docPage = document.querySelector('.document-page');
+            
+            // 1. Setup Controls Toggles
+            const viewMode = document.getElementById('viewMode');
+            const fontFamily = document.getElementById('fontFamily');
+            const fontSize = document.getElementById('fontSize');
+            const lineSpacing = document.getElementById('lineSpacing');
+            const themeSelect = document.getElementById('themeSelect');
+            
+            // View Mode Handler
+            viewMode.addEventListener('change', (e) => {
+                if (e.target.value === 'web') {
+                    docPage.classList.add('web-view');
+                } else {
+                    docPage.classList.remove('web-view');
+                }
+            });
+            
+            // Font Family Handler
+            fontFamily.addEventListener('change', (e) => {
+                if (e.target.value === 'serif') {
+                    docBody.classList.remove('sans-font');
+                    docBody.classList.add('serif-font');
+                } else {
+                    docBody.classList.remove('serif-font');
+                    docBody.classList.add('sans-font');
+                }
+            });
+            
+            // Font Size Handler
+            fontSize.addEventListener('change', (e) => {
+                docBody.classList.remove('size-small', 'size-medium', 'size-large');
+                docBody.classList.add(`size-${e.target.value}`);
+            });
+
+            // Line Spacing Handler
+            lineSpacing.addEventListener('change', (e) => {
+                docBody.classList.remove('spacing-1-5', 'spacing-2');
+                docBody.classList.add(`spacing-${e.target.value}`);
+            });
+            
+            // Theme Handler
+            themeSelect.addEventListener('change', (e) => {
+                document.body.className = `theme-${e.target.value}`;
+            });
+
+            // 2. Generate Dynamic Table of Contents (TOC)
+            const headings = document.querySelectorAll('.document-body h2, .document-body h3');
+            const tocList = document.querySelector('.toc-list');
+            
+            headings.forEach((heading, index) => {
+                // Assign unique anchor ID if not present
+                if (!heading.id) {
+                    heading.id = `section-heading-${index}`;
+                }
+                
+                const li = document.createElement('li');
+                li.className = `toc-item ${heading.tagName.toLowerCase() === 'h2' ? 'toc-h2' : 'toc-h3'}`;
+                
+                const a = document.createElement('a');
+                a.href = `#${heading.id}`;
+                a.textContent = heading.textContent;
+                
+                // Smooth scroll trigger
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    
+                    // Update active class immediately on click
+                    document.querySelectorAll('.toc-item').forEach(item => item.classList.remove('active'));
+                    li.classList.add('active');
+                });
+                
+                li.appendChild(a);
+                tocList.appendChild(li);
+            });
+
+            // 3. Scroll Spy Implementation (highlight TOC as user scrolls)
+            const observerOptions = {
+                root: null,
+                rootMargin: '0px 0px -70% 0px', // Trigger when section hits upper part of screen
+                threshold: 0
+            };
+            
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const id = entry.target.id;
+                        document.querySelectorAll('.toc-list .toc-item').forEach(item => {
+                            const a = item.querySelector('a');
+                            if (a.getAttribute('href') === `#${id}`) {
+                                item.classList.add('active');
+                                // Softly center the active TOC item in sidebar scroll view
+                                item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            } else {
+                                item.classList.remove('active');
+                            }
+                        });
+                    }
+                });
+            }, observerOptions);
+            
+            headings.forEach(heading => observer.observe(heading));
+        });
+    </script>
+</body>
+</html>

@@ -8,5 +8,7 @@ markdown==3.5.1
 Pygments==2.16.1
 PyYAML
 jupyterlab-language-pack-zh-CN==4.5.post1
-xedu-python==0.0.1
+# xedu-python is installed separately via scripts/setup_portable_python.py with --no-deps.
+pinpong==0.6.2
 kimi-agent-sdk
+rapidocr-onnxruntime

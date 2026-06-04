@@ -205,12 +205,14 @@ def resolve_blockly_runtime_asset_urls() -> Dict[str, str]:
                 return {
                     "vite_client_url": vite_client_url,
                     "runtime_module_url": f"{host}/js/blockly-workspace.js",
+                    "blockly_media_url": f"{host}/blockly/media/",
                 }
         except (urllib.error.URLError, TimeoutError, ValueError):
             continue
     return {
         "vite_client_url": "",
         "runtime_module_url": "/api/resources/frontend-assets/assets/blockly-workspace.js",
+        "blockly_media_url": "/api/resources/frontend-assets/blockly/media/",
     }
 
 
@@ -240,7 +242,10 @@ def build_blockly_playground_html(
     task_stage: str = "",
     task_hint: str = "",
     toolbox_switch_enabled: bool = True,
+    supported_runtime_tasks: List[str] | None = None,
 ) -> str:
+    # 页面首屏必须快速可用，不能在渲染阶段探测 XEduHub 运行时。
+    xeduhub_supported_tasks = [] if supported_runtime_tasks is None else list(supported_runtime_tasks)
     runtime_config = {
         "workspaceUrl": workspace_url or "",
         "toolboxUrl": toolbox_url or "",
@@ -263,11 +268,16 @@ def build_blockly_playground_html(
         "xeduhubExecuteUrl": xeduhub_execute_url or "",
         "toolboxValidateUrl": toolbox_validate_url or "",
         "toolboxSaveUrl": toolbox_save_url or "",
-        "defaultXEduHubToolbox": build_xeduhub_toolbox_definition("classification"),
-        "xeduhubTaskRegistry": get_xeduhub_frontend_registry(),
+        "defaultXEduHubToolbox": build_xeduhub_toolbox_definition(
+            "classification",
+            supported_tasks=xeduhub_supported_tasks,
+            starter_task_id="det_body",
+        ),
+        "xeduhubTaskRegistry": get_xeduhub_frontend_registry(supported_tasks=xeduhub_supported_tasks),
     }
-    runtime_config_json = json.dumps(runtime_config, ensure_ascii=False).replace("</", "<\\/")
     asset_urls = resolve_blockly_runtime_asset_urls()
+    runtime_config["blocklyMediaUrl"] = asset_urls["blockly_media_url"]
+    runtime_config_json = json.dumps(runtime_config, ensure_ascii=False).replace("</", "<\\/")
     vite_client_tag = (
         f'<script type="module" src="{asset_urls["vite_client_url"]}"></script>'
         if asset_urls.get("vite_client_url")
@@ -275,15 +285,91 @@ def build_blockly_playground_html(
     )
     runtime_module_url = asset_urls["runtime_module_url"]
     page_title = workspace_label or "Blockly 课堂模式"
+    critical_css = """
+  <style id="xedu-blockly-critical-style">
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 12% 16%, rgba(107, 112, 232, 0.12), transparent 24%),
+        radial-gradient(circle at 88% 12%, rgba(111, 170, 219, 0.12), transparent 26%),
+        linear-gradient(135deg, #f7f8fd 0%, #f0f4fb 54%, #f7fbff 100%);
+      color: #24324a;
+      font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    body.xedu-blockly-runtime-pending {
+      overflow: hidden;
+    }
+    body.xedu-blockly-runtime-pending > .topbar,
+    body.xedu-blockly-runtime-pending > .layout {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .xedu-blockly-boot {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      padding: 32px;
+      background:
+        radial-gradient(circle at 26% 24%, rgba(107, 112, 232, 0.16), transparent 26%),
+        linear-gradient(135deg, #f8fbff 0%, #eef3ff 100%);
+      transition: opacity .18s ease, visibility .18s ease;
+    }
+    .xedu-blockly-boot-card {
+      width: min(360px, 86vw);
+      padding: 28px 26px;
+      border: 1px solid rgba(187, 198, 219, 0.55);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+      text-align: center;
+    }
+    .xedu-blockly-boot-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 14px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #6b70e8 0%, #555fd6 100%);
+      box-shadow: 0 12px 24px rgba(107, 112, 232, 0.24);
+    }
+    .xedu-blockly-boot-title {
+      font-size: 16px;
+      font-weight: 820;
+      line-height: 1.4;
+      margin-bottom: 6px;
+    }
+    .xedu-blockly-boot-desc {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #61728d;
+    }
+    body.xedu-blockly-runtime-ready .xedu-blockly-boot {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+  </style>"""
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{page_title}</title>
+  {critical_css}
   {vite_client_tag}
 </head>
-<body>
+<body class="xedu-blockly-runtime xedu-blockly-runtime-pending">
+  <div class="xedu-blockly-boot" aria-live="polite">
+    <div class="xedu-blockly-boot-card">
+      <div class="xedu-blockly-boot-icon" aria-hidden="true"></div>
+      <div class="xedu-blockly-boot-title">正在加载 Blockly 工作台</div>
+      <div class="xedu-blockly-boot-desc">正在准备积木分类、运行面板和课程工作区。</div>
+    </div>
+  </div>
   <div class="topbar">
     <div class="topbar-left">
       <span class="title-dot" aria-hidden="true"></span>
@@ -345,6 +431,16 @@ def build_blockly_playground_html(
       </div>
     </section>
     <aside id="codeDock" class="workspace-sidecar">
+      <div
+        id="codeDockResizeHandle"
+        class="code-dock-resize-handle"
+        role="separator"
+        tabindex="0"
+        aria-label="调整右侧工作栏宽度"
+        aria-orientation="vertical"
+      >
+        <span class="code-dock-resize-grip" aria-hidden="true"></span>
+      </div>
       <button id="codeDockToggleBtn" class="code-dock-toggle" type="button" aria-label="收起右侧工作栏" aria-expanded="true">
         <span class="code-dock-toggle-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none">
@@ -367,14 +463,15 @@ def build_blockly_playground_html(
         <section id="outputPanel" class="panel output-panel side-output-panel">
           <div class="panel-head panel-head-muted">
             <div class="panel-head-copy">
-              <span>终端</span>
-              <small>显示本次运行输出与错误信息</small>
+              <span>运行反馈</span>
+              <small>在一个输出框里显示 print 输出、运行结果与报错信息</small>
             </div>
             <span id="resultRunBadge" class="run-badge">未运行</span>
           </div>
-          <div class="panel-subhead" hidden>实验证据</div>
           <div id="resultBox" class="output-body" data-state="idle">
-            <div id="resultEvidence" class="result-evidence"></div>
+            <div class="terminal-output result-output-shell" aria-label="运行输出">
+              <pre id="resultTerminal" class="result-terminal">尚未运行</pre>
+            </div>
           </div>
         </section>
       </div>

@@ -2,17 +2,17 @@
   "meta": {
     "source_file": "renderer/js/blockly/xeduhub-blocks.js",
     "generated_by": "scripts/generate_xeduhub_block_audit.mjs",
-    "block_count": 88,
-    "runnable_block_count": 67,
+    "block_count": 90,
+    "runnable_block_count": 69,
     "legacy_compat_count": 15,
-    "semantic_task_count": 20,
+    "semantic_task_count": 22,
     "registry_default_task_id": "det_body"
   },
   "summary": {
     "conclusions": {
       "一致": 34,
       "废弃兼容": 15,
-      "弱一致": 39
+      "弱一致": 41
     },
     "groups": {
       "结果读取/计算类": 10,
@@ -20,7 +20,7 @@
       "结果展示类": 5,
       "图像与视频处理类": 19,
       "输入类": 4,
-      "执行类": 27
+      "执行类": 29
     },
     "priority_findings": [
       {
@@ -133,6 +133,18 @@
       },
       {
         "id": "xeduhub_run_det_coco_l",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_det_face",
+        "issue_level": "P2",
+        "conclusion": "弱一致",
+        "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      },
+      {
+        "id": "xeduhub_run_det_hand",
         "issue_level": "P2",
         "conclusion": "弱一致",
         "summary": "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
@@ -432,8 +444,7 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 1 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+          "runtime-helpers.test.js: 定向命中 1 次"
         ]
       },
       "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
@@ -830,8 +841,7 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 3 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+          "runtime-helpers.test.js: 定向命中 3 次"
         ]
       },
       "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
@@ -904,8 +914,8 @@
         "WINDOW=video"
       ],
       "tooltip": "",
-      "generated_python": "camera = xrt.XEduCamera.video(\"demo.mp4\", window_name=\"video\")",
-      "generated_python_summary": "camera = xrt.XEduCamera.video(\"demo.mp4\", window_name=\"video\")",
+      "generated_python": "camera = xrt.XEduCamera.video(\"courses/blockly-smoke/demo.mp4\", window_name=\"video\")",
+      "generated_python_summary": "camera = xrt.XEduCamera.video(\"courses/blockly-smoke/demo.mp4\", window_name=\"video\")",
       "hidden_globals": [
         "camera",
         "video"
@@ -915,10 +925,9 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/python/run",
       "current_test_coverage": {
-        "status": "已覆盖（含定向断言）",
+        "status": "已覆盖（主要依赖全量 sweep）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
         ]
       },
       "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
@@ -1112,8 +1121,7 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 1 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+          "runtime-helpers.test.js: 定向命中 2 次"
         ]
       },
       "test_strategy": "模拟依赖测试 + 本地 Python 执行测试",
@@ -1186,10 +1194,9 @@
       "is_runnable": true,
       "runtime_entrypoint": "前端结果区动作渲染 + Python 导出 helper 调用",
       "current_test_coverage": {
-        "status": "已覆盖（含定向断言）",
+        "status": "已覆盖（主要依赖全量 sweep）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
         ]
       },
       "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
@@ -1470,7 +1477,7 @@
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
           "runtime-helpers.test.js: 定向命中 1 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
         ]
       },
       "test_strategy": "代码生成快照 + stubbed Python 执行",
@@ -1802,8 +1809,7 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 6 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 24 次"
+          "runtime-helpers.test.js: 定向命中 6 次"
         ]
       },
       "test_strategy": "浏览器/页面行为测试 + 本地 Python 执行测试",
@@ -2267,7 +2273,7 @@
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
           "runtime-helpers.test.js: 定向命中 1 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
         ]
       },
       "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
@@ -2290,8 +2296,9 @@
     {
       "id": "xeduhub_run_cls_imagenet",
       "group": "执行类",
-      "title": "〔看图分类〕 · 分类 对 ? 进行推理 结果保存到 lab_result",
+      "title": "看图分类 分类 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=看图分类",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "ImageNet 图像分类。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2309,7 +2316,8 @@
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
           "runtime-helpers.test.js: 定向命中 1 次",
-          "test_blockly_resources_api.py: 定向命中 2 次"
+          "test_blockly_resources_api.py: 定向命中 2 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2332,8 +2340,9 @@
     {
       "id": "xeduhub_run_depth_anything",
       "group": "执行类",
-      "title": "〔看远近〕 · 深度 对 ? 进行推理 结果保存到 lab_result",
+      "title": "看远近 深度 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=看远近",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "单目深度估计。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2347,9 +2356,10 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
       "current_test_coverage": {
-        "status": "已覆盖（主要依赖全量 sweep）",
+        "status": "已覆盖（含定向断言）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2372,8 +2382,9 @@
     {
       "id": "xeduhub_run_det_body",
       "group": "执行类",
-      "title": "〔找人体〕 · 检测 对 ? 进行推理 结果保存到 lab_result",
+      "title": "找人体 检测 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=找人体",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "人体目标检测。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
@@ -2392,9 +2403,9 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 7 次",
+          "runtime-helpers.test.js: 定向命中 9 次",
           "test_blockly_resources_api.py: 定向命中 2 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 8 次"
+          "courses/blockly-smoke: 示例工作区/快照命中 5 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2417,8 +2428,9 @@
     {
       "id": "xeduhub_run_det_body_l",
       "group": "执行类",
-      "title": "〔找人体+〕 · 检测 对 ? 进行推理 结果保存到 lab_result",
+      "title": "找人体+ 检测 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=找人体+",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "人体目标检测 Large。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2460,8 +2472,9 @@
     {
       "id": "xeduhub_run_det_coco",
       "group": "执行类",
-      "title": "〔找物体〕 · 检测 对 ? 进行推理 结果保存到 lab_result",
+      "title": "找物体 检测 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=找物体",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "COCO 目标检测。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
@@ -2503,11 +2516,12 @@
     {
       "id": "xeduhub_run_det_coco_l",
       "group": "执行类",
-      "title": "〔找物体+〕 · 检测 对 ? 进行推理 结果保存到 lab_result",
+      "title": "找物体+ 检测 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=找物体+",
         "RESULT_VAR=lab_result"
       ],
-      "tooltip": "COCO 目标检测 Large。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "tooltip": "COCO 目标检测 Large。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
       "generated_python": "lab_task_id = \"cocodetect\"\nlab_flow = xedu_flow_cocodetect\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
       "generated_python_summary": "lab_task_id = \"cocodetect\" lab_flow = xedu_flow_cocodetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
       "hidden_globals": [
@@ -2544,10 +2558,99 @@
       "backed_by_registry_runnable": false
     },
     {
+      "id": "xeduhub_run_det_face",
+      "group": "执行类",
+      "title": "找人脸 检测 · 输入 ? 输出 lab_result",
+      "user_visible_fields": [
+        "TASK_LABEL=找人脸",
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "人脸目标检测。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
+      "generated_python": "lab_task_id = \"det_face\"\nlab_flow = xedu_flow_det_face\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"det_face\" lab_flow = xedu_flow_det_face lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "det_face",
+      "semantic_task_label": "人脸目标检测",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_run_det_hand",
+      "group": "执行类",
+      "title": "找手部 检测 · 输入 ? 输出 lab_result",
+      "user_visible_fields": [
+        "TASK_LABEL=找手部",
+        "RESULT_VAR=lab_result"
+      ],
+      "tooltip": "手部目标检测。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
+      "generated_python": "lab_task_id = \"det_hand\"\nlab_flow = xedu_flow_det_hand\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
+      "generated_python_summary": "lab_task_id = \"det_hand\" lab_flow = xedu_flow_det_hand lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
+      "hidden_globals": [
+        "lab_input",
+        "lab_result",
+        "lab_flow"
+      ],
+      "ui_behavior": "主要驱动运行时执行链路，由统一结果面板渲染结果",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+        ]
+      },
+      "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
+      "test_assertions": [
+        "断言任务 ID 解析、输入绑定和 execute 路由选择正确。",
+        "断言成功/失败 payload 能驱动结果面板更新。"
+      ],
+      "audit_conclusion": "弱一致",
+      "issue_level": "P2",
+      "findings": [
+        "该块依赖隐式运行时状态：lab_input、lab_result、lab_flow，用户界面没有完整解释这些状态契约。"
+      ],
+      "remediation": [
+        "补充 tooltip/字段说明，明确隐式状态和父流程依赖。"
+      ],
+      "semantic_task_id": "det_hand",
+      "semantic_task_label": "手部目标检测",
+      "backed_by_registry_runnable": false
+    },
+    {
       "id": "xeduhub_run_drive_perception",
       "group": "执行类",
-      "title": "〔驾驶感知〕 · 感知 对 ? 进行推理 结果保存到 lab_result",
+      "title": "驾驶感知 感知 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=驾驶感知",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "全景驾驶感知。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2561,9 +2664,10 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
       "current_test_coverage": {
-        "status": "已覆盖（主要依赖全量 sweep）",
+        "status": "已覆盖（含定向断言）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2586,8 +2690,9 @@
     {
       "id": "xeduhub_run_embedding_audio",
       "group": "执行类",
-      "title": "〔音频特征〕 · 特征 对 ? 进行推理 结果保存到 lab_result",
+      "title": "音频特征 特征 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=音频特征",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "音频特征提取。对音频进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2601,9 +2706,10 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
       "current_test_coverage": {
-        "status": "已覆盖（主要依赖全量 sweep）",
+        "status": "已覆盖（含定向断言）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2626,8 +2732,9 @@
     {
       "id": "xeduhub_run_embedding_image",
       "group": "执行类",
-      "title": "〔图像特征〕 · 特征 对 ? 进行推理 结果保存到 lab_result",
+      "title": "图像特征 特征 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=图像特征",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "图像特征提取。对输入资源进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2641,9 +2748,10 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
       "current_test_coverage": {
-        "status": "已覆盖（主要依赖全量 sweep）",
+        "status": "已覆盖（含定向断言）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2666,8 +2774,9 @@
     {
       "id": "xeduhub_run_embedding_text",
       "group": "执行类",
-      "title": "〔文本特征〕 · 特征 对 ? 进行推理 结果保存到 lab_result",
+      "title": "文本特征 特征 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=文本特征",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "文本特征提取。对文本进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2681,9 +2790,10 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
       "current_test_coverage": {
-        "status": "已覆盖（主要依赖全量 sweep）",
+        "status": "已覆盖（含定向断言）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2706,8 +2816,9 @@
     {
       "id": "xeduhub_run_gen_color",
       "group": "执行类",
-      "title": "〔图像上色〕 · 生成 对 ? 进行推理 结果保存到 lab_result",
+      "title": "图像上色 生成 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=图像上色",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "图像着色。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2721,9 +2832,10 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
       "current_test_coverage": {
-        "status": "已覆盖（主要依赖全量 sweep）",
+        "status": "已覆盖（含定向断言）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2746,8 +2858,9 @@
     {
       "id": "xeduhub_run_gen_style",
       "group": "执行类",
-      "title": "〔换风格〕 · 生成 对 ? 进行推理 结果保存到 lab_result",
+      "title": "换风格 生成 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=换风格",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "图像风格迁移。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2761,9 +2874,10 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
       "current_test_coverage": {
-        "status": "已覆盖（主要依赖全量 sweep）",
+        "status": "已覆盖（含定向断言）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2786,8 +2900,9 @@
     {
       "id": "xeduhub_run_ocr",
       "group": "执行类",
-      "title": "〔读文字〕 · 文字 对 ? 进行推理 结果保存到 lab_result",
+      "title": "读文字 文字 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=读文字",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "光学字符识别。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2804,7 +2919,8 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 1 次"
+          "runtime-helpers.test.js: 定向命中 1 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -2827,8 +2943,9 @@
     {
       "id": "xeduhub_run_pose_body17",
       "group": "执行类",
-      "title": "〔看动作〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "title": "看动作 关键点 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=看动作",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "人体关键点 17。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
@@ -2870,8 +2987,9 @@
     {
       "id": "xeduhub_run_pose_body17_l",
       "group": "执行类",
-      "title": "〔看动作+〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "title": "看动作+ 关键点 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=看动作+",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "人体关键点 17 Large。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2913,8 +3031,9 @@
     {
       "id": "xeduhub_run_pose_body26",
       "group": "执行类",
-      "title": "〔看动作26〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "title": "看动作26 关键点 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=看动作26",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "人体关键点 26。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -2956,8 +3075,9 @@
     {
       "id": "xeduhub_run_pose_face106",
       "group": "执行类",
-      "title": "〔看脸点〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "title": "看脸点 关键点 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=看脸点",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "人脸关键点 106。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
@@ -2999,8 +3119,9 @@
     {
       "id": "xeduhub_run_pose_hand21",
       "group": "执行类",
-      "title": "〔看手势〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "title": "看手势 关键点 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=看手势",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "手部关键点 21。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
@@ -3042,11 +3163,12 @@
     {
       "id": "xeduhub_run_pose_wholebody133",
       "group": "执行类",
-      "title": "〔看全身点〕 · 关键点 对 ? 进行推理 结果保存到 lab_result",
+      "title": "看全身点 关键点 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=看全身点",
         "RESULT_VAR=lab_result"
       ],
-      "tooltip": "全身关键点 133。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
+      "tooltip": "全身关键点 133。对图片进行推理，默认可以直接运行。适合课堂里的标准演示与预演。",
       "generated_python": "lab_task_id = \"wholebody133\"\nlab_flow = xedu_flow_wholebody133\nlab_result = lab_flow.inference(data=lab_input)\nlab_result = lab_result",
       "generated_python_summary": "lab_task_id = \"wholebody133\" lab_flow = xedu_flow_wholebody133 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result",
       "hidden_globals": [
@@ -3085,8 +3207,9 @@
     {
       "id": "xeduhub_run_segment_anything",
       "group": "执行类",
-      "title": "〔圈区域〕 · 分割 对 ? 进行推理 结果保存到 lab_result",
+      "title": "圈区域 分割 · 输入 ? 输出 lab_result",
       "user_visible_fields": [
+        "TASK_LABEL=圈区域",
         "RESULT_VAR=lab_result"
       ],
       "tooltip": "SAM 图像分割。对图片进行推理，默认可以直接运行。当前本地环境默认不建议使用，可能无法运行。",
@@ -3100,9 +3223,10 @@
       "is_runnable": true,
       "runtime_entrypoint": "/api/resources/blockly/xeduhub/execute",
       "current_test_coverage": {
-        "status": "已覆盖（主要依赖全量 sweep）",
+        "status": "已覆盖（含定向断言）",
         "items": [
-          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep"
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -3272,7 +3396,7 @@
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
           "runtime-helpers.test.js: 定向命中 6 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 4 次"
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "迁移验证 + 代码生成快照",
@@ -3354,7 +3478,7 @@
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
           "runtime-helpers.test.js: 定向命中 6 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 4 次"
+          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
         ]
       },
       "test_strategy": "本地 Python 执行测试",
@@ -3435,8 +3559,8 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 3 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 51 次"
+          "runtime-helpers.test.js: 定向命中 4 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 47 次"
         ]
       },
       "test_strategy": "迁移验证 + 代码生成快照",
@@ -3477,8 +3601,8 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 1 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 48 次"
+          "runtime-helpers.test.js: 定向命中 2 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 45 次"
         ]
       },
       "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
@@ -3517,7 +3641,7 @@
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
           "runtime-helpers.test.js: 定向命中 2 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
         ]
       },
       "test_strategy": "代码生成快照 + 浏览器/页面行为测试",
@@ -3560,8 +3684,7 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 5 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 25 次"
+          "runtime-helpers.test.js: 定向命中 6 次"
         ]
       },
       "test_strategy": "代码生成快照 + 运行时 spec 抽取与绑定验证",
@@ -3584,7 +3707,7 @@
     {
       "id": "xeduhub_workflow_create_var",
       "group": "执行类",
-      "title": "初始化任务 人体目标检测 记为 lab_flow",
+      "title": "新建任务 人体目标检测 记为 lab_flow",
       "user_visible_fields": [
         "TASK_ID=人体目标检测",
         "MODEL_VAR=lab_flow"
@@ -3603,8 +3726,7 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 4 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 25 次"
+          "runtime-helpers.test.js: 定向命中 5 次"
         ]
       },
       "test_strategy": "代码生成快照 + 运行时 spec 抽取与绑定验证",
@@ -3649,8 +3771,8 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 6 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 2 次"
+          "runtime-helpers.test.js: 定向命中 7 次",
+          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",
@@ -3673,7 +3795,7 @@
     {
       "id": "xeduhub_workflow_infer_pair",
       "group": "执行类",
-      "title": "模型推理 lab_flow 对 ? 进行推理 结果保存到 lab_result 图片保存到 display_img 可选检测框 ? 参数 {\"thr\": 0.5}",
+      "title": "识别流程 lab_flow 对 ? 进行推理 结果保存到 lab_result 图片保存到 display_img 可选检测框 ? 参数 {\"thr\": 0.5}",
       "user_visible_fields": [
         "MODEL_VAR=lab_flow",
         "RESULT_VAR=lab_result",
@@ -3722,7 +3844,7 @@
     {
       "id": "xeduhub_workflow_infer_var",
       "group": "执行类",
-      "title": "模型推理 lab_flow 对 ? 进行推理 结果保存到 lab_result 可选检测框 ? 参数 {\"thr\": 0.5}",
+      "title": "识别流程 lab_flow 输入 ? 输出到 lab_result 检测框 ? 参数 {\"thr\": 0.5}",
       "user_visible_fields": [
         "MODEL_VAR=lab_flow",
         "RESULT_VAR=lab_result",
@@ -3745,8 +3867,7 @@
         "status": "已覆盖（含定向断言）",
         "items": [
           "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
-          "runtime-helpers.test.js: 定向命中 4 次",
-          "courses/blockly-smoke: 示例工作区/快照命中 1 次"
+          "runtime-helpers.test.js: 定向命中 5 次"
         ]
       },
       "test_strategy": "运行时 spec 抽取与绑定验证 + 后端接口执行测试",

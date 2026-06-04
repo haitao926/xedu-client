@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片、轻颗粒纸张质感、少量手绘箭头和标签，视觉清晰，结构化强，适合直接放入正式汇报PPT。整体风格统一为教育类 editorial infographic，配色以深蓝、墨绿、橙色、米白为主，可加入少量青蓝或黄绿点缀。不要纯黑白线框，不要工程蓝图，不要过度扁平商务图标风，不要复杂长段文字，不要乱码，只出现指定中文短词。一张“学生学习闭环”的中文信息图，横向弧形路径构图，从左到右五步：任务情境、流程理解、代码实践、结果验证、讨论复盘。每一步用一个有填充感的小场景卡片表示，并在卡片下方对应工具短词：讲解页、Blockly、Jupyter、结果图、交流。整体更像学习旅程图，不是矩形流程框，具有轻微手绘感、色块丰富、路径有节奏。标题“学习闭环”，只出现这些中文短词，不要额外乱码。",
+  "original_prompt": "面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片、轻颗粒纸张质感、少量手绘箭头和标签，视觉清晰，结构化强，适合直接放入正式汇报PPT。整体风格统一为教育类 editorial infographic，配色以深蓝、墨绿、橙色、米白为主，可加入少量青蓝或黄绿点缀。不要纯黑白线框，不要工程蓝图，不要过度扁平商务图标风，不要复杂长段文字，不要乱码，只出现指定中文短词。一张“学生学习闭环”的中文信息图，横向弧形路径构图，从左到右五步：任务情境、流程理解、代码实践、结果验证、讨论复盘。每一步用一个有填充感的小场景卡片表示，并在卡片下方对应工具短词：讲解页、Blockly、Jupyter、结果图、交流。整体更像学习旅程图，不是矩形流程框，具有轻微手绘感、色块丰富、路径有节奏。标题“学习闭环”，只出现这些中文短词，不要额外乱码。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片_2372bad14615.png",
+  "image_urls": [
+    "/static/generated/面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片_2372bad14615.png"
+  ],
+  "output_path": "docs/case-application-2026/generated-infographics/02-学习闭环.png",
+  "output_paths": [
+    "docs/case-application-2026/generated-infographics/02-学习闭环.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

@@ -1,0 +1,222 @@
+# -*- coding: utf-8 -*-
+"""
+Blockly 相关资源路由模块。
+"""
+
+from __future__ import annotations
+
+import json
+import urllib.parse
+from pathlib import Path
+
+from flask import Response, jsonify, request
+
+from services.blockly_xeduhub_support import validate_toolbox_schema
+
+
+def register_resource_blockly_routes(app, services: dict):
+    """注册 Blockly 相关资源路由"""
+
+    logger = services["logger"]
+    decode_local_preview_token = services["decode_local_preview_token"]
+    resolve_local_course_file = services["resolve_local_course_file"]
+    guess_blockly_toolbox_path = services["guess_blockly_toolbox_path"]
+    guess_blockly_python_path = services["guess_blockly_python_path"]
+    guess_blockly_notebook_path = services["guess_blockly_notebook_path"]
+    get_frontend_build_dir = services["get_frontend_build_dir"]
+    build_blockly_playground_html = services["build_blockly_playground_html"]
+    execute_xeduhub_runtime = services["execute_xeduhub_runtime"]
+    get_nonblocking_supported_tasks_snapshot = services["get_nonblocking_supported_tasks_snapshot"]
+
+    @app.route("/api/resources/blockly-playground/<root_token>")
+    def resources_blockly_playground(root_token):
+        role = str(request.args.get("role") or "").strip().lower()
+        toolbox_import_enabled = role != "student"
+        workspace_rel = str(request.args.get("workspace") or "").strip().lstrip("/")
+        toolbox_rel = str(request.args.get("toolbox") or "").strip().lstrip("/")
+        python_rel = str(request.args.get("python") or "").strip().lstrip("/")
+        practice_rel = str(request.args.get("practice") or "").strip().lstrip("/")
+        try:
+            base = decode_local_preview_token(root_token)
+            if not workspace_rel:
+                return jsonify({"success": False, "message": "缺少 workspace 参数"}), 400
+
+            workspace_file = resolve_local_course_file(base, workspace_rel)
+            if not workspace_file.exists() or not workspace_file.is_file():
+                return jsonify({"success": False, "message": "Blockly 工作区文件不存在"}), 404
+
+            if not toolbox_rel:
+                guessed_toolbox = guess_blockly_toolbox_path(workspace_rel)
+                if guessed_toolbox:
+                    toolbox_file = resolve_local_course_file(base, guessed_toolbox)
+                    if toolbox_file.exists() and toolbox_file.is_file():
+                        toolbox_rel = guessed_toolbox
+
+            if not python_rel:
+                guessed_python = guess_blockly_python_path(workspace_rel)
+                if guessed_python:
+                    python_rel = guessed_python
+
+            practice_kind = ""
+            if not practice_rel:
+                guessed_notebook = guess_blockly_notebook_path(workspace_rel)
+                if guessed_notebook:
+                    notebook_file = resolve_local_course_file(base, guessed_notebook)
+                    if notebook_file.exists() and notebook_file.is_file():
+                        practice_rel = guessed_notebook
+                        practice_kind = "notebook"
+                if not practice_rel and python_rel:
+                    python_file = resolve_local_course_file(base, python_rel)
+                    if python_file.exists() and python_file.is_file():
+                        practice_rel = python_rel
+                        practice_kind = "python"
+            elif practice_rel:
+                if practice_rel.lower().endswith(".ipynb"):
+                    practice_kind = "notebook"
+                elif practice_rel.lower().endswith(".py"):
+                    practice_kind = "python"
+
+            workspace_url = f"/api/resources/local-file/{root_token}/{workspace_rel}"
+            toolbox_url = f"/api/resources/local-file/{root_token}/{toolbox_rel}" if toolbox_rel else ""
+            python_url = f"/api/resources/local-file/{root_token}/{python_rel}" if python_rel else ""
+            practice_url = f"/api/resources/local-file/{root_token}/{practice_rel}" if practice_rel else ""
+            practice_launch_url = ""
+            if practice_rel:
+                practice_launch_query = urllib.parse.urlencode({
+                    "project": str(base),
+                    "file": practice_rel,
+                    "kind": practice_kind,
+                })
+                practice_launch_url = f"xedu://open-practice?{practice_launch_query}"
+
+            html = build_blockly_playground_html(
+                workspace_url=workspace_url,
+                toolbox_url=toolbox_url,
+                generated_python_url=python_url,
+                workspace_label=Path(workspace_rel).name,
+                role=role,
+                root_token=root_token,
+                workspace_rel=workspace_rel,
+                toolbox_rel=toolbox_rel,
+                project_root=str(base),
+                practice_label=Path(practice_rel).name if practice_rel else "",
+                practice_kind=practice_kind,
+                practice_url=practice_url,
+                practice_launch_url=practice_launch_url,
+                toolbox_switch_enabled=toolbox_import_enabled,
+            )
+            return Response(html, mimetype="text/html")
+        except ValueError as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except Exception as exc:
+            logger.error(f"打开 Blockly playground 失败: {exc}")
+            return jsonify({"success": False, "message": "打开 Blockly playground 失败"}), 500
+
+    @app.route("/api/resources/blockly-playground-blank")
+    def resources_blockly_playground_blank():
+        try:
+            role = str(request.args.get("role") or "").strip().lower()
+            toolbox_import_enabled = role != "student"
+            project_root = str(get_frontend_build_dir().parent)
+            html = build_blockly_playground_html(
+                workspace_url="",
+                toolbox_url="",
+                generated_python_url="",
+                workspace_label="",
+                role=role,
+                project_root=project_root,
+                practice_label="",
+                practice_kind="",
+                practice_url="",
+                practice_launch_url="",
+                toolbox_switch_enabled=toolbox_import_enabled,
+                supported_runtime_tasks=get_nonblocking_supported_tasks_snapshot(),
+            )
+            return Response(html, mimetype="text/html")
+        except Exception as exc:
+            logger.error(f"打开空白 Blockly playground 失败: {exc}")
+            return jsonify({"success": False, "message": "打开空白 Blockly playground 失败"}), 500
+
+    @app.route("/api/resources/blockly/xeduhub/execute", methods=["POST"])
+    def resources_blockly_xeduhub_execute():
+        try:
+            payload = request.get_json(silent=True) or {}
+            result = execute_xeduhub_runtime(payload)
+            return jsonify(result), 200 if result.get("success") else 400
+        except Exception as exc:
+            logger.error(f"执行 Blockly XEduHub runtime 失败: {exc}")
+            return jsonify({
+                "success": False,
+                "result_type": "error",
+                "message": "执行 Blockly XEduHub runtime 失败",
+                "result": {"error": str(exc)},
+                "artifacts": {},
+            }), 500
+
+    @app.route("/api/resources/blockly/validate-toolbox", methods=["POST"])
+    def resources_blockly_validate_toolbox():
+        try:
+            payload = request.get_json(silent=True) or {}
+            toolbox = payload.get("toolbox") if isinstance(payload, dict) else None
+            result = validate_toolbox_schema(toolbox)
+            status_code = 200 if result.get("valid") else 400
+            return jsonify(result), status_code
+        except Exception as exc:
+            logger.error(f"校验 Blockly toolbox 失败: {exc}")
+            return jsonify({
+                "valid": False,
+                "errors": ["校验 Blockly toolbox 失败"],
+                "normalized": None,
+            }), 500
+
+    @app.route("/api/resources/blockly/toolbox/save", methods=["POST"])
+    def resources_blockly_toolbox_save():
+        try:
+            payload = request.get_json(silent=True) or {}
+            if not isinstance(payload, dict):
+                return jsonify({"success": False, "message": "请求参数无效"}), 400
+
+            role = str(payload.get("role") or "").strip().lower()
+            if role == "student":
+                return jsonify({"success": False, "message": "学生模式不允许保存课程积木"}), 403
+
+            root_token = str(payload.get("root_token") or "").strip()
+            workspace_rel = str(payload.get("workspace_rel") or "").strip().lstrip("/")
+            toolbox_rel = str(payload.get("toolbox_rel") or "").strip().lstrip("/")
+            toolbox = payload.get("toolbox")
+
+            if not root_token:
+                return jsonify({"success": False, "message": "缺少课程标识"}), 400
+            if not toolbox_rel:
+                if not workspace_rel:
+                    return jsonify({"success": False, "message": "缺少工作区路径，无法推导 toolbox 保存路径"}), 400
+                toolbox_rel = guess_blockly_toolbox_path(workspace_rel)
+            if not toolbox_rel:
+                return jsonify({"success": False, "message": "无法推导 toolbox 保存路径"}), 400
+
+            validation = validate_toolbox_schema(toolbox)
+            if not validation.get("valid"):
+                return jsonify({
+                    "success": False,
+                    "message": "积木包格式不正确",
+                    "errors": validation.get("errors") or ["未知错误"],
+                }), 400
+
+            base = decode_local_preview_token(root_token)
+            target_file = resolve_local_course_file(base, toolbox_rel)
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            safe_toolbox = validation.get("normalized") or toolbox
+            target_file.write_text(f"{json.dumps(safe_toolbox, ensure_ascii=False, indent=2)}\n", encoding="utf-8")
+            return jsonify({
+                "success": True,
+                "message": "课程积木已保存",
+                "toolbox_path": toolbox_rel,
+            }), 200
+        except ValueError as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except OSError as exc:
+            logger.error(f"保存 Blockly toolbox 失败: {exc}")
+            return jsonify({"success": False, "message": "保存失败，请检查课程目录写权限"}), 500
+        except Exception as exc:
+            logger.error(f"保存 Blockly toolbox 失败: {exc}")
+            return jsonify({"success": False, "message": "保存 Blockly toolbox 失败"}), 500

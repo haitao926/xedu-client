@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "画面目标：\n为教师申报PPT生成一张清晰、克制、低AI味的教育科技关系图，主题是“XEduPro、XEduHub、XEdu Client 的关系”。这是一张正式汇报用的信息图，不是宣传海报。\n\n主体与结构：\n横向16:9画面，浅灰白背景，中心为三层关系结构。\n第一层在上方：XEduPro，表现为一个稳定的大平台底座或平台框架，代表“人工智能学习与开发工具体系”。\n第二层在中间：XEduHub，表现为嵌入在 XEduPro 内部的能力模块，代表“深度学习模型推理与任务执行工具库”。\n第三层在下方：XEdu Client，表现为课堂端桌面工作台，连接 HTML、Blockly、Jupyter 三个课堂入口，代表“课堂实验落地端”。\n\n构图要求：\n使用上中下三层结构，不要画成三个并列产品。\nXEduHub 必须看起来属于 XEduPro 内部的一部分，而不是独立平行产品。\nXEdu Client 位于下方，表示把 XEduHub 的能力接入课堂实验。\n用少量清晰箭头表示能力从 XEduHub 向 XEdu Client 输出。\n整体结构必须一眼看懂：上位体系 -> 能力库 -> 课堂客户端。\n\n视觉风格：\n教育科技白皮书风格，干净、专业、克制。\n半扁平信息图，柔和色块，清晰层级，轻微纸张质感或细腻阴影。\n配色使用深蓝、青绿、浅灰、少量橙色强调。\n不要强烈赛博风，不要卡通风，不要儿童插画风，不要手绘涂鸦风，不要复杂人物，不要机器人形象，不要炫光，不要渐变球，不要AI海报感。\n\n文字要求：\n只允许出现以下英文/中文短词：\nXEduPro\nXEduHub\nXEdu Client\nHTML\nBlockly\nJupyter\n人工智能学习工具体系\n模型推理\n任务执行\n课堂实验\n不要出现其他文字，不要生成乱码，不要生成伪中文，不要密集文字。\n如果文字难以保证清晰，优先保留三个英文标题：XEduPro、XEduHub、XEdu Client，其余中文可以减少。\n\n限制条件：\n不要二维码，不要网址，不要联系方式，不要水印。\n不要把 XEduHub 画成独立产品。\n不要把 XEduPro 画成普通网页或管理后台。\n不要把画面做成广告海报。\n画面要适合作为PPT中第3页的主视觉关系图，留出适当空白方便后期加中文说明。",
+  "original_prompt": "画面目标：\n为教师申报PPT生成一张清晰、克制、低AI味的教育科技关系图，主题是“XEduPro、XEduHub、XEdu Client 的关系”。这是一张正式汇报用的信息图，不是宣传海报。\n\n主体与结构：\n横向16:9画面，浅灰白背景，中心为三层关系结构。\n第一层在上方：XEduPro，表现为一个稳定的大平台底座或平台框架，代表“人工智能学习与开发工具体系”。\n第二层在中间：XEduHub，表现为嵌入在 XEduPro 内部的能力模块，代表“深度学习模型推理与任务执行工具库”。\n第三层在下方：XEdu Client，表现为课堂端桌面工作台，连接 HTML、Blockly、Jupyter 三个课堂入口，代表“课堂实验落地端”。\n\n构图要求：\n使用上中下三层结构，不要画成三个并列产品。\nXEduHub 必须看起来属于 XEduPro 内部的一部分，而不是独立平行产品。\nXEdu Client 位于下方，表示把 XEduHub 的能力接入课堂实验。\n用少量清晰箭头表示能力从 XEduHub 向 XEdu Client 输出。\n整体结构必须一眼看懂：上位体系 -> 能力库 -> 课堂客户端。\n\n视觉风格：\n教育科技白皮书风格，干净、专业、克制。\n半扁平信息图，柔和色块，清晰层级，轻微纸张质感或细腻阴影。\n配色使用深蓝、青绿、浅灰、少量橙色强调。\n不要强烈赛博风，不要卡通风，不要儿童插画风，不要手绘涂鸦风，不要复杂人物，不要机器人形象，不要炫光，不要渐变球，不要AI海报感。\n\n文字要求：\n只允许出现以下英文/中文短词：\nXEduPro\nXEduHub\nXEdu Client\nHTML\nBlockly\nJupyter\n人工智能学习工具体系\n模型推理\n任务执行\n课堂实验\n不要出现其他文字，不要生成乱码，不要生成伪中文，不要密集文字。\n如果文字难以保证清晰，优先保留三个英文标题：XEduPro、XEduHub、XEdu Client，其余中文可以减少。\n\n限制条件：\n不要二维码，不要网址，不要联系方式，不要水印。\n不要把 XEduHub 画成独立产品。\n不要把 XEduPro 画成普通网页或管理后台。\n不要把画面做成广告海报。\n画面要适合作为PPT中第3页的主视觉关系图，留出适当空白方便后期加中文说明。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/画面目标：_为教师申报PPT生成一张清晰、克制、低AI味的教育科技关系图，主题是“XEduPro、X_4fd646bcab70.png",
+  "image_urls": [
+    "/static/generated/画面目标：_为教师申报PPT生成一张清晰、克制、低AI味的教育科技关系图，主题是“XEduPro、X_4fd646bcab70.png"
+  ],
+  "output_path": "docs/case-application-2026/generated-infographics/xedupro-xeduhub-client-roil-v1.png",
+  "output_paths": [
+    "docs/case-application-2026/generated-infographics/xedupro-xeduhub-client-roil-v1.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

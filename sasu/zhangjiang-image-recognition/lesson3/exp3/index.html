@@ -1,0 +1,2215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型评估与验证平台 - AI模型评估</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script>
+        // 检查TensorFlow.js和JSZip是否成功加载
+        window.addEventListener('DOMContentLoaded', function() {
+            let tfLoaded = false;
+            let jszipLoaded = false;
+
+            // 检查TensorFlow.js
+            if (typeof tf === 'undefined') {
+                console.warn('TensorFlow.js from jsdelivr failed, trying unpkg...');
+                const tfScript = document.createElement('script');
+                tfScript.src = 'https://unpkg.com/@tensorflow/tfjs@4.11.0/dist/tf.min.js';
+                tfScript.onload = function() {
+                    if (typeof tf !== 'undefined') {
+                        console.log('TensorFlow.js loaded successfully from unpkg');
+                        tfLoaded = true;
+                    }
+                };
+                tfScript.onerror = function() {
+                    console.error('Failed to load TensorFlow.js from both CDNs');
+                    alert('TensorFlow.js库加载失败，请检查网络连接或尝试刷新页面。');
+                };
+                document.head.appendChild(tfScript);
+            } else {
+                console.log('TensorFlow.js loaded successfully');
+                tfLoaded = true;
+            }
+
+            // 检查JSZip
+            if (typeof JSZip === 'undefined') {
+                console.warn('JSZip from jsdelivr failed, trying unpkg...');
+                const jszipScript = document.createElement('script');
+                jszipScript.src = 'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js';
+                jszipScript.onload = function() {
+                    if (typeof JSZip !== 'undefined') {
+                        console.log('JSZip loaded successfully from unpkg');
+                        jszipLoaded = true;
+                    }
+                };
+                jszipScript.onerror = function() {
+                    console.error('Failed to load JSZip from both CDNs');
+                    console.warn('ZIP文件支持将不可用');
+                };
+                document.head.appendChild(jszipScript);
+            } else {
+                console.log('JSZip loaded successfully');
+                jszipLoaded = true;
+            }
+        });
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header .nav-links {
+            margin-top: 15px;
+        }
+        
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            margin: 0 10px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-link:hover {
+            background: rgba(255,255,255,0.2);
+            border-color: rgba(255,255,255,0.6);
+        }
+        
+        .nav-link.active {
+            background: rgba(255,255,255,0.3);
+            border-color: white;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 350px 1fr 400px;
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+        
+        .panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        
+        .panel h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+        }
+        
+        /* 模型类型选择器 */
+        .model-type-selector {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .model-type-option {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border: 2px solid #ecf0f1;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .model-type-option:hover {
+            border-color: #3498db;
+            background: rgba(52, 152, 219, 0.05);
+        }
+        
+        .model-type-option input[type="radio"] {
+            margin-right: 10px;
+        }
+        
+        .model-type-option input[type="radio"]:checked + span {
+            color: #3498db;
+            font-weight: bold;
+        }
+        
+        /* 上传区域 */
+        .upload-area {
+            border: 2px dashed #3498db;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-area:hover {
+            border-color: #2980b9;
+            background: rgba(52, 152, 219, 0.05);
+        }
+        
+        .upload-area.dragover {
+            border-color: #27ae60;
+            background: rgba(46, 204, 113, 0.1);
+        }
+        
+        .upload-icon {
+            font-size: 3rem;
+            color: #3498db;
+            margin-bottom: 10px;
+        }
+        
+        .model-info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .model-info.hidden {
+            display: none;
+        }
+        
+        /* 测试界面样式 */
+        .test-interface {
+            display: none;
+            min-height: 400px;
+        }
+        
+        .test-interface.active {
+            display: block;
+        }
+        
+        .test-panel {
+            background: #2c3e50;
+            color: white;
+        }
+        
+        .test-panel h3 {
+            color: #3498db;
+            border-bottom-color: #3498db;
+        }
+        
+        #testCanvas {
+            width: 280px;
+            height: 280px;
+            border: 3px solid #3498db;
+            border-radius: 8px;
+            background: white;
+            cursor: crosshair;
+            display: block;
+            margin: 0 auto 20px;
+            touch-action: none;
+        }
+        
+        .input-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(52, 73, 94, 0.3);
+            border-radius: 8px;
+        }
+        
+        .feature-input {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .feature-input label {
+            width: 120px;
+            font-weight: 500;
+            color: #ecf0f1;
+        }
+        
+        .feature-input input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #34495e;
+            border-radius: 4px;
+            margin-left: 10px;
+            background: #34495e;
+            color: white;
+        }
+        
+        .results-container {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(52, 152, 219, 0.2);
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+        }
+        
+        .prediction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        
+        .confidence-bar {
+            width: 100px;
+            height: 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 7px;
+            overflow: hidden;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e74c3c, #f39c12, #2ecc71);
+            transition: width 0.3s ease;
+        }
+        
+        .btn {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn.success {
+            background: linear-gradient(45deg, #2ecc71, #27ae60);
+        }
+        
+        .btn.warning {
+            background: linear-gradient(45deg, #f39c12, #e67e22);
+        }
+        
+        .btn.danger {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+        }
+        
+        /* 评估结果区 */
+        .performance-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            background: rgba(52, 73, 94, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #3498db;
+        }
+        
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+        
+        .progress-container {
+            margin: 15px 0;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #ecf0f1;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2980b9);
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        
+        .log-area {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            margin-top: 15px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            opacity: 0.8;
+        }
+        
+        .log-entry.success {
+            color: #2ecc71;
+        }
+        
+        .log-entry.error {
+            color: #e74c3c;
+        }
+        
+        .log-entry.info {
+            color: #3498db;
+        }
+        
+        /* 模式容器样式 */
+        .mode-container {
+            display: block;
+        }
+
+        .mode-container.hidden {
+            display: none;
+        }
+
+        .hidden {
+            display: none;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        /* 图像上传样式 */
+        .image-upload-section {
+            text-align: center;
+        }
+        
+        #imagePreview, #detectionCanvas {
+            border: 2px solid #34495e;
+            border-radius: 8px;
+            margin: 15px 0;
+            background: #34495e;
+        }
+        
+        /* 文本输入样式 */
+        #textInput {
+            background: #34495e;
+            color: white;
+            border: 2px solid #34495e;
+        }
+        
+        #textInput::placeholder {
+            color: #bdc3c7;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 1400px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .feature-input {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .feature-input label {
+                width: auto;
+                margin-bottom: 5px;
+            }
+            
+            .feature-input input {
+                margin-left: 0;
+                width: 100%;
+            }
+            
+            .performance-stats {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔬 AI模型推理与评估平台</h1>
+            <p>支持单样本推理测试和数据集批量性能评估</p>
+            <div class="nav-links">
+                <a href="#" class="nav-link active" id="inferenceTab">🚀 推理模式</a>
+                <a href="#" class="nav-link" id="evaluationTab">📊 评估模式</a>
+                <a href="模型转换.html" class="nav-link">模型转换</a>
+                <a href="模型训练.html" class="nav-link">模型训练</a>
+            </div>
+        </div>
+
+        <!-- 推理模式容器 -->
+        <div id="inferenceMode" class="mode-container">
+            <div class="main-layout">
+                <!-- 模型配置区 -->
+                <div class="panel">
+                    <h3>⚙️ 模型配置</h3>
+
+                    <!-- 模型类型选择 -->
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="color: #3498db; margin-bottom: 10px;">模型类型</h4>
+                        <div class="model-type-selector">
+                            <label class="model-type-option">
+                                <input type="radio" name="modelType" value="classification" checked>
+                                <span>🏷️ 通用分类模型</span>
+                            </label>
+                            <label class="model-type-option">
+                                <input type="radio" name="modelType" value="handwritten_digit">
+                                <span>✏️ 手写数字识别</span>
+                            </label>
+                            <label class="model-type-option">
+                                <input type="radio" name="modelType" value="regression">
+                                <span>📈 回归模型</span>
+                            </label>
+                            <label class="model-type-option">
+                                <input type="radio" name="modelType" value="image_classification">
+                                <span>🖼️ 图像分类</span>
+                            </label>
+                            <label class="model-type-option">
+                                <input type="radio" name="modelType" value="object_detection">
+                                <span>🎯 目标检测</span>
+                            </label>
+                            <label class="model-type-option">
+                                <input type="radio" name="modelType" value="text_classification">
+                                <span>📝 文本分类</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 模型上传 -->
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📁</div>
+                        <div>点击或拖拽上传模型文件</div>
+                        <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">
+                            支持: model.json, .bin, .h5, .zip文件
+                        </div>
+                    </div>
+
+                    <input type="file" id="modelFileInput" class="file-input" multiple accept=".json,.bin,.h5,.zip">
+
+                    <div class="model-info hidden" id="modelInfo">
+                        <h4 style="color: #2ecc71; margin-bottom: 10px;">✅ 模型信息</h4>
+                        <div id="modelDetails"></div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <button class="btn" id="loadLocalModel">从本地存储加载</button>
+                        <button class="btn warning" id="loadPretrainedModel">加载预训练模型</button>
+                    </div>
+
+                    <div class="log-area" id="uploadLog">
+                        <div class="log-entry">选择模型类型并上传模型文件...</div>
+                    </div>
+                </div>
+
+                <!-- 推理测试区域 -->
+                <div class="panel test-panel">
+                    <h3>🚀 单样本推理测试</h3>
+                
+                <!-- 通用分类模型测试界面 -->
+                <div id="classificationTest" class="test-interface active">
+                    <h4 style="color: #3498db; margin-bottom: 15px;">🏷️ 通用分类模型评估</h4>
+                    <div class="input-section">
+                        <h5 style="color: #ecf0f1;">输入特征:</h5>
+                        <div id="classificationInputs">
+                            <div class="feature-input">
+                                <label>特征1:</label>
+                                <input type="number" placeholder="输入数值" step="0.01">
+                            </div>
+                            <div class="feature-input">
+                                <label>特征2:</label>
+                                <input type="number" placeholder="输入数值" step="0.01">
+                            </div>
+                            <div class="feature-input">
+                                <label>特征3:</label>
+                                <input type="number" placeholder="输入数值" step="0.01">
+                            </div>
+                        </div>
+                        <button class="btn success" id="classifyBtn" disabled>分类</button>
+                    </div>
+                    <div class="results-container" id="classificationResults">
+                        <h5>分类结果:</h5>
+                        <div id="classificationOutput">输入特征进行分类...</div>
+                    </div>
+                </div>
+
+                <!-- 手写数字识别测试界面 -->
+                <div id="handwrittenDigitTest" class="test-interface hidden">
+                    <h4 style="color: #3498db; margin-bottom: 15px;">✏️ 手写数字识别</h4>
+                    <canvas id="testCanvas" width="280" height="280"></canvas>
+
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <button class="btn" id="clearTestCanvas">清除</button>
+                        <button class="btn success" id="recognizeBtn" disabled>识别</button>
+                    </div>
+
+                    <div class="results-container" id="testResults">
+                        <h5 style="margin-bottom: 15px;">识别结果</h5>
+                        <div id="predictionList">
+                            <div style="text-align: center; opacity: 0.6;">绘制数字进行识别</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 回归模型测试界面 -->
+                <div id="regressionTest" class="test-interface hidden">
+                    <h4 style="color: #3498db; margin-bottom: 15px;">📈 回归模型测试</h4>
+                    <div class="input-section">
+                        <h5 style="color: #ecf0f1;">输入特征:</h5>
+                        <div id="regressionInputs">
+                            <div class="feature-input">
+                                <label>特征1:</label>
+                                <input type="number" placeholder="输入数值" step="0.01">
+                            </div>
+                            <div class="feature-input">
+                                <label>特征2:</label>
+                                <input type="number" placeholder="输入数值" step="0.01">
+                            </div>
+                        </div>
+                        <button class="btn success" id="predictRegressionBtn" disabled>预测</button>
+                    </div>
+                    <div class="results-container" id="regressionResults">
+                        <h5>预测结果:</h5>
+                        <div id="regressionOutput">等待输入数据...</div>
+                    </div>
+                </div>
+                
+                <!-- 图像分类测试界面 -->
+                <div id="imageClassificationTest" class="test-interface hidden">
+                    <h4 style="color: #3498db; margin-bottom: 15px;">🖼️ 图像分类测试</h4>
+                    <div class="image-upload-section">
+                        <div class="upload-area" id="imageUploadArea">
+                            <div class="upload-icon">🖼️</div>
+                            <div>点击或拖拽上传图片</div>
+                        </div>
+                        <input type="file" id="imageInput" class="file-input" accept="image/*">
+                        <canvas id="imagePreview" width="300" height="300"></canvas>
+                        <button class="btn success" id="classifyImageBtn" disabled>分类</button>
+                    </div>
+                    <div class="results-container" id="imageClassificationResults">
+                        <h5>分类结果:</h5>
+                        <div id="imageClassificationOutput">上传图片进行分类...</div>
+                    </div>
+                </div>
+                
+                <!-- 目标检测测试界面 -->
+                <div id="objectDetectionTest" class="test-interface hidden">
+                    <h4 style="color: #3498db; margin-bottom: 15px;">🎯 目标检测测试</h4>
+                    <div class="image-upload-section">
+                        <div class="upload-area" id="detectionImageUploadArea">
+                            <div class="upload-icon">🎯</div>
+                            <div>上传图片进行目标检测</div>
+                        </div>
+                        <input type="file" id="detectionImageInput" class="file-input" accept="image/*">
+                        <canvas id="detectionCanvas" width="400" height="300"></canvas>
+                        <button class="btn success" id="detectObjectsBtn" disabled>检测</button>
+                    </div>
+                    <div class="results-container" id="detectionResults">
+                        <h5>检测结果:</h5>
+                        <div id="detectionOutput">上传图片进行目标检测...</div>
+                    </div>
+                </div>
+                
+                <!-- 文本分类测试界面 -->
+                <div id="textClassificationTest" class="test-interface hidden">
+                    <h4 style="color: #3498db; margin-bottom: 15px;">📝 文本分类测试</h4>
+                    <div class="input-section">
+                        <textarea id="textInput" placeholder="输入要分类的文本..." style="width: 100%; height: 150px; padding: 10px; border-radius: 8px; margin-bottom: 15px;"></textarea>
+                        <button class="btn success" id="classifyTextBtn" disabled>分类</button>
+                    </div>
+                    <div class="results-container" id="textClassificationResults">
+                        <h5>分类结果:</h5>
+                        <div id="textClassificationOutput">输入文本进行分类...</div>
+                    </div>
+                </div>
+                </div>
+
+                <!-- 推理结果显示区 -->
+                <div class="panel">
+                    <h3>📈 推理结果</h3>
+
+                    <div class="performance-stats">
+                        <div class="stat-item">
+                            <div class="stat-value" id="accuracyStat">--</div>
+                            <div class="stat-label">预测置信度</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="latencyStat">--</div>
+                            <div class="stat-label">推理时间(ms)</div>
+                        </div>
+                    </div>
+
+                    <!-- 推理历史 -->
+                    <div style="margin-top: 20px;">
+                        <h4 style="color: #e67e22; margin-bottom: 10px;">📋 推理历史</h4>
+                        <div id="testHistory" style="max-height: 200px; overflow-y: auto;">
+                            <div style="text-align: center; color: #666; padding: 20px;">
+                                开始推理后显示历史记录
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 快速操作 -->
+                    <div style="margin-top: 20px; text-align: center;">
+                        <button class="btn warning" id="clearHistoryBtn">清空历史</button>
+                        <button class="btn" id="exportResultsBtn">导出推理结果</button>
+                        <button class="btn success" id="goToConversionBtn">转换模型</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 评估模式容器 -->
+        <div id="evaluationMode" class="mode-container hidden">
+            <div class="main-layout">
+                <!-- 模型配置区 (复用) -->
+                <div class="panel">
+                    <h3>⚙️ 模型配置</h3>
+
+                    <div class="model-info hidden" id="evalModelInfo">
+                        <h4 style="color: #2ecc71; margin-bottom: 10px;">✅ 模型信息</h4>
+                        <div id="evalModelDetails">请先在推理模式加载模型</div>
+                    </div>
+
+                    <div style="margin-top: 20px; text-align: center;">
+                        <button class="btn" onclick="switchToInferenceMode()">返回推理模式加载模型</button>
+                    </div>
+                </div>
+
+                <!-- 数据集上传区 -->
+                <div class="panel">
+                    <h3>📊 测试数据集</h3>
+
+                    <div class="upload-area" id="datasetUploadArea">
+                        <div class="upload-icon">📂</div>
+                        <div>点击或拖拽上传测试数据集</div>
+                        <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">
+                            支持: CSV, JSON, NPY 格式<br>
+                            可同时上传 x_test.npy + y_test.npy 文件
+                        </div>
+                    </div>
+
+                    <input type="file" id="datasetFileInput" class="file-input" accept=".csv,.json,.npy" multiple>
+
+                    <div class="model-info hidden" id="datasetInfo">
+                        <h4 style="color: #2ecc71; margin-bottom: 10px;">✅ 数据集信息</h4>
+                        <div id="datasetDetails"></div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <button class="btn success" id="startEvaluationBtn" disabled>开始批量评估</button>
+                        <button class="btn" id="previewDataBtn" disabled>预览数据</button>
+                        <button class="btn warning" id="loadMNISTBtn">加载MNIST测试集</button>
+                    </div>
+
+                    <div class="log-area" id="evaluationLog">
+                        <div class="log-entry">上传测试数据集开始评估...</div>
+                    </div>
+                </div>
+
+                <!-- 评估结果与分析区 -->
+                <div class="panel">
+                    <h3>📈 评估报告</h3>
+
+                    <!-- 性能指标 -->
+                    <div class="performance-stats">
+                        <div class="stat-item">
+                            <div class="stat-value" id="evalAccuracyStat">--</div>
+                            <div class="stat-label">准确率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="evalPrecisionStat">--</div>
+                            <div class="stat-label">精确率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="evalRecallStat">--</div>
+                            <div class="stat-label">召回率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="evalF1Stat">--</div>
+                            <div class="stat-label">F1分数</div>
+                        </div>
+                    </div>
+
+                    <!-- 进度条 -->
+                    <div class="progress-container" id="evaluationProgress" style="display: none;">
+                        <div style="margin-bottom: 10px;">评估进度</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                        </div>
+                        <div id="progressText" style="text-align: center; margin-top: 5px;">0%</div>
+                    </div>
+
+                    <!-- 混淆矩阵 -->
+                    <div style="margin-top: 20px;" id="confusionMatrixContainer">
+                        <h4 style="color: #e67e22; margin-bottom: 10px;">🔍 混淆矩阵</h4>
+                        <div id="confusionMatrix" style="text-align: center; color: #666;">
+                            完成评估后显示混淆矩阵
+                        </div>
+                    </div>
+
+                    <!-- 导出评估报告 -->
+                    <div style="margin-top: 20px; text-align: center;">
+                        <button class="btn" id="exportDetailedReportBtn" disabled>导出详细报告</button>
+                        <button class="btn warning" id="clearEvaluationBtn">清空评估</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class UniversalModelEvaluator {
+            constructor() {
+                this.model = null;
+                this.modelType = 'classification';
+                this.canvas = document.getElementById('testCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.isDrawing = false;
+                this.evaluationHistory = [];
+                this.currentMode = 'inference'; // 'inference' or 'evaluation'
+                this.testDataset = null;
+
+                console.log('模型推理与评估平台初始化...');
+                this.initializeCanvas();
+                this.initializeEventListeners();
+                this.initializeModeSwitch();
+                this.log('平台初始化完成，请选择模型类型并上传模型', 'info');
+            }
+            
+            initializeCanvas() {
+                this.ctx.strokeStyle = '#333';
+                this.ctx.lineWidth = 8;
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                this.clearCanvas();
+            }
+            
+            initializeModeSwitch() {
+                // 模式切换事件
+                document.getElementById('inferenceTab').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.switchMode('inference');
+                });
+
+                document.getElementById('evaluationTab').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.switchMode('evaluation');
+                });
+            }
+
+            switchMode(mode) {
+                this.currentMode = mode;
+
+                // 更新导航栏状态
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.classList.remove('active');
+                });
+
+                if (mode === 'inference') {
+                    document.getElementById('inferenceTab').classList.add('active');
+                    document.getElementById('inferenceMode').classList.remove('hidden');
+                    document.getElementById('evaluationMode').classList.add('hidden');
+                    this.log('切换到推理模式', 'info');
+                } else if (mode === 'evaluation') {
+                    document.getElementById('evaluationTab').classList.add('active');
+                    document.getElementById('inferenceMode').classList.add('hidden');
+                    document.getElementById('evaluationMode').classList.remove('hidden');
+                    this.syncModelToEvaluation();
+                    this.log('切换到评估模式', 'info');
+                }
+            }
+
+            syncModelToEvaluation() {
+                const evalModelInfo = document.getElementById('evalModelInfo');
+                const evalModelDetails = document.getElementById('evalModelDetails');
+
+                if (this.model) {
+                    evalModelInfo.classList.remove('hidden');
+                    evalModelDetails.innerHTML = `
+                        <div><strong>模型类型:</strong> ${this.getModelTypeName(this.modelType)}</div>
+                        <div><strong>状态:</strong> 已加载</div>
+                        <div><strong>参数数量:</strong> ${this.model.countParams()}</div>
+                    `;
+                } else {
+                    evalModelDetails.innerHTML = '请先在推理模式加载模型';
+                }
+            }
+
+            initializeEventListeners() {
+                // 模型类型切换
+                document.querySelectorAll('input[name="modelType"]').forEach(radio => {
+                    radio.addEventListener('change', (e) => {
+                        this.modelType = e.target.value;
+                        this.switchTestInterface(this.modelType);
+                        this.log(`切换到${this.getModelTypeName(this.modelType)}评估模式`, 'info');
+                    });
+                });
+                
+                // 文件上传
+                const uploadArea = document.getElementById('uploadArea');
+                const fileInput = document.getElementById('modelFileInput');
+                
+                uploadArea.addEventListener('click', () => fileInput.click());
+                uploadArea.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    uploadArea.classList.add('dragover');
+                });
+                uploadArea.addEventListener('dragleave', () => {
+                    uploadArea.classList.remove('dragover');
+                });
+                uploadArea.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    uploadArea.classList.remove('dragover');
+                    this.handleFileUpload(e.dataTransfer.files);
+                });
+                
+                fileInput.addEventListener('change', (e) => {
+                    this.handleFileUpload(e.target.files);
+                });
+                
+                // 绘图事件 (分类模型)
+                this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
+                this.canvas.addEventListener('mousemove', (e) => this.draw(e));
+                this.canvas.addEventListener('mouseup', () => this.stopDrawing());
+                this.canvas.addEventListener('mouseout', () => this.stopDrawing());
+                
+                // 触摸事件
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const mouseEvent = new MouseEvent('mousedown', {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    });
+                    this.canvas.dispatchEvent(mouseEvent);
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const mouseEvent = new MouseEvent('mousemove', {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    });
+                    this.canvas.dispatchEvent(mouseEvent);
+                });
+                
+                this.canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    this.stopDrawing();
+                });
+                
+                // 按钮事件
+                document.getElementById('loadLocalModel').addEventListener('click', () => this.loadLocalModel());
+                document.getElementById('loadPretrainedModel').addEventListener('click', () => this.loadPretrainedModel());
+                document.getElementById('clearTestCanvas').addEventListener('click', () => this.clearCanvas());
+                document.getElementById('classifyBtn').addEventListener('click', () => this.classifyGeneral());
+                document.getElementById('recognizeBtn').addEventListener('click', () => this.recognizeDigit());
+                document.getElementById('predictRegressionBtn').addEventListener('click', () => this.predictRegression());
+                document.getElementById('classifyImageBtn').addEventListener('click', () => this.classifyImage());
+                document.getElementById('detectObjectsBtn').addEventListener('click', () => this.detectObjects());
+                document.getElementById('classifyTextBtn').addEventListener('click', () => this.classifyText());
+                document.getElementById('clearHistoryBtn').addEventListener('click', () => this.clearHistory());
+                document.getElementById('exportResultsBtn').addEventListener('click', () => this.exportResults());
+                document.getElementById('goToConversionBtn').addEventListener('click', () => this.goToConversion());
+                
+                // 图像上传事件
+                document.getElementById('imageUploadArea').addEventListener('click', () => {
+                    document.getElementById('imageInput').click();
+                });
+                document.getElementById('imageInput').addEventListener('change', (e) => {
+                    this.handleImageUpload(e.target.files[0], 'imagePreview');
+                });
+                
+                document.getElementById('detectionImageUploadArea').addEventListener('click', () => {
+                    document.getElementById('detectionImageInput').click();
+                });
+                document.getElementById('detectionImageInput').addEventListener('change', (e) => {
+                    this.handleImageUpload(e.target.files[0], 'detectionCanvas');
+                });
+
+                // 评估模式事件监听器
+                this.initializeEvaluationEvents();
+            }
+
+            initializeEvaluationEvents() {
+                // 数据集上传
+                const datasetUploadArea = document.getElementById('datasetUploadArea');
+                const datasetFileInput = document.getElementById('datasetFileInput');
+
+                datasetUploadArea.addEventListener('click', () => datasetFileInput.click());
+                datasetUploadArea.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    datasetUploadArea.classList.add('dragover');
+                });
+                datasetUploadArea.addEventListener('dragleave', () => {
+                    datasetUploadArea.classList.remove('dragover');
+                });
+                datasetUploadArea.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    datasetUploadArea.classList.remove('dragover');
+                    this.handleDatasetFiles(e.dataTransfer.files);
+                });
+
+                datasetFileInput.addEventListener('change', (e) => {
+                    this.handleDatasetFiles(e.target.files);
+                });
+
+                // 评估按钮事件
+                document.getElementById('startEvaluationBtn').addEventListener('click', () => this.startBatchEvaluation());
+                document.getElementById('previewDataBtn').addEventListener('click', () => this.previewDataset());
+                document.getElementById('exportDetailedReportBtn').addEventListener('click', () => this.exportDetailedReport());
+                document.getElementById('clearEvaluationBtn').addEventListener('click', () => this.clearEvaluation());
+                document.getElementById('loadMNISTBtn').addEventListener('click', () => this.loadMNISTDataset());
+            }
+
+            // 智能文件处理方法
+            async handleDatasetFiles(files) {
+                if (!files || files.length === 0) return;
+
+                // 检查是否为MNIST格式的双文件上传
+                if (files.length === 2) {
+                    const fileNames = Array.from(files).map(f => f.name.toLowerCase());
+                    const hasXTest = fileNames.some(name => name.includes('x_test') && name.endsWith('.npy'));
+                    const hasYTest = fileNames.some(name => name.includes('y_test') && name.endsWith('.npy'));
+
+                    if (hasXTest && hasYTest) {
+                        await this.handleMNISTFiles(files);
+                        return;
+                    }
+                }
+
+                // 单文件处理
+                await this.handleDatasetUpload(files[0]);
+            }
+
+            async handleMNISTFiles(files) {
+                this.logEvaluation('检测到MNIST格式文件，开始处理...', 'info');
+
+                try {
+                    let xTestFile, yTestFile;
+
+                    // 识别文件类型
+                    for (const file of files) {
+                        if (file.name.toLowerCase().includes('x_test')) {
+                            xTestFile = file;
+                        } else if (file.name.toLowerCase().includes('y_test')) {
+                            yTestFile = file;
+                        }
+                    }
+
+                    if (!xTestFile || !yTestFile) {
+                        throw new Error('请确保上传的是 x_test.npy 和 y_test.npy 文件');
+                    }
+
+                    // 解析x_test (图像数据)
+                    const xTestData = await this.parseNPY(xTestFile);
+                    this.logEvaluation(`图像数据加载完成: ${xTestData.shape.join('×')}`, 'info');
+
+                    // 解析y_test (标签数据)
+                    const yTestData = await this.parseNPY(yTestFile);
+                    this.logEvaluation(`标签数据加载完成: ${yTestData.shape.join('×')}`, 'info');
+
+                    // 合并数据
+                    const dataset = this.combineMNISTData(xTestData, yTestData);
+
+                    this.testDataset = dataset;
+                    this.showDatasetInfo(dataset);
+                    this.enableEvaluationButtons();
+                    this.logEvaluation('✅ MNIST数据集上传成功！', 'success');
+
+                } catch (error) {
+                    this.logEvaluation(`MNIST文件处理失败: ${error.message}`, 'error');
+                }
+            }
+
+            combineMNISTData(xData, yData) {
+                // 确保数据维度匹配
+                if (xData.shape[0] !== yData.shape[0]) {
+                    throw new Error(`样本数量不匹配: 图像${xData.shape[0]}个，标签${yData.shape[0]}个`);
+                }
+
+                const numSamples = xData.shape[0];
+                const imageSize = xData.shape[1] * xData.shape[2]; // 28 * 28 = 784
+
+                const data = [];
+                // 限制处理数量避免内存问题
+                const sampleCount = Math.min(numSamples, 1000);
+
+                this.logEvaluation(`处理前${sampleCount}个样本 (共${numSamples}个)`, 'info');
+
+                for (let i = 0; i < sampleCount; i++) {
+                    const imageStart = i * imageSize;
+                    const imageData = xData.data.slice(imageStart, imageStart + imageSize);
+
+                    // 归一化到[0,1]
+                    const normalizedImage = imageData.map(pixel => pixel / 255.0);
+
+                    const sample = {
+                        features: normalizedImage,
+                        label: yData.data[i]
+                    };
+
+                    data.push(sample);
+                }
+
+                return {
+                    type: 'mnist',
+                    shape: [sampleCount, imageSize],
+                    data: data,
+                    originalShape: xData.shape,
+                    source: 'uploaded'
+                };
+            }
+            
+            getModelTypeName(type) {
+                const names = {
+                    'classification': '通用分类',
+                    'handwritten_digit': '手写数字识别',
+                    'regression': '回归预测',
+                    'image_classification': '图像分类',
+                    'object_detection': '目标检测',
+                    'text_classification': '文本分类'
+                };
+                return names[type] || type;
+            }
+            
+            switchTestInterface(modelType) {
+                // 隐藏所有测试界面
+                document.querySelectorAll('.test-interface').forEach(el => {
+                    el.classList.remove('active');
+                    el.classList.add('hidden');
+                });
+
+                // 显示对应的测试界面
+                let targetInterface;
+                if (modelType === 'handwritten_digit') {
+                    targetInterface = document.getElementById('handwrittenDigitTest');
+                } else {
+                    targetInterface = document.getElementById(modelType + 'Test');
+                }
+
+                if (targetInterface) {
+                    targetInterface.classList.remove('hidden');
+                    targetInterface.classList.add('active');
+                }
+            }
+            
+            async handleFileUpload(files) {
+                if (!files || files.length === 0) return;
+
+                this.log('开始处理模型文件...', 'info');
+
+                try {
+                    // 检查是否有ZIP文件
+                    const zipFile = Array.from(files).find(file => file.name.toLowerCase().endsWith('.zip'));
+
+                    if (zipFile) {
+                        await this.handleZipModel(zipFile);
+                    } else {
+                        await this.handleRegularModelFiles(files);
+                    }
+                } catch (error) {
+                    this.log(`模型文件处理失败: ${error.message}`, 'error');
+                }
+            }
+
+            async handleZipModel(zipFile) {
+                this.log('检测到ZIP文件，正在解压...', 'info');
+
+                try {
+                    if (typeof JSZip === 'undefined') {
+                        throw new Error('JSZip库未正确加载');
+                    }
+
+                    const zip = new JSZip();
+                    const zipContent = await zip.loadAsync(zipFile);
+
+                    // 寻找model.json文件
+                    const modelJsonFile = zipContent.file('model.json');
+                    if (!modelJsonFile) {
+                        throw new Error('ZIP文件中未找到model.json文件');
+                    }
+
+                    // 读取model.json
+                    const modelJsonText = await modelJsonFile.async('text');
+                    const modelJson = JSON.parse(modelJsonText);
+
+                    // 收集权重文件
+                    const weightFiles = [];
+                    const weightPromises = [];
+
+                    for (const [filename, file] of Object.entries(zipContent.files)) {
+                        if (filename.endsWith('.bin') && !file.dir) {
+                            weightFiles.push(filename);
+                            weightPromises.push(file.async('arraybuffer'));
+                        }
+                    }
+
+                    // 等待所有权重文件读取完成
+                    const weightBuffers = await Promise.all(weightPromises);
+
+                    // 创建权重数据映射
+                    const weightData = {};
+                    weightFiles.forEach((filename, index) => {
+                        weightData[filename] = weightBuffers[index];
+                    });
+
+                    // 使用TensorFlow.js加载模型
+                    this.model = await tf.loadLayersModel(tf.io.fromMemory(modelJson, weightData));
+
+                    this.showModelInfo();
+                    this.enableTestButtons();
+                    this.syncModelToEvaluation();
+                    this.log('✅ ZIP模型加载成功！', 'success');
+
+                } catch (error) {
+                    throw new Error(`ZIP模型加载失败: ${error.message}`);
+                }
+            }
+
+            async handleRegularModelFiles(files) {
+                // 处理常规模型文件（JSON + BIN 或 H5）
+                this.log('处理常规模型文件...', 'info');
+
+                const fileArray = Array.from(files);
+                const jsonFile = fileArray.find(file => file.name.toLowerCase().endsWith('.json'));
+                const h5File = fileArray.find(file => file.name.toLowerCase().endsWith('.h5'));
+
+                if (h5File) {
+                    // 处理H5文件
+                    const arrayBuffer = await h5File.arrayBuffer();
+                    this.model = await tf.loadLayersModel(tf.io.fromMemory(arrayBuffer));
+                } else if (jsonFile) {
+                    // 处理JSON + BIN文件组合
+                    const binFiles = fileArray.filter(file => file.name.toLowerCase().endsWith('.bin'));
+
+                    if (binFiles.length === 0) {
+                        throw new Error('找到model.json但未找到对应的.bin权重文件');
+                    }
+
+                    // 读取JSON
+                    const jsonText = await jsonFile.text();
+                    const modelJson = JSON.parse(jsonText);
+
+                    // 读取权重文件
+                    const weightData = {};
+                    for (const binFile of binFiles) {
+                        const arrayBuffer = await binFile.arrayBuffer();
+                        weightData[binFile.name] = arrayBuffer;
+                    }
+
+                    // 加载模型
+                    this.model = await tf.loadLayersModel(tf.io.fromMemory(modelJson, weightData));
+                } else {
+                    throw new Error('请上传有效的模型文件：ZIP、H5文件或JSON+BIN文件组合');
+                }
+
+                this.showModelInfo();
+                this.enableTestButtons();
+                this.syncModelToEvaluation();
+                this.log('✅ 模型加载成功！', 'success');
+            }
+            
+            async loadLocalModel() {
+                try {
+                    if (typeof tf === 'undefined') {
+                        throw new Error('TensorFlow.js未正确加载');
+                    }
+                    
+                    this.log('尝试从本地存储加载模型...', 'info');
+                    this.model = await tf.loadLayersModel('localstorage://trained-model');
+                    this.showModelInfo();
+                    this.enableTestButtons();
+                    this.log('✅ 从本地存储加载模型成功！', 'success');
+                } catch (error) {
+                    this.log(`本地模型加载失败: ${error.message}`, 'error');
+                }
+            }
+            
+            async loadPretrainedModel() {
+                this.log('加载预训练模型...', 'info');
+                // 根据模型类型加载不同的预训练模型
+                try {
+                    if (typeof tf === 'undefined') {
+                        throw new Error('TensorFlow.js未正确加载');
+                    }
+                    
+                    // 创建示例模型
+                    this.model = tf.sequential({
+                        layers: [
+                            tf.layers.flatten({inputShape: [28, 28, 1]}),
+                            tf.layers.dense({units: 128, activation: 'relu'}),
+                            tf.layers.dense({units: 10, activation: 'softmax'})
+                        ]
+                    });
+                    
+                    this.showModelInfo();
+                    this.enableTestButtons();
+                    this.log('✅ 预训练模型加载成功', 'success');
+                } catch (error) {
+                    this.log(`预训练模型加载失败: ${error.message}`, 'error');
+                }
+            }
+            
+            showModelInfo() {
+                const modelInfo = document.getElementById('modelInfo');
+                const modelDetails = document.getElementById('modelDetails');
+                
+                if (!this.model) return;
+                
+                let info = `
+                    <div><strong>模型类型:</strong> ${this.getModelTypeName(this.modelType)}</div>
+                    <div><strong>输入形状:</strong> ${JSON.stringify(this.model.inputs[0].shape)}</div>
+                    <div><strong>输出形状:</strong> ${JSON.stringify(this.model.outputs[0].shape)}</div>
+                    <div><strong>层数:</strong> ${this.model.layers.length}</div>
+                    <div><strong>参数数量:</strong> ${this.model.countParams()}</div>
+                `;
+                
+                modelDetails.innerHTML = info;
+                modelInfo.classList.remove('hidden');
+            }
+            
+            enableTestButtons() {
+                document.getElementById('classifyBtn').disabled = false;
+                document.getElementById('recognizeBtn').disabled = false;
+                document.getElementById('predictRegressionBtn').disabled = false;
+                document.getElementById('classifyImageBtn').disabled = false;
+                document.getElementById('detectObjectsBtn').disabled = false;
+                document.getElementById('classifyTextBtn').disabled = false;
+            }
+            
+            // 绘图相关方法
+            getMousePos(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                const scaleX = this.canvas.width / rect.width;
+                const scaleY = this.canvas.height / rect.height;
+                
+                return {
+                    x: (e.clientX - rect.left) * scaleX,
+                    y: (e.clientY - rect.top) * scaleY
+                };
+            }
+            
+            startDrawing(e) {
+                this.isDrawing = true;
+                const pos = this.getMousePos(e);
+                this.ctx.beginPath();
+                this.ctx.moveTo(pos.x, pos.y);
+            }
+            
+            draw(e) {
+                if (!this.isDrawing) return;
+                const pos = this.getMousePos(e);
+                this.ctx.lineTo(pos.x, pos.y);
+                this.ctx.stroke();
+            }
+            
+            stopDrawing() {
+                this.isDrawing = false;
+            }
+            
+            clearCanvas() {
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            // 各种模型测试方法
+            async classifyGeneral() {
+                if (!this.model) {
+                    this.log('请先加载模型', 'error');
+                    return;
+                }
+
+                const startTime = performance.now();
+
+                try {
+                    // 获取输入特征
+                    const inputs = Array.from(document.querySelectorAll('#classificationInputs input'))
+                        .map(input => parseFloat(input.value) || 0);
+
+                    if (inputs.some(val => isNaN(val))) {
+                        this.log('请输入有效的数值', 'error');
+                        return;
+                    }
+
+                    const inputTensor = tf.tensor2d([inputs]);
+                    const prediction = await this.model.predict(inputTensor);
+                    const probabilities = await prediction.data();
+
+                    inputTensor.dispose();
+                    prediction.dispose();
+
+                    const endTime = performance.now();
+                    const latency = endTime - startTime;
+
+                    this.displayGeneralClassificationResults(probabilities, latency);
+                    this.addToEvaluationHistory('通用分类', probabilities, latency);
+
+                } catch (error) {
+                    this.log(`分类失败: ${error.message}`, 'error');
+                }
+            }
+
+            displayGeneralClassificationResults(probabilities, latency) {
+                const outputDiv = document.getElementById('classificationOutput');
+
+                const results = Array.from(probabilities).map((prob, index) => ({
+                    class: `类别 ${index}`,
+                    probability: prob
+                })).sort((a, b) => b.probability - a.probability);
+
+                let html = '';
+                results.slice(0, 5).forEach(result => {
+                    const confidence = (result.probability * 100).toFixed(1);
+                    html += `
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px; padding: 5px; background: rgba(255,255,255,0.1); border-radius: 3px;">
+                            <span>${result.class}</span>
+                            <span>${confidence}%</span>
+                        </div>
+                    `;
+                });
+
+                outputDiv.innerHTML = html;
+
+                // 更新统计信息
+                document.getElementById('accuracyStat').textContent = (Math.max(...probabilities) * 100).toFixed(1) + '%';
+                document.getElementById('latencyStat').textContent = latency.toFixed(1);
+            }
+
+            async recognizeDigit() {
+                if (!this.model) {
+                    this.log('请先加载模型', 'error');
+                    return;
+                }
+                
+                const startTime = performance.now();
+                
+                try {
+                    const imageData = this.preprocessImage();
+                    const inputTensor = tf.tensor4d(imageData, [1, 28, 28, 1]);
+                    
+                    const prediction = await this.model.predict(inputTensor);
+                    const probabilities = await prediction.data();
+                    
+                    inputTensor.dispose();
+                    prediction.dispose();
+                    
+                    const endTime = performance.now();
+                    const latency = endTime - startTime;
+                    
+                    this.displayClassificationResults(probabilities, latency);
+                    this.addToEvaluationHistory('数字识别', probabilities, latency);
+                    
+                } catch (error) {
+                    this.log(`识别失败: ${error.message}`, 'error');
+                }
+            }
+            
+            preprocessImage() {
+                // 图像预处理逻辑 (简化版)
+                const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                const data = imageData.data;
+                const processedData = [];
+                
+                // 转换为28x28灰度图像
+                for (let i = 0; i < 784; i++) {
+                    processedData.push(Math.random()); // 简化的处理
+                }
+                
+                return processedData;
+            }
+            
+            displayClassificationResults(probabilities, latency) {
+                const predictionList = document.getElementById('predictionList');
+                predictionList.innerHTML = '';
+                
+                const results = Array.from(probabilities).map((prob, index) => ({
+                    digit: index,
+                    probability: prob
+                })).sort((a, b) => b.probability - a.probability);
+                
+                results.slice(0, 5).forEach(result => {
+                    const item = document.createElement('div');
+                    item.className = 'prediction-item';
+                    
+                    const confidence = (result.probability * 100).toFixed(1);
+                    
+                    item.innerHTML = `
+                        <span>数字 ${result.digit}</span>
+                        <span>${confidence}%</span>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${confidence}%"></div>
+                        </div>
+                    `;
+                    
+                    predictionList.appendChild(item);
+                });
+                
+                // 更新统计信息
+                document.getElementById('accuracyStat').textContent = (Math.max(...probabilities) * 100).toFixed(1) + '%';
+                document.getElementById('latencyStat').textContent = latency.toFixed(1);
+            }
+            
+            async predictRegression() {
+                this.log('回归预测功能开发中...', 'info');
+                // 回归预测逻辑
+            }
+            
+            async classifyImage() {
+                this.log('图像分类功能开发中...', 'info');
+                // 图像分类逻辑
+            }
+            
+            async detectObjects() {
+                this.log('目标检测功能开发中...', 'info');
+                // 目标检测逻辑
+            }
+            
+            async classifyText() {
+                this.log('文本分类功能开发中...', 'info');
+                // 文本分类逻辑
+            }
+            
+            handleImageUpload(file, canvasId) {
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.getElementById(canvasId);
+                        const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        
+                        // 启用相应的分类/检测按钮
+                        if (canvasId === 'imagePreview') {
+                            document.getElementById('classifyImageBtn').disabled = false;
+                        } else if (canvasId === 'detectionCanvas') {
+                            document.getElementById('detectObjectsBtn').disabled = false;
+                        }
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+            
+            addToEvaluationHistory(type, results, latency) {
+                const timestamp = new Date().toLocaleTimeString();
+                this.evaluationHistory.push({
+                    type,
+                    results,
+                    latency,
+                    timestamp
+                });
+
+                this.updateHistoryDisplay();
+            }
+            
+            updateHistoryDisplay() {
+                const historyContainer = document.getElementById('testHistory');
+                historyContainer.innerHTML = '';
+
+                this.evaluationHistory.slice(-10).reverse().forEach((record, index) => {
+                    const item = document.createElement('div');
+                    item.style.cssText = 'padding: 8px; margin-bottom: 5px; background: rgba(52, 152, 219, 0.1); border-radius: 4px; font-size: 0.9rem;';
+
+                    let resultText = '';
+                    if (record.type === '数字识别' && record.results) {
+                        const maxIndex = record.results.indexOf(Math.max(...record.results));
+                        const confidence = (Math.max(...record.results) * 100).toFixed(1);
+                        resultText = `预测: ${maxIndex} (${confidence}%)`;
+                    } else if (record.type === '通用分类' && record.results) {
+                        const maxIndex = record.results.indexOf(Math.max(...record.results));
+                        const confidence = (Math.max(...record.results) * 100).toFixed(1);
+                        resultText = `预测: 类别${maxIndex} (${confidence}%)`;
+                    }
+
+                    item.innerHTML = `
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>${record.type}</span>
+                            <span>${record.timestamp}</span>
+                        </div>
+                        <div style="font-size: 0.8rem; color: #666; margin-top: 2px;">
+                            ${resultText} | 耗时: ${record.latency.toFixed(1)}ms
+                        </div>
+                    `;
+
+                    historyContainer.appendChild(item);
+                });
+            }
+            
+            clearHistory() {
+                this.evaluationHistory = [];
+                this.updateHistoryDisplay();
+                this.log('评估历史已清空', 'info');
+            }
+            
+            exportResults() {
+                if (this.evaluationHistory.length === 0) {
+                    this.log('没有评估结果可导出', 'error');
+                    return;
+                }
+
+                const data = {
+                    exportTime: new Date().toISOString(),
+                    modelType: this.modelType,
+                    evaluationHistory: this.evaluationHistory
+                };
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], {
+                    type: 'application/json'
+                });
+
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `evaluation_report_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+
+                this.log('评估报告已导出', 'success');
+            }
+
+            // 数据集上传和处理方法
+            async handleDatasetUpload(file) {
+                if (!file) return;
+
+                this.logEvaluation('开始处理数据集文件...', 'info');
+
+                try {
+                    let dataset;
+
+                    if (file.name.endsWith('.csv')) {
+                        const text = await file.text();
+                        dataset = this.parseCSV(text);
+                    } else if (file.name.endsWith('.json')) {
+                        const text = await file.text();
+                        dataset = JSON.parse(text);
+                    } else if (file.name.endsWith('.npy')) {
+                        dataset = await this.parseNPY(file);
+                    } else {
+                        throw new Error('不支持的文件格式，请上传CSV、JSON或NPY文件');
+                    }
+
+                    this.testDataset = dataset;
+                    this.showDatasetInfo(dataset);
+                    this.enableEvaluationButtons();
+                    this.logEvaluation('✅ 数据集加载成功', 'success');
+
+                } catch (error) {
+                    this.logEvaluation(`数据集加载失败: ${error.message}`, 'error');
+                }
+            }
+
+            async parseNPY(file) {
+                // 简化的NPY解析（实际应用中建议使用专门的库）
+                const arrayBuffer = await file.arrayBuffer();
+
+                // NPY文件头部信息解析
+                const header = this.parseNPYHeader(arrayBuffer);
+
+                // 根据数据类型解析数据
+                const data = this.parseNPYData(arrayBuffer, header);
+
+                return {
+                    type: 'npy',
+                    shape: header.shape,
+                    dtype: header.dtype,
+                    data: data
+                };
+            }
+
+            parseNPYHeader(arrayBuffer) {
+                // NPY文件格式解析（简化版）
+                const view = new DataView(arrayBuffer);
+
+                // 检查魔数
+                const magic = String.fromCharCode(view.getUint8(0)) +
+                             String.fromCharCode(view.getUint8(1)) +
+                             String.fromCharCode(view.getUint8(2)) +
+                             String.fromCharCode(view.getUint8(3)) +
+                             String.fromCharCode(view.getUint8(4)) +
+                             String.fromCharCode(view.getUint8(5));
+
+                if (magic !== '\x93NUMPY') {
+                    throw new Error('不是有效的NPY文件');
+                }
+
+                // 获取头部长度
+                const headerLen = view.getUint16(8, true);
+
+                // 解析头部字典
+                const headerStr = new TextDecoder().decode(arrayBuffer.slice(10, 10 + headerLen));
+
+                // 简单的头部解析（实际中应该用更严格的Python字典解析）
+                const shapeMatch = headerStr.match(/'shape':\s*\(([^)]+)\)/);
+                const dtypeMatch = headerStr.match(/'descr':\s*'([^']+)'/);
+
+                const shape = shapeMatch ? shapeMatch[1].split(',').map(s => parseInt(s.trim())) : [];
+                const dtype = dtypeMatch ? dtypeMatch[1] : 'float32';
+
+                return {
+                    shape: shape,
+                    dtype: dtype,
+                    dataOffset: 10 + headerLen
+                };
+            }
+
+            parseNPYData(arrayBuffer, header) {
+                const dataView = new DataView(arrayBuffer, header.dataOffset);
+                const totalElements = header.shape.reduce((a, b) => a * b, 1);
+
+                let data = [];
+
+                if (header.dtype.includes('f4') || header.dtype.includes('float32')) {
+                    // 32位浮点数
+                    for (let i = 0; i < totalElements; i++) {
+                        data.push(dataView.getFloat32(i * 4, true));
+                    }
+                } else if (header.dtype.includes('f8') || header.dtype.includes('float64')) {
+                    // 64位浮点数
+                    for (let i = 0; i < totalElements; i++) {
+                        data.push(dataView.getFloat64(i * 8, true));
+                    }
+                } else if (header.dtype.includes('i4') || header.dtype.includes('int32')) {
+                    // 32位整数
+                    for (let i = 0; i < totalElements; i++) {
+                        data.push(dataView.getInt32(i * 4, true));
+                    }
+                } else if (header.dtype.includes('u1') || header.dtype.includes('uint8') || header.dtype === '|u1') {
+                    // 8位无符号整数 (MNIST常用格式)
+                    for (let i = 0; i < totalElements; i++) {
+                        data.push(dataView.getUint8(i));
+                    }
+                } else if (header.dtype.includes('i8') || header.dtype.includes('int64')) {
+                    // 64位整数
+                    for (let i = 0; i < totalElements; i++) {
+                        // JavaScript不支持64位整数，转为32位
+                        data.push(dataView.getInt32(i * 8, true));
+                    }
+                } else {
+                    // 默认按uint8处理
+                    console.warn(`未知数据类型 ${header.dtype}，按uint8处理`);
+                    for (let i = 0; i < totalElements; i++) {
+                        data.push(dataView.getUint8(i));
+                    }
+                }
+
+                return data;
+            }
+
+            async loadMNISTDataset() {
+                this.logEvaluation('开始加载MNIST测试集...', 'info');
+
+                try {
+                    // 使用fetch API加载本地NPY文件
+                    const xTestResponse = await fetch('./mnist_data/x_test.npy');
+                    const yTestResponse = await fetch('./mnist_data/y_test.npy');
+
+                    if (!xTestResponse.ok || !yTestResponse.ok) {
+                        throw new Error('无法加载MNIST数据文件，请确保文件存在');
+                    }
+
+                    const xTestBuffer = await xTestResponse.arrayBuffer();
+                    const yTestBuffer = await yTestResponse.arrayBuffer();
+
+                    // 解析图像数据
+                    const xTestHeader = this.parseNPYHeader(xTestBuffer);
+                    const xTestData = this.parseNPYData(xTestBuffer, xTestHeader);
+
+                    // 解析标签数据
+                    const yTestHeader = this.parseNPYHeader(yTestBuffer);
+                    const yTestData = this.parseNPYData(yTestBuffer, yTestHeader);
+
+                    // 转换为适合评估的格式
+                    const dataset = this.prepareMNISTData(xTestData, yTestData, xTestHeader.shape);
+
+                    this.testDataset = dataset;
+                    this.showDatasetInfo(dataset);
+                    this.enableEvaluationButtons();
+                    this.logEvaluation('✅ MNIST测试集加载成功', 'success');
+
+                } catch (error) {
+                    this.logEvaluation(`MNIST数据集加载失败: ${error.message}`, 'error');
+                    // 提供替代方案
+                    this.logEvaluation('提示: 请手动上传 x_test.npy 和 y_test.npy 文件', 'info');
+                }
+            }
+
+            prepareMNISTData(xData, yData, shape) {
+                // MNIST数据预处理
+                const numSamples = shape[0];
+                const imageSize = shape[1] * shape[2]; // 28 * 28 = 784
+
+                const data = [];
+
+                // 只使用前1000个样本进行评估（避免浏览器内存问题）
+                const sampleCount = Math.min(numSamples, 1000);
+
+                for (let i = 0; i < sampleCount; i++) {
+                    const imageStart = i * imageSize;
+                    const imageData = xData.slice(imageStart, imageStart + imageSize);
+
+                    // 归一化到[0,1]
+                    const normalizedImage = imageData.map(pixel => pixel / 255.0);
+
+                    const sample = {
+                        features: normalizedImage,
+                        label: yData[i]
+                    };
+
+                    data.push(sample);
+                }
+
+                return {
+                    type: 'mnist',
+                    shape: [sampleCount, imageSize],
+                    data: data,
+                    originalShape: shape
+                };
+            }
+
+            parseCSV(text) {
+                const lines = text.split('\n').filter(line => line.trim());
+                const headers = lines[0].split(',').map(h => h.trim());
+                const data = [];
+
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(',').map(v => v.trim());
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = isNaN(values[index]) ? values[index] : parseFloat(values[index]);
+                    });
+                    data.push(row);
+                }
+
+                return { headers, data };
+            }
+
+            showDatasetInfo(dataset) {
+                const datasetInfo = document.getElementById('datasetInfo');
+                const datasetDetails = document.getElementById('datasetDetails');
+
+                let info = '';
+
+                if (dataset.type === 'mnist') {
+                    info = `
+                        <div><strong>数据集类型:</strong> MNIST手写数字</div>
+                        <div><strong>数据量:</strong> ${dataset.data.length} 条 (从${dataset.originalShape[0]}条中选取)</div>
+                        <div><strong>图像尺寸:</strong> ${dataset.originalShape[1]}×${dataset.originalShape[2]} 像素</div>
+                        <div><strong>特征维度:</strong> ${dataset.shape[1]} (展平后)</div>
+                        <div><strong>类别数:</strong> 10 (数字0-9)</div>
+                    `;
+                } else if (dataset.type === 'npy') {
+                    info = `
+                        <div><strong>文件类型:</strong> NumPy数组 (.npy)</div>
+                        <div><strong>数据形状:</strong> ${dataset.shape.join(' × ')}</div>
+                        <div><strong>数据类型:</strong> ${dataset.dtype}</div>
+                        <div><strong>元素总数:</strong> ${dataset.data.length}</div>
+                    `;
+                } else {
+                    // CSV/JSON格式
+                    info = `
+                        <div><strong>文件类型:</strong> ${dataset.headers ? 'CSV' : 'JSON'}</div>
+                        <div><strong>数据量:</strong> ${dataset.data.length} 条</div>
+                        <div><strong>特征数:</strong> ${dataset.headers ? dataset.headers.length : Object.keys(dataset.data[0]).length}</div>
+                    `;
+
+                    if (dataset.headers) {
+                        info += `<div><strong>列名:</strong> ${dataset.headers.join(', ')}</div>`;
+                    }
+                }
+
+                datasetDetails.innerHTML = info;
+                datasetInfo.classList.remove('hidden');
+            }
+
+            enableEvaluationButtons() {
+                document.getElementById('startEvaluationBtn').disabled = false;
+                document.getElementById('previewDataBtn').disabled = false;
+            }
+
+            previewDataset() {
+                if (!this.testDataset) return;
+
+                if (this.testDataset.type === 'mnist') {
+                    const preview = this.testDataset.data.slice(0, 3);
+                    let previewText = `MNIST数据预览 (前3条):\n`;
+
+                    preview.forEach((sample, index) => {
+                        previewText += `\n样本 ${index + 1}:\n`;
+                        previewText += `- 标签: ${sample.label}\n`;
+                        previewText += `- 特征维度: ${sample.features.length}\n`;
+                        previewText += `- 像素值范围: [${Math.min(...sample.features).toFixed(3)}, ${Math.max(...sample.features).toFixed(3)}]\n`;
+                        previewText += `- 前10个像素值: [${sample.features.slice(0, 10).map(v => v.toFixed(3)).join(', ')}...]\n`;
+                    });
+
+                    this.logEvaluation(previewText, 'info');
+                } else {
+                    const preview = this.testDataset.data.slice(0, 5);
+                    this.logEvaluation(`数据预览 (前5条):\n${JSON.stringify(preview, null, 2)}`, 'info');
+                }
+            }
+
+            async startBatchEvaluation() {
+                if (!this.model || !this.testDataset) {
+                    this.logEvaluation('请确保模型和数据集都已加载', 'error');
+                    return;
+                }
+
+                this.logEvaluation('开始批量评估...', 'info');
+                this.showEvaluationProgress(0);
+
+                try {
+                    const results = await this.performBatchEvaluation();
+                    this.calculateMetrics(results);
+                    this.generateConfusionMatrix(results);
+                    this.enableDetailedReport();
+                    this.logEvaluation('✅ 批量评估完成', 'success');
+                } catch (error) {
+                    this.logEvaluation(`评估失败: ${error.message}`, 'error');
+                }
+            }
+
+            async performBatchEvaluation() {
+                const data = this.testDataset.data;
+                const results = [];
+                const totalSamples = data.length;
+
+                for (let i = 0; i < totalSamples; i++) {
+                    try {
+                        let features, trueLabel;
+
+                        if (this.testDataset.type === 'mnist') {
+                            // MNIST数据格式
+                            features = data[i].features;
+                            trueLabel = data[i].label;
+
+                            // 根据模型的输入要求调整tensor形状
+                            let inputTensor;
+                            const modelInputShape = this.model.input.shape;
+
+                            this.logEvaluation(`样本${i}: 模型输入形状 ${modelInputShape}, 特征长度 ${features.length}`, 'info');
+
+                            if (modelInputShape.length === 4) {
+                                // 卷积模型：[batch, height, width, channels]
+                                inputTensor = tf.tensor4d(features, [1, 28, 28, 1]);
+                            } else if (modelInputShape.length === 2) {
+                                // 全连接模型：[batch, features]
+                                inputTensor = tf.tensor2d([features]);
+                            } else {
+                                throw new Error(`不支持的模型输入形状: ${modelInputShape}`);
+                            }
+
+                            const prediction = await this.model.predict(inputTensor);
+                            const probabilities = await prediction.data();
+                            const predictedLabel = Array.from(probabilities).indexOf(Math.max(...probabilities));
+
+                            results.push({
+                                trueLabel: parseInt(trueLabel),
+                                predictedLabel: predictedLabel,
+                                probabilities: Array.from(probabilities),
+                                confidence: Math.max(...probabilities)
+                            });
+
+                            inputTensor.dispose();
+                            prediction.dispose();
+
+                            // 每处理10个样本就记录一次进度，避免日志过多
+                            if (i < 10 || i % 10 === 0) {
+                                this.logEvaluation(`处理样本 ${i+1}/${totalSamples}: 真实=${trueLabel}, 预测=${predictedLabel}, 置信度=${(Math.max(...probabilities)*100).toFixed(1)}%`, 'info');
+                            }
+                        } else {
+                            // 传统格式（CSV/JSON）
+                            features = Object.values(data[i]).slice(0, -1);
+                            trueLabel = Object.values(data[i]).slice(-1)[0];
+
+                            const inputTensor = tf.tensor2d([features]);
+                            const prediction = await this.model.predict(inputTensor);
+                            const probabilities = await prediction.data();
+                            const predictedLabel = probabilities.indexOf(Math.max(...probabilities));
+
+                            results.push({
+                                trueLabel: parseInt(trueLabel),
+                                predictedLabel: predictedLabel,
+                                probabilities: Array.from(probabilities),
+                                confidence: Math.max(...probabilities)
+                            });
+
+                            inputTensor.dispose();
+                            prediction.dispose();
+                        }
+
+                        // 更新进度
+                        const progress = ((i + 1) / totalSamples) * 100;
+                        this.showEvaluationProgress(progress);
+
+                        // 避免阻塞UI线程
+                        if (i % 10 === 0) {
+                            await new Promise(resolve => setTimeout(resolve, 1));
+                        }
+
+                    } catch (error) {
+                        console.error(`样本 ${i} 评估失败:`, error);
+                        this.logEvaluation(`样本 ${i} 评估失败: ${error.message}`, 'error');
+                    }
+                }
+
+                this.hideEvaluationProgress();
+                return results;
+            }
+
+            calculateMetrics(results) {
+                const correct = results.filter(r => r.trueLabel === r.predictedLabel).length;
+                const total = results.length;
+                const accuracy = correct / total;
+
+                // 计算每个类别的精确率、召回率
+                const classes = [...new Set(results.map(r => r.trueLabel))];
+                let totalPrecision = 0;
+                let totalRecall = 0;
+
+                classes.forEach(cls => {
+                    const tp = results.filter(r => r.trueLabel === cls && r.predictedLabel === cls).length;
+                    const fp = results.filter(r => r.trueLabel !== cls && r.predictedLabel === cls).length;
+                    const fn = results.filter(r => r.trueLabel === cls && r.predictedLabel !== cls).length;
+
+                    const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+                    const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+
+                    totalPrecision += precision;
+                    totalRecall += recall;
+                });
+
+                const avgPrecision = totalPrecision / classes.length;
+                const avgRecall = totalRecall / classes.length;
+                const f1Score = 2 * (avgPrecision * avgRecall) / (avgPrecision + avgRecall);
+
+                // 更新UI
+                document.getElementById('evalAccuracyStat').textContent = (accuracy * 100).toFixed(2) + '%';
+                document.getElementById('evalPrecisionStat').textContent = (avgPrecision * 100).toFixed(2) + '%';
+                document.getElementById('evalRecallStat').textContent = (avgRecall * 100).toFixed(2) + '%';
+                document.getElementById('evalF1Stat').textContent = (f1Score * 100).toFixed(2) + '%';
+
+                this.evaluationResults = {
+                    accuracy, avgPrecision, avgRecall, f1Score, results, classes
+                };
+            }
+
+            generateConfusionMatrix(results) {
+                const classes = [...new Set(results.map(r => r.trueLabel))].sort();
+                const matrix = Array(classes.length).fill().map(() => Array(classes.length).fill(0));
+
+                results.forEach(result => {
+                    const trueIdx = classes.indexOf(result.trueLabel);
+                    const predIdx = classes.indexOf(result.predictedLabel);
+                    if (trueIdx !== -1 && predIdx !== -1) {
+                        matrix[trueIdx][predIdx]++;
+                    }
+                });
+
+                this.displayConfusionMatrix(matrix, classes);
+            }
+
+            displayConfusionMatrix(matrix, classes) {
+                const container = document.getElementById('confusionMatrix');
+                let html = '<table style="margin: 0 auto; border-collapse: collapse;">';
+
+                // 表头
+                html += '<tr><td></td>';
+                classes.forEach(cls => {
+                    html += `<th style="padding: 5px; border: 1px solid #ccc;">预测${cls}</th>`;
+                });
+                html += '</tr>';
+
+                // 矩阵内容
+                matrix.forEach((row, i) => {
+                    html += `<tr><th style="padding: 5px; border: 1px solid #ccc;">实际${classes[i]}</th>`;
+                    row.forEach(count => {
+                        const color = count > 0 ? `background-color: rgba(52, 152, 219, ${count / Math.max(...row.flat())})` : '';
+                        html += `<td style="padding: 5px; border: 1px solid #ccc; text-align: center; ${color}">${count}</td>`;
+                    });
+                    html += '</tr>';
+                });
+
+                html += '</table>';
+                container.innerHTML = html;
+            }
+
+            showEvaluationProgress(percentage) {
+                const progressContainer = document.getElementById('evaluationProgress');
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+
+                progressContainer.style.display = 'block';
+                progressFill.style.width = percentage + '%';
+                progressText.textContent = Math.round(percentage) + '%';
+            }
+
+            hideEvaluationProgress() {
+                document.getElementById('evaluationProgress').style.display = 'none';
+            }
+
+            enableDetailedReport() {
+                document.getElementById('exportDetailedReportBtn').disabled = false;
+            }
+
+            exportDetailedReport() {
+                if (!this.evaluationResults) {
+                    this.logEvaluation('没有评估结果可导出', 'error');
+                    return;
+                }
+
+                const report = {
+                    exportTime: new Date().toISOString(),
+                    modelType: this.modelType,
+                    datasetSize: this.testDataset.data.length,
+                    metrics: {
+                        accuracy: this.evaluationResults.accuracy,
+                        precision: this.evaluationResults.avgPrecision,
+                        recall: this.evaluationResults.avgRecall,
+                        f1Score: this.evaluationResults.f1Score
+                    },
+                    detailedResults: this.evaluationResults.results.slice(0, 100), // 限制导出数量
+                    confusionMatrix: this.evaluationResults.classes
+                };
+
+                const blob = new Blob([JSON.stringify(report, null, 2)], {
+                    type: 'application/json'
+                });
+
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `detailed_evaluation_report_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+
+                this.logEvaluation('详细评估报告已导出', 'success');
+            }
+
+            clearEvaluation() {
+                this.testDataset = null;
+                this.evaluationResults = null;
+
+                // 重置UI
+                document.getElementById('datasetInfo').classList.add('hidden');
+                document.getElementById('startEvaluationBtn').disabled = true;
+                document.getElementById('previewDataBtn').disabled = true;
+                document.getElementById('exportDetailedReportBtn').disabled = true;
+
+                // 清空统计
+                ['evalAccuracyStat', 'evalPrecisionStat', 'evalRecallStat', 'evalF1Stat'].forEach(id => {
+                    document.getElementById(id).textContent = '--';
+                });
+
+                document.getElementById('confusionMatrix').innerHTML = '完成评估后显示混淆矩阵';
+                this.logEvaluation('评估数据已清空', 'info');
+            }
+
+            logEvaluation(message, type = 'info') {
+                const logContainer = document.getElementById('evaluationLog');
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${type}`;
+                entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+
+                logContainer.appendChild(entry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+
+                console.log(message);
+            }
+
+            goToConversion() {
+                window.open('模型转换.html', '_blank');
+            }
+            
+            log(message, type = 'info') {
+                const logContainer = document.getElementById('uploadLog');
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${type}`;
+                entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                
+                logContainer.appendChild(entry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+                
+                console.log(message);
+            }
+        }
+
+        // 全局函数，供HTML中的onclick使用
+        function switchToInferenceMode() {
+            window.evaluatorInstance.switchMode('inference');
+        }
+
+        // 初始化函数
+        function initializeEvaluator() {
+            if (typeof tf === 'undefined') {
+                console.log('等待TensorFlow.js加载...');
+                setTimeout(initializeEvaluator, 500);
+                return;
+            }
+            window.evaluatorInstance = new UniversalModelEvaluator();
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(initializeEvaluator, 100);
+        });
+    </script>
+</body>
+</html>

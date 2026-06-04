@@ -38,6 +38,25 @@ const fetchWithBase = (url, options = {}, base = DEFAULT_BASE_URL) => {
     return rawFetch(normalizedUrl, options);
 };
 
+export const API_ENDPOINTS = Object.freeze({
+    STATUS: '/api/status',
+    HEALTH: '/api/health',
+    JUPYTER_START: '/api/start',
+    JUPYTER_STOP: '/api/stop',
+    JUPYTER_RESTART: '/api/restart',
+    CONFIG_SAVE: '/api/save_config',
+    CONFIG_LOAD: '/api/load_config',
+    QUICKFORM_TEST: '/api/quickform/test',
+    QUICKFORM_TASKS: '/api/quickform/tasks',
+    QUICKFORM_CREATE_TASK: '/api/quickform/tasks/create',
+    QUICKFORM_INJECT: '/api/resources/quickform/inject',
+    PYTHON_DETECT: '/api/detect_python',
+    AI_ASK: '/api/ai/ask',
+    AI_TEST_CONFIG: '/api/ai/test_config',
+    AI_SAVE_CONFIG: '/api/ai/save_config',
+    PYTHON_PIP: '/api/python/pip',
+});
+
 // 全局兜底：如果其他代码还在用 fetch('/api/...')，强制改写为 http://127.../api/...
 if (typeof window !== 'undefined' && !window.__XEDU_FETCH_PATCHED__) {
     window.__XEDU_FETCH_PATCHED__ = true;
@@ -151,59 +170,59 @@ class JupyterAPI extends APIClient {
 
     // 状态相关
     async getStatus() {
-        return this.get('/api/status');
+        return this.get(API_ENDPOINTS.STATUS);
     }
 
     async getHealth() {
-        return this.get('/api/health');
+        return this.get(API_ENDPOINTS.HEALTH);
     }
 
     // 控制相关
     async startJupyter(config = {}) {
-        return this.post('/api/start', config);
+        return this.post(API_ENDPOINTS.JUPYTER_START, config);
     }
 
     async stopJupyter() {
-        return this.post('/api/stop', {});
+        return this.post(API_ENDPOINTS.JUPYTER_STOP, {});
     }
 
     async restartJupyter() {
-        return this.post('/api/restart', {});
+        return this.post(API_ENDPOINTS.JUPYTER_RESTART, {});
     }
 
     // 配置相关
     async saveConfig(config) {
-        return this.post('/api/save_config', config);
+        return this.post(API_ENDPOINTS.CONFIG_SAVE, config);
     }
 
     async loadConfig() {
-        return this.get('/api/load_config');
+        return this.get(API_ENDPOINTS.CONFIG_LOAD);
     }
 
     async testQuickForm(config = {}) {
-        return this.post('/api/quickform/test', { config });
+        return this.post(API_ENDPOINTS.QUICKFORM_TEST, { config });
     }
 
     async listQuickFormTasks(config = {}) {
-        return this.post('/api/quickform/tasks', { config });
+        return this.post(API_ENDPOINTS.QUICKFORM_TASKS, { config });
     }
 
     async createQuickFormTask(payload = {}) {
-        return this.post('/api/quickform/tasks/create', payload);
+        return this.post(API_ENDPOINTS.QUICKFORM_CREATE_TASK, payload);
     }
 
     async injectQuickForm(payload = {}) {
-        return this.post('/api/resources/quickform/inject', payload);
+        return this.post(API_ENDPOINTS.QUICKFORM_INJECT, payload);
     }
 
     // 环境检测
     async detectPython() {
-        return this.get('/api/detect_python');
+        return this.get(API_ENDPOINTS.PYTHON_DETECT);
     }
 
     // AI助手
     async askAI(image, question, history = [], config = null, context = null) {
-        return this.post('/api/ai/ask', {
+        return this.post(API_ENDPOINTS.AI_ASK, {
             image,
             question,
             history,
@@ -215,20 +234,20 @@ class JupyterAPI extends APIClient {
 
     // AI配置
     async testAIConfig(config) {
-        return this.post('/api/ai/test_config', {
+        return this.post(API_ENDPOINTS.AI_TEST_CONFIG, {
             config
         });
     }
 
     async saveAIConfig(config) {
-        return this.post('/api/ai/save_config', {
+        return this.post(API_ENDPOINTS.AI_SAVE_CONFIG, {
             config
         });
     }
 
     // Python 包管理（install/uninstall/list）
     async managePythonPackage(payload) {
-        return this.post('/api/python/pip', payload);
+        return this.post(API_ENDPOINTS.PYTHON_PIP, payload);
     }
 }
 

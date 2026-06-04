@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XEdu Client 创AI申报演讲稿</title>
+  <style>
+    :root {
+      --bg: #f6f1e8;
+      --paper: #fffdf8;
+      --ink: #18222f;
+      --muted: #5b6570;
+      --line: rgba(24, 34, 47, 0.12);
+      --accent: #9a3412;
+      --accent-soft: rgba(154, 52, 18, 0.09);
+      --shadow: 0 24px 60px rgba(24, 34, 47, 0.12);
+      --radius: 24px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", serif;
+      background:
+        radial-gradient(circle at top left, rgba(154, 52, 18, 0.12), transparent 22%),
+        radial-gradient(circle at right top, rgba(24, 34, 47, 0.08), transparent 24%),
+        linear-gradient(180deg, #f8f3eb 0%, #efe7da 100%);
+      padding: 28px;
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: rgba(255, 253, 248, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(16px);
+    }
+
+    .hero {
+      padding: 40px 48px 30px;
+      background:
+        linear-gradient(135deg, rgba(154, 52, 18, 0.12), transparent 46%),
+        linear-gradient(225deg, rgba(24, 34, 47, 0.06), transparent 40%);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(154, 52, 18, 0.18);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    h1 {
+      margin: 18px 0 12px;
+      font-size: 44px;
+      line-height: 1.08;
+      font-weight: 700;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.9;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .pill {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .content {
+      padding: 28px 48px 42px;
+    }
+
+    .nav {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    .nav a {
+      text-decoration: none;
+      color: var(--ink);
+      background: var(--accent-soft);
+      border: 1px solid rgba(154, 52, 18, 0.12);
+      padding: 10px 12px;
+      border-radius: 14px;
+      text-align: center;
+      font-size: 14px;
+    }
+
+    .note {
+      margin: 0 0 26px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(24, 34, 47, 0.04);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      line-height: 1.8;
+      font-size: 14px;
+    }
+
+    .slide {
+      padding: 22px 0 24px;
+      border-top: 1px dashed rgba(24, 34, 47, 0.12);
+    }
+
+    .script {
+      padding: 24px 24px 26px;
+      margin-bottom: 30px;
+      border: 1px solid rgba(154, 52, 18, 0.18);
+      border-radius: var(--radius);
+      background: rgba(154, 52, 18, 0.05);
+    }
+
+    .script h2 {
+      margin-bottom: 16px;
+    }
+
+    .script p {
+      margin: 0 0 14px;
+      font-size: 18px;
+      line-height: 2;
+      text-align: justify;
+    }
+
+    .script p:last-child {
+      margin-bottom: 0;
+    }
+
+    .slide:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .slide-head {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+
+    .slide-no {
+      min-width: 76px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 27px;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+
+    .slide p {
+      margin: 0;
+      font-size: 18px;
+      line-height: 2;
+      text-align: justify;
+    }
+
+    .footer {
+      padding: 18px 48px 30px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 900px) {
+      body {
+        padding: 12px;
+      }
+
+      .hero,
+      .content,
+      .footer {
+        padding-left: 22px;
+        padding-right: 22px;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      h2 {
+        font-size: 22px;
+      }
+
+      .slide p {
+        font-size: 17px;
+        line-height: 1.9;
+      }
+
+      .slide-head {
+        flex-direction: column;
+        gap: 4px;
+      }
+    }
+
+    @media print {
+      body {
+        padding: 0;
+        background: #fff;
+      }
+
+      .page {
+        max-width: none;
+        border-radius: 0;
+        box-shadow: none;
+        border: 0;
+      }
+
+      .nav {
+        display: none;
+      }
+
+      .slide {
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <span class="eyebrow">XEdu Client · 创AI申报</span>
+      <h1>面向人工智能课堂的一体化实验学习平台<br />演讲稿</h1>
+      <p class="lead">
+        本页整理为可直接照读的逐页讲稿，适配当前 18 页 PPT 结构。整体口径以“十二年一贯制学校场景、连续学习路径、课程资产沉淀”为主轴。
+      </p>
+      <div class="hero-meta">
+        <span class="pill">建议时长：7-9 分钟</span>
+        <span class="pill">适合打印</span>
+        <span class="pill">按页分段</span>
+      </div>
+    </header>
+
+    <section class="content">
+      <nav class="nav">
+        <a href="#slide-1">1 封面</a>
+        <a href="#slide-3">3 问题</a>
+        <a href="#slide-5">5 路径</a>
+        <a href="#slide-10">10 应用</a>
+        <a href="#slide-16">16 成效</a>
+        <a href="#slide-17">17 总结</a>
+      </nav>
+
+      <p class="note">
+        使用建议：先读“直接口播稿”。下面的逐页提示只用于对照 PPT 翻页。
+      </p>
+
+      <article class="script" id="full-script">
+        <h2>直接口播稿</h2>
+        <p>各位评审老师，大家好。今天我汇报的案例是《XEdu Client：面向人工智能课堂的一体化实验学习平台》。这个案例对应“创AI”人工智能学习工具方向。</p>
+        <p>我先用一句话概括它：XEdu Client 不是再做一个单独的教学工具，而是把人工智能课堂里分散的讲解、积木、代码和课程资源，组织成一条可以连续运行的实验学习路径。</p>
+        <p>我们在课堂里遇到的真实问题是，人工智能实验课往往不好顺畅开展。环境配置比较复杂，工具之间要频繁切换，学生刚理解了任务情境，又要跳到另一个环境里搭流程，再跳到代码环境里运行。这样一来，学习路径容易断，课堂时间也会被切换和排错消耗掉。另一方面，教师准备的讲解页、积木文件、Notebook、图片数据和说明文档，也常常分散在不同位置，后续复用和共享都不方便。</p>
+        <p>所以，XEdu Client 的第一层回应，是把这些分散环节收进一个统一的课堂实验工作台。学生从统一桌面入口进入课堂，先看 HTML 情境讲解，再用 Blockly 理解实验流程，最后进入 Jupyter 做真实代码实践。教师则在同一个平台里组织课程、检查资源、分发课程，并把课堂材料沉淀成课程资源包。</p>
+        <p>从功能架构上看，平台有教师模式和学生模式。教师模式负责创建或导入课程、整理课程、检查预演和共享分发；学生模式负责进入课堂、完成情境体验、流程探究和代码实践。中间的课程资源包是核心对象，本地服务、Jupyter 管理、Python 运行环境都围绕它来支撑。这样，教师备课和学生学习不再是两套割裂流程，而是在同一个课程上下文里运转。</p>
+        <p>学生侧的学习路径，是这套平台最重要的设计。我们没有把 HTML、Blockly、Jupyter 当成三个并列入口，而是把它们设计成递进关系。HTML 负责让学生先进入任务情境，知道这节课要解决什么问题；Blockly 负责把 AI 实验流程显性化，让学生先看懂输入、处理、模型、输出之间的关系；Jupyter 负责把前面的流程理解推进到真实代码实践，让学生阅读代码、运行代码、修改参数、验证结果。</p>
+        <p>这里面，XEduHub 起到能力底座的作用。它把输入、模型、流程和结果从零散脚本里抽象出来。这样 Blockly 做流程探究时用的是这套能力，Jupyter 做代码实践时用的也是这套能力。前后不是两套脚本，而是同一个实验底座，学生的学习体验会更连贯，教师后续扩展课程任务也更方便。</p>
+        <p>把这条学习路径放到真实课堂里，就形成了一节 AI 实验课的完整流程。课前，教师组织课程资源，准备讲解页、Blockly 文件、Notebook、素材数据和说明文档。课中，学生沿着情境、流程、代码这条路径完成实验。课后，教师可以把课堂结果、学生作品和修订内容继续沉淀下来。</p>
+        <p>为了让课程能够复用，我们把一个 AI 实验设计成课程资源包，而不是只保存一个 Notebook。一个课程包里可以包含 index.html 任务讲解页、.blockly.xml 可视化流程、.ipynb 或 .py 代码文件、images 和 data 素材数据，以及 README 说明与评价。这样，讲解、积木、代码、素材和结果都在同一个课程上下文里。教师少找文件，课程也更容易在下一个班级继续使用。</p>
+        <p>在教师侧，平台还支持课程整理和课程共享。零散材料可以按照课程信息、课程结构、材料整理的流程，归纳成可导入、可发布、可复用的平台课程。课程也可以从共享仓库拉取，教师在课堂使用后再上传修订。这样，一门课就不再停留在个人文件夹里，而是可以形成“共享一门课、共上一门课、共改一门课”的持续迭代机制。</p>
+        <p>平台本身也保留了比较高的自主配置空间。教师可以设置 Python 环境、管理包、配置资源库，也可以根据学校实际调整课堂设置。因为不同学校的设备条件、网络环境和课程资源都不一样，所以平台必须足够灵活。开源和可配置，也为后续区域课程资源共建共享留下了空间。</p>
+        <p>目前，XEdu Client 已经在我们自己的学生中开展了初步使用。从课堂感受看，把 HTML 体验、Blockly 流程和 Jupyter 代码实践串起来以后，学生进入实验更顺，教师组织课堂也更集中。后续我们会继续补充真实课堂照片、应用数据、学生作品和 AI 辅助开发记录，让应用成效呈现得更完整。</p>
+        <p>最后总结一下。XEdu Client 的价值，不只是把几个工具放在一起，更重要的是把人工智能课堂里的体验、流程、代码和资源组织成连续学习路径；再通过 XEduHub 能力底座和课程共建机制，把一次课堂活动逐步沉淀为可复用、可共享、可持续建设的教学资产。我的汇报到这里结束，感谢各位评审老师的聆听。</p>
+      </article>
+
+      <article class="slide" id="slide-1">
+        <div class="slide-head">
+          <span class="slide-no">Slide 01</span>
+          <h2>封面</h2>
+        </div>
+        <p>各位评审老师，大家好。今天我汇报的案例是《XEdu Client：面向人工智能课堂的一体化实验学习平台》。它对应“创AI”人工智能学习工具方向。这个平台想解决的核心问题很明确：把原来分散的讲解、积木、代码和课程资源，组织成一条能在课堂里连续运行的 AI 实验学习路径。</p>
+      </article>
+
+      <article class="slide" id="slide-2">
+        <div class="slide-head">
+          <span class="slide-no">Slide 02</span>
+          <h2>汇报结构</h2>
+        </div>
+        <p>我会按一条线索讲：先看课堂问题，再看 XEdu Client 怎么回应；接着看学生怎样从 HTML 到 Blockly 再到 Jupyter；然后看教师侧怎样把课程资源沉淀和共享；最后讲应用成效和反思。前两页我不展开，直接进入核心内容。</p>
+      </article>
+
+      <article class="slide" id="slide-3">
+        <div class="slide-head">
+          <span class="slide-no">Slide 03</span>
+          <h2>问题与平台回应</h2>
+        </div>
+        <p>人工智能实验课最容易卡在四件事上：环境配置复杂，工具切换频繁，学习路径断裂，资源更新困难。XEdu Client 的回应，是把这些分散环节收进一个课堂实验工作台。学生从统一桌面入口进入，依次完成 HTML 情境讲解、Blockly 流程探究、Jupyter 本地实践，最后进行结果复盘；教师则把这些内容沉淀成课程资源包。这样，课堂不是在不同软件之间跳来跳去，而是沿着一条清楚的实验链往前走。</p>
+      </article>
+
+      <article class="slide" id="slide-4">
+        <div class="slide-head">
+          <span class="slide-no">Slide 04</span>
+          <h2>功能架构</h2>
+        </div>
+        <p>这个工作台内部分成三条主线。左侧是教师模式，负责创建或导入课程、课程整理、检查预演和共享分发。右侧是学生模式，学生从课堂入口进入，依次完成 HTML 情境体验、Blockly 流程探究和 Jupyter 代码实践。中间是共享课程数据和平台能力，课程资源包、本地服务接口、Jupyter 管理、Python 运行都在这里连接起来。也就是说，教师备课和学生学习不是两套系统，而是在同一个课程数据上协同运转。</p>
+      </article>
+
+      <article class="slide" id="slide-5">
+        <div class="slide-head">
+          <span class="slide-no">Slide 05</span>
+          <h2>连续学习路径</h2>
+        </div>
+        <p>在学生侧，我们不把 HTML、Blockly、Jupyter 当成三个并列入口，而是把它们设计成递进路线。HTML 负责让学生先看到任务情境和目标；Blockly 负责用低门槛方式理解和搭建实验流程；Jupyter 负责进入真实代码，完成运行、调参和复盘。学生看起来是在切换工具，实际是在同一个任务里从“看见问题”走向“理解流程”，再走向“代码实践”。</p>
+      </article>
+
+      <article class="slide" id="slide-6">
+        <div class="slide-head">
+          <span class="slide-no">Slide 06</span>
+          <h2>HTML 体验层</h2>
+        </div>
+        <p>第一步是 HTML，让知识先变得可体验。很多人工智能任务如果一开始就讲代码，学生会觉得距离很远；先用 HTML 页面呈现任务背景、操作目标和结果预期，学生就更容易进入情境。这里的重点不是做一个展示页，而是把学生带到任务里，为后面的流程探究做准备。</p>
+      </article>
+
+      <article class="slide" id="slide-7">
+        <div class="slide-head">
+          <span class="slide-no">Slide 07</span>
+          <h2>Blockly 中间层</h2>
+        </div>
+        <p>第二步是 Blockly。它承担的是课堂中间层作用，把 AI 实验流程先变成学生看得见的结构。输入、处理、模型、输出这些环节，通过语义化积木被显性化。学生先理解“这个实验怎么走”，再进入代码实践，就不会一开始被完整代码挡住。</p>
+      </article>
+
+      <article class="slide" id="slide-8">
+        <div class="slide-head">
+          <span class="slide-no">Slide 08</span>
+          <h2>XEduHub 能力底座</h2>
+        </div>
+        <p>Blockly 和 Jupyter 能够接起来，背后依赖 XEduHub 这层能力底座。它把输入、模型、流程和结果从零散脚本中抽象出来。这样，Blockly 做流程探究时用的是这套能力，Jupyter 做代码实践时用的也是这套能力。前后不是两套脚本，而是同一个实验底座，课堂体验会更一致，后续扩展课程任务也更方便。</p>
+      </article>
+
+      <article class="slide" id="slide-9">
+        <div class="slide-head">
+          <span class="slide-no">Slide 09</span>
+          <h2>Jupyter 真实代码实践</h2>
+        </div>
+        <p>第三步进入 Jupyter，学生从流程理解过渡到真实代码实践。平台后端会统一管理 Jupyter 的启动、状态和课程目录绑定，学生打开的 Notebook 就对应当前课程任务。学生可以阅读代码、运行代码、修改参数、验证结果。简单说，Blockly 让学生看懂流程，Jupyter 让学生真正进入代码、调参和复盘。</p>
+      </article>
+
+      <article class="slide" id="slide-10">
+        <div class="slide-head">
+          <span class="slide-no">Slide 10</span>
+          <h2>课堂应用流程</h2>
+        </div>
+        <p>把这条学习路径放到课堂里，就是一套完整流程。教师先组织课程、准备资源、开启课堂；学生进入课堂后，沿着讲解、流程和代码完成实验；课后，教师再把结果和资源沉淀下来。这里要说明的是，XEdu Client 不只是功能集合，而是能支撑一节 AI 实验课完整跑完。</p>
+      </article>
+
+      <article class="slide" id="slide-11">
+        <div class="slide-head">
+          <span class="slide-no">Slide 11</span>
+          <h2>课程资源包</h2>
+        </div>
+        <p>要让这节课能复用，就不能只保存一个 Notebook，而要形成课程资源包。一个课程包里有 index.html 任务讲解页，有 .blockly.xml 可视化流程，有 .ipynb 或 .py 代码实践文件，也有 images、data 这样的素材数据，还有 README 说明与评价。讲解、积木、代码、素材和结果都在同一个课程上下文里，教师少找文件，课程也更容易被下一次课堂复用。</p>
+      </article>
+
+      <article class="slide" id="slide-12">
+        <div class="slide-head">
+          <span class="slide-no">Slide 12</span>
+          <h2>课程整理能力</h2>
+        </div>
+        <p>课程整理 skills 解决的是材料归纳的问题。很多老师手头并不缺材料，缺的是把材料整理成平台课程的流程。这里的路径是：先录入课程信息，再形成课程结构，再完成材料整理，最后变成可导入、可发布、可复用的课程。这样，零散材料就从个人文件变成了平台课程。</p>
+      </article>
+
+      <article class="slide" id="slide-13">
+        <div class="slide-head">
+          <span class="slide-no">Slide 13</span>
+          <h2>教师课程共享</h2>
+        </div>
+        <p>课程资源包进一步往前走，就是教师课程共享。图中几位教师都围绕同一个共享课程仓库工作：可以拉取课程，也可以上传修订。右侧是课程版本演进，从 v1 初始课程，到 v2 课堂修订，再到 v3 共建完善。这样，一门课就可以被多位教师持续维护，形成“共享一门课、共上一门课、共改一门课”的机制。</p>
+      </article>
+
+      <article class="slide" id="slide-14">
+        <div class="slide-head">
+          <span class="slide-no">Slide 14</span>
+          <h2>教师操作流程</h2>
+        </div>
+        <p>教师实际操作也尽量做得简单。流程是先输入课程仓库地址，再开始创建课程，课程拉取成功以后，就可以开启课堂授课。这个过程说明，共享课程不是停留在“别人有一份材料”，而是可以被教师快速获取、直接进入课堂，并且在迭代后继续更新贡献。</p>
+      </article>
+
+      <article class="slide" id="slide-15">
+        <div class="slide-head">
+          <span class="slide-no">Slide 15</span>
+          <h2>开放性与灵活性</h2>
+        </div>
+        <p>平台还保留了很高的自主配置空间。教师可以设置 Python 环境、管理包、配置资源库，也可以根据学校实际调整课堂设置。因为不同学校的设备条件、网络环境和课程资源都不一样，所以平台必须足够灵活。开源和可配置，也为后续区域课程资源共建共享留下了空间。</p>
+      </article>
+
+      <article class="slide" id="slide-16">
+        <div class="slide-head">
+          <span class="slide-no">Slide 16</span>
+          <h2>初步应用成效</h2>
+        </div>
+        <p>目前，XEdu Client 已经在我们自己的学生中开展了初步使用。从课堂感受看，把 HTML 体验、Blockly 流程和 Jupyter 代码实践串起来以后，学生进入实验更顺，教师组织课堂也更集中。当然，应用证据还需要继续补齐。后续我们会把真实课堂照片、应用数据、学生作品和 AI 辅助开发记录继续整理进来，让成效呈现得更完整。</p>
+      </article>
+
+      <article class="slide" id="slide-17">
+        <div class="slide-head">
+          <span class="slide-no">Slide 17</span>
+          <h2>总结</h2>
+        </div>
+        <p>最后做一个总结。XEdu Client 的价值，不只是工具整合，更重要的是把人工智能课堂里的体验、流程、代码和资源组织成连续学习路径；再通过 XEduHub 能力底座和课程共建机制，把一次课堂活动逐步沉淀为可复用、可共享、可持续建设的教学资产。我的汇报到这里结束，感谢各位评审老师的聆听。</p>
+      </article>
+    </section>
+
+    <footer class="footer">
+      文件位置：<code>docs/case-application-2026/html/speech-xedu-client-20260601.html</code>
+    </footer>
+  </main>
+</body>
+</html>

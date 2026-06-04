@@ -1,15 +1,15 @@
 # XEduHub Blockly 积木审计结果
 
 - 来源文件：`renderer/js/blockly/xeduhub-blocks.js`
-- 自定义积木总数：`88`
-- 可运行积木数：`67`
+- 自定义积木总数：`90`
+- 可运行积木数：`69`
 - 兼容旧块数：`15`
 - 机器可读明细：`docs/overview/xeduhub-block-audit.json`
 
 ## 结论摘要
 
 - 一致：34
-- 弱一致：39
+- 弱一致：41
 - 不一致：0
 - 废弃兼容：15
 
@@ -56,6 +56,8 @@
 - `xeduhub_run_det_body_l`：运行时 spec 抽取与绑定验证 + 后端接口执行测试
 - `xeduhub_run_det_coco`：运行时 spec 抽取与绑定验证 + 后端接口执行测试
 - `xeduhub_run_det_coco_l`：运行时 spec 抽取与绑定验证 + 后端接口执行测试
+- `xeduhub_run_det_face`：运行时 spec 抽取与绑定验证 + 后端接口执行测试
+- `xeduhub_run_det_hand`：运行时 spec 抽取与绑定验证 + 后端接口执行测试
 - `xeduhub_run_drive_perception`：运行时 spec 抽取与绑定验证 + 后端接口执行测试
 - `xeduhub_run_embedding_audio`：运行时 spec 抽取与绑定验证 + 后端接口执行测试
 - `xeduhub_run_embedding_image`：运行时 spec 抽取与绑定验证 + 后端接口执行测试
@@ -154,7 +156,7 @@
 | `xeduhub_cv_gaussian_blur` | KSIZE=6 | `__result = cv2.GaussianBlur(None, (7, 7), 0)` | 无 | 依附父块 | 代码生成快照 | 一致 / P3 |
 | `xeduhub_cv_loop_frames` | CAMERA_VAR=camera、FRAME_VAR=frame、QUIT_KEY=q、DELAY=1 | `try: while camera.is_opened(): frame = camera.read() if frame is None: break pass if camera.should_quit("q", delay=1): break finally: cam...` | camera、frame | /api/python/run | 模拟依赖测试 + 本地 Python 执行测试 | 弱一致 / P2 |
 | `xeduhub_cv_open_camera` | SOURCE=0、CAMERA_VAR=camera、WINDOW=video | `camera = xrt.XEduCamera.camera(0, window_name="video")` | camera、video | /api/python/run | 模拟依赖测试 + 本地 Python 执行测试 | 一致 / P3 |
-| `xeduhub_cv_open_video` | CAMERA_VAR=camera、WINDOW=video | `camera = xrt.XEduCamera.video("demo.mp4", window_name="video")` | camera、video | /api/python/run | 模拟依赖测试 + 本地 Python 执行测试 | 一致 / P3 |
+| `xeduhub_cv_open_video` | CAMERA_VAR=camera、WINDOW=video | `camera = xrt.XEduCamera.video("courses/blockly-smoke/demo.mp4", window_name="video")` | camera、video | /api/python/run | 模拟依赖测试 + 本地 Python 执行测试 | 一致 / P3 |
 | `xeduhub_cv_put_text` | TEXT=XEdu、TEXT_X=20、TEXT_Y=40、TEXT_SCALE=1、TEXT_THICKNESS=2 | `__result = cv2.putText(None, "XEdu", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)` | 无 | 依附父块 | 代码生成快照 | 一致 / P3 |
 | `xeduhub_cv_resize_image` | 图像 ? 缩放 宽 ? 高 ? | `__result = cv2.resize(None, (int(640), int(480)))` | 无 | 依附父块 | 代码生成快照 | 一致 / P3 |
 | `xeduhub_cv_rotate_image` | ROTATE_CODE=顺时针 90° | `__result = cv2.rotate(None, cv2.ROTATE_90_CLOCKWISE)` | 无 | 依附父块 | 代码生成快照 | 一致 / P3 |
@@ -178,26 +180,28 @@
 
 | 积木 ID | 用户看到的输入/字段 | 生成代码摘要 | 隐式状态 | 运行入口 | 测试策略 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `xeduhub_run_cls_imagenet` | RESULT_VAR=lab_result | `# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_depth_anything` | RESULT_VAR=lab_result | `# 单目深度估计 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_det_body` | RESULT_VAR=lab_result | `lab_task_id = "bodydetect" lab_flow = xedu_flow_bodydetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_det_body_l` | RESULT_VAR=lab_result | `lab_task_id = "bodydetect" lab_flow = xedu_flow_bodydetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_det_coco` | RESULT_VAR=lab_result | `lab_task_id = "cocodetect" lab_flow = xedu_flow_cocodetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_det_coco_l` | RESULT_VAR=lab_result | `lab_task_id = "cocodetect" lab_flow = xedu_flow_cocodetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_drive_perception` | RESULT_VAR=lab_result | `# 全景驾驶感知 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_embedding_audio` | RESULT_VAR=lab_result | `# 音频特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_embedding_image` | RESULT_VAR=lab_result | `# 图像特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_embedding_text` | RESULT_VAR=lab_result | `# 文本特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_gen_color` | RESULT_VAR=lab_result | `# 图像着色 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_gen_style` | RESULT_VAR=lab_result | `# 图像风格迁移 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_ocr` | RESULT_VAR=lab_result | `# 光学字符识别 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_pose_body17` | RESULT_VAR=lab_result | `lab_task_id = "body17" lab_flow = xedu_flow_body17 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_pose_body17_l` | RESULT_VAR=lab_result | `lab_task_id = "body17" lab_flow = xedu_flow_body17 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_pose_body26` | RESULT_VAR=lab_result | `lab_task_id = "body26" lab_flow = xedu_flow_body26 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_pose_face106` | RESULT_VAR=lab_result | `lab_task_id = "face106" lab_flow = xedu_flow_face106 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_pose_hand21` | RESULT_VAR=lab_result | `lab_task_id = "hand21" lab_flow = xedu_flow_hand21 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_pose_wholebody133` | RESULT_VAR=lab_result | `lab_task_id = "wholebody133" lab_flow = xedu_flow_wholebody133 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
-| `xeduhub_run_segment_anything` | RESULT_VAR=lab_result | `# SAM 图像分割 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_cls_imagenet` | TASK_LABEL=看图分类、RESULT_VAR=lab_result | `# ImageNet 图像分类 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_depth_anything` | TASK_LABEL=看远近、RESULT_VAR=lab_result | `# 单目深度估计 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_det_body` | TASK_LABEL=找人体、RESULT_VAR=lab_result | `lab_task_id = "bodydetect" lab_flow = xedu_flow_bodydetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_det_body_l` | TASK_LABEL=找人体+、RESULT_VAR=lab_result | `lab_task_id = "bodydetect" lab_flow = xedu_flow_bodydetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_det_coco` | TASK_LABEL=找物体、RESULT_VAR=lab_result | `lab_task_id = "cocodetect" lab_flow = xedu_flow_cocodetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_det_coco_l` | TASK_LABEL=找物体+、RESULT_VAR=lab_result | `lab_task_id = "cocodetect" lab_flow = xedu_flow_cocodetect lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_det_face` | TASK_LABEL=找人脸、RESULT_VAR=lab_result | `lab_task_id = "det_face" lab_flow = xedu_flow_det_face lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_det_hand` | TASK_LABEL=找手部、RESULT_VAR=lab_result | `lab_task_id = "det_hand" lab_flow = xedu_flow_det_hand lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_drive_perception` | TASK_LABEL=驾驶感知、RESULT_VAR=lab_result | `# 全景驾驶感知 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_embedding_audio` | TASK_LABEL=音频特征、RESULT_VAR=lab_result | `# 音频特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_embedding_image` | TASK_LABEL=图像特征、RESULT_VAR=lab_result | `# 图像特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_embedding_text` | TASK_LABEL=文本特征、RESULT_VAR=lab_result | `# 文本特征提取 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_gen_color` | TASK_LABEL=图像上色、RESULT_VAR=lab_result | `# 图像着色 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_gen_style` | TASK_LABEL=换风格、RESULT_VAR=lab_result | `# 图像风格迁移 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_ocr` | TASK_LABEL=读文字、RESULT_VAR=lab_result | `# 光学字符识别 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_pose_body17` | TASK_LABEL=看动作、RESULT_VAR=lab_result | `lab_task_id = "body17" lab_flow = xedu_flow_body17 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_pose_body17_l` | TASK_LABEL=看动作+、RESULT_VAR=lab_result | `lab_task_id = "body17" lab_flow = xedu_flow_body17 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_pose_body26` | TASK_LABEL=看动作26、RESULT_VAR=lab_result | `lab_task_id = "body26" lab_flow = xedu_flow_body26 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_pose_face106` | TASK_LABEL=看脸点、RESULT_VAR=lab_result | `lab_task_id = "face106" lab_flow = xedu_flow_face106 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_pose_hand21` | TASK_LABEL=看手势、RESULT_VAR=lab_result | `lab_task_id = "hand21" lab_flow = xedu_flow_hand21 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_pose_wholebody133` | TASK_LABEL=看全身点、RESULT_VAR=lab_result | `lab_task_id = "wholebody133" lab_flow = xedu_flow_wholebody133 lab_result = lab_flow.inference(data=lab_input) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
+| `xeduhub_run_segment_anything` | TASK_LABEL=圈区域、RESULT_VAR=lab_result | `# SAM 图像分割 当前不可本地运行 # 当前本地 XEdu 运行环境不支持该任务。 # 需安装对应模型/版本后再试。 lab_result = {}` | lab_result | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |
 | `xeduhub_workflow_create` | TASK_ID=人体目标检测、MODEL_VAR=lab_flow | `lab_flow = wf(task="bodydetect")` | lab_flow | /api/resources/blockly/xeduhub/execute | 代码生成快照 + 运行时 spec 抽取与绑定验证 | 弱一致 / P2 |
 | `xeduhub_workflow_create_var` | TASK_ID=人体目标检测、MODEL_VAR=lab_flow | `lab_flow = wf(task="bodydetect")` | lab_flow | /api/resources/blockly/xeduhub/execute | 代码生成快照 + 运行时 spec 抽取与绑定验证 | 一致 / P3 |
 | `xeduhub_workflow_infer` | MODEL_VAR=lab_flow、RESULT_VAR=lab_result、PARAMS={"thr": 0.5} | `lab_params = {"thr": 0.5} lab_result = lab_flow.inference(data=lab_input, **lab_params) lab_result = lab_result` | lab_input、lab_result、lab_flow | /api/resources/blockly/xeduhub/execute | 运行时 spec 抽取与绑定验证 + 后端接口执行测试 | 弱一致 / P2 |

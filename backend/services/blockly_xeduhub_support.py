@@ -6,25 +6,74 @@ from __future__ import annotations
 import base64
 import copy
 import io
+import inspect
 import json
 import os
+import subprocess
+import queue
 import re
+import threading
+import time
 import traceback
 from html import escape
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
+from urllib.parse import unquote, urlparse
+
+from runtime.sample_assets import (
+    BLOCKLY_SMOKE_IMAGE,
+    BLOCKLY_SMOKE_IMAGE_ALIASES,
+    ensure_blockly_smoke_image,
+    repo_path,
+    resolve_checkpoint_file,
+)
 
 PEDAGOGY_LEVELS = ("L1", "L2", "L3")
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_BLOCKLY_SAMPLE_IMAGE = "courses/blockly-smoke/demo.jpg"
-DEFAULT_BLOCKLY_SAMPLE_ALIASES = {
-    "demo.jpg",
-    "./demo.jpg",
-    "demo.jpeg",
-    "./demo.jpeg",
-    "demo.png",
-    "./demo.png",
+BLOCKLY_COLOR_CONTRACT_PATH = REPO_ROOT / "config" / "blockly-colors.json"
+DEFAULT_BLOCKLY_SAMPLE_IMAGE = BLOCKLY_SMOKE_IMAGE
+DEFAULT_BLOCKLY_SAMPLE_ALIASES = set(BLOCKLY_SMOKE_IMAGE_ALIASES)
+_RUNTIME_SUPPORTED_TASKS_CACHE: Dict[str, Any] = {
+    "value": None,
+    "expires_at": 0.0,
 }
+FALLBACK_SUPPORTED_TASK_IDS = {
+    "det_body",
+    "cls_imagenet",
+    "ocr",
+    "gen_style",
+    "gen_color",
+    "segment_anything",
+    "depth_anything",
+    "drive_perception",
+    "embedding_image",
+    "embedding_text",
+    "embedding_audio",
+    "det_face",
+    "det_hand",
+    "det_coco_l",
+    "pose_wholebody133",
+}
+
+
+def _force_noninteractive_matplotlib_backend() -> None:
+    os.environ["MPLBACKEND"] = "Agg"
+    try:
+        import matplotlib  # type: ignore
+
+        current_backend = str(matplotlib.get_backend() or "").lower()
+        if current_backend != "agg":
+            matplotlib.use("Agg", force=True)
+    except Exception:
+        return
+
+def _bundled_python_executables() -> List[Path]:
+    candidates = [
+        REPO_ROOT / "python_env" / "bin" / "python3",
+        REPO_ROOT / "python_env" / "bin" / "python",
+        REPO_ROOT / "python_env" / "Scripts" / "python.exe",
+    ]
+    return [candidate for candidate in candidates if candidate.exists()]
 
 _TOOLBOX_BLOCK_KINDS = {"block", "shadow", "label", "sep", "category"}
 _UNSAFE_INPUT_PRESET_BLOCKS = {
@@ -52,44 +101,36 @@ ADVANCED_BLOCK_TYPES = (
     "xeduhub_catch_error",
 )
 
-TASK_FAMILY_META = {
-    "detection": {"label": "目标检测", "colour": "#f59e0b", "description": "检测并定位人体、人脸、人手和 COCO 目标"},
-    "pose": {"label": "关键点识别", "colour": "#ec4899", "description": "识别人脸、人体、手部和全身关键点"},
-    "ocr": {"label": "OCR", "colour": "#14b8a6", "description": "提取图像中的文字内容"},
-    "classification": {"label": "图像分类", "colour": "#3b82f6", "description": "识别图像类别并返回预测结果"},
-    "generation": {"label": "内容生成", "colour": "#8b5cf6", "description": "执行风格迁移与图像着色"},
-    "panoptic": {"label": "全景感知", "colour": "#7c3aed", "description": "驾驶场景的检测与区域感知"},
-    "multimodal": {"label": "多模态特征", "colour": "#2563eb", "description": "提取图像、文本与音频向量"},
-    "segmentation": {"label": "图像分割", "colour": "#06b6d4", "description": "基于提示点或框执行 SAM 分割"},
-    "depth": {"label": "深度估计", "colour": "#6366f1", "description": "生成单目深度结果图"},
-}
+def _load_blockly_color_contract() -> Dict[str, Any]:
+    with BLOCKLY_COLOR_CONTRACT_PATH.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict):
+        raise ValueError("Blockly color contract must be a JSON object")
+    return payload
 
-TASK_FAMILY_ORDER = [
-    "classification",
-    "detection",
-    "ocr",
-    "pose",
-    "generation",
-    "segmentation",
-    "depth",
-    "multimodal",
-    "panoptic",
-]
+
+BLOCKLY_COLOR_CONTRACT = _load_blockly_color_contract()
+BLOCKLY_BRAND_META = copy.deepcopy(BLOCKLY_COLOR_CONTRACT.get("brand", {}))
+TASK_FAMILY_META = copy.deepcopy(BLOCKLY_COLOR_CONTRACT.get("taskFamilies", {}))
+TASK_FAMILY_ORDER = list(BLOCKLY_COLOR_CONTRACT.get("taskFamilyOrder", []))
+CATEGORY_COLOR_PALETTE = copy.deepcopy(BLOCKLY_COLOR_CONTRACT.get("categoryPalette", {}))
+TASK_FIRST_CATEGORY_META = copy.deepcopy(BLOCKLY_COLOR_CONTRACT.get("taskFirstCategories", {}))
+
+
+def _category_colour(name: str, fallback: str | None = None) -> str:
+    default_colour = fallback or str(BLOCKLY_BRAND_META.get("primary") or "#5f6792")
+    return str(CATEGORY_COLOR_PALETTE.get(name, default_colour))
 
 TOOLBOX_HIDDEN_TASK_IDS = {
     "det_body_l",
-    "det_coco_l",
     "pose_body17_l",
     "pose_body26",
-    "pose_wholebody133",
 }
 
 HIDDEN_TASK_FALLBACKS: Dict[str, str] = {
     "det_body_l": "det_body",
-    "det_coco_l": "det_coco",
     "pose_body17_l": "pose_body17",
     "pose_body26": "pose_body17",
-    "pose_wholebody133": "pose_body17",
 }
 
 TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
@@ -309,24 +350,41 @@ TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 RUNTIME_TASK_ID_MAP: Dict[str, str] = {
-    "det_body": "bodydetect",
-    "det_body_l": "bodydetect",
-    "det_coco": "cocodetect",
-    "det_coco_l": "cocodetect",
-    "pose_body17": "body17",
-    "pose_body17_l": "body17",
-    "pose_body26": "body26",
-    "pose_face106": "face106",
-    "pose_hand21": "hand21",
-    "pose_wholebody133": "wholebody133",
+    "bodydetect": "det_body",
+    "cocodetect": "det_coco",
+    "body17": "pose_body17",
+    "body26": "pose_body26",
+    "face106": "pose_face106",
+    "hand21": "pose_hand21",
+    "wholebody133": "pose_wholebody133",
+    "det_body": "det_body",
+    "det_body_l": "det_body_l",
+    "det_coco": "det_coco",
+    "det_coco_l": "det_coco_l",
+    "pose_body17": "pose_body17",
+    "pose_body17_l": "pose_body17_l",
+    "pose_body26": "pose_body26",
+    "pose_face106": "pose_face106",
+    "pose_hand21": "pose_hand21",
+    "pose_wholebody133": "pose_wholebody133",
 }
 
 SMOKE_CHECKPOINT_MAP: Dict[str, str] = {
+    "det_body": "bodydetect.onnx",
+    "det_body_l": "bodydetect.onnx",
+    "det_coco": "cocodetect.onnx",
+    "det_coco_l": "cocodetect.onnx",
+    "pose_body17": "body17.onnx",
+    "pose_body17_l": "body17.onnx",
+    "pose_body26": "body26.onnx",
+    "pose_face106": "face106.onnx",
+    "pose_hand21": "hand21.onnx",
+    "pose_wholebody133": "pose_wholebody133.onnx",
     "bodydetect": "bodydetect.onnx",
     "cocodetect": "cocodetect.onnx",
     "body17": "body17.onnx",
     "body26": "body26.onnx",
-    "wholebody133": "whole133.onnx",
+    "wholebody133": "pose_wholebody133.onnx",
     "face106": "face106.onnx",
     "hand21": "hand21.onnx",
 }
@@ -537,24 +595,102 @@ def infer_task_from_text(text: str) -> str:
     return "classification"
 
 
-def recommended_model_for_task(task_type: str) -> str:
+def recommended_model_for_task(task_type: str, supported_tasks: List[str] | None = None) -> str:
     family = normalize_task_type(task_type)
     candidate = TASK_ID_ALIAS_MAP.get(family, "cls_imagenet")
-    if _is_runtime_task_available(candidate):
+    if _is_runtime_task_available(candidate, supported_tasks):
         return candidate
-    return _default_frontend_task_id()
+    return _default_frontend_task_id(supported_tasks)
 
 
 def _get_runtime_supported_tasks() -> List[str]:
-    try:
-        from XEdu.hub import Workflow as wf  # type: ignore
+    now = time.monotonic()
+    cached = _RUNTIME_SUPPORTED_TASKS_CACHE.get("value")
+    expires_at = float(_RUNTIME_SUPPORTED_TASKS_CACHE.get("expires_at") or 0)
+    if cached is not None and now < expires_at:
+        return _normalize_supported_runtime_tasks(list(cached))
 
-        supported = wf.support_task()
-        if isinstance(supported, (list, tuple)):
-            return [str(item).strip() for item in supported if str(item).strip()]
-    except Exception:
-        return []
-    return []
+    try:
+        timeout = max(0.05, float(os.environ.get("XEDU_RUNTIME_SUPPORT_TIMEOUT", "1.5") or "1.5"))
+    except ValueError:
+        timeout = 1.5
+    try:
+        ttl = max(1.0, float(os.environ.get("XEDU_RUNTIME_SUPPORT_TTL", "300") or "300"))
+    except ValueError:
+        ttl = 300.0
+
+    result_queue: "queue.Queue[List[str]]" = queue.Queue(maxsize=1)
+
+    def probe() -> None:
+        try:
+            executables = _bundled_python_executables()
+            if not executables:
+                result_queue.put([])
+                return
+            probe_code = (
+                "import json\n"
+                "from XEdu.hub import Workflow as wf\n"
+                "print(json.dumps(wf.support_task(), ensure_ascii=False))\n"
+            )
+            for executable in executables:
+                try:
+                    completed = subprocess.run(
+                        [str(executable), "-c", probe_code],
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        cwd=str(REPO_ROOT),
+                    )
+                except Exception:
+                    continue
+                if completed.returncode != 0:
+                    continue
+                lines = [line.strip() for line in str(completed.stdout or "").splitlines() if line.strip()]
+                if not lines:
+                    continue
+                try:
+                    supported = json.loads(lines[-1])
+                except Exception:
+                    continue
+                if isinstance(supported, (list, tuple)):
+                    normalized: List[str] = []
+                    for item in supported:
+                        text = str(item).strip()
+                        if not text:
+                            continue
+                        runtime_task_id = _resolve_runtime_task_id(text)
+                        normalized.append(runtime_task_id or text)
+                    result_queue.put(list(dict.fromkeys(normalized)))
+                    return
+            result_queue.put([])
+        except Exception:
+            result_queue.put([])
+
+    thread = threading.Thread(target=probe, name="xeduhub-runtime-support-probe", daemon=True)
+    thread.start()
+    try:
+        resolved = result_queue.get(timeout=timeout)
+    except queue.Empty:
+        resolved = list(cached or [])
+
+    _RUNTIME_SUPPORTED_TASKS_CACHE["value"] = _normalize_supported_runtime_tasks(list(resolved))
+    _RUNTIME_SUPPORTED_TASKS_CACHE["expires_at"] = time.monotonic() + ttl
+    return list(_RUNTIME_SUPPORTED_TASKS_CACHE["value"])
+
+
+def get_nonblocking_supported_tasks_snapshot() -> List[str]:
+    now = time.monotonic()
+    cached = _RUNTIME_SUPPORTED_TASKS_CACHE.get("value")
+    expires_at = float(_RUNTIME_SUPPORTED_TASKS_CACHE.get("expires_at") or 0)
+    if cached is not None and now < expires_at:
+        return _normalize_supported_runtime_tasks(list(cached))
+
+    runtime_ids: List[str] = []
+    for task_id in TASK_REGISTRY:
+        runtime_task_id = _resolve_runtime_task_id(task_id)
+        if runtime_task_id and _resolve_smoke_checkpoint(runtime_task_id):
+            runtime_ids.append(runtime_task_id)
+    return list(dict.fromkeys(runtime_ids))
 
 
 def _resolve_runtime_task_id(task_id: str) -> str:
@@ -562,32 +698,103 @@ def _resolve_runtime_task_id(task_id: str) -> str:
     return RUNTIME_TASK_ID_MAP.get(normalized, normalized)
 
 
+def _normalize_supported_runtime_tasks(supported_tasks: List[str] | None) -> List[str]:
+    normalized: List[str] = []
+    for item in supported_tasks or []:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        normalized.append(_resolve_runtime_task_id(text) or text)
+    return list(dict.fromkeys(normalized))
+
+
 def _resolve_smoke_checkpoint(runtime_task_id: str) -> str:
-    checkpoint_name = SMOKE_CHECKPOINT_MAP.get(str(runtime_task_id or "").strip())
+    checkpoint_name = SMOKE_CHECKPOINT_MAP.get(_resolve_runtime_task_id(runtime_task_id))
     if not checkpoint_name:
         return ""
-    checkpoint_path = (REPO_ROOT / "courses" / "blockly-smoke" / "checkpoints" / checkpoint_name).resolve()
-    return str(checkpoint_path) if checkpoint_path.exists() else ""
+    checkpoint_path = resolve_checkpoint_file(checkpoint_name)
+    return str(checkpoint_path) if checkpoint_path else ""
+
+
+def _workflow_init_kwargs(runtime_task_id: str) -> Dict[str, str]:
+    checkpoint_path = _resolve_smoke_checkpoint(runtime_task_id)
+    return {"checkpoint": checkpoint_path} if checkpoint_path else {}
 
 
 def _is_runtime_task_available(task_id: str, supported_tasks: List[str] | None = None) -> bool:
     runtime_task_id = _resolve_runtime_task_id(task_id)
     if not runtime_task_id:
         return False
-    supported = supported_tasks if supported_tasks is not None else _get_runtime_supported_tasks()
-    if not supported:
-        return True
+    supported = _normalize_supported_runtime_tasks(supported_tasks if supported_tasks is not None else _get_runtime_supported_tasks())
     return runtime_task_id in supported
 
 
-def _default_frontend_task_id() -> str:
-    preferred = "cls_imagenet"
-    supported = _get_runtime_supported_tasks()
-    if _is_runtime_task_available(preferred, supported):
+def _is_fallback_task_available(task_id: str) -> bool:
+    normalized_task_id = str(task_id or "").strip()
+    if normalized_task_id == "det_body":
+        return _bodydetect_fallback_enabled()
+    return normalized_task_id in FALLBACK_SUPPORTED_TASK_IDS
+
+
+def _task_support_metadata(task_id: str, supported_tasks: List[str] | None = None) -> Dict[str, Any]:
+    runtime_task_id = _resolve_runtime_task_id(task_id)
+    supported = _normalize_supported_runtime_tasks(supported_tasks if supported_tasks is not None else _get_runtime_supported_tasks())
+    available = bool(runtime_task_id) and runtime_task_id in supported
+    if available:
+        return {
+            "available": True,
+            "support_reason": "当前本地环境支持该任务。",
+            "support_source": "runtime",
+            "recommended_action": "",
+        }
+    if _is_fallback_task_available(task_id):
+        return {
+            "available": True,
+            "support_reason": "当前任务将以兼容演示模式运行，可用于验证 Blockly 流程。",
+            "support_source": "fallback",
+            "recommended_action": "如需真实推理效果，请补齐对应模型/版本后再试。",
+        }
+    if runtime_task_id and _resolve_smoke_checkpoint(runtime_task_id):
+        return {
+            "available": False,
+            "support_reason": "本地存在样例模型资源，但当前 XEdu 运行环境未声明支持该任务。",
+            "support_source": "checkpoint",
+            "recommended_action": "请安装或切换到支持该任务的 XEdu 版本后再试。",
+        }
+    return {
+        "available": False,
+        "support_reason": "当前本地 XEdu 运行环境不支持该任务。",
+        "support_source": "unknown",
+        "recommended_action": "需安装对应模型/版本后再试。",
+    }
+
+
+def _is_default_visible_task(task_id: str, task: Dict[str, Any], supported_tasks: List[str] | None = None) -> bool:
+    if task_id in TOOLBOX_HIDDEN_TASK_IDS:
+        return False
+    if not _quick_block_enabled(task_id, task):
+        return False
+    return _is_runtime_task_available(task_id, supported_tasks)
+
+
+def _default_frontend_task_id(supported_tasks: List[str] | None = None) -> str:
+    preferred = "det_body"
+    supported = _normalize_supported_runtime_tasks(_get_runtime_supported_tasks() if supported_tasks is None else supported_tasks)
+    if preferred in TASK_REGISTRY and _is_default_visible_task(preferred, TASK_REGISTRY[preferred], supported):
         return preferred
+    for task_id, task in TASK_REGISTRY.items():
+        if _is_default_visible_task(task_id, task, supported):
+            return task_id
     for task_id in TASK_REGISTRY:
         if _is_runtime_task_available(task_id, supported):
             return task_id
+    for task_id, task in TASK_REGISTRY.items():
+        if _quick_block_enabled(task_id, task):
+            return task_id
+    if preferred in TASK_REGISTRY:
+        return preferred
+    for task_id in TASK_REGISTRY:
+        return task_id
     return preferred
 
 
@@ -606,10 +813,12 @@ def derive_title_from_request(text: str, task_type: str = "") -> str:
     return f"{family_label} 积木实验"
 
 
-def get_xeduhub_frontend_registry() -> Dict[str, Any]:
+def get_xeduhub_frontend_registry(supported_tasks: List[str] | None = None) -> Dict[str, Any]:
     families = []
     tasks = []
-    supported_tasks = _get_runtime_supported_tasks()
+    resolved_supported_tasks = _normalize_supported_runtime_tasks(
+        _get_runtime_supported_tasks() if supported_tasks is None else supported_tasks
+    )
     for family_id in TASK_FAMILY_ORDER:
         meta = TASK_FAMILY_META[family_id]
         families.append(
@@ -623,17 +832,20 @@ def get_xeduhub_frontend_registry() -> Dict[str, Any]:
     for task_id, task in TASK_REGISTRY.items():
         family_meta = TASK_FAMILY_META[task["family"]]
         runtime_task_id = _resolve_runtime_task_id(task_id)
-        available = _is_runtime_task_available(task_id, supported_tasks)
+        support_meta = _task_support_metadata(task_id, resolved_supported_tasks)
         tasks.append(
             {
                 "task_id": task_id,
                 "runtime_task_id": runtime_task_id,
-                "available": available,
+                "available": support_meta["available"],
                 "label": task["label"],
                 "family": task["family"],
                 "family_label": family_meta["label"],
                 "colour": family_meta["colour"],
                 "description": task.get("description") or task["label"],
+                "support_reason": support_meta["support_reason"],
+                "support_source": support_meta["support_source"],
+                "recommended_action": support_meta["recommended_action"],
                 "input_mode": task["input_mode"],
                 "result_kind": task["result_kind"],
                 "result_shape": _result_shape_for_task(task),
@@ -643,8 +855,8 @@ def get_xeduhub_frontend_registry() -> Dict[str, Any]:
             }
         )
     return {
-        "default_task_id": _default_frontend_task_id(),
-        "supported_runtime_tasks": supported_tasks,
+        "default_task_id": _default_frontend_task_id(resolved_supported_tasks),
+        "supported_runtime_tasks": resolved_supported_tasks,
         "families": families,
         "tasks": tasks,
         "family_order": list(TASK_FAMILY_ORDER),
@@ -673,20 +885,32 @@ def _quick_block_enabled(task_id: str, task: Dict[str, Any]) -> bool:
     }
 
 
-def _task_ids_for_family(family: str) -> List[str]:
+def _task_ids_for_family(family: str, *, supported_tasks: List[str] | None = None, default_only: bool = False) -> List[str]:
     return [
         task_id
         for task_id, task in TASK_REGISTRY.items()
         if task["family"] == family
-        and task_id not in TOOLBOX_HIDDEN_TASK_IDS
+        and (
+            _is_default_visible_task(task_id, task, supported_tasks)
+            if default_only
+            else task_id not in TOOLBOX_HIDDEN_TASK_IDS
+        )
     ]
 
 
-def _build_family_category(family: str, *, visible_by_default: bool = True) -> Dict[str, Any]:
+def _build_family_category(
+    family: str,
+    *,
+    visible_by_default: bool = True,
+    supported_tasks: List[str] | None = None,
+    default_only: bool = False,
+) -> Dict[str, Any] | None:
     family_meta = TASK_FAMILY_META[family]
     contents: List[Dict[str, Any]] = []
-    for task_id in _task_ids_for_family(family):
+    for task_id in _task_ids_for_family(family, supported_tasks=supported_tasks, default_only=default_only):
         contents.append({"kind": "block", "type": f"xeduhub_run_{task_id}"})
+    if not contents:
+        return None
     return {
         "kind": "category",
         "name": family_meta["label"],
@@ -697,53 +921,53 @@ def _build_family_category(family: str, *, visible_by_default: bool = True) -> D
     }
 
 
-def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[str, Any]:
-    starter_task_id = recommended_model_for_task(task_type)
+def build_xeduhub_toolbox_definition(
+    task_type: str = "classification",
+    *,
+    supported_tasks: List[str] | None = None,
+    starter_task_id: str = "",
+) -> Dict[str, Any]:
+    resolved_supported_tasks = _get_runtime_supported_tasks() if supported_tasks is None else supported_tasks
+    starter_task_id = starter_task_id or recommended_model_for_task(task_type, resolved_supported_tasks)
     quick_task_families = ("classification", "detection", "pose", "ocr", "generation", "segmentation", "depth")
 
     xedu_contents: List[Dict[str, Any]] = [
         {
             "kind": "category",
-            "name": "核心语法",
-            "colour": "#8b5cf6",
+            "name": "AI流程",
+            "colour": _category_colour("AI流程"),
             "visible_by_default": True,
-            "description": "创建任务、执行推理和串联 AI 主流程。",
+            "description": "只保留初始化任务、模型推理、结果显示三个核心步骤。",
             "contents": [
-                {"kind": "block", "type": "xeduhub_set_input_resource", "fields": {"INPUT": DEFAULT_BLOCKLY_SAMPLE_IMAGE}},
-                {"kind": "block", "type": "xeduhub_set_input_list", "fields": {"INPUTS": '["courses/blockly-smoke/demo.jpg","courses/blockly-smoke/demo.jpg"]'}},
                 {"kind": "block", "type": "xeduhub_workflow_create_var", "fields": {"TASK_ID": starter_task_id, "MODEL_VAR": "lab_flow"}},
                 {"kind": "block", "type": "xeduhub_workflow_infer_var", "fields": {"MODEL_VAR": "lab_flow", "RESULT_VAR": "lab_result"}},
                 {"kind": "block", "type": "xeduhub_workflow_infer_pair", "fields": {"MODEL_VAR": "lab_flow", "RESULT_VAR": "lab_result", "IMAGE_VAR": "display_img"}},
-            ],
-        },
-        {
-            "kind": "category",
-            "name": "结果处理",
-            "colour": "#10b981",
-            "visible_by_default": True,
-            "description": "从结构化推理结果中提取框、关键点、文本和结果图。",
-            "contents": [
-                {"kind": "block", "type": "xeduhub_result_first_box"},
-                {"kind": "block", "type": "xeduhub_bbox_center_x"},
-                {"kind": "block", "type": "xeduhub_keypoint_axis", "fields": {"AXIS": "x"}},
-                {"kind": "block", "type": "xeduhub_ocr_first_text"},
-                {"kind": "block", "type": "xeduhub_show_result_card", "fields": {"TITLE": "运行结果"}},
-                {"kind": "block", "type": "xeduhub_show_result_image"},
-                {"kind": "block", "type": "xeduhub_clear_result"},
+                {"kind": "block", "type": "xeduhub_show_result_card", "fields": {"TITLE": "运行结果"}, "inputs": {"RESULT": {"kind": "block", "type": "variables_get", "fields": {"VAR": "lab_result"}}}},
             ],
         },
     ]
     for family in quick_task_families:
-        xedu_contents.append(_build_family_category(family, visible_by_default=True))
+        category = _build_family_category(
+            family,
+            visible_by_default=True,
+            supported_tasks=resolved_supported_tasks,
+            default_only=False,
+        )
+        if category:
+            xedu_contents.append(category)
 
     image_video_contents: List[Dict[str, Any]] = [
+        {"kind": "block", "type": "xeduhub_load_image_to_var", "fields": {"INPUT": DEFAULT_BLOCKLY_SAMPLE_IMAGE, "IMAGE_VAR": "lab_input"}},
         {"kind": "block", "type": "xeduhub_cv_open_camera", "fields": {"SOURCE": 0, "CAMERA_VAR": "camera", "WINDOW": "video"}},
-        {"kind": "block", "type": "xeduhub_cv_open_video", "fields": {"CAMERA_VAR": "video", "WINDOW": "video"}},
         {"kind": "block", "type": "xeduhub_cv_loop_frames", "fields": {"CAMERA_VAR": "camera", "FRAME_VAR": "frame", "QUIT_KEY": "q", "DELAY": 1}},
         {"kind": "block", "type": "xeduhub_cv_show_frame", "fields": {"WINDOW": "video"}},
-        {"kind": "block", "type": "xeduhub_cv_draw_boxes", "fields": {"IMAGE_VAR": "display_img"}},
+        {"kind": "block", "type": "xeduhub_cv_open_video", "fields": {"CAMERA_VAR": "video", "WINDOW": "video"}},
+        {"kind": "block", "type": "xeduhub_show_result_image", "inputs": {"IMAGE": {"kind": "block", "type": "variables_get", "fields": {"VAR": "display_img"}}}},
         {"kind": "block", "type": "xeduhub_cv_save_image"},
-        {"kind": "block", "type": "xeduhub_media_frames_to_video", "fields": {"FPS": 30}},
+        {"kind": "block", "type": "xeduhub_cv_resize_image"},
+        {"kind": "block", "type": "xeduhub_cv_crop_image"},
+        {"kind": "block", "type": "xeduhub_cv_cvt_color"},
+        {"kind": "block", "type": "xeduhub_cv_put_text"},
     ]
 
     communication_contents: List[Dict[str, Any]] = [
@@ -752,6 +976,7 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {"kind": "block", "type": "xeduhub_http_loop_stream_frames", "fields": {"STREAM_VAR": "response", "FRAME_VAR": "frame", "CHUNK_SIZE": 16384, "MIN_SIZE": 100}},
         {"kind": "block", "type": "xeduhub_http_iter_chunks", "fields": {"STREAM_VAR": "response", "CHUNK_VAR": "chunk", "CHUNK_SIZE": 16384}},
         {"kind": "block", "type": "xeduhub_chunk_over_size"},
+        {"kind": "block", "type": "xeduhub_decode_chunk_image"},
         {"kind": "block", "type": "xeduhub_cv_decode_chunk", "fields": {"IMAGE_VAR": "frame"}},
         {"kind": "block", "type": "xeduhub_http_send_command", "fields": {"RESPONSE_VAR": "response", "STOP_CMD": "S", "DELAY": 0.3}},
         {"kind": "block", "type": "xeduhub_servo_setup", "fields": {"BOARD": "uno", "PIN": "D4", "SERVO_VAR": "servo"}},
@@ -759,16 +984,23 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
     ]
 
     debug_extension_contents: List[Dict[str, Any]] = [
-        {"kind": "block", "type": "xeduhub_debug_print", "fields": {"VAR": "lab_result"}},
+        {"kind": "block", "type": "xeduhub_debug_print", "inputs": {"VALUE": {"kind": "block", "type": "variables_get", "fields": {"VAR": "lab_result"}}}},
         {"kind": "block", "type": "xeduhub_catch_error", "fields": {"ERROR_VAR": "lab_error"}},
-        {"kind": "block", "type": "xeduhub_run_and_record"},
+        {"kind": "block", "type": "xeduhub_run_and_record", "inputs": {"NOTE": {"kind": "block", "type": "text", "fields": {"TEXT": "本次实验结论"}}}},
     ]
+    experimental_task_contents: List[Dict[str, Any]] = []
+    for task_id, task in TASK_REGISTRY.items():
+        if task["family"] in quick_task_families and _quick_block_enabled(task_id, task):
+            continue
+        if task_id in TOOLBOX_HIDDEN_TASK_IDS or not _quick_block_enabled(task_id, task):
+            experimental_task_contents.append({"kind": "block", "type": f"xeduhub_run_{task_id}"})
+            continue
 
     basic_programming_contents: List[Dict[str, Any]] = [
         {
             "kind": "category",
             "name": "逻辑",
-            "colour": "#a5b4fc",
+            "colour": _category_colour("逻辑"),
             "visible_by_default": True,
             "description": "条件判断与逻辑运算，编程基础积木",
             "contents": [
@@ -784,7 +1016,7 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "循环",
-            "colour": "#fbbf24",
+            "colour": _category_colour("循环"),
             "visible_by_default": True,
             "description": "重复执行特定代码块，编程核心概念",
             "contents": [
@@ -797,7 +1029,7 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "数学",
-            "colour": "#60a5fa",
+            "colour": _category_colour("数学"),
             "visible_by_default": True,
             "description": "数学运算与随机数生成",
             "contents": [
@@ -810,14 +1042,12 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
                 {"kind": "block", "type": "math_round"},
                 {"kind": "block", "type": "math_random_int", "inputs": {"FROM": {"kind": "block", "type": "math_number", "fields": {"NUM": 1}}, "TO": {"kind": "block", "type": "math_number", "fields": {"NUM": 100}}}},
                 {"kind": "block", "type": "xeduhub_math_distance"},
-                {"kind": "block", "type": "xeduhub_polyfit_quadratic", "fields": {"COEFF_VAR": "coeff"}},
-                {"kind": "block", "type": "xeduhub_quadratic_eval"},
             ],
         },
         {
             "kind": "category",
             "name": "文本",
-            "colour": "#f9a8d4",
+            "colour": _category_colour("文本"),
             "visible_by_default": True,
             "description": "文字处理与打印输出",
             "contents": [
@@ -832,7 +1062,7 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "列表",
-            "colour": "#5eead4",
+            "colour": _category_colour("列表"),
             "visible_by_default": False,
             "description": "集中存储多项数据，进阶数据结构",
             "contents": [
@@ -842,11 +1072,11 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
                 {"kind": "block", "type": "lists_indexOf"},
             ],
         },
-        {"kind": "category", "name": "变量", "custom": "VARIABLE", "colour": "#fb7185", "visible_by_default": True, "description": "存储和修改数据变量"},
+        {"kind": "category", "name": "变量", "custom": "VARIABLE", "colour": _category_colour("变量"), "visible_by_default": True, "description": "存储和修改数据变量"},
         {
             "kind": "category",
             "name": "函数",
-            "colour": "#c4b5fd",
+            "colour": _category_colour("函数"),
             "visible_by_default": False,
             "description": "代码重用与逻辑封装",
             "contents": [
@@ -860,38 +1090,38 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "基础编程",
-            "colour": "#6366f1",
+            "colour": TASK_FIRST_CATEGORY_META["基础编程"]["colour"],
             "visible_by_default": True,
-            "description": "逻辑、循环、数学、文本与变量等基础编程积木。",
+            "description": TASK_FIRST_CATEGORY_META["基础编程"]["description"],
             "contents": basic_programming_contents,
         },
         {
             "kind": "category",
             "name": "XEdu",
-            "colour": "#3b82f6",
+            "colour": TASK_FIRST_CATEGORY_META["XEdu"]["colour"],
             "visible_by_default": True,
-            "description": "XEdu 平台核心语法、快捷任务和结果处理。",
+            "description": TASK_FIRST_CATEGORY_META["XEdu"]["description"],
             "contents": xedu_contents,
         },
         {
             "kind": "category",
             "name": "媒体与设备",
-            "colour": "#0ea5e9",
+            "colour": TASK_FIRST_CATEGORY_META["媒体与设备"]["colour"],
             "visible_by_default": True,
-            "description": "摄像头、视频流、显示、保存和设备控制。",
+            "description": TASK_FIRST_CATEGORY_META["媒体与设备"]["description"],
             "contents": [
                 {
                     "kind": "category",
-                    "name": "图像视频",
-                    "colour": "#0ea5e9",
+                    "name": "图像与视频",
+                    "colour": _category_colour("图像与视频"),
                     "visible_by_default": True,
-                    "description": "摄像头、视频、显示、绘图与保存",
+                    "description": "读取图片、OpenCV 图像处理、摄像头、视频、显示、绘图与保存",
                     "contents": image_video_contents,
                 },
                 {
                     "kind": "category",
                     "name": "通信控制",
-                    "colour": "#f97316",
+                    "colour": _category_colour("通信控制"),
                     "visible_by_default": True,
                     "description": "网络视频流、设备动作与控制指令",
                     "contents": communication_contents,
@@ -901,28 +1131,42 @@ def build_xeduhub_toolbox_definition(task_type: str = "classification") -> Dict[
         {
             "kind": "category",
             "name": "调试与扩展",
-            "colour": "#6366f1",
-            "visible_by_default": True,
-            "description": "调试打印、异常保护和可扩展流程积木。",
+            "colour": TASK_FIRST_CATEGORY_META["调试与扩展"]["colour"],
+            "visible_by_default": False,
+            "description": TASK_FIRST_CATEGORY_META["调试与扩展"]["description"],
             "contents": [
                 {
                     "kind": "category",
                     "name": "调试扩展",
-                    "colour": "#6366f1",
-                    "visible_by_default": True,
+                    "colour": _category_colour("调试扩展"),
+                    "visible_by_default": False,
                     "description": "记录结果、打印调试信息并对流程做异常保护。",
                     "contents": debug_extension_contents,
-                },
+                }
             ],
         },
     ]
+    if experimental_task_contents:
+        debug_contents = contents[-1]["contents"]
+        debug_contents.append(
+            {
+                "kind": "category",
+                "name": "实验性任务",
+                "colour": _category_colour("实验性任务"),
+                "visible_by_default": False,
+                "description": "这些任务当前本地环境可能无法运行，仅供教师按需查看与兼容导入使用。",
+                "teacher_only": True,
+                "contents": experimental_task_contents,
+            }
+        )
     return {
         "kind": "categoryToolbox",
         "pedagogy_level_default": "L1",
         "required_block_types": [
-            "xeduhub_set_input_resource",
+            "xeduhub_load_image_to_var",
             "xeduhub_workflow_create_var",
             "xeduhub_workflow_infer_var",
+            "variables_get",
         ],
         "contents": contents,
     }
@@ -935,15 +1179,16 @@ def _escape_field(value: Any) -> str:
 def build_xeduhub_workspace_xml(title: str, task_type: str = "classification", model_name: str = "", input_path: str = DEFAULT_BLOCKLY_SAMPLE_IMAGE) -> str:
     del title
     preferred = model_name if _canonical_task_id(model_name) else task_type
-    task_id = _canonical_task_id(preferred) or recommended_model_for_task(preferred)
+    task_id = _canonical_task_id(preferred) or recommended_model_for_task(preferred, [])
     safe_input = _escape_field(input_path or DEFAULT_BLOCKLY_SAMPLE_IMAGE)
     return (
         '<xml xmlns="https://developers.google.com/blockly/xml">'
-        f'<block type="xeduhub_set_input_resource" id="input1" x="28" y="28"><field name="INPUT">{safe_input}</field>'
+        '<variables><variable id="lab_input_var">lab_input</variable></variables>'
+        f'<block type="xeduhub_workflow_create_var" id="flow1" x="28" y="28"><field name="TASK_ID">{task_id}</field><field name="MODEL_VAR">lab_flow</field>'
         '<next>'
-        f'<block type="xeduhub_workflow_create_var" id="flow1"><field name="TASK_ID">{task_id}</field><field name="MODEL_VAR">lab_flow</field>'
+        f'<block type="xeduhub_load_image_to_var" id="input1"><field name="INPUT">{safe_input}</field><field name="IMAGE_VAR" id="lab_input_var">lab_input</field>'
         '<next>'
-        '<block type="xeduhub_workflow_infer_var" id="infer1"><field name="MODEL_VAR">lab_flow</field><field name="RESULT_VAR">lab_result</field>'
+        '<block type="xeduhub_workflow_infer_var" id="infer1"><field name="MODEL_VAR">lab_flow</field><field name="RESULT_VAR">lab_result</field><value name="INPUT_DATA"><block type="variables_get" id="input_get1"><field name="VAR" id="lab_input_var">lab_input</field></block></value>'
         '</block>'
         '</next>'
         '</block>'
@@ -954,7 +1199,8 @@ def build_xeduhub_workspace_xml(title: str, task_type: str = "classification", m
 
 
 def build_xeduhub_execution_config(task_type: str, model_name: str, title: str) -> Dict[str, Any]:
-    task_id = _canonical_task_id(model_name) or recommended_model_for_task(task_type)
+    supported_tasks: List[str] = []
+    task_id = _canonical_task_id(model_name) or recommended_model_for_task(task_type, supported_tasks)
     family = normalize_task_type(task_id)
     return {
         "title": title,
@@ -974,7 +1220,7 @@ def build_xeduhub_execution_config(task_type: str, model_name: str, title: str) 
             "mode": "teaching_card",
             "sections": ["conclusion", "evidence", "debug"],
         },
-        "xeduhub_task_registry": get_xeduhub_frontend_registry(),
+        "xeduhub_task_registry": get_xeduhub_frontend_registry(supported_tasks=supported_tasks),
     }
 
 
@@ -982,10 +1228,28 @@ def resolve_input_path(input_value: str, project_root: str = "") -> str:
     raw = str(input_value or "").strip()
     if not raw:
         return ""
+    if raw.lower().startswith("file://"):
+        parsed = urlparse(raw)
+        raw_path = unquote(parsed.path or "")
+        if parsed.netloc and parsed.netloc.lower() not in {"localhost"}:
+            raw_path = f"//{parsed.netloc}{raw_path}"
+        if re.match(r"^/[A-Za-z]:[\\/]", raw_path):
+            raw_path = raw_path[1:]
+        raw = raw_path or raw
     normalized = raw.replace("\\", "/").strip()
-    if normalized in DEFAULT_BLOCKLY_SAMPLE_ALIASES:
-        sample_path = (REPO_ROOT / DEFAULT_BLOCKLY_SAMPLE_IMAGE).resolve()
-        if sample_path.exists():
+    sample_inputs = {
+        DEFAULT_BLOCKLY_SAMPLE_IMAGE.replace("\\", "/").strip(),
+        "demo.jpg",
+        "./demo.jpg",
+        "demo.jpeg",
+        "./demo.jpeg",
+        "demo.png",
+        "./demo.png",
+        *DEFAULT_BLOCKLY_SAMPLE_ALIASES,
+    }
+    if normalized in sample_inputs:
+        sample_path = ensure_blockly_smoke_image()
+        if sample_path:
             return str(sample_path)
     path = Path(raw)
     if path.is_absolute() or not project_root:
@@ -993,13 +1257,6 @@ def resolve_input_path(input_value: str, project_root: str = "") -> str:
     resolved = (Path(project_root) / raw).expanduser().resolve()
     if resolved.exists():
         return str(resolved)
-    for candidate in (
-        Path(project_root) / DEFAULT_BLOCKLY_SAMPLE_IMAGE,
-        REPO_ROOT / DEFAULT_BLOCKLY_SAMPLE_IMAGE,
-    ):
-        candidate = candidate.expanduser().resolve()
-        if candidate.exists():
-            return str(candidate)
     return str(resolved)
 
 
@@ -1023,6 +1280,145 @@ def _best_effort_image_to_data_url(image: Any) -> str:
         return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
     except Exception:
         return ""
+
+
+def _load_image_for_preview(prepared_input: Any):
+    try:
+        from PIL import Image  # type: ignore
+        import numpy as np  # type: ignore
+    except Exception:
+        return None
+    try:
+        if isinstance(prepared_input, str):
+            return Image.open(prepared_input).convert("RGB")
+        if hasattr(prepared_input, "save"):
+            return prepared_input.convert("RGB") if hasattr(prepared_input, "convert") else prepared_input
+        array = np.array(prepared_input)
+        if array.ndim == 3 and array.shape[2] == 3:
+            return Image.fromarray(array.astype("uint8")).convert("RGB")
+        return Image.fromarray(array.squeeze().astype("uint8")).convert("RGB")
+    except Exception:
+        return None
+
+
+def _iter_detection_boxes(output: Any) -> Iterable[Tuple[float, float, float, float]]:
+    payload = _jsonable(output)
+    if isinstance(payload, dict):
+        candidates = payload.get("检测框") or payload.get("boxes") or payload.get("bboxes") or []
+    else:
+        candidates = payload
+    if not isinstance(candidates, list):
+        return []
+    boxes: List[Tuple[float, float, float, float]] = []
+    for item in candidates:
+        raw_box = item
+        if isinstance(item, dict):
+            raw_box = item.get("bbox") or item.get("box") or item.get("检测框") or item.get("坐标")
+        if not isinstance(raw_box, (list, tuple)) or len(raw_box) < 4:
+            continue
+        try:
+            x1, y1, x2, y2 = [float(raw_box[index]) for index in range(4)]
+        except Exception:
+            continue
+        boxes.append((x1, y1, x2, y2))
+    return boxes
+
+
+def _build_detection_preview_image(prepared_input: Any, output: Any) -> str:
+    image = _load_image_for_preview(prepared_input)
+    boxes = list(_iter_detection_boxes(output))
+    if image is None or not boxes:
+        return ""
+    try:
+        from PIL import ImageDraw  # type: ignore
+
+        draw = ImageDraw.Draw(image)
+        width, height = image.size
+        for x1, y1, x2, y2 in boxes:
+            left = max(0, min(width, x1))
+            top = max(0, min(height, y1))
+            right = max(0, min(width, x2))
+            bottom = max(0, min(height, y2))
+            if right <= left or bottom <= top:
+                continue
+            draw.rectangle((left, top, right, bottom), outline=(255, 82, 82), width=3)
+        return _best_effort_image_to_data_url(image)
+    except Exception:
+        return ""
+
+
+def _build_input_preview_image(prepared_input: Any) -> str:
+    image = _load_image_for_preview(prepared_input)
+    if image is None:
+        return ""
+    return _best_effort_image_to_data_url(image)
+
+
+def _build_segmentation_preview_image(prepared_input: Any, output: Any) -> str:
+    image = _load_image_for_preview(prepared_input)
+    if image is None:
+        return ""
+    try:
+        import numpy as np  # type: ignore
+        from PIL import Image, ImageDraw  # type: ignore
+
+        payload = np.array(output)
+        if payload.ndim == 3:
+            mask = payload[0]
+        else:
+            mask = payload
+        mask = np.array(mask).squeeze()
+        if mask.size == 0:
+            return _best_effort_image_to_data_url(image)
+        mask = (mask > 0.5).astype("uint8") * 255
+        width, height = image.size
+        if mask.shape[0] != height or mask.shape[1] != width:
+            mask = np.array(Image.fromarray(mask).resize((width, height)))
+        overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        ys, xs = np.where(mask > 0)
+        step = max(1, len(xs) // 4000 + 1)
+        for x, y in zip(xs[::step], ys[::step]):
+            draw.point((int(x), int(y)), fill=(64, 196, 255, 96))
+        composed = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+        return _best_effort_image_to_data_url(composed)
+    except Exception:
+        return _best_effort_image_to_data_url(image)
+
+
+def _build_depth_preview_image(output: Any) -> str:
+    try:
+        import numpy as np  # type: ignore
+
+        payload = np.array(output).astype("float32").squeeze()
+        if payload.size == 0:
+            return ""
+        min_v = float(np.min(payload))
+        max_v = float(np.max(payload))
+        if max_v - min_v < 1e-6:
+            normalized = np.zeros_like(payload, dtype="uint8")
+        else:
+            normalized = ((payload - min_v) / (max_v - min_v) * 255.0).clip(0, 255).astype("uint8")
+        return _best_effort_image_to_data_url(normalized)
+    except Exception:
+        return ""
+
+
+def _ensure_preview_image_for_result(task_id: str, prepared_input: Any, output: Any, image_data: str) -> str:
+    if image_data:
+        return image_data
+    result_kind = TASK_REGISTRY.get(task_id, {}).get("result_kind")
+    if result_kind == "detection":
+        return _build_detection_preview_image(prepared_input, output) or _build_input_preview_image(prepared_input)
+    if result_kind == "segmentation":
+        return _build_segmentation_preview_image(prepared_input, output)
+    if result_kind == "depth":
+        return _build_depth_preview_image(output) or _build_input_preview_image(prepared_input)
+    if result_kind == "generation":
+        return _best_effort_image_to_data_url(output) or _build_input_preview_image(prepared_input)
+    if result_kind in {"classification", "ocr", "pose", "panoptic", "multimodal"}:
+        return _build_input_preview_image(prepared_input)
+    return ""
 
 
 def _coerce_jsonish(value: str) -> Any:
@@ -1133,8 +1529,21 @@ def _build_xeduhub_runtime_params(task_id: str, params: Dict[str, Any]) -> Dict[
     if task.get("result_kind") == "pose":
         if params.get("bbox") not in (None, ""):
             runtime_params["bbox"] = params["bbox"]
-    if params.get("img_type") not in (None, ""):
-        runtime_params["get_img"] = params["img_type"]
+    if task_id == "segment_anything":
+        if params.get("mode") not in (None, ""):
+            runtime_params["mode"] = params["mode"]
+        if params.get("prompt") not in (None, ""):
+            runtime_params["prompt"] = _coerce_jsonish(str(params["prompt"]))
+    if task_id == "gen_style" and params.get("style") not in (None, ""):
+        runtime_params["style"] = params["style"]
+    img_type = params.get("img_type")
+    if img_type in (None, ""):
+        for spec in task.get("params") or []:
+            if spec.get("key") == "img_type":
+                img_type = spec.get("default") or ""
+                break
+    if img_type not in (None, ""):
+        runtime_params["img_type"] = img_type
     return runtime_params
 
 
@@ -1187,6 +1596,51 @@ def _patch_openxlab_repo_parser() -> None:
     download_file._xedu_repo_parser_patched = True  # type: ignore[attr-defined]
 
 
+def _patch_rapidocr_visres_compat() -> None:
+    try:
+        from rapidocr_onnxruntime import VisRes as RapidOCRVisRes  # type: ignore
+        from rapidocr_onnxruntime.utils.vis_res import VisRes as RapidOCRVisResImpl  # type: ignore
+    except Exception:
+        return
+
+    def _patch_visres_class(visres_cls) -> None:
+        if getattr(visres_cls, "_xedu_font_path_compat_patched", False):
+            return
+        original_init = getattr(visres_cls, "__init__", None)
+        original_get_font_path = getattr(visres_cls, "get_font_path", None)
+        if not callable(original_init):
+            return
+
+        def _patched_init(self, *args, **kwargs):
+            self._xedu_default_font_path = kwargs.pop("font_path", None)
+            return original_init(self, *args, **kwargs)
+
+        def _patched_get_font_path(self, font_path=None):
+            candidates = [font_path, getattr(self, "_xedu_default_font_path", None)]
+            for candidate in candidates:
+                if candidate and Path(candidate).exists():
+                    return str(candidate)
+            try:
+                import matplotlib  # type: ignore
+
+                bundled_font = Path(matplotlib.get_data_path()) / "fonts/ttf/DejaVuSans.ttf"
+                if bundled_font.exists():
+                    return str(bundled_font)
+            except Exception:
+                pass
+            if callable(original_get_font_path):
+                return original_get_font_path(font_path)
+            raise FileNotFoundError(f"The {font_path} does not exists!")
+
+        visres_cls.__init__ = _patched_init
+        visres_cls.get_font_path = _patched_get_font_path
+        visres_cls._xedu_font_path_compat_patched = True
+
+    _patch_visres_class(RapidOCRVisRes)
+    if RapidOCRVisResImpl is not RapidOCRVisRes:
+        _patch_visres_class(RapidOCRVisResImpl)
+
+
 def _run_builtin_bodydetect_fallback(prepared_input: Any, params: Dict[str, Any]) -> Tuple[Any, str]:
     try:
         from PIL import Image  # type: ignore
@@ -1215,8 +1669,53 @@ def _run_builtin_bodydetect_fallback(prepared_input: Any, params: Dict[str, Any]
     return [], image_data
 
 
+def _load_preview_image_data(prepared_input: Any) -> str:
+    image = _load_image_for_preview(prepared_input)
+    return _best_effort_image_to_data_url(image) if image is not None else ""
+
+
+def _run_generic_demo_fallback(task_id: str, prepared_input: Any, params: Dict[str, Any]) -> Tuple[Any, str]:
+    del params
+    result_kind = TASK_REGISTRY.get(task_id, {}).get("result_kind")
+    image_data = _load_preview_image_data(prepared_input)
+    if result_kind == "classification":
+        return {"预测类别": "demo_only", "分数": 0.0}, image_data
+    if result_kind == "ocr":
+        return {"文本": ["DEMO OCR"], "检测框": []}, image_data
+    if result_kind == "generation":
+        return {"status": "demo_only_image_generated"}, image_data
+    if result_kind == "segmentation":
+        return {"掩码": []}, image_data
+    if result_kind == "depth":
+        return {"深度图": "demo_only"}, image_data
+    if result_kind == "panoptic":
+        return {"检测框": []}, image_data
+    if result_kind == "multimodal":
+        return {"向量": [0.0] * 8}, image_data
+    if result_kind == "detection":
+        return [], image_data
+    if result_kind == "pose":
+        return {"关键点": []}, image_data
+    return {"status": "demo_only"}, image_data
+
+
 def _bodydetect_fallback_enabled() -> bool:
     return os.environ.get("XEDU_DISABLE_BODYDETECT_FALLBACK", "").strip().lower() not in {"1", "true", "yes", "on"}
+
+
+def _is_openxlab_auth_error(error_text: str) -> bool:
+    return "Local config must not be empty" in error_text and "openxlab config" in error_text
+
+
+def _is_bodydetect_model_bootstrap_error(error_text: str) -> bool:
+    text = str(error_text or "")
+    return (
+        "NoSuchFile" in text
+        or "File doesn't exist" in text
+        or "checkpoints/" in text
+        or "The input string must be in the format 'didi12/test-d-1'" in text
+        or _is_openxlab_auth_error(text)
+    )
 
 
 def _extract_key_fields(task_id: str, output: Any) -> Dict[str, Any]:
@@ -1276,13 +1775,16 @@ def _build_result_summary(task_id: str, output: Any) -> Dict[str, Any]:
         hints = ["可更换图片后比较分类差异。"]
     elif result_kind == "detection" and key_fields.get("检测框数") is not None:
         headline = f"检测到 {key_fields['检测框数']} 个目标"
-        hints = ["证据区可查看标注结果图。"]
+        if int(key_fields["检测框数"] or 0) == 0:
+            hints = ["模型已完成推理，图片预览会在弹窗中显示；当前图片未检测到目标，请确认图片内容与任务类型是否匹配。"]
+        else:
+            hints = ["标注结果图会在弹窗中显示。"]
     elif result_kind == "pose" and key_fields.get("关键点数") is not None:
         headline = f"识别到 {key_fields['关键点数']} 个关键点"
         hints = ["关键点任务建议配合检测框一起使用。"]
     elif result_kind == "ocr":
         headline = f"OCR 识别到 {key_fields.get('文本块数', 0)} 个文本块"
-        hints = ["证据区可查看带文字标注的结果图。"]
+        hints = ["带文字标注的结果图会在弹窗中显示。"]
     elif result_kind == "multimodal":
         headline = "向量提取完成"
         hints = ["可结合相似度计算继续做检索或分类。"]
@@ -1294,7 +1796,7 @@ def _build_result_summary(task_id: str, output: Any) -> Dict[str, Any]:
         hints = ["结果为相对深度，不是绝对距离。"]
     elif result_kind == "generation":
         headline = f"{task['label']}完成"
-        hints = ["证据区可查看生成后的图像。"]
+        hints = ["生成后的图像会在弹窗中显示。"]
     elif result_kind == "panoptic":
         headline = "驾驶感知完成"
         hints = ["结果包含检测框、车道线和可行驶区域。"]
@@ -1315,9 +1817,12 @@ def _build_runtime_success(
 ) -> Dict[str, Any]:
     task = TASK_REGISTRY[task_id]
     normalized_result = _jsonable(output)
+    preview_image = _ensure_preview_image_for_result(task_id, prepared_input, output, image_data)
     result_payload = {
         "task_id": task_id,
         "runtime_task_id": runtime_task_id,
+        "runtime_mode": "real",
+        "result_truthfulness": "verified",
         "task_label": task["label"],
         "task_family": task["family"],
         "input": _jsonable(prepared_input),
@@ -1333,11 +1838,11 @@ def _build_runtime_success(
         "result": result_payload,
         "artifacts": {
             "generated_python": code,
-            "image_data": image_data,
+            "image_data": preview_image,
         },
         "result_summary": _build_result_summary(task_id, output),
         "result_artifacts": {
-            "preview_image": image_data,
+            "preview_image": preview_image,
             "key_fields": _extract_key_fields(task_id, output),
         },
     }
@@ -1355,6 +1860,12 @@ def _build_runtime_error(
     artifacts: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     task = TASK_REGISTRY.get(task_id or "", {})
+    visible_metrics = []
+    for metric in metrics or []:
+        label = str(metric.get("label") if isinstance(metric, dict) else "").strip()
+        if label.lower() in {"task_id", "runtime_task_id"}:
+            continue
+        visible_metrics.append(metric)
     return {
         "success": False,
         "result_type": "error",
@@ -1364,7 +1875,7 @@ def _build_runtime_error(
         "artifacts": artifacts or {},
         "result_summary": {
             "headline": headline,
-            "metrics": metrics or [],
+            "metrics": visible_metrics,
             "hints": hints or [],
         },
         "result_artifacts": {"preview_image": "", "key_fields": {}},
@@ -1372,21 +1883,24 @@ def _build_runtime_error(
             "code": code,
             "task_id": task_id,
             "task_label": task.get("label", ""),
+            "recommended_action": (hints or [""])[0],
         },
     }
 
 
 def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
+    _force_noninteractive_matplotlib_backend()
+    _patch_rapidocr_visres_compat()
     code = str(payload.get("code") or "").strip()
     spec = payload.get("spec") if isinstance(payload.get("spec"), dict) else {}
     explicit_task_id = str(spec.get("task_id") or "").strip()
     if explicit_task_id and not _canonical_task_id(explicit_task_id):
         return _build_runtime_error(
             code="invalid_task_id",
-            message=f"未知 task_id: {explicit_task_id}",
+            message="当前任务不可用",
             headline="任务不可用",
             hints=["请从当前 Blockly 语义积木重新选择一个预置任务。"],
-            metrics=[{"label": "task_id", "value": explicit_task_id}],
+            metrics=[{"label": "任务", "value": explicit_task_id}],
             artifacts={"generated_python": code},
         )
     legacy_task = str(spec.get("task") or spec.get("task_type") or "").strip()
@@ -1431,17 +1945,17 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
             hints=["请先放入一个 XEduHub 任务积木。"],
             artifacts={"generated_python": code},
         )
-    if not _is_runtime_task_available(task_id, supported_runtime_tasks):
+    runtime_available = _is_runtime_task_available(task_id, supported_runtime_tasks)
+    fallback_available = _is_fallback_task_available(task_id)
+    if not runtime_available and not fallback_available:
+        support_meta = _task_support_metadata(task_id, supported_runtime_tasks)
         return _build_runtime_error(
             code="runtime_task_unavailable",
-            message=f"当前本地 XEdu 运行环境暂不支持任务: {task_id}",
+            message=f"当前本地 XEdu 运行环境暂不支持：{task.get('label') or task_id}",
             headline="本地运行环境不支持该任务",
             task_id=task_id,
-            metrics=[
-                {"label": "task_id", "value": task_id},
-                {"label": "runtime_task_id", "value": runtime_task_id},
-            ],
-            hints=["请切换到当前环境支持的任务，或安装对应 XEdu 模型/版本后再试。"],
+            metrics=[{"label": "任务", "value": task.get("label") or task_id}],
+            hints=[support_meta["recommended_action"] or "请切换到当前环境支持的任务，或安装对应 XEdu 模型/版本后再试。"],
             artifacts={"generated_python": code},
         )
     if prepared_input in ("", None, []) and not allows_runtime_bound_input:
@@ -1466,6 +1980,33 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
             artifacts={"generated_python": code},
         )
 
+    if not runtime_available and fallback_available:
+        if task_id == "det_body" and _bodydetect_fallback_enabled():
+            fallback_output, fallback_image = _run_builtin_bodydetect_fallback(prepared_input, params)
+            fallback_message = "已完成 人体目标检测（已自动切换到本地兼容模式）"
+            fallback_mode = "opencv_fallback"
+            fallback_headline = "兼容演示结果"
+        else:
+            fallback_output, fallback_image = _run_generic_demo_fallback(task_id, prepared_input, params)
+            fallback_message = f"已完成 {task['label']}（兼容演示模式）"
+            fallback_mode = "fallback"
+            fallback_headline = f"{task['label']}（兼容演示）"
+        payload = _build_runtime_success(
+            code=code,
+            task_id=task_id,
+            runtime_task_id=runtime_task_id,
+            prepared_input=prepared_input,
+            params=params,
+            output=fallback_output,
+            image_data=fallback_image,
+            message=fallback_message,
+        )
+        payload["result"]["runtime_mode"] = fallback_mode
+        payload["result"]["result_truthfulness"] = "demo_only"
+        payload["result_summary"]["headline"] = fallback_headline
+        payload["result_summary"]["hints"] = ["兼容演示结果，仅用于验证流程，不代表真实识别。"]
+        return payload
+
     try:
         _patch_openxlab_repo_parser()
         from XEdu.hub import Workflow as wf  # type: ignore
@@ -1482,9 +2023,20 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     try:
-        checkpoint = _resolve_smoke_checkpoint(runtime_task_id)
-        workflow = wf(task=runtime_task_id, checkpoint=checkpoint) if checkpoint else wf(task=runtime_task_id)
-        result = workflow.inference(data=prepared_input, **runtime_params)
+        workflow_kwargs = _workflow_init_kwargs(runtime_task_id)
+        workflow = wf(task=runtime_task_id, **workflow_kwargs)
+        inference_signature = inspect.signature(workflow.inference)
+        call_params = dict(runtime_params)
+        img_type = call_params.pop("img_type", None)
+        if img_type not in (None, ""):
+            if "img_type" in inference_signature.parameters:
+                result = workflow.inference(data=prepared_input, img_type=img_type, **call_params)
+            elif "get_img" in inference_signature.parameters:
+                result = workflow.inference(data=prepared_input, get_img=img_type, **call_params)
+            else:
+                result = workflow.inference(data=prepared_input, **call_params)
+        else:
+            result = workflow.inference(data=prepared_input, **call_params)
         image_data = ""
         normalized_result = result
         if isinstance(result, (list, tuple)) and len(result) == 2:
@@ -1503,6 +2055,7 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
             params=params,
             output=normalized_result,
             image_data=image_data,
+            extra_result={"checkpoint": workflow_kwargs.get("checkpoint", "")},
         )
     except Exception as exc:
         if isinstance(exc, (ModuleNotFoundError, ImportError)):
@@ -1517,14 +2070,9 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
                 artifacts={"generated_python": code},
             )
         error_text = str(exc)
-        if task_id == "det_body" and _bodydetect_fallback_enabled() and (
-            "NoSuchFile" in error_text
-            or "File doesn't exist" in error_text
-            or "checkpoints/" in error_text
-            or ("Local config must not be empty" in error_text and "openxlab config" in error_text)
-        ):
+        if task_id == "det_body" and _bodydetect_fallback_enabled() and _is_bodydetect_model_bootstrap_error(error_text):
             fallback_output, fallback_image = _run_builtin_bodydetect_fallback(prepared_input, params)
-            return _build_runtime_success(
+            payload = _build_runtime_success(
                 code=code,
                 task_id=task_id,
                 runtime_task_id=runtime_task_id,
@@ -1535,16 +2083,18 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
                 message="已完成 人体目标检测（已自动切换到本地兼容模式）",
                 extra_result={"runtime_mode": "opencv_fallback"},
             )
-        if "Local config must not be empty" in error_text and "openxlab config" in error_text:
+            payload["result"]["runtime_mode"] = "fallback"
+            payload["result"]["result_truthfulness"] = "demo_only"
+            payload["result_summary"]["headline"] = "兼容演示结果"
+            payload["result_summary"]["hints"] = ["兼容演示结果，仅用于验证流程，不代表真实识别。"]
+            return payload
+        if _is_openxlab_auth_error(error_text):
             return _build_runtime_error(
                 code="model_download_auth_missing",
                 message="当前环境尚未配置 OpenXLab 登录，XEduHub 自动下载模型失败。",
                 headline="自动下载需要 OpenXLab 配置",
                 task_id=task_id,
-                metrics=[
-                    {"label": "任务", "value": task["label"]},
-                    {"label": "runtime_task_id", "value": runtime_task_id},
-                ],
+                metrics=[{"label": "任务", "value": task["label"]}],
                 hints=["请先执行 `openxlab config` 完成 AK/SK 配置，或手动准备对应 checkpoint 模型文件。"],
                 result={"task_id": task_id, "runtime_task_id": runtime_task_id, "traceback": traceback.format_exc(limit=4)},
                 artifacts={"generated_python": code},
@@ -1555,10 +2105,7 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
                 message=f"XEdu 模型文件缺失，无法执行任务: {task_id}",
                 headline="模型文件缺失",
                 task_id=task_id,
-                metrics=[
-                    {"label": "任务", "value": task["label"]},
-                    {"label": "runtime_task_id", "value": runtime_task_id},
-                ],
+                metrics=[{"label": "任务", "value": task["label"]}],
                 hints=["请先准备对应 checkpoint 模型文件，或确认当前环境支持自动下载。"],
                 result={"task_id": task_id, "runtime_task_id": runtime_task_id, "traceback": traceback.format_exc(limit=4)},
                 artifacts={"generated_python": code},

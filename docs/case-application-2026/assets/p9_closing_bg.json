@@ -1,0 +1,21 @@
+{
+  "success": true,
+  "model": "gpt-image-2",
+  "requested_model": "gpt-image-2",
+  "prompt": "Use case: scientific-and-educational\nAsset type: PPT closing slide background\nPrimary request: Generate an elegant minimal background for the closing slide of a formal education AI case-application presentation.\nScene/background: mostly white with very light blue gradient, soft atmosphere, lots of empty space for overlay text.\nSubject: abstract education-technology visual language with subtle geometric nodes, flowing lines, gentle layered shapes, and calm intelligence atmosphere.\nComposition/framing: wide landscape 16:9, visual weight biased to edges and corners, center area kept clean for closing text.\nStyle/medium: refined modern presentation background, minimal, premium, restrained.\nLighting/mood: calm, clean, optimistic, professional.\nText (verbatim): no text, no letters, no numbers.\nConstraints: no logos, no watermark, no people, no devices as main subject, no clutter, no heavy decoration.\nAvoid: dark cyberpunk, business poster look, overdone glow, busy network mesh.",
+  "original_prompt": "Use case: scientific-and-educational\nAsset type: PPT closing slide background\nPrimary request: Generate an elegant minimal background for the closing slide of a formal education AI case-application presentation.\nScene/background: mostly white with very light blue gradient, soft atmosphere, lots of empty space for overlay text.\nSubject: abstract education-technology visual language with subtle geometric nodes, flowing lines, gentle layered shapes, and calm intelligence atmosphere.\nComposition/framing: wide landscape 16:9, visual weight biased to edges and corners, center area kept clean for closing text.\nStyle/medium: refined modern presentation background, minimal, premium, restrained.\nLighting/mood: calm, clean, optimistic, professional.\nText (verbatim): no text, no letters, no numbers.\nConstraints: no logos, no watermark, no people, no devices as main subject, no clutter, no heavy decoration.\nAvoid: dark cyberpunk, business poster look, overdone glow, busy network mesh.",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://external-resources.packyapi.com/images/2026-05-13/c0d7ab81-39d9-4e7f-8e81-17d9a73d040f.png",
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/assets/p9_closing_bg.png",
+  "attempted_models": [
+    "gpt-image-2"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "backend_unavailable",
+  "direct_warning": "Backend session is configured but unavailable; falling back to direct mode.",
+  "backend_fallback_error": "HTTPSConnectionPool(host='image.roil.top', port=443): Max retries exceeded with url: /api/generate/single (Caused by ProxyError('Unable to connect to proxy', RemoteDisconnected('Remote end closed connection without response')))"
+}

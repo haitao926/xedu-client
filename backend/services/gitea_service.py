@@ -36,6 +36,14 @@ DEFAULT_EXCLUDES = {
 
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+TESTABLE_FILE_EXTENSIONS = (
+    ".html",
+    ".htm",
+    ".blockly.xml",
+    ".blockly.json",
+    ".ipynb",
+    ".py",
+)
 
 
 @dataclass
@@ -551,11 +559,82 @@ def load_repo_tree_data(
     return [item for item in tree if isinstance(item, dict)]
 
 
+def _prefix_lesson_file_path(path: Any, experiment_root: str) -> str:
+    raw = str(path or "").strip().replace("\\", "/")
+    if not raw:
+        return ""
+    if raw.startswith(("http://", "https://", "/")):
+        return raw.lstrip("/")
+    if raw.startswith("./"):
+        raw = raw[2:]
+    normalized_root = str(experiment_root or "").strip().strip("/")
+    if not normalized_root:
+        return raw
+    if raw.startswith(f"{normalized_root}/") or raw == normalized_root:
+        return raw
+    return f"{normalized_root}/{raw}".replace("//", "/")
+
+
+def _normalize_lesson_files(files: Any, experiment_root: str) -> List[Any]:
+    normalized_files: List[Any] = []
+    if not isinstance(files, list):
+        return normalized_files
+    for item in files:
+        if isinstance(item, str):
+            normalized_files.append({
+                "path": _prefix_lesson_file_path(item, experiment_root),
+                "type": _guess_file_type(str(item)),
+            })
+            continue
+        if not isinstance(item, dict):
+            continue
+        next_item = dict(item)
+        path = next_item.get("path")
+        url = next_item.get("url")
+        name = next_item.get("name")
+        if path:
+            next_item["path"] = _prefix_lesson_file_path(path, experiment_root)
+        elif not url and name:
+            next_item["path"] = _prefix_lesson_file_path(name, experiment_root)
+        if isinstance(next_item.get("children"), list):
+            next_item["children"] = _normalize_lesson_files(next_item["children"], experiment_root)
+        normalized_files.append(next_item)
+    return normalized_files
+
+
+def _normalize_lessons_to_sections(lessons: Any) -> List[Dict[str, Any]]:
+    sections: List[Dict[str, Any]] = []
+    if not isinstance(lessons, list):
+        return sections
+    for lesson_index, lesson in enumerate(lessons):
+        if not isinstance(lesson, dict):
+            continue
+        lesson_id = _normalize_course_path(lesson.get("id") or f"lesson{lesson_index + 1}")
+        experiments: List[Dict[str, Any]] = []
+        for experiment_index, experiment in enumerate(lesson.get("experiments") or lesson.get("items") or []):
+            if not isinstance(experiment, dict):
+                continue
+            experiment_id = _normalize_course_path(experiment.get("id") or f"exp{experiment_index + 1}")
+            experiment_root = "/".join(part for part in [lesson_id, experiment_id] if part)
+            next_experiment = dict(experiment)
+            next_experiment["files"] = _normalize_lesson_files(
+                experiment.get("files") or experiment.get("items") or experiment.get("resources") or [],
+                experiment_root,
+            )
+            experiments.append(next_experiment)
+        section = dict(lesson)
+        section["experiments"] = experiments
+        sections.append(section)
+    return sections
+
+
 def _normalize_course_data(course: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(course or {})
-    normalized.setdefault("sections", [])
     normalized.setdefault("tags", [])
-    normalized["sections"] = normalized.get("sections") or []
+    sections = normalized.get("sections") or []
+    if not sections and isinstance(normalized.get("lessons"), list):
+        sections = _normalize_lessons_to_sections(normalized.get("lessons"))
+    normalized["sections"] = sections or []
     normalized["tags"] = normalized.get("tags") or []
     return normalized
 
@@ -592,6 +671,64 @@ def _generate_course_id(title: str) -> str:
     return f"course-{digest}"
 
 
+def _get_default_course_root() -> Path:
+    root = Path.home() / "Documents" / "XeduCourses"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _load_course_data_from_local_package_path(source_path: Path) -> Dict[str, Any]:
+    if source_path.is_dir():
+        course_file = source_path / "course.json"
+        if not course_file.exists():
+            children = [item for item in source_path.iterdir()]
+            if len(children) == 1 and children[0].is_dir():
+                course_file = children[0] / "course.json"
+        if not course_file.exists():
+            return {}
+        try:
+            return json.loads(course_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    if source_path.suffix.lower() != ".zip":
+        return {}
+
+    try:
+        with zipfile.ZipFile(source_path, "r") as zipf:
+            members = [name for name in zipf.namelist() if name and not name.endswith("/")]
+            candidate_name = ""
+            if "course.json" in members:
+                candidate_name = "course.json"
+            else:
+                nested_candidates = [
+                    name
+                    for name in members
+                    if name.count("/") == 1 and name.endswith("/course.json")
+                ]
+                if len(nested_candidates) == 1:
+                    candidate_name = nested_candidates[0]
+            if not candidate_name:
+                return {}
+            with zipf.open(candidate_name) as course_file:
+                return json.loads(course_file.read().decode("utf-8"))
+    except (OSError, KeyError, UnicodeDecodeError, zipfile.BadZipFile, json.JSONDecodeError):
+        return {}
+    return {}
+
+
+def resolve_local_course_package_target_path(package_path: str) -> str:
+    source_path = Path(package_path).expanduser()
+    course_data = _load_course_data_from_local_package_path(source_path)
+    course_id = str(course_data.get("id") or "").strip()
+    if not course_id:
+        course_id = _generate_course_id(str(course_data.get("title") or "").strip())
+    if not course_id:
+        base_name = source_path.stem if source_path.is_file() else source_path.name
+        course_id = _generate_course_id(base_name or "course")
+    return str(_get_default_course_root() / course_id)
+
+
 def _sanitize_ref_component(value: str, fallback: str = "user") -> str:
     text = (value or "").strip().lower()
     text = re.sub(r"[^a-z0-9._-]+", "-", text)
@@ -612,6 +749,200 @@ def _summarize_course(course: Dict[str, Any]) -> Dict[str, Any]:
         "section_count": len(sections),
         "experiment_count": exp_count,
         "file_count": file_count,
+    }
+
+
+def _normalize_course_path(path: Any) -> str:
+    return str(path or "").strip().replace("\\", "/").lstrip("/")
+
+
+def _is_external_course_path(path: str) -> bool:
+    return path.startswith("http://") or path.startswith("https://")
+
+
+def _is_directory_entry(file_entry: Dict[str, Any]) -> bool:
+    raw_type = str(file_entry.get("type") or file_entry.get("kind") or "").strip().lower()
+    path = _normalize_course_path(file_entry.get("path") or file_entry.get("name"))
+    return raw_type in {"dir", "directory", "folder"} or path.endswith("/")
+
+
+def _is_testable_course_file(path: str) -> bool:
+    lower = path.lower()
+    return any(lower.endswith(ext) for ext in TESTABLE_FILE_EXTENSIONS)
+
+
+def _entry_kind_for_course_file(path: str, file_entry: Dict[str, Any]) -> str:
+    raw_type = str(file_entry.get("type") or file_entry.get("kind") or "").strip().lower()
+    lower = path.lower()
+    if raw_type in {"html", "htm"} or lower.endswith((".html", ".htm")):
+        return "html"
+    if raw_type == "blockly" or lower.endswith((".blockly.xml", ".blockly.json")):
+        return "blockly"
+    if raw_type in {"ipynb", "notebook"} or lower.endswith(".ipynb"):
+        return "notebook"
+    if raw_type in {"py", "python"} or lower.endswith(".py"):
+        return "python"
+    return raw_type or "file"
+
+
+def _flatten_course_files(files: Any, bucket: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    items = bucket if bucket is not None else []
+    if not isinstance(files, list):
+        return items
+    for item in files:
+        if isinstance(item, str):
+            items.append({"path": item})
+            continue
+        if not isinstance(item, dict):
+            continue
+        items.append(item)
+        children = item.get("children")
+        if isinstance(children, list):
+            _flatten_course_files(children, items)
+    return items
+
+
+def _course_file_exists(
+    *,
+    path: str,
+    local_base: Optional[Path] = None,
+    remote_paths: Optional[set[str]] = None,
+) -> bool:
+    clean_path = _normalize_course_path(path)
+    if not clean_path:
+        return False
+    if _is_external_course_path(clean_path):
+        return True
+    if local_base is not None:
+        target = (local_base / clean_path).resolve()
+        try:
+            base = local_base.resolve()
+            if target != base and base not in target.parents:
+                return False
+        except OSError:
+            return False
+        return target.exists() and target.is_file()
+    if remote_paths is not None:
+        return clean_path in remote_paths
+    return True
+
+
+def _inspect_course_experiment(
+    *,
+    experiment: Dict[str, Any],
+    section_index: int,
+    experiment_index: int,
+    local_base: Optional[Path] = None,
+    remote_paths: Optional[set[str]] = None,
+) -> Dict[str, Any]:
+    files = _flatten_course_files(experiment.get("files") or experiment.get("items") or experiment.get("resources") or [])
+    file_entries = []
+    entries = []
+    missing_files = []
+
+    for file_entry in files:
+        if not isinstance(file_entry, dict) or _is_directory_entry(file_entry):
+            continue
+        path = _normalize_course_path(file_entry.get("path") or file_entry.get("url") or file_entry.get("name"))
+        if not path:
+            continue
+        exists = _course_file_exists(path=path, local_base=local_base, remote_paths=remote_paths)
+        kind = _entry_kind_for_course_file(path, file_entry)
+        file_entries.append({"path": path, "kind": kind, "exists": exists})
+        if not exists:
+            missing_files.append(path)
+        if _is_testable_course_file(path):
+            entries.append({"path": path, "kind": kind, "exists": exists})
+
+    issues: List[str] = []
+    if not file_entries:
+        issues.append("实验未配置文件")
+    if missing_files:
+        issues.append("存在缺失文件")
+    if file_entries and not entries:
+        issues.append("未配置可测试入口")
+    if entries and not any(entry.get("exists") for entry in entries):
+        issues.append("可测试入口文件缺失")
+
+    if not file_entries or missing_files or (entries and not any(entry.get("exists") for entry in entries)):
+        status = "broken"
+    elif not entries:
+        status = "partial"
+    else:
+        status = "ready"
+
+    return {
+        "section_index": section_index,
+        "experiment_index": experiment_index,
+        "title": experiment.get("title") or experiment.get("name") or f"实验 {experiment_index + 1}",
+        "status": status,
+        "issues": issues,
+        "entries": entries,
+        "missing_files": missing_files,
+        "file_count": len(file_entries),
+    }
+
+
+def inspect_course(
+    course: Dict[str, Any],
+    *,
+    local_path: str = "",
+    remote_tree: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    normalized = _normalize_course_data(course)
+    local_base = Path(local_path).resolve() if local_path else None
+    remote_paths: Optional[set[str]] = None
+    if remote_tree is not None:
+        remote_paths = {
+            _normalize_course_path(item.get("path"))
+            for item in remote_tree
+            if isinstance(item, dict)
+            and str(item.get("type") or "").lower() == "blob"
+            and _normalize_course_path(item.get("path"))
+        }
+
+    section_results = []
+    ready_count = 0
+    partial_count = 0
+    broken_count = 0
+
+    sections = normalized.get("sections") or []
+    for section_index, section in enumerate(sections):
+        experiments = section.get("experiments") or section.get("items") or []
+        experiment_results = []
+        if isinstance(experiments, list):
+            for experiment_index, experiment in enumerate(experiments):
+                if not isinstance(experiment, dict):
+                    continue
+                result = _inspect_course_experiment(
+                    experiment=experiment,
+                    section_index=section_index,
+                    experiment_index=experiment_index,
+                    local_base=local_base,
+                    remote_paths=remote_paths,
+                )
+                ready_count += 1 if result["status"] == "ready" else 0
+                partial_count += 1 if result["status"] == "partial" else 0
+                broken_count += 1 if result["status"] == "broken" else 0
+                experiment_results.append(result)
+        section_results.append({
+            "section_index": section_index,
+            "title": section.get("title") or section.get("name") or f"第 {section_index + 1} 课",
+            "experiments": experiment_results,
+        })
+
+    summary = _summarize_course(normalized)
+    summary.update({
+        "ready_count": ready_count,
+        "partial_count": partial_count,
+        "broken_count": broken_count,
+    })
+    return {
+        "course": normalized,
+        "summary": summary,
+        "inspection": {
+            "sections": section_results,
+        },
     }
 
 
@@ -835,6 +1166,8 @@ def scan_course(
     if not course_data.get("id"):
         course_data["id"] = _generate_course_id(course_data.get("title", ""))
 
+    course_data = _normalize_course_data(course_data)
+
     if "sections" not in course_data:
         if auto_build:
             course_data["sections"] = []
@@ -872,6 +1205,8 @@ def save_course_json(local_path: str, course_data: Dict[str, Any]) -> CourseScan
 
     if not course_data.get("id"):
         course_data["id"] = _generate_course_id(course_data.get("title", ""))
+
+    course_data = _normalize_course_data(course_data)
 
     if "sections" not in course_data:
         course_data["sections"] = []
@@ -1457,6 +1792,59 @@ def pull_course(
             raise GiteaServiceError("课程包格式错误，无法解压") from exc
 
     # Validate course.json after extraction
+    scan_result = scan_course(str(target_dir))
+    if backup_path:
+        scan_result.summary["backup_path"] = backup_path
+    return scan_result
+
+
+def import_local_course_package(
+    *,
+    package_path: str,
+    target_path: str,
+    replace_existing: bool = True,
+    backup_before_replace: bool = True,
+) -> CourseScanResult:
+    source_path = Path(package_path).expanduser()
+    if not source_path.exists():
+        raise GiteaServiceError("课程包不存在")
+
+    target_dir = Path(target_path).expanduser()
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        staged_dir = Path(tmp_dir) / "course"
+        staged_dir.mkdir(parents=True, exist_ok=True)
+
+        if source_path.is_dir():
+            if source_path.resolve() == target_dir.resolve():
+                raise GiteaServiceError("课程包目录与本地保存位置不能相同")
+            extracted_root = source_path
+        else:
+            if source_path.suffix.lower() != ".zip":
+                raise GiteaServiceError("仅支持导入 zip 课程包或已解压目录")
+            try:
+                with zipfile.ZipFile(source_path, "r") as zipf:
+                    zipf.extractall(staged_dir)
+            except zipfile.BadZipFile as exc:
+                raise GiteaServiceError("课程包格式错误，无法解压") from exc
+            extracted_root = staged_dir
+            if not (extracted_root / "course.json").exists():
+                top_level = [item for item in staged_dir.iterdir()]
+                if len(top_level) == 1 and top_level[0].is_dir() and (top_level[0] / "course.json").exists():
+                    extracted_root = top_level[0]
+
+        if not (extracted_root / "course.json").exists():
+            raise GiteaServiceError("课程包缺少 course.json")
+
+        scan_course(str(extracted_root))
+        backup_path = _backup_and_replace_course_dir(
+            staged_dir=extracted_root,
+            target_dir=target_dir,
+            replace_existing=replace_existing,
+            backup_before_replace=backup_before_replace,
+        )
+
     scan_result = scan_course(str(target_dir))
     if backup_path:
         scan_result.summary["backup_path"] = backup_path

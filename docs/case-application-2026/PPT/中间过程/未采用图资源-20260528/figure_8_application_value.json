@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "画面目标：生成一张正式申报报告可用的中文应用价值总结图，说明 XEdu Client 对学生、教师、课程三方面的价值。主体与场景：中心是 XEdu Client，周围三类价值对象。构图与镜头：横向16:9，白底，中心大模块“XEdu Client”，左侧模块“学生：降低实验门槛”，右侧模块“教师：减少组织成本”，下方模块“课程：沉淀共享资源”；三个模块用箭头连接中心，底部短语“连续学习、稳定实施、资源复用”。风格与材质：教育技术论文总结图，白底，深蓝线条，浅蓝模块底色，少量绿色强调，正式清楚。文字与标签：只出现上述中文和 XEdu Client，不要新增文字、乱码、水印。限制条件：不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "original_prompt": "画面目标：生成一张正式申报报告可用的中文应用价值总结图，说明 XEdu Client 对学生、教师、课程三方面的价值。主体与场景：中心是 XEdu Client，周围三类价值对象。构图与镜头：横向16:9，白底，中心大模块“XEdu Client”，左侧模块“学生：降低实验门槛”，右侧模块“教师：减少组织成本”，下方模块“课程：沉淀共享资源”；三个模块用箭头连接中心，底部短语“连续学习、稳定实施、资源复用”。风格与材质：教育技术论文总结图，白底，深蓝线条，浅蓝模块底色，少量绿色强调，正式清楚。文字与标签：只出现上述中文和 XEdu Client，不要新增文字、乱码、水印。限制条件：不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/画面目标：生成一张正式申报报告可用的中文应用价值总结图，说明_XEdu_Client_对学生、教师、_81861c29f7c9.png",
+  "image_urls": [
+    "/static/generated/画面目标：生成一张正式申报报告可用的中文应用价值总结图，说明_XEdu_Client_对学生、教师、_81861c29f7c9.png"
+  ],
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_8_application_value.png",
+  "output_paths": [
+    "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_8_application_value.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

@@ -1,0 +1,14 @@
+<xml xmlns="https://developers.google.com/blockly/xml">
+  <block type="xeduhub_run_cls_imagenet" id="xeduhub_task_cls_imagenet_video_run" x="28" y="28">
+    <value name="INPUT_DATA">
+      <block type="text" id="xeduhub_task_cls_imagenet_video_input_path">
+              <field name="TEXT">demo.mp4</field>
+            </block>
+    </value>
+    <next>
+      <block type="xeduhub_show_result_card" id="xeduhub_task_cls_imagenet_video_show">
+        <field name="TITLE">ImageNet 图像分类 视频 视频</field>
+      </block>
+    </next>
+  </block>
+</xml>

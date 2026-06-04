@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "doubao-seedream-5-0-260128",
+  "requested_model": "doubao-seedream-5-0-260128",
+  "prompt": "生成一张论文级中文系统架构图底图，主题是“XEdu Client总体架构图”。横向 16:9，白底，分层架构。顶部是用户层：教师、学生；中间是桌面端入口：Electron桌面端；下一层是教学工作台：HTML体验、Blockly实践、Jupyter应用创新；再下一层是本地服务层：课程资源管理、课堂接入、同步更新、运行管理；底部是能力与资源层：XEduHub工具箱、本地课程目录、云端课程仓库、模型与数据资源。模块之间用上下箭头和连接线表达依赖关系。风格正式、清晰、像论文系统图，不要手绘，不要插画人物，不要复杂背景，不要水印。只出现这些中文标签和必要英文，不要额外乱码。",
+  "original_prompt": "生成一张论文级中文系统架构图底图，主题是“XEdu Client总体架构图”。横向 16:9，白底，分层架构。顶部是用户层：教师、学生；中间是桌面端入口：Electron桌面端；下一层是教学工作台：HTML体验、Blockly实践、Jupyter应用创新；再下一层是本地服务层：课程资源管理、课堂接入、同步更新、运行管理；底部是能力与资源层：XEduHub工具箱、本地课程目录、云端课程仓库、模型与数据资源。模块之间用上下箭头和连接线表达依赖关系。风格正式、清晰、像论文系统图，不要手绘，不要插画人物，不要复杂背景，不要水印。只出现这些中文标签和必要英文，不要额外乱码。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/生成一张论文级中文系统架构图底图，主题是“XEdu_Client总体架构图”。横向_169，白底，分_975b26a88f1f.png",
+  "image_urls": [
+    "/static/generated/生成一张论文级中文系统架构图底图，主题是“XEdu_Client总体架构图”。横向_169，白底，分_975b26a88f1f.png"
+  ],
+  "output_path": "docs/case-application-2026/assets/figures/roil-base/figure_2_architecture_base.png",
+  "output_paths": [
+    "docs/case-application-2026/assets/figures/roil-base/figure_2_architecture_base.png"
+  ],
+  "attempted_models": [
+    "doubao-seedream-5-0-260128"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

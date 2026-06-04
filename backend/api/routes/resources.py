@@ -1,29 +1,32 @@
 # -*- coding: utf-8 -*-
 """
-资源路由模块
+资源核心路由模块。
 """
 
 from __future__ import annotations
 
 import urllib.error
-import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
-from flask import Response, jsonify, request, send_file
+from flask import jsonify, request, send_file
 
 from services.gitea_service import (
     GiteaClient,
     GiteaServiceError,
     find_course_entry_from_index,
+    import_local_course_package,
+    inspect_course,
+    load_course_data_from_repo,
     load_index_data,
+    load_repo_tree_data,
     publish_course,
     pull_course,
+    resolve_local_course_package_target_path,
     save_course_json,
     scan_course,
     scan_folder,
 )
-from services.blockly_xeduhub_support import validate_toolbox_schema
 
 
 def register_resource_routes(app, services: dict):
@@ -42,12 +45,7 @@ def register_resource_routes(app, services: dict):
     resolve_local_course_file = services["resolve_local_course_file"]
     normalize_quickform_public_config = services["normalize_quickform_public_config"]
     inject_quickform_file = services["inject_quickform_file"]
-    guess_blockly_toolbox_path = services["guess_blockly_toolbox_path"]
-    guess_blockly_python_path = services["guess_blockly_python_path"]
-    guess_blockly_notebook_path = services["guess_blockly_notebook_path"]
     get_frontend_build_dir = services["get_frontend_build_dir"]
-    build_blockly_playground_html = services["build_blockly_playground_html"]
-    execute_xeduhub_runtime = services["execute_xeduhub_runtime"]
 
     @app.route("/api/resources/frontend-assets/<path:asset_path>")
     def resources_frontend_assets(asset_path):
@@ -63,6 +61,30 @@ def register_resource_routes(app, services: dict):
             logger.error(f"读取前端资源失败: {exc}")
             return jsonify({"success": False, "message": "读取前端资源失败"}), 500
 
+    @app.route("/api/resources/default-sample", methods=["GET"])
+    def get_default_sample_course():
+        try:
+            backend_root = Path(__file__).resolve().parents[2]
+            sample_dir = backend_root / "sasu" / "zhangjiang-image-recognition"
+            course_file = sample_dir / "course.json"
+            if not course_file.exists():
+                return jsonify({"success": False, "message": "默认测试样例不存在"}), 404
+            result = scan_course(str(sample_dir), init_if_missing=False, init_meta=None, auto_build=False)
+            return jsonify({
+                "success": True,
+                "sample": {
+                    "label": "默认测试样例",
+                    "path": str(sample_dir),
+                    "course": result.course,
+                    "summary": result.summary,
+                },
+            })
+        except GiteaServiceError as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except Exception as exc:
+            logger.error(f"读取默认测试样例失败: {exc}")
+            return jsonify({"success": False, "message": "读取默认测试样例失败"}), 500
+
     @app.route("/api/resources/local-file/<root_token>/<path:relpath>")
     def resources_local_file(root_token, relpath):
         try:
@@ -76,140 +98,6 @@ def register_resource_routes(app, services: dict):
         except Exception as exc:
             logger.error(f"读取本地预览文件失败: {exc}")
             return jsonify({"success": False, "message": "读取本地预览文件失败"}), 500
-
-    @app.route("/api/resources/blockly-playground/<root_token>")
-    def resources_blockly_playground(root_token):
-        role = str(request.args.get("role") or "").strip().lower()
-        toolbox_switch_enabled = role != "student"
-        workspace_rel = str(request.args.get("workspace") or "").strip().lstrip("/")
-        toolbox_rel = str(request.args.get("toolbox") or "").strip().lstrip("/")
-        python_rel = str(request.args.get("python") or "").strip().lstrip("/")
-        practice_rel = str(request.args.get("practice") or "").strip().lstrip("/")
-        try:
-            base = decode_local_preview_token(root_token)
-            if not workspace_rel:
-                return jsonify({"success": False, "message": "缺少 workspace 参数"}), 400
-
-            workspace_file = resolve_local_course_file(base, workspace_rel)
-            if not workspace_file.exists() or not workspace_file.is_file():
-                return jsonify({"success": False, "message": "Blockly 工作区文件不存在"}), 404
-
-            if not toolbox_rel:
-                guessed_toolbox = guess_blockly_toolbox_path(workspace_rel)
-                if guessed_toolbox:
-                    toolbox_file = resolve_local_course_file(base, guessed_toolbox)
-                    if toolbox_file.exists() and toolbox_file.is_file():
-                        toolbox_rel = guessed_toolbox
-
-            if not python_rel:
-                guessed_python = guess_blockly_python_path(workspace_rel)
-                if guessed_python:
-                    python_rel = guessed_python
-
-            practice_kind = ""
-            if not practice_rel:
-                guessed_notebook = guess_blockly_notebook_path(workspace_rel)
-                if guessed_notebook:
-                    notebook_file = resolve_local_course_file(base, guessed_notebook)
-                    if notebook_file.exists() and notebook_file.is_file():
-                        practice_rel = guessed_notebook
-                        practice_kind = "notebook"
-                if not practice_rel and python_rel:
-                    python_file = resolve_local_course_file(base, python_rel)
-                    if python_file.exists() and python_file.is_file():
-                        practice_rel = python_rel
-                        practice_kind = "python"
-            elif practice_rel:
-                if practice_rel.lower().endswith(".ipynb"):
-                    practice_kind = "notebook"
-                elif practice_rel.lower().endswith(".py"):
-                    practice_kind = "python"
-
-            workspace_url = f"/api/resources/local-file/{root_token}/{workspace_rel}"
-            toolbox_url = f"/api/resources/local-file/{root_token}/{toolbox_rel}" if toolbox_rel else ""
-            python_url = f"/api/resources/local-file/{root_token}/{python_rel}" if python_rel else ""
-            practice_url = f"/api/resources/local-file/{root_token}/{practice_rel}" if practice_rel else ""
-            practice_launch_url = ""
-            if practice_rel:
-                practice_launch_query = urllib.parse.urlencode({
-                    "project": str(base),
-                    "file": practice_rel,
-                    "kind": practice_kind,
-                })
-                practice_launch_url = f"xedu://open-practice?{practice_launch_query}"
-
-            html = build_blockly_playground_html(
-                workspace_url=workspace_url,
-                toolbox_url=toolbox_url,
-                generated_python_url=python_url,
-                workspace_label=Path(workspace_rel).name,
-                project_root=str(base),
-                practice_label=Path(practice_rel).name if practice_rel else "",
-                practice_kind=practice_kind,
-                practice_url=practice_url,
-                practice_launch_url=practice_launch_url,
-                toolbox_switch_enabled=toolbox_switch_enabled,
-            )
-            return Response(html, mimetype="text/html")
-        except ValueError as exc:
-            return jsonify({"success": False, "message": str(exc)}), 400
-        except Exception as exc:
-            logger.error(f"打开 Blockly playground 失败: {exc}")
-            return jsonify({"success": False, "message": "打开 Blockly playground 失败"}), 500
-
-    @app.route("/api/resources/blockly-playground-blank")
-    def resources_blockly_playground_blank():
-        try:
-            role = str(request.args.get("role") or "").strip().lower()
-            toolbox_switch_enabled = role != "student"
-            html = build_blockly_playground_html(
-                workspace_url="",
-                toolbox_url="",
-                generated_python_url="",
-                workspace_label="空白 Blockly 实验台",
-                project_root="",
-                practice_label="",
-                practice_kind="",
-                practice_url="",
-                practice_launch_url="",
-                toolbox_switch_enabled=toolbox_switch_enabled,
-            )
-            return Response(html, mimetype="text/html")
-        except Exception as exc:
-            logger.error(f"打开空白 Blockly playground 失败: {exc}")
-            return jsonify({"success": False, "message": "打开空白 Blockly playground 失败"}), 500
-
-    @app.route("/api/resources/blockly/xeduhub/execute", methods=["POST"])
-    def resources_blockly_xeduhub_execute():
-        try:
-            payload = request.get_json(silent=True) or {}
-            result = execute_xeduhub_runtime(payload)
-            return jsonify(result), 200 if result.get("success") else 400
-        except Exception as exc:
-            logger.error(f"执行 Blockly XEduHub runtime 失败: {exc}")
-            return jsonify({
-                "success": False,
-                "result_type": "error",
-                "message": "执行 Blockly XEduHub runtime 失败",
-                "result": {"error": str(exc)},
-                "artifacts": {},
-            }), 500
-
-    @app.route("/api/resources/blockly/validate-toolbox", methods=["POST"])
-    def resources_blockly_validate_toolbox():
-        try:
-            payload = request.get_json(silent=True) or {}
-            toolbox = payload.get("toolbox") if isinstance(payload, dict) else None
-            result = validate_toolbox_schema(toolbox)
-            status_code = 200 if result.get("valid") else 400
-            return jsonify(result), status_code
-        except Exception as exc:
-            logger.error(f"校验 Blockly toolbox 失败: {exc}")
-            return jsonify({
-                "valid": False,
-                "errors": ["校验 Blockly toolbox 失败"],
-                "normalized": None,
-            }), 500
 
     @app.route("/api/resources/index", methods=["GET", "POST"])
     def get_resources_index():
@@ -383,6 +271,100 @@ def register_resource_routes(app, services: dict):
         except Exception as exc:
             logger.error(f"扫描课程失败: {exc}")
             return jsonify({"success": False, "message": "扫描课程失败"}), 500
+
+    @app.route("/api/resources/inspect-course", methods=["POST"])
+    def inspect_resource_course():
+        payload = request.get_json(silent=True) or {}
+        try:
+            local_path = str(payload.get("local_path") or "").strip()
+            if local_path:
+                result = scan_course(local_path, init_if_missing=False, init_meta=None, auto_build=False)
+                inspection = inspect_course(result.course, local_path=local_path)
+                return jsonify({"success": True, **inspection})
+
+            ui_config = get_app_config().ui
+            source_id = str(payload.get("source_id") or "").strip()
+            source_override = payload.get("source_override")
+            token_override = str(payload.get("token_override") or "").strip()
+            course_id = str(payload.get("course_id") or "").strip()
+            course_url = str(payload.get("course_url") or "").strip()
+            package_url = str(payload.get("package_url") or "").strip()
+
+            selected = resolve_resource_source_for_request(ui_config, source_id=source_id, source_override=source_override)
+            if not selected:
+                return jsonify({"success": False, "message": "课程资源库未配置"}), 400
+
+            base_url = (selected.get("base_url") or "").rstrip("/")
+            repo = (selected.get("repo") or "").strip("/")
+            branch = (selected.get("branch") or "main").strip() or "main"
+            index_path = (selected.get("index_path") or "index.json").strip().lstrip("/") or "index.json"
+            single_course_repo = parse_bool(selected.get("single_course_repo"), False)
+            token = resolve_resources_token(ui_config, token_override)
+            if not base_url or not repo:
+                return jsonify({"success": False, "message": "课程资源库未配置"}), 400
+
+            raw_base_url = f"{base_url}/{repo}/raw/{branch}"
+            if single_course_repo:
+                course_url = course_url or "course.json"
+            elif (not course_url) and course_id:
+                entry = find_course_entry_from_index(
+                    raw_base_url=raw_base_url,
+                    course_id=course_id,
+                    index_path=index_path,
+                    token=token,
+                )
+                course_url = entry.get("course_url") or course_url
+                package_url = entry.get("package_url") or package_url
+            if not course_url:
+                return jsonify({"success": False, "message": "缺少 course_url，无法读取课程结构"}), 400
+
+            course = load_course_data_from_repo(raw_base_url=raw_base_url, course_path=course_url, token=token)
+            remote_tree = load_repo_tree_data(base_url=base_url, repo=repo, branch=branch, token=token)
+            course_path_for_root = course_url
+            if course_path_for_root.startswith(raw_base_url):
+                course_path_for_root = course_path_for_root[len(raw_base_url):].lstrip("/")
+            if course_path_for_root.startswith(("http://", "https://")):
+                course_path_for_root = ""
+            course_root = str(Path(course_path_for_root).parent).replace("\\", "/").strip(".").strip("/")
+            if course_root:
+                prefix = f"{course_root}/"
+                remote_tree = [
+                    *remote_tree,
+                    *[
+                        {**item, "path": str(item.get("path") or "")[len(prefix):]}
+                        for item in remote_tree
+                        if str(item.get("path") or "").startswith(prefix)
+                    ],
+                ]
+            inspection = inspect_course(course, remote_tree=remote_tree)
+            normalized_course = {
+                **(inspection.get("course") or {}),
+                "course_url": course_url,
+                "package_url": package_url,
+                "_source_id": selected.get("id", source_id),
+                "_source_name": selected.get("name", ""),
+                "_source_repo_url": f"{base_url}/{repo}",
+                "_source_raw_base_url": raw_base_url,
+                "_source_branch": branch,
+                "single_course_repo": single_course_repo,
+            }
+            return jsonify({
+                "success": True,
+                "course": normalized_course,
+                "summary": inspection.get("summary") or {},
+                "inspection": inspection.get("inspection") or {},
+            })
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                return jsonify({"success": False, "message": "资源库认证失败，请检查 Gitea Token"}), 400
+            if exc.code == 404:
+                return jsonify({"success": False, "message": "未找到课程文件或仓库文件树"}), 404
+            return jsonify({"success": False, "message": f"读取课程失败: HTTP {exc.code}"}), 400
+        except GiteaServiceError as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except Exception as exc:
+            logger.error(f"巡检课程失败: {exc}")
+            return jsonify({"success": False, "message": "巡检课程失败"}), 500
 
     @app.route("/api/resources/publish", methods=["POST"])
     def publish_resource_course():
@@ -586,6 +568,31 @@ def register_resource_routes(app, services: dict):
         except Exception as exc:
             logger.error(f"保存课程结构失败: {exc}")
             return jsonify({"success": False, "message": "保存课程结构失败"}), 500
+
+    @app.route("/api/resources/import-package-local", methods=["POST"])
+    def import_local_resource_package():
+        payload = request.get_json(silent=True) or {}
+        package_path = str(payload.get("package_path") or "").strip()
+        target_path = str(payload.get("target_path") or "").strip()
+        replace_existing = parse_bool(payload.get("replace_existing"), True)
+        backup_before_replace = parse_bool(payload.get("backup_before_replace"), True)
+        if not package_path:
+            return jsonify({"success": False, "message": "缺少 package_path"}), 400
+        if not target_path:
+            target_path = resolve_local_course_package_target_path(package_path)
+        try:
+            result = import_local_course_package(
+                package_path=package_path,
+                target_path=target_path,
+                replace_existing=replace_existing,
+                backup_before_replace=backup_before_replace,
+            )
+            return jsonify({"success": True, "course": result.course, "summary": result.summary, "local_path": target_path})
+        except GiteaServiceError as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except Exception as exc:
+            logger.error(f"导入本地课程包失败: {exc}")
+            return jsonify({"success": False, "message": "导入本地课程包失败"}), 500
 
     @app.route("/api/resources/quickform/inject", methods=["POST"])
     def inject_quickform_script():

@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张严格论文风格的中文闭环机制图，主题为“教师课程分享与更新机制”。\n\n用途：用于说明课程资源不是静态文件，而是教师可持续迭代的平台资源。\n\n图形结构：横向 16:9，白色背景。六个步骤构成顺时针闭环，中心放置机制说明。步骤用编号圆角矩形或圆形节点表示，箭头顺时针连接。不要手绘、不要人物、不要水彩装饰。\n\n图内文字必须且只包含：\n标题：教师课程分享与更新机制\n中心：上一节、改一节、同步一节\n步骤：1 本地创建、2 导入整理、3 上传课程、4 课堂使用、5 课后修订、6 拉取更新\n\n排版要求：闭环关系清楚，编号清晰，线条统一，颜色克制。",
+  "original_prompt": "生成一张严格论文风格的中文闭环机制图，主题为“教师课程分享与更新机制”。\n\n用途：用于说明课程资源不是静态文件，而是教师可持续迭代的平台资源。\n\n图形结构：横向 16:9，白色背景。六个步骤构成顺时针闭环，中心放置机制说明。步骤用编号圆角矩形或圆形节点表示，箭头顺时针连接。不要手绘、不要人物、不要水彩装饰。\n\n图内文字必须且只包含：\n标题：教师课程分享与更新机制\n中心：上一节、改一节、同步一节\n步骤：1 本地创建、2 导入整理、3 上传课程、4 课堂使用、5 课后修订、6 拉取更新\n\n排版要求：闭环关系清楚，编号清晰，线条统一，颜色克制。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/f3600d58-a6f9-42c5-b53f-c26ca7e80f39.png",
+  "output_path": "docs/case-application-2026/assets/figures/paper-roil/figure_5_course_update.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

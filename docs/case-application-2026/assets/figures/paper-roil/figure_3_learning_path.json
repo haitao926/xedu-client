@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张严格论文风格的中文学习路径模型图，主题为“HTML—Blockly—Jupyter 学习路径模型”。\n\n用途：用于说明本项目的核心教学创新，即三类入口不是并列关系，而是递进学习路径。\n\n图形结构：横向 16:9，白色背景。从左到右三个大模块，依次用箭头连接。每个模块上方是工具形态，下方是学习阶段。底部加一条细横线表示“连续学习主线”。不要插画、不要人物、不要复杂背景。\n\n图内文字必须且只包含：\n标题：HTML—Blockly—Jupyter 学习路径模型\n模块一：HTML体验\n说明一：任务感知\n模块二：Blockly实践\n说明二：流程理解\n模块三：Jupyter应用创新\n说明三：代码扩展\n底部文字：连续学习主线\n\n排版要求：三阶段对齐，箭头清楚，颜色从蓝到绿到橙渐进，文字少而清晰。",
+  "original_prompt": "生成一张严格论文风格的中文学习路径模型图，主题为“HTML—Blockly—Jupyter 学习路径模型”。\n\n用途：用于说明本项目的核心教学创新，即三类入口不是并列关系，而是递进学习路径。\n\n图形结构：横向 16:9，白色背景。从左到右三个大模块，依次用箭头连接。每个模块上方是工具形态，下方是学习阶段。底部加一条细横线表示“连续学习主线”。不要插画、不要人物、不要复杂背景。\n\n图内文字必须且只包含：\n标题：HTML—Blockly—Jupyter 学习路径模型\n模块一：HTML体验\n说明一：任务感知\n模块二：Blockly实践\n说明二：流程理解\n模块三：Jupyter应用创新\n说明三：代码扩展\n底部文字：连续学习主线\n\n排版要求：三阶段对齐，箭头清楚，颜色从蓝到绿到橙渐进，文字少而清晰。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/a877b49d-04fc-42e1-80c2-1926cd17e2c2.png",
+  "output_path": "docs/case-application-2026/assets/figures/paper-roil/figure_3_learning_path.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

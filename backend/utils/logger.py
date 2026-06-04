@@ -67,6 +67,8 @@ class BackendLogger:
 
     def setup_logger(self):
         """设置日志器"""
+        # 测试退出阶段 stdout/stderr 关闭时，避免 logging 内部打印大量 handler 异常。
+        logging.raiseExceptions = False
         # 清除现有处理器
         self.logger.handlers.clear()
 
@@ -140,12 +142,16 @@ class BackendLogger:
 
     def _log(self, level: int, message: str, **kwargs):
         """内部日志方法"""
-        if kwargs.get('exc_info'):
-            self.logger.log(level, message, exc_info=True)
-        elif kwargs.get('extra'):
-            self.logger.log(level, message, extra=kwargs['extra'])
-        else:
-            self.logger.log(level, message)
+        try:
+            if kwargs.get('exc_info'):
+                self.logger.log(level, message, exc_info=True)
+            elif kwargs.get('extra'):
+                self.logger.log(level, message, extra=kwargs['extra'])
+            else:
+                self.logger.log(level, message)
+        except (ValueError, OSError):
+            # 进程退出阶段 stdout/stderr 可能已关闭；避免抛出二次异常干扰退出流程。
+            return
 
     def log_api_request(self, endpoint: str, method: str, data: Optional[dict] = None):
         """记录 API 请求"""

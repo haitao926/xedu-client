@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "画面目标：生成一张正式申报报告可用的中文课程资源结构图，说明一门课程包如何组织 XEdu Client 的各类材料。主体与场景：中心是一个大文件夹模块，标题“课程资源包”，周围连接五类资源。构图与镜头：横向16:9，白底，中心放“课程资源包”，周围五个模块分别为“HTML 讲解页”“Blockly 工作区”“Jupyter Notebook”“Python 脚本”“图片素材与结果图”；右侧有一个小模块“课堂入口”，箭头从课程资源包指向课堂入口。底部一句短语“讲解、积木、代码、素材统一管理”。风格与材质：教育技术论文机制图，白底，深蓝线条，浅蓝模块底色，克制正式，和申报材料配套。文字与标签：只出现上述中文和必要英文技术名，不要新增文字、乱码、水印。限制条件：不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "original_prompt": "画面目标：生成一张正式申报报告可用的中文课程资源结构图，说明一门课程包如何组织 XEdu Client 的各类材料。主体与场景：中心是一个大文件夹模块，标题“课程资源包”，周围连接五类资源。构图与镜头：横向16:9，白底，中心放“课程资源包”，周围五个模块分别为“HTML 讲解页”“Blockly 工作区”“Jupyter Notebook”“Python 脚本”“图片素材与结果图”；右侧有一个小模块“课堂入口”，箭头从课程资源包指向课堂入口。底部一句短语“讲解、积木、代码、素材统一管理”。风格与材质：教育技术论文机制图，白底，深蓝线条，浅蓝模块底色，克制正式，和申报材料配套。文字与标签：只出现上述中文和必要英文技术名，不要新增文字、乱码、水印。限制条件：不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/画面目标：生成一张正式申报报告可用的中文课程资源结构图，说明一门课程包如何组织_XEdu_Clien_c2ac3886fd5e.png",
+  "image_urls": [
+    "/static/generated/画面目标：生成一张正式申报报告可用的中文课程资源结构图，说明一门课程包如何组织_XEdu_Clien_c2ac3886fd5e.png"
+  ],
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_4_course_resource_structure.png",
+  "output_paths": [
+    "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_4_course_resource_structure.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

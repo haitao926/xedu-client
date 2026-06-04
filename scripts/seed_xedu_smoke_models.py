@@ -10,12 +10,12 @@ import onnx.numpy_helper as nh
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CHECKPOINTS_DIR = REPO_ROOT / "checkpoints"
+SMOKE_CHECKPOINTS_DIR = REPO_ROOT / "courses" / "blockly-smoke" / "checkpoints"
 
 POSE_MODEL_SPECS = {
     "body17.onnx": 17,
     "body26.onnx": 26,
-    "whole133.onnx": 133,
+    "pose_wholebody133.onnx": 133,
     "face106.onnx": 106,
     "hand21.onnx": 21,
 }
@@ -78,12 +78,17 @@ def build_pose_model(keypoints_count: int) -> onnx.ModelProto:
 
 
 def main() -> int:
-    CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
+    SMOKE_CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
     for filename, class_index in DETECTION_MODEL_SPECS.items():
-        save_model(build_detection_model(class_index), CHECKPOINTS_DIR / filename)
+        model = build_detection_model(class_index)
+        save_model(model, SMOKE_CHECKPOINTS_DIR / filename)
     for filename, keypoints_count in POSE_MODEL_SPECS.items():
-        save_model(build_pose_model(keypoints_count), CHECKPOINTS_DIR / filename)
-    print(f"Seeded {len(DETECTION_MODEL_SPECS) + len(POSE_MODEL_SPECS)} smoke checkpoint models in {CHECKPOINTS_DIR}")
+        model = build_pose_model(keypoints_count)
+        save_model(model, SMOKE_CHECKPOINTS_DIR / filename)
+    print(
+        f"Seeded {len(DETECTION_MODEL_SPECS) + len(POSE_MODEL_SPECS)} smoke checkpoint models in "
+        f"{SMOKE_CHECKPOINTS_DIR}"
+    )
     return 0
 
 

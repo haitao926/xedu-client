@@ -1,4 +1,5 @@
 // UI 工具函数
+import { getPageCopy } from './experience-config.js';
 
 function hasVisibleModal() {
     return Boolean(document.querySelector('.modal-overlay.show'));
@@ -70,31 +71,17 @@ export function showTab(tabId, navItem) {
     if (targetSection) {
         targetSection.classList.add('active');
     }
+    if (tabId === 'blockly-workspace' && window.app?.workspace?.ensureBlocklyWorkspaceMounted) {
+        try {
+            window.app.workspace.ensureBlocklyWorkspaceMounted();
+        } catch (error) {
+            console.warn('挂载 Blockly 工作台失败:', error);
+        }
+    }
     document.body.classList.toggle('blockly-toolbar-top', tabId === 'blockly-workspace');
+    document.body.classList.toggle('ai-toolbar-compact', tabId === 'ai-assistant');
 
-    const titleMap = {
-        main: {
-            title: '总控制台',
-            subtitle: '',
-        },
-        'blockly-workspace': {
-            title: 'Blockly',
-            subtitle: '',
-        },
-        'ai-assistant': {
-            title: 'AI 助手',
-            subtitle: '教师优先的课程助教工作台',
-        },
-        resources: {
-            title: '课程资源',
-            subtitle: '浏览课程、实验与文件，并按需打开到实验环境',
-        },
-        settings: {
-            title: '设置',
-            subtitle: '系统、模型与资源源配置',
-        },
-    };
-    const titleConfig = titleMap[tabId] || titleMap.main;
+    const titleConfig = getPageCopy(tabId);
     const titleEl = document.getElementById('page-title');
     const subtitleEl = document.getElementById('page-subtitle');
     if (titleEl && titleConfig?.title) titleEl.textContent = titleConfig.title;
@@ -115,11 +102,7 @@ export function showTab(tabId, navItem) {
 
     if (tabId === 'resources') {
         if (window.app && window.app.resources && window.app.resources.initResourcesPage) {
-            window.app.resources.initResourcesPage();
-        } else {
-            import('./resources.js').then(resources => {
-                resources.initResourcesPage();
-            }).catch(err => {
+            Promise.resolve(window.app.resources.initResourcesPage()).catch((err) => {
                 console.error('加载课程资源模块失败:', err);
             });
         }

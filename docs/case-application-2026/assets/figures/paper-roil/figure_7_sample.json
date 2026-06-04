@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张严格论文风格的实验样例图版式底图，主题为“目标检测与细粒度分类样例”。\n\n用途：用于承载真实项目截图和输出结果，作为课堂样例证据图。注意：只生成版式底图和占位框，不生成真实动物、不生成代码内容。\n\n图形结构：横向 16:9，白色背景。四个占位框按 2×2 排布或左到右流程排布，框之间用箭头连接。每个框留出足够空间用于后期放入真实截图。底部有一条说明栏。\n\n图内文字必须且只包含：\n标题：目标检测与细粒度分类样例\n占位框：输入图片、检测结果、裁剪区域、代码实践\n底部：从流程理解到代码复现\n\n排版要求：像论文实验结果图，边框清晰，编号可见，留白充足，不要插画和装饰。",
+  "original_prompt": "生成一张严格论文风格的实验样例图版式底图，主题为“目标检测与细粒度分类样例”。\n\n用途：用于承载真实项目截图和输出结果，作为课堂样例证据图。注意：只生成版式底图和占位框，不生成真实动物、不生成代码内容。\n\n图形结构：横向 16:9，白色背景。四个占位框按 2×2 排布或左到右流程排布，框之间用箭头连接。每个框留出足够空间用于后期放入真实截图。底部有一条说明栏。\n\n图内文字必须且只包含：\n标题：目标检测与细粒度分类样例\n占位框：输入图片、检测结果、裁剪区域、代码实践\n底部：从流程理解到代码复现\n\n排版要求：像论文实验结果图，边框清晰，编号可见，留白充足，不要插画和装饰。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/3145033d-60b5-4836-99c8-a8ac3be1a21f.png",
+  "output_path": "docs/case-application-2026/assets/figures/paper-roil/figure_7_sample.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

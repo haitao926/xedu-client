@@ -24,6 +24,7 @@ class JupyterConfig:
     args: str = ""
     env: Dict[str, str] = field(default_factory=dict)
     debug: bool = False
+    allow_remote_access: bool = False
 
     def __post_init__(self):
         """初始化后的处理"""
@@ -60,6 +61,9 @@ class JupyterConfig:
 
         if self.max_restarts < 0:
             errors.append("最大重启次数不能为负数")
+
+        if isinstance(self.allow_remote_access, bool) is False:
+            errors.append("Jupyter 远程访问开关必须为布尔值")
 
         return len(errors) == 0, errors
 
@@ -130,6 +134,7 @@ class UIConfig:
     classroom_name: str = ""
     classroom_code: str = ""
     classroom_teacher_code: str = ""
+    allow_network_access: bool = False
     quickform: QuickFormSettings = field(default_factory=QuickFormSettings)
 
     def validate(self) -> tuple[bool, list[str]]:
@@ -153,6 +158,9 @@ class UIConfig:
 
         if getattr(self, "classroom_auto_discover", None) is not None and isinstance(self.classroom_auto_discover, bool) is False:
             errors.append("课堂自动发现开关必须为布尔值")
+
+        if isinstance(self.allow_network_access, bool) is False:
+            errors.append("网络暴露开关必须为布尔值")
 
         quickform_valid, quickform_errors = self.quickform.validate()
         if not quickform_valid:
@@ -301,6 +309,10 @@ class SystemInfo:
     jupyterlab_installed: bool = False
     jupyterlab_version: Optional[str] = None
     jupyter_notebook_version: Optional[str] = None
+    xedu_version: Optional[str] = None
+    xedu_expected_version: Optional[str] = None
+    xedu_version_ok: Optional[bool] = None
+    xedu_runtime_message: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""

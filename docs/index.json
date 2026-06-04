@@ -1,7 +1,19 @@
 {
   "version": "2.0",
-  "last_updated": "2024-12-04T15:00:00Z",
+  "last_updated": "2026-05-30T15:00:00Z",
   "documents": [
+    {
+      "id": "xedu-client-project-map",
+      "file_path": "overview/project-map.md",
+      "title": "XEdu Client 项目地图",
+      "component": "XEdu Client",
+      "category": "overview",
+      "tags": ["架构", "项目地图", "功能导览", "健康检查"],
+      "difficulty": "intermediate",
+      "keywords": ["XEdu Client", "Electron", "Flask", "Blockly", "Jupyter", "课堂", "AI"],
+      "last_updated": "2026-05-30",
+      "author": "Codex"
+    },
     {
       "id": "xedu-introduction",
       "file_path": "overview/xedu-introduction.md",
@@ -115,7 +127,7 @@
     "overview": {
       "name": "概述",
       "description": "XEdu框架的整体介绍和核心概念",
-      "documents": ["xedu-introduction", "quickstart"]
+      "documents": ["xedu-client-project-map", "xedu-introduction", "quickstart"]
     },
     "guide": {
       "name": "使用指南",
@@ -138,6 +150,11 @@
       "name": "XEdu",
       "description": "XEdu整体框架",
       "documents": ["xedu-introduction", "quickstart"]
+    },
+    "XEdu Client": {
+      "name": "XEdu Client",
+      "description": "课堂实验桌面工作台",
+      "documents": ["xedu-client-project-map"]
     },
     "MMEdu": {
       "name": "MMEdu",

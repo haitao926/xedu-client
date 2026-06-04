@@ -32,7 +32,13 @@ class AIService:
             'User-Agent': 'XeduClient/2.0'
         })
 
-    def ask_question(self, question: str, image_data: Optional[str] = None, history: List[Dict[str, str]] = None) -> Dict[str, Any]:
+    def ask_question(
+        self,
+        question: str,
+        image_data: Optional[str] = None,
+        history: List[Dict[str, str]] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         向AI提问
 
@@ -61,7 +67,7 @@ class AIService:
                 }
 
             # 准备消息
-            messages = self._prepare_messages(question, image_data, history)
+            messages = self._prepare_messages(question, image_data, history, request_context=request_context)
 
             # 调用API
             response = self._call_ai_api(messages)
@@ -85,14 +91,30 @@ class AIService:
                 'error': f'处理请求时出错: {str(e)}'
             }
 
-    def _prepare_messages(self, question: str, image_data: Optional[str] = None, history: List[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+    def _prepare_messages(
+        self,
+        question: str,
+        image_data: Optional[str] = None,
+        history: List[Dict[str, str]] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         """准备消息内容"""
         messages = []
+        request_context = request_context or {}
+        experience_mode = str(request_context.get("experience_mode") or "").strip().lower()
+        is_teacher = experience_mode == "teacher"
+        system_prompt = (
+            "你是 XEdu 教师助教，专门帮助教师完成课程整理、课堂准备、实验设计和教学支持。"
+            "回答要优先围绕课程结构、实验组织、教学步骤、课堂执行和 AI 工具使用。"
+        ) if is_teacher else (
+            "你是 XEdu 学习助手，专门帮助学生理解课程内容、实验要求、报错原因和下一步学习步骤。"
+            "回答要面向学生，语言清晰、鼓励式、避免教师管理和写入型操作建议。"
+        )
 
         # 添加系统提示
         messages.append({
             "role": "system",
-            "content": "你是XEdu AI助手，专门帮助用户解决使用XEdu进行AI学习和开发的问题。请根据提供的文档内容回答用户的问题。"
+            "content": system_prompt
         })
 
         # 添加相关文档内容
@@ -168,8 +190,8 @@ class AIService:
             # 使用PIL处理图片
             image = Image.open(io.BytesIO(image_bytes))
 
-            # 检查图片格式和大小
-            if image.mode not in ['RGB', 'RGBA']:
+            # JPEG 不支持透明通道，统一转成 RGB，避免 RGBA 图片处理失败
+            if image.mode != 'RGB':
                 image = image.convert('RGB')
 
             # 调整图片大小（如果太大）

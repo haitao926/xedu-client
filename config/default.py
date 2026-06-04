@@ -16,7 +16,7 @@ DEFAULT_CONFIG = {
 
     # API 服务器配置
     'api_port': 5123,
-    'api_host': '0.0.0.0',
+    'api_host': '127.0.0.1',
     'debug_mode': True,
 
     # AI 配置

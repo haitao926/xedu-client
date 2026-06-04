@@ -74,7 +74,7 @@ def register_classroom_routes(app, services: dict):
         base_url = payload.get("base_url", "")
         try:
             result = ClassroomService.fetch_index(base_url)
-            return jsonify({"success": True, "index": result})
+            return jsonify({"success": True, **result})
         except ClassroomServiceError as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:

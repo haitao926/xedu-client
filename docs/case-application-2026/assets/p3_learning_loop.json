@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2",
+  "prompt": "Use case: research-figures\nAsset type: PPT structure diagram\nPrimary request: Generate a clean educational workflow diagram showing one integrated AI learning loop for a middle-school classroom.\nScene/background: minimal white background with subtle soft blue depth.\nSubject: four connected modules arranged horizontally from left to right.\nComposition/framing: landscape 16:9, centered, evenly spaced, strong visual hierarchy.\nStyle/medium: modern academic-meets-educational diagram illustration, crisp vector-like shapes, projector-friendly.\nText (verbatim): no text, no letters, no numbers.\nStructure:\n- Module 1: organized course resources with folders, lesson cards, image asset, and structured materials.\n- Module 2: Blockly-style colorful puzzle blocks showing visual AI workflow understanding.\n- Module 3: Jupyter-style notebook panel with code cells and a small preview image showing code practice.\n- Module 4: result review and reflection with result card, chart, magnifier, and check mark.\n- Connect all modules with smooth arrows or light connector paths that imply a continuous loop.\nColor palette: white, light blue, teal, soft green, small warm accent colors.\nConstraints: no text, no watermark, no logo, no people, no clutter, clean margins, suitable for formal education PPT.\nAvoid: complicated dashboards, dark neon, heavy 3D, cartoon characters, random symbols.",
+  "original_prompt": "Use case: research-figures\nAsset type: PPT structure diagram\nPrimary request: Generate a clean educational workflow diagram showing one integrated AI learning loop for a middle-school classroom.\nScene/background: minimal white background with subtle soft blue depth.\nSubject: four connected modules arranged horizontally from left to right.\nComposition/framing: landscape 16:9, centered, evenly spaced, strong visual hierarchy.\nStyle/medium: modern academic-meets-educational diagram illustration, crisp vector-like shapes, projector-friendly.\nText (verbatim): no text, no letters, no numbers.\nStructure:\n- Module 1: organized course resources with folders, lesson cards, image asset, and structured materials.\n- Module 2: Blockly-style colorful puzzle blocks showing visual AI workflow understanding.\n- Module 3: Jupyter-style notebook panel with code cells and a small preview image showing code practice.\n- Module 4: result review and reflection with result card, chart, magnifier, and check mark.\n- Connect all modules with smooth arrows or light connector paths that imply a continuous loop.\nColor palette: white, light blue, teal, soft green, small warm accent colors.\nConstraints: no text, no watermark, no logo, no people, no clutter, clean margins, suitable for formal education PPT.\nAvoid: complicated dashboards, dark neon, heavy 3D, cartoon characters, random symbols.",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/Use_case_research-figures_Asset_type_PPT_structure_643d5e888851.png",
+  "image_urls": [
+    "/static/generated/Use_case_research-figures_Asset_type_PPT_structure_643d5e888851.png"
+  ],
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/assets/p3_learning_loop.png",
+  "output_paths": [
+    "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/assets/p3_learning_loop.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

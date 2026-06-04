@@ -1,0 +1,14 @@
+Use case: scientific-and-educational
+Asset type: classroom process illustration
+Primary request: Generate a clear teaching-process infographic for a middle-school AI course showing how one classroom lesson flows through the integrated platform.
+Scene/background: light classroom-tech background, mostly white, soft blue gradients, strong information hierarchy.
+Subject: one four-step classroom flow with teacher preparation and student learning progression.
+Composition/framing: landscape 16:9, left-to-right process with 4 distinct large panels, strong arrow guidance, large numbered circles 1 to 4.
+Style/medium: polished educational infographic illustration, clean icons, soft isometric depth, presentation-ready.
+Text (verbatim): only these short Chinese labels may appear if possible: “备课”, “流程理解”, “代码实践”, “结果复盘”. If text rendering is unreliable, use empty title bars with large numbers only. No other words.
+Step 1: teacher prepares course resources and lesson materials.
+Step 2: students open a Blockly-style workspace and understand the task workflow.
+Step 3: students switch into a Jupyter-style notebook to read and run code.
+Step 4: students review output, discuss results, and reflect.
+Constraints: no real faces, no logos, no watermark, no messy classroom crowd, no long text, no fake paragraphs, very clear sequential guidance.
+Avoid: photoreal classroom, comic exaggeration, clutter, dark palette, chaotic arrows.

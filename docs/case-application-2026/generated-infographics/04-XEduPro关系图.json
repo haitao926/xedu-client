@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片、轻颗粒纸张质感、少量手绘箭头和标签，视觉清晰，结构化强，适合直接放入正式汇报PPT。整体风格统一为教育类 editorial infographic，配色以深蓝、墨绿、橙色、米白为主，可加入少量青蓝点缀。不要纯黑白线框，不要工程蓝图，不要复杂长段文字，不要乱码，只出现指定中文短词。一张“XEdu Pro、XEduHub、XEdu Client关系图”的中文信息图，纵向三层结构。顶部是XEdu Pro大平台，包含短词：课程组织、项目构建、资源管理、共享更新。中间是XEduHub能力层，包含短词：输入资源、模型调用、流程执行、结果输出。底部是XEdu Client课堂层，包含短词：HTML、Blockly、Jupyter、结果复盘。用清晰分层大色块和连接箭头表达从平台到底座再到课堂落地的关系。标题“XEdu Pro 平台关系”，只出现这些短词，不要额外文字。",
+  "original_prompt": "面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片、轻颗粒纸张质感、少量手绘箭头和标签，视觉清晰，结构化强，适合直接放入正式汇报PPT。整体风格统一为教育类 editorial infographic，配色以深蓝、墨绿、橙色、米白为主，可加入少量青蓝点缀。不要纯黑白线框，不要工程蓝图，不要复杂长段文字，不要乱码，只出现指定中文短词。一张“XEdu Pro、XEduHub、XEdu Client关系图”的中文信息图，纵向三层结构。顶部是XEdu Pro大平台，包含短词：课程组织、项目构建、资源管理、共享更新。中间是XEduHub能力层，包含短词：输入资源、模型调用、流程执行、结果输出。底部是XEdu Client课堂层，包含短词：HTML、Blockly、Jupyter、结果复盘。用清晰分层大色块和连接箭头表达从平台到底座再到课堂落地的关系。标题“XEdu Pro 平台关系”，只出现这些短词，不要额外文字。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片_f3c7838b0418.png",
+  "image_urls": [
+    "/static/generated/面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片_f3c7838b0418.png"
+  ],
+  "output_path": "docs/case-application-2026/generated-infographics/04-XEduPro关系图.png",
+  "output_paths": [
+    "docs/case-application-2026/generated-infographics/04-XEduPro关系图.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

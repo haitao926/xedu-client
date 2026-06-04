@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "doubao-seedream-5-0-260128",
+  "requested_model": "doubao-seedream-5-0-260128",
+  "prompt": "Use case: research-figures. Asset type: thesis-grade educational architecture figure. Generate a clean academic progression diagram on a white background showing three large horizontal stages from left to right. Stage 1 label: HTML 体验. Stage 2 label: Blockly 实践. Stage 3 label: Jupyter 应用创新. Each stage is a clear panel with a strong number badge 1, 2, 3, a simplified interface cue, and a short subtitle area. Use bold directional arrows from stage 1 to stage 2 to stage 3. The figure must communicate a learning progression rather than three parallel tools. Style should be crisp, diagram-first, modern academic infographic, strong spacing, no people, no logos, no watermark, no clutter, and no extra words.",
+  "original_prompt": "Use case: research-figures. Asset type: thesis-grade educational architecture figure. Generate a clean academic progression diagram on a white background showing three large horizontal stages from left to right. Stage 1 label: HTML 体验. Stage 2 label: Blockly 实践. Stage 3 label: Jupyter 应用创新. Each stage is a clear panel with a strong number badge 1, 2, 3, a simplified interface cue, and a short subtitle area. Use bold directional arrows from stage 1 to stage 2 to stage 3. The figure must communicate a learning progression rather than three parallel tools. Style should be crisp, diagram-first, modern academic infographic, strong spacing, no people, no logos, no watermark, no clutter, and no extra words.",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/Use_case_research-figures._Asset_type_thesis-grade_ab3b12d6e24c.png",
+  "image_urls": [
+    "/static/generated/Use_case_research-figures._Asset_type_thesis-grade_ab3b12d6e24c.png"
+  ],
+  "output_path": "docs/case-application-2026/assets/figure_c_learning_progression_roil.png",
+  "output_paths": [
+    "docs/case-application-2026/assets/figure_c_learning_progression_roil.png"
+  ],
+  "attempted_models": [
+    "doubao-seedream-5-0-260128"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

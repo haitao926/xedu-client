@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 MutationCheck = Callable[[Dict[str, Any]], Tuple[bool, str]]
 _BLOCKLY_KEYWORDS = (
-    'blockly', '积木', 'xeduhub', 'workflow', '模型推理', '图像分类', '目标检测', '搭积木', 'toolbox'
+    'blockly', '积木', 'xeduhub', 'workflow', '模型推理', '搭积木', 'toolbox'
 )
 
 
@@ -297,7 +297,7 @@ class BlocklyBuilderToolAdapter:
         text = _text(request_text) or _text((request_context.get('context') or {}).get('latest_question'))
         inferred_task = normalize_task_type(task_type or infer_task_from_text(text))
         resolved_title = _text(title) or derive_title_from_request(text, inferred_task)
-        resolved_model = _text(model_name) or recommended_model_for_task(inferred_task)
+        resolved_model = _text(model_name) or recommended_model_for_task(inferred_task, [])
         draft_name = slugify(resolved_title)
         return {
             'success': True,
@@ -320,7 +320,7 @@ class BlocklyBuilderToolAdapter:
             task_type=task_type,
             model_name=model_name,
         )['request_summary']
-        toolbox = build_xeduhub_toolbox_definition(request_summary['task_type'])
+        toolbox = build_xeduhub_toolbox_definition(request_summary['task_type'], supported_tasks=[])
         validation = validate_toolbox_schema(toolbox)
         if not validation.get('valid'):
             raise ValueError(f"默认 toolbox 校验失败: {'; '.join(validation.get('errors') or [])}")
@@ -470,9 +470,9 @@ class BlocklyBuilderToolAdapter:
             raise ValueError('请提供 python_code 或 request_text')
         resolved_title = _text(title) or derive_title_from_request(source, task_type)
         resolved_task = normalize_task_type(task_type or infer_task_from_text(source))
-        resolved_model = _text(model_name) or recommended_model_for_task(resolved_task)
+        resolved_model = _text(model_name) or recommended_model_for_task(resolved_task, [])
         workspace_xml, unsupported = _python_to_blockly_workspace_xml(source)
-        toolbox = build_xeduhub_toolbox_definition(resolved_task)
+        toolbox = build_xeduhub_toolbox_definition(resolved_task, supported_tasks=[])
         toolbox_validation = validate_toolbox_schema(toolbox)
         if not toolbox_validation.get('valid'):
             raise ValueError(f"toolbox 校验失败: {'; '.join(toolbox_validation.get('errors') or [])}")

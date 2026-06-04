@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据采集实验室 | Data Collection Lab</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --bg-page: #f8fafc;
+            --bg-card: #ffffff;
+            --text-main: #1e293b;
+            --text-sub: #64748b;
+            --border: #e2e8f0;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-main);
+            margin: 0;
+            padding: 24px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: var(--primary);
+            font-weight: 800;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 700;
+            background: #fff;
+        }
+
+        .panel-content {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* 左侧采集区 */
+        .canvas-wrapper {
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            width: 260px;
+            height: 260px;
+            margin: 0 auto 20px;
+            cursor: crosshair;
+            background: white;
+        }
+
+        /* 上传图片区域 */
+        .upload-section {
+            margin-bottom: 20px;
+        }
+
+        .upload-btn {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: white;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .upload-btn:hover {
+            background: #f1f5f9;
+            border-color: var(--primary);
+        }
+
+        .upload-hint {
+            font-size: 0.8rem;
+            color: var(--text-sub);
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        /* 自定义标签区 */
+        .tag-input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            outline: none;
+        }
+        input[type="text"]:focus { border-color: var(--primary); }
+
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 20px;
+            min-height: 40px;
+        }
+
+        .tag-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            background: white;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tag-btn:hover { border-color: var(--primary); }
+        
+        .tag-btn.active { 
+            background: var(--primary); 
+            color: white; 
+            border-color: var(--primary); 
+        }
+
+        .tag-remove {
+            font-size: 1rem;
+            line-height: 1;
+            opacity: 0.7;
+            padding: 0 2px;
+        }
+        .tag-remove:hover { opacity: 1; color: #fff; }
+
+        .btn {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 8px;
+        }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-outline { background: white; border: 1px solid var(--border); color: var(--text-main); }
+        .btn-outline:hover { background: #f1f5f9; }
+        .btn-small { width: auto; padding: 8px 16px; margin: 0; }
+
+        /* 右侧列表 */
+        .sample-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 12px;
+        }
+
+        .sample-card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            text-align: center;
+            position: relative;
+            background: #f8fafc;
+        }
+
+        .sample-card canvas {
+            border: 1px solid #e2e8f0;
+            background: white;
+            margin-bottom: 5px;
+            image-rendering: pixelated;
+        }
+
+        .sample-tag {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-del {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: var(--danger);
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: none;
+            font-size: 12px;
+            cursor: pointer;
+            display: none;
+        }
+        
+        .sample-card:hover .btn-del { display: block; }
+
+        /* 模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            width: 300px;
+            max-width: 90%;
+        }
+
+        .modal-title {
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+
+        .modal-btns {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>Data Collection Lab</h1>
+            <div style="font-size:0.9rem; color:var(--text-sub);">构建自定义数据集</div>
+        </div>
+        <div style="font-size:0.9rem;">
+            Total Samples: <strong id="totalCount" style="color:var(--primary)">0</strong>
+        </div>
+    </header>
+
+    <div class="main-container">
+        
+        <!-- 左侧：输入 -->
+        <aside class="panel">
+            <div class="panel-header">✏️ 采集板 (Input)</div>
+            <div class="panel-content">
+                
+                <!-- 上传图片区域 -->
+                <div class="upload-section">
+                    <div style="margin-bottom: 8px; font-weight:600; font-size:0.9rem;">上传或绘制图片:</div>
+                    <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                        📁 上传本地图片
+                    </button>
+                    <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
+                    <div class="upload-hint">支持 JPG、PNG 格式，最大 2MB</div>
+                </div>
+
+                <!-- 画板 -->
+                <canvas id="canvas" width="260" height="260" class="canvas-wrapper"></canvas>
+
+                <!-- 自定义标签区域 -->
+                <div style="margin-bottom: 8px; font-weight:600; font-size:0.9rem;">1. 定义标签 (Define Labels):</div>
+                <div class="tag-input-group">
+                    <input type="text" id="newTagInput" placeholder="输入类别 (e.g. Tree)">
+                    <button class="btn btn-primary btn-small" onclick="addNewTag()">添加</button>
+                </div>
+
+                <div style="margin-bottom: 8px; font-weight:600; font-size:0.9rem;">2. 选择当前标签:</div>
+                <div class="tag-list" id="tagListContainer">
+                    <!-- 动态标签将在这里生成 -->
+                </div>
+
+                <div style="border-top:1px solid var(--border); margin: 20px 0;"></div>
+
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-outline" onclick="clearCanvas()">清空画板</button>
+                    <button class="btn btn-primary" onclick="addSample()">+ 采集样本</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右侧：数据集 -->
+        <main class="panel">
+            <div class="panel-header" style="display:flex; justify-content:space-between;">
+                <span>📚 数据集预览 (Dataset)</span>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-outline" style="width:auto; padding:4px 12px; font-size:0.8rem;" onclick="downloadJSON()">导出 JSON</button>
+                    <button class="btn btn-primary" style="width:auto; padding:4px 12px; font-size:0.8rem;" onclick="saveAndGoToTrain()">💾 保存并去训练</button>
+                </div>
+            </div>
+            <div class="panel-content">
+                <div id="list" class="sample-list">
+                    <!-- 样本卡片将在这里生成 -->
+                    <div style="grid-column:1/-1; text-align:center; color:#94a3b8; padding:40px;">
+                        暂无数据，请在左侧定义标签并开始采集
+                    </div>
+                </div>
+            </div>
+        </main>
+
+    </div>
+
+    <!-- 预处理选项模态框 -->
+    <div id="preprocessModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">选择预处理方式</div>
+            <div style="color: var(--text-sub); font-size: 0.9rem; margin-bottom: 15px;">
+                检测到彩色/大尺寸图片，请选择处理方式：
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 10px;">
+                    <input type="radio" name="preprocessOption" value="grayscale" checked> 
+                    <span style="margin-left: 8px;">转换为灰度图（推荐）</span>
+                </label>
+                <label style="display: block; margin-bottom: 10px;">
+                    <input type="radio" name="preprocessOption" value="crop"> 
+                    <span style="margin-left: 8px;">裁剪并保留原色</span>
+                </label>
+                <label style="display: block;">
+                    <input type="radio" name="preprocessOption" value="cancel"> 
+                    <span style="margin-left: 8px;">取消上传</span>
+                </label>
+            </div>
+            <div class="modal-btns">
+                <button class="btn btn-outline" style="flex:1;" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" style="flex:1;" onclick="confirmPreprocess()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const tagListContainer = document.getElementById('tagListContainer');
+        const tagInput = document.getElementById('newTagInput');
+        
+        let tags = []; // 存储所有标签字符串
+        let currentLabel = null; // 当前选中的标签
+        let samples = [];
+        let isDrawing = false;
+        let pendingImage = null; // 等待处理的图片
+
+        // Init Canvas
+        clearCanvas();
+        ctx.lineWidth = 15;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "black";
+
+        // Drawing Events
+        canvas.addEventListener('mousedown', start);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stop);
+        canvas.addEventListener('mouseout', stop);
+
+        function start(e) { isDrawing=true; draw(e); }
+        function stop() { isDrawing=false; ctx.beginPath(); }
+        function draw(e) {
+            if(!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            ctx.lineTo(e.clientX-rect.left, e.clientY-rect.top);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(e.clientX-rect.left, e.clientY-rect.top);
+        }
+
+        function clearCanvas() {
+            ctx.fillStyle = "white";
+            ctx.fillRect(0,0,260,260);
+        }
+
+        // --- 图片上传功能 ---
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // 检查文件大小（2MB限制）
+            if (file.size > 2 * 1024 * 1024) {
+                alert("图片大小不能超过 2MB");
+                return;
+            }
+            
+            // 检查文件类型
+            const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+            if (!validTypes.includes(file.type)) {
+                alert("请上传 JPG、PNG 格式的图片");
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    pendingImage = img;
+                    
+                    // 检查图片是否需要预处理（彩色或尺寸过大）
+                    const isColorful = isColorImage(img);
+                    const isLarge = img.width > 260 || img.height > 260;
+                    
+                    if (isColorful || isLarge) {
+                        showModal();
+                    } else {
+                        // 直接绘制到画板
+                        drawImageToCanvas(img);
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            
+            // 清空文件输入，允许重复上传同一文件
+            event.target.value = '';
+        }
+        
+        function isColorImage(img) {
+            // 创建一个临时canvas来检查图片是否为彩色
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = Math.min(img.width, 50);
+            tempCanvas.height = Math.min(img.height, 50);
+            
+            tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            const data = imageData.data;
+            
+            // 检查是否有明显的颜色差异
+            let colorVariance = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                const avg = (r + g + b) / 3;
+                colorVariance += Math.abs(r - avg) + Math.abs(g - avg) + Math.abs(b - avg);
+            }
+            
+            return colorVariance / (data.length / 4) > 10; // 阈值可调整
+        }
+        
+        function drawImageToCanvas(img, option = 'grayscale') {
+            clearCanvas();
+            
+            // 计算缩放比例以适应画板
+            const scale = Math.min(260 / img.width, 260 / img.height);
+            const newWidth = img.width * scale;
+            const newHeight = img.height * scale;
+            const offsetX = (260 - newWidth) / 2;
+            const offsetY = (260 - newHeight) / 2;
+            
+            if (option === 'grayscale') {
+                // 先绘制到临时canvas进行灰度处理
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCanvas.width = 260;
+                tempCanvas.height = 260;
+                
+                // 绘制原图
+                tempCtx.drawImage(img, offsetX, offsetY, newWidth, newHeight);
+                
+                // 转换为灰度
+                const imageData = tempCtx.getImageData(0, 0, 260, 260);
+                const data = imageData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const gray = data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11;
+                    data[i] = gray;     // R
+                    data[i + 1] = gray; // G
+                    data[i + 2] = gray; // B
+                    // Alpha通道保持不变
+                }
+                tempCtx.putImageData(imageData, 0, 0);
+                
+                // 绘制到主画板
+                ctx.drawImage(tempCanvas, 0, 0);
+            } else if (option === 'crop') {
+                // 裁剪模式：居中裁剪
+                const cropSize = Math.min(img.width, img.height);
+                const cropX = (img.width - cropSize) / 2;
+                const cropY = (img.height - cropSize) / 2;
+                
+                ctx.drawImage(img, cropX, cropY, cropSize, cropSize, 0, 0, 260, 260);
+            }
+        }
+        
+        function showModal() {
+            document.getElementById('preprocessModal').style.display = 'flex';
+        }
+        
+        function closeModal() {
+            document.getElementById('preprocessModal').style.display = 'none';
+            pendingImage = null;
+        }
+        
+        function confirmPreprocess() {
+            const selectedOption = document.querySelector('input[name="preprocessOption"]:checked').value;
+            
+            if (selectedOption === 'cancel') {
+                closeModal();
+                return;
+            }
+            
+            drawImageToCanvas(pendingImage, selectedOption);
+            closeModal();
+        }
+
+        // --- Tag Logic ---
+
+        function addNewTag() {
+            const val = tagInput.value.trim();
+            if(!val) return;
+            if(tags.includes(val)) {
+                alert("标签已存在");
+                return;
+            }
+            
+            tags.push(val);
+            tagInput.value = "";
+            renderTags();
+            
+            // 自动选中新添加的标签
+            selectTag(val);
+        }
+
+        // 绑定回车键
+        tagInput.addEventListener('keypress', (e) => {
+            if(e.key === 'Enter') addNewTag();
+        });
+
+        function renderTags() {
+            tagListContainer.innerHTML = '';
+            tags.forEach(tag => {
+                const btn = document.createElement('div');
+                btn.className = `tag-btn ${currentLabel === tag ? 'active' : ''}`;
+                btn.innerHTML = `
+                    <span onclick="selectTag('${tag}')">${tag}</span>
+                    <span class="tag-remove" onclick="removeTag('${tag}', event)">×</span>
+                `;
+                tagListContainer.appendChild(btn);
+            });
+        }
+
+        function selectTag(tag) {
+            currentLabel = tag;
+            renderTags(); // Re-render to update active class
+        }
+
+        function removeTag(tag, e) {
+            e.stopPropagation(); // 阻止触发 selectTag
+            tags = tags.filter(t => t !== tag);
+            if(currentLabel === tag) currentLabel = null;
+            renderTags();
+        }
+
+        // --- Sample Logic ---
+
+        function addSample() {
+            if(!currentLabel) {
+                alert("请先选择或创建一个标签！");
+                return;
+            }
+
+            // Resize to 28x28 for storage
+            const tCanvas = document.createElement('canvas');
+            tCanvas.width = 28; tCanvas.height = 28;
+            const tCtx = tCanvas.getContext('2d');
+            
+            // 简单缩放（实际项目可用更高级算法）
+            tCtx.drawImage(canvas, 0, 0, 28, 28);
+            
+            // Get Data (Grayscale & Normalize)
+            const imgData = tCtx.getImageData(0,0,28,28);
+            const arr = [];
+            for(let i=0; i<imgData.data.length; i+=4) {
+                // Invert & Grayscale: Input is Black on White -> Store as White(1) on Black(0) usually
+                // Here: 0=Black, 1=White. Let's store inverted (MNIST style) where 1=Ink
+                const gray = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
+                arr.push(parseFloat(((255-gray)/255).toFixed(3)));
+            }
+
+            samples.push({ 
+                label: currentLabel, 
+                data: arr,
+                id: Date.now() 
+            });
+            
+            renderList();
+            clearCanvas();
+        }
+
+        function renderList() {
+            const list = document.getElementById('list');
+            document.getElementById('totalCount').innerText = samples.length;
+            
+            if(samples.length === 0) {
+                list.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#94a3b8; padding:40px;">暂无数据</div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            // 显示最近采集的在前面
+            [...samples].reverse().forEach((s) => {
+                const div = document.createElement('div');
+                div.className = 'sample-card';
+                
+                // Draw preview
+                const c = document.createElement('canvas');
+                c.width = 28; c.height = 28;
+                const cx = c.getContext('2d');
+                const idata = cx.createImageData(28,28);
+                
+                for(let i=0; i<s.data.length; i++) {
+                    // Restore visual: 1(Ink) -> Black(0), 0(Bg) -> White(255)
+                    const v = (1-s.data[i])*255; 
+                    idata.data[i*4]=v; idata.data[i*4+1]=v; idata.data[i*4+2]=v; idata.data[i*4+3]=255;
+                }
+                cx.putImageData(idata, 0, 0);
+                
+                div.innerHTML = `
+                    <button class="btn-del" onclick="delSample(${s.id})">×</button>
+                    <div class="sample-tag">${s.label}</div>
+                `;
+                div.insertBefore(c, div.firstChild);
+                list.appendChild(div);
+            });
+        }
+
+        function delSample(id) {
+            samples = samples.filter(s => s.id !== id);
+            renderList();
+        }
+
+        function downloadJSON() {
+            if(samples.length === 0) {
+                alert("没有数据可导出");
+                return;
+            }
+            const blob = new Blob([JSON.stringify(samples, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `dataset_${samples.length}_samples.json`;
+            a.click();
+        }
+
+        // === Link to Training ===
+        function saveAndGoToTrain() {
+            if(samples.length === 0) {
+                alert("请先采集至少一个样本！");
+                return;
+            }
+            
+            // 1. 提取所有唯一标签
+            const uniqueLabels = [...new Set(samples.map(s => s.label))];
+            
+            if(uniqueLabels.length < 2) {
+                alert(`当前只有 1 类数据 (${uniqueLabels[0]})，训练至少需要 2 类！`);
+                return;
+            }
+
+            // 2. 保存到 LocalStorage
+            const datasetObj = {
+                timestamp: Date.now(),
+                count: samples.length,
+                labels: uniqueLabels,
+                data: samples
+            };
+            
+            localStorage.setItem('zhangjiang_dataset', JSON.stringify(datasetObj));
+            
+            // 3. 跳转提示
+            if(confirm(`已保存 ${samples.length} 个样本，包含 ${uniqueLabels.length} 个类别：\n${uniqueLabels.join(', ')}\n\n是否前往"模型训练实验室"？`)) {
+                window.location.href = '3.模型训练实验室.html';
+            }
+        }
+        
+        // 预设一些标签方便测试
+        tags = ["Tree", "House"];
+        renderTags();
+        
+    </script>
+</body>
+</html>

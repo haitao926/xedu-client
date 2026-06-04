@@ -1,0 +1,14 @@
+<xml xmlns="https://developers.google.com/blockly/xml">
+  <block type="xeduhub_run_embedding_text" id="xeduhub_task_embedding_text_run" x="28" y="28">
+    <value name="INPUT_DATA">
+      <block type="text" id="xeduhub_task_embedding_text_input_text">
+              <field name="TEXT">XEduHub test text</field>
+            </block>
+    </value>
+    <next>
+      <block type="xeduhub_show_result_card" id="xeduhub_task_embedding_text_show">
+        <field name="TITLE">文本特征提取</field>
+      </block>
+    </next>
+  </block>
+</xml>

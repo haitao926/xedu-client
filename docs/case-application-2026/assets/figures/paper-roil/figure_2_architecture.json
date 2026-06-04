@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张严格论文风格的中文系统架构图，主题为“XEdu Client 总体架构”。\n\n用途：用于论文/申报报告的“系统设计与功能架构”部分，说明平台分层结构。\n\n图形结构：横向 16:9，白色背景，分层架构图。自上而下分为五层：用户层、桌面端层、教学工作台层、本地服务层、资源与能力层。每层用浅色横向分区表示，层内放置若干模块，层与层之间用向下箭头连接。不要手绘、不要插画、不要复杂背景。\n\n图内文字必须且只包含：\n标题：XEdu Client 总体架构\n层级：用户层、桌面端层、教学工作台层、本地服务层、资源与能力层\n模块：教师、学生、Electron桌面端、HTML体验、Blockly实践、Jupyter应用创新、课程资源管理、运行管理、同步更新、XEduHub工具箱、本地课程目录、云端课程仓库、模型与数据资源\n\n排版要求：结构清晰，线条细，颜色克制，像软件工程论文架构图。",
+  "original_prompt": "生成一张严格论文风格的中文系统架构图，主题为“XEdu Client 总体架构”。\n\n用途：用于论文/申报报告的“系统设计与功能架构”部分，说明平台分层结构。\n\n图形结构：横向 16:9，白色背景，分层架构图。自上而下分为五层：用户层、桌面端层、教学工作台层、本地服务层、资源与能力层。每层用浅色横向分区表示，层内放置若干模块，层与层之间用向下箭头连接。不要手绘、不要插画、不要复杂背景。\n\n图内文字必须且只包含：\n标题：XEdu Client 总体架构\n层级：用户层、桌面端层、教学工作台层、本地服务层、资源与能力层\n模块：教师、学生、Electron桌面端、HTML体验、Blockly实践、Jupyter应用创新、课程资源管理、运行管理、同步更新、XEduHub工具箱、本地课程目录、云端课程仓库、模型与数据资源\n\n排版要求：结构清晰，线条细，颜色克制，像软件工程论文架构图。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/eba8f4ae-6376-4308-abca-f32e8bf9496a.png",
+  "output_path": "docs/case-application-2026/assets/figures/paper-roil/figure_2_architecture.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

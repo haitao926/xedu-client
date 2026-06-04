@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神经网络推理过程 - 手写数字识别</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+    <script>
+        // 检查TensorFlow.js是否成功加载
+        window.addEventListener('DOMContentLoaded', function() {
+            if (typeof tf === 'undefined') {
+                console.warn('TensorFlow.js from jsdelivr failed, trying unpkg...');
+                const script = document.createElement('script');
+                script.src = 'https://unpkg.com/@tensorflow/tfjs@4.11.0/dist/tf.min.js';
+                script.onload = function() {
+                    if (typeof tf !== 'undefined') {
+                        console.log('TensorFlow.js loaded successfully from unpkg');
+                    }
+                };
+                script.onerror = function() {
+                    console.error('Failed to load TensorFlow.js from both CDNs');
+                    alert('TensorFlow.js库加载失败，请检查网络连接或尝试刷新页面。');
+                };
+                document.head.appendChild(script);
+            } else {
+                console.log('TensorFlow.js loaded successfully');
+            }
+        });
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+            overflow-x: auto;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .inference-pipeline {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+        
+        .pipeline-stage {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            min-height: 400px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        
+        .pipeline-stage.active {
+            transform: scale(1.02);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+            border: 2px solid #4CAF50;
+        }
+        
+        .stage-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .stage-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #1e3c72;
+            color: white;
+            font-weight: bold;
+            line-height: 30px;
+            margin-right: 10px;
+        }
+        
+        .stage-title {
+            color: #333;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        
+        /* 阶段1：输入区域 */
+        .input-stage {
+            width: 300px;
+        }
+        
+        #drawCanvas {
+            width: 240px;
+            height: 240px;
+            border: 3px solid #1e3c72;
+            border-radius: 10px;
+            background: white;
+            cursor: crosshair;
+            display: block;
+            margin: 0 auto 15px;
+            touch-action: none; /* 防止触摸滚动 */
+        }
+        
+        .controls {
+            text-align: center;
+            margin-top: 15px;
+        }
+        
+        .btn {
+            background: linear-gradient(45deg, #1e3c72, #2a5298);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* 阶段2：预处理 */
+        .preprocessing-stage {
+            width: 280px;
+        }
+        
+        .preprocess-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        
+        .preprocess-item {
+            text-align: center;
+        }
+        
+        .preprocess-canvas {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .preprocess-label {
+            margin-top: 8px;
+            font-size: 0.9rem;
+            color: #666;
+            font-weight: bold;
+        }
+        
+        /* 阶段3：神经网络 */
+        .network-stage {
+            width: 400px;
+        }
+        
+        #networkCanvas {
+            width: 100%;
+            height: 300px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        
+        .network-info {
+            margin-top: 15px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .layer-info {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+        
+        .layer-info.active {
+            background: rgba(76, 175, 80, 0.1);
+            border-left: 4px solid #4CAF50;
+        }
+        
+        /* 阶段4：特征提取 */
+        .features-stage {
+            width: 300px;
+        }
+        
+        .feature-maps {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin: 15px 0;
+        }
+        
+        .feature-map {
+            text-align: center;
+        }
+        
+        .feature-canvas {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .feature-label {
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        /* 阶段5：输出结果 */
+        .output-stage {
+            width: 320px;
+        }
+        
+        .probability-bars {
+            margin: 20px 0;
+        }
+        
+        .prob-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+        }
+        
+        .prob-digit {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .prob-digit.winner {
+            background: #4CAF50;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+        
+        .prob-bar {
+            flex: 1;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .prob-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1e3c72, #2a5298);
+            border-radius: 10px;
+            transition: width 0.8s ease;
+        }
+        
+        .prob-fill.winner {
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+        }
+        
+        .prob-value {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .result-display {
+            text-align: center;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+        }
+        
+        .result-digit {
+            font-size: 4rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .result-confidence {
+            font-size: 1.2rem;
+        }
+        
+        /* 流程箭头 */
+        .arrow {
+            font-size: 2rem;
+            color: rgba(255, 255, 255, 0.7);
+            align-self: center;
+            margin: 0 10px;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        @keyframes processing {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        
+        .processing {
+            animation: processing 1s infinite;
+        }
+        
+        /* 数据流动效果 */
+        .data-flow {
+            position: absolute;
+            top: 50%;
+            right: -15px;
+            width: 30px;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, #4CAF50, transparent);
+            border-radius: 2px;
+            opacity: 0;
+            animation: flow 2s infinite;
+        }
+        
+        @keyframes flow {
+            0% { opacity: 0; transform: translateX(-30px); }
+            50% { opacity: 1; transform: translateX(0); }
+            100% { opacity: 0; transform: translateX(30px); }
+        }
+        
+        .status-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(30, 60, 114, 0.1);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: #1e3c72;
+            border-left: 4px solid #1e3c72;
+        }
+        
+        @media (max-width: 1200px) {
+            .inference-pipeline {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .arrow {
+                transform: rotate(90deg);
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 神经网络推理过程可视化</h1>
+            <p>观察AI如何"思考"并识别手写数字的完整过程</p>
+        </div>
+        
+        <div class="inference-pipeline">
+            <!-- 阶段1：输入 -->
+            <div class="pipeline-stage input-stage" id="stage1">
+                <div class="stage-header">
+                    <span class="stage-number">1</span>
+                    <span class="stage-title">手写输入</span>
+                </div>
+                
+                <canvas id="drawCanvas" width="240" height="240"></canvas>
+                
+                <div class="controls">
+                    <button class="btn" id="clearBtn">清除</button>
+                    <button class="btn" id="recognizeBtn">开始识别</button>
+                    <button class="btn" id="trainPageBtn" onclick="window.open('neural_network_training.html', '_blank')" style="background: linear-gradient(45deg, #FF6B35, #F7931E); margin-top: 10px;">🎓 打开训练页面</button>
+                </div>
+                
+                <div class="status-info">
+                    💡 在画布上绘制0-9任意数字，然后点击"开始识别"观察AI推理过程<br>
+                    🎯 想要更高的识别精度？点击"训练页面"按钮，手写训练数据来提升模型准确率！
+                </div>
+                
+                <div class="data-flow"></div>
+            </div>
+            
+            <div class="arrow">→</div>
+            
+            <!-- 阶段2：数据预处理 -->
+            <div class="pipeline-stage preprocessing-stage" id="stage2">
+                <div class="stage-header">
+                    <span class="stage-number">2</span>
+                    <span class="stage-title">数据预处理</span>
+                </div>
+                
+                <div class="preprocess-grid">
+                    <div class="preprocess-item">
+                        <canvas class="preprocess-canvas" id="grayCanvas" width="80" height="80"></canvas>
+                        <div class="preprocess-label">灰度化</div>
+                    </div>
+                    <div class="preprocess-item">
+                        <canvas class="preprocess-canvas" id="resizeCanvas" width="80" height="80"></canvas>
+                        <div class="preprocess-label">缩放到28×28</div>
+                    </div>
+                    <div class="preprocess-item">
+                        <canvas class="preprocess-canvas" id="normalizeCanvas" width="80" height="80"></canvas>
+                        <div class="preprocess-label">归一化</div>
+                    </div>
+                    <div class="preprocess-item">
+                        <canvas class="preprocess-canvas" id="tensorCanvas" width="80" height="80"></canvas>
+                        <div class="preprocess-label">张量格式</div>
+                    </div>
+                </div>
+                
+                <div class="status-info" id="preprocessStatus">
+                    等待输入数据...
+                </div>
+                
+                <div class="data-flow"></div>
+            </div>
+            
+            <div class="arrow">→</div>
+            
+            <!-- 阶段3：神经网络处理 -->
+            <div class="pipeline-stage network-stage" id="stage3">
+                <div class="stage-header">
+                    <span class="stage-number">3</span>
+                    <span class="stage-title">神经网络推理</span>
+                </div>
+                
+                <canvas id="networkCanvas"></canvas>
+                
+                <div class="network-info">
+                    <div class="layer-info" id="layer1">
+                        <span>🔹 输入层: 784个神经元</span>
+                        <span class="layer-status">待处理</span>
+                    </div>
+                    <div class="layer-info" id="layer2">
+                        <span>🔹 隐藏层1: 128个神经元</span>
+                        <span class="layer-status">待处理</span>
+                    </div>
+                    <div class="layer-info" id="layer3">
+                        <span>🔹 隐藏层2: 64个神经元</span>
+                        <span class="layer-status">待处理</span>
+                    </div>
+                    <div class="layer-info" id="layer4">
+                        <span>🔹 输出层: 10个神经元</span>
+                        <span class="layer-status">待处理</span>
+                    </div>
+                </div>
+                
+                <div class="data-flow"></div>
+            </div>
+            
+            <div class="arrow">→</div>
+            
+            <!-- 阶段4：特征提取 -->
+            <div class="pipeline-stage features-stage" id="stage4">
+                <div class="stage-header">
+                    <span class="stage-number">4</span>
+                    <span class="stage-title">特征提取</span>
+                </div>
+                
+                <div class="feature-maps" id="featureMaps">
+                    <!-- 特征图将动态生成 -->
+                </div>
+                
+                <div class="status-info" id="featureStatus">
+                    神经网络正在提取关键特征...
+                </div>
+                
+                <div class="data-flow"></div>
+            </div>
+            
+            <div class="arrow">→</div>
+            
+            <!-- 阶段5：结果输出 -->
+            <div class="pipeline-stage output-stage" id="stage5">
+                <div class="stage-header">
+                    <span class="stage-number">5</span>
+                    <span class="stage-title">识别结果</span>
+                </div>
+                
+                <div class="result-display" id="resultDisplay" style="display: none;">
+                    <div class="result-digit" id="resultDigit">?</div>
+                    <div class="result-confidence" id="resultConfidence">置信度: --%</div>
+                </div>
+                
+                <div class="probability-bars" id="probabilityBars">
+                    <!-- 概率条将动态生成 -->
+                </div>
+                
+                <div class="status-info" id="outputStatus">
+                    等待推理完成...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class InferenceVisualizer {
+            constructor() {
+                this.canvas = document.getElementById('drawCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.isDrawing = false;
+                this.model = null;
+                this.currentStage = 0;
+                
+                // 添加调试信息
+                console.log('初始化开始...');
+                console.log('画布元素:', this.canvas);
+                console.log('画布上下文:', this.ctx);
+                console.log('画布尺寸:', this.canvas.width, 'x', this.canvas.height);
+                
+                // 先初始化UI元素，再初始化画布
+                this.initializeProbabilityBars();
+                this.initializeFeatureMaps();
+                this.initializeCanvas();
+                this.initializeEventListeners();
+                this.drawNeuralNetwork(); // 添加网络绘制
+                this.loadPretrainedModel();
+                
+                console.log('初始化完成');
+            }
+            
+            initializeCanvas() {
+                // 确保画布尺寸正确
+                this.canvas.width = 240;
+                this.canvas.height = 240;
+                
+                // 设置画布样式
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 12;
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                
+                // 清空画布
+                this.clearCanvas();
+                
+                // 测试绘图功能
+                this.testDrawing();
+                
+                console.log('画布初始化完成');
+            }
+            
+            testDrawing() {
+                // 测试画布是否可以绘图
+                this.ctx.fillStyle = '#ff0000';
+                this.ctx.fillRect(10, 10, 20, 20);
+                console.log('测试绘图完成');
+                
+                // 2秒后清除测试
+                setTimeout(() => {
+                    this.clearCanvas();
+                }, 2000);
+            }
+            
+            initializeEventListeners() {
+                // 鼠标事件
+                this.canvas.addEventListener('mousedown', (e) => {
+                    console.log('鼠标按下');
+                    this.startDrawing(e);
+                });
+                
+                this.canvas.addEventListener('mousemove', (e) => {
+                    this.draw(e);
+                });
+                
+                this.canvas.addEventListener('mouseup', () => {
+                    console.log('鼠标抬起');
+                    this.stopDrawing();
+                });
+                
+                this.canvas.addEventListener('mouseout', () => {
+                    this.stopDrawing();
+                });
+                
+                // 触摸事件（移动设备支持）
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    console.log('触摸开始');
+                    const touch = e.touches[0];
+                    const rect = this.canvas.getBoundingClientRect();
+                    const mouseEvent = new MouseEvent('mousedown', {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    });
+                    this.canvas.dispatchEvent(mouseEvent);
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const mouseEvent = new MouseEvent('mousemove', {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    });
+                    this.canvas.dispatchEvent(mouseEvent);
+                });
+                
+                this.canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    console.log('触摸结束');
+                    this.stopDrawing();
+                });
+                
+                // 按钮事件
+                document.getElementById('clearBtn').addEventListener('click', () => {
+                    console.log('清除按钮点击');
+                    this.clearCanvas();
+                });
+                
+                document.getElementById('recognizeBtn').addEventListener('click', () => {
+                    console.log('识别按钮点击');
+                    this.startInference();
+                });
+                
+                console.log('事件监听器设置完成');
+            }
+            
+            async loadPretrainedModel() {
+                try {
+                    // 检查TensorFlow.js是否已加载
+                    if (typeof tf === 'undefined') {
+                        throw new Error('TensorFlow.js未正确加载，请刷新页面重试');
+                    }
+                    
+                    console.log('TensorFlow.js版本: ' + tf.version.tfjs);
+                    
+                    // 首先尝试从训练页面加载模型
+                    console.log('尝试加载训练好的模型...');
+                    try {
+                        this.model = await tf.loadLayersModel('localstorage://trained-model');
+                        console.log('✅ 成功加载训练好的模型！');
+                        document.getElementById('outputStatus').textContent = '✅ 已加载训练好的模型，识别精度更高';
+                        return;
+                    } catch (error) {
+                        console.log('训练好的模型不存在，使用默认模型');
+                    }
+                    
+                    // 如果没有训练好的模型，创建并训练默认模型
+                    console.log('创建并训练默认模型...');
+                    this.model = tf.sequential({
+                        layers: [
+                            tf.layers.flatten({inputShape: [28, 28, 1]}),
+                            tf.layers.dense({units: 256, activation: 'relu'}),
+                            tf.layers.dropout({rate: 0.2}),
+                            tf.layers.dense({units: 128, activation: 'relu'}),
+                            tf.layers.dropout({rate: 0.2}),
+                            tf.layers.dense({units: 64, activation: 'relu'}),
+                            tf.layers.dense({units: 10, activation: 'softmax'})
+                        ]
+                    });
+                    
+                    this.model.compile({
+                        optimizer: tf.train.adam(0.001),
+                        loss: 'categoricalCrossentropy',
+                        metrics: ['accuracy']
+                    });
+                    
+                    // 使用模拟训练数据改善识别精度
+                    await this.trainWithSimulatedData();
+                    
+                    console.log('默认模型训练完成');
+                    document.getElementById('outputStatus').textContent = '模型已准备就绪，可开始识别手写数字';
+                } catch (error) {
+                    console.error('模型加载失败:', error);
+                    document.getElementById('outputStatus').textContent = '❌ 模型加载失败，请刷新页面重试';
+                }
+            }
+            
+            async trainWithSimulatedData() {
+                console.log('正在使用模拟数据训练模型...');
+                
+                const trainingData = this.generateTrainingData();
+                const xs = tf.tensor4d(trainingData.images, [trainingData.images.length / 784, 28, 28, 1]);
+                const ys = tf.tensor2d(trainingData.labels);
+                
+                await this.model.fit(xs, ys, {
+                    epochs: 30,
+                    batchSize: 32,
+                    validationSplit: 0.1,
+                    verbose: 0,
+                    shuffle: true
+                });
+                
+                xs.dispose();
+                ys.dispose();
+                console.log('模拟训练完成');
+            }
+            
+            generateTrainingData() {
+                const images = [];
+                const labels = [];
+                
+                // 为每个数字生成更多多样化的样本
+                for (let digit = 0; digit < 10; digit++) {
+                    for (let sample = 0; sample < 50; sample++) { // 增加到50个样本
+                        const image = this.generateDigitPattern(digit);
+                        images.push(...image);
+                        
+                        const label = new Array(10).fill(0);
+                        label[digit] = 1;
+                        labels.push(label);
+                    }
+                }
+                
+                return { images, labels };
+            }
+            
+            generateDigitPattern(digit) {
+                const image = new Array(28 * 28).fill(0);
+                
+                // 添加随机位置偏移
+                const offsetX = Math.floor((Math.random() - 0.5) * 4);
+                const offsetY = Math.floor((Math.random() - 0.5) * 4);
+                
+                switch(digit) {
+                    case 0:
+                        this.drawEllipse(image, 14 + offsetX, 14 + offsetY, 6, 8);
+                        break;
+                    case 1:
+                        this.drawVerticalLine(image, 14 + offsetX, 6 + offsetY, 20 + offsetY);
+                        // 添加顶部小斜线
+                        this.drawDiagonalLine(image, 12 + offsetX, 8 + offsetY, 14 + offsetX, 6 + offsetY);
+                        break;
+                    case 2:
+                        this.drawHorizontalLine(image, 8 + offsetX, 18 + offsetX, 8 + offsetY);
+                        this.drawCurveTopRight(image, 18 + offsetX, 8 + offsetY, 8 + offsetX, 14 + offsetY);
+                        this.drawHorizontalLine(image, 8 + offsetX, 18 + offsetX, 20 + offsetY);
+                        break;
+                    case 3:
+                        this.drawHorizontalLine(image, 8 + offsetX, 16 + offsetX, 8 + offsetY);
+                        this.drawHorizontalLine(image, 8 + offsetX, 15 + offsetX, 14 + offsetY);
+                        this.drawHorizontalLine(image, 8 + offsetX, 16 + offsetX, 20 + offsetY);
+                        this.drawVerticalLine(image, 16 + offsetX, 8 + offsetY, 20 + offsetY);
+                        break;
+                    case 4:
+                        this.drawVerticalLine(image, 8 + offsetX, 6 + offsetY, 14 + offsetY);
+                        this.drawHorizontalLine(image, 8 + offsetX, 16 + offsetX, 14 + offsetY);
+                        this.drawVerticalLine(image, 16 + offsetX, 6 + offsetY, 22 + offsetY);
+                        break;
+                    case 5:
+                        this.drawHorizontalLine(image, 8 + offsetX, 16 + offsetX, 8 + offsetY);
+                        this.drawVerticalLine(image, 8 + offsetX, 8 + offsetY, 14 + offsetY);
+                        this.drawHorizontalLine(image, 8 + offsetX, 15 + offsetX, 14 + offsetY);
+                        this.drawVerticalLine(image, 15 + offsetX, 14 + offsetY, 20 + offsetY);
+                        this.drawHorizontalLine(image, 8 + offsetX, 15 + offsetX, 20 + offsetY);
+                        break;
+                    case 6:
+                        this.drawVerticalLine(image, 8 + offsetX, 8 + offsetY, 20 + offsetY);
+                        this.drawHorizontalLine(image, 8 + offsetX, 15 + offsetX, 14 + offsetY);
+                        this.drawHorizontalLine(image, 8 + offsetX, 15 + offsetX, 20 + offsetY);
+                        this.drawVerticalLine(image, 15 + offsetX, 14 + offsetY, 20 + offsetY);
+                        this.drawCurveTop(image, 8 + offsetX, 8 + offsetY, 15 + offsetX, 8 + offsetY);
+                        break;
+                    case 7:
+                        this.drawHorizontalLine(image, 8 + offsetX, 18 + offsetX, 8 + offsetY);
+                        this.drawDiagonalLine(image, 18 + offsetX, 8 + offsetY, 10 + offsetX, 22 + offsetY);
+                        break;
+                    case 8:
+                        this.drawEllipse(image, 14 + offsetX, 11 + offsetY, 4, 3);
+                        this.drawEllipse(image, 14 + offsetX, 17 + offsetY, 4, 3);
+                        // 连接两个椭圆
+                        this.drawVerticalLine(image, 10 + offsetX, 8 + offsetY, 20 + offsetY);
+                        this.drawVerticalLine(image, 18 + offsetX, 8 + offsetY, 20 + offsetY);
+                        break;
+                    case 9:
+                        this.drawEllipse(image, 14 + offsetX, 11 + offsetY, 4, 3);
+                        this.drawVerticalLine(image, 18 + offsetX, 8 + offsetY, 22 + offsetY);
+                        this.drawHorizontalLine(image, 10 + offsetX, 18 + offsetX, 8 + offsetY);
+                        this.drawHorizontalLine(image, 14 + offsetX, 18 + offsetX, 14 + offsetY);
+                        break;
+                }
+                
+                // 添加更真实的随机变化和噪声
+                for (let i = 0; i < image.length; i++) {
+                    // 添加椒盐噪声
+                    if (Math.random() < 0.01) {
+                        image[i] = Math.random() * 0.2;
+                    }
+                    // 对现有像素添加随机变化
+                    if (image[i] > 0) {
+                        image[i] += (Math.random() - 0.5) * 0.15;
+                        image[i] = Math.max(0, Math.min(1, image[i]));
+                    }
+                }
+                
+                // 随机旋转
+                if (Math.random() < 0.3) {
+                    this.rotateImage(image, (Math.random() - 0.5) * 0.3);
+                }
+                
+                return image;
+            }
+            
+            drawEllipse(image, centerX, centerY, radiusX, radiusY) {
+                for (let angle = 0; angle < 2 * Math.PI; angle += 0.05) {
+                    const x = Math.round(centerX + radiusX * Math.cos(angle));
+                    const y = Math.round(centerY + radiusY * Math.sin(angle));
+                    if (x >= 0 && x < 28 && y >= 0 && y < 28) {
+                        image[y * 28 + x] = 0.8 + Math.random() * 0.2;
+                        // 增加线条厚度
+                        if (x > 0) image[y * 28 + (x - 1)] = 0.6;
+                        if (x < 27) image[y * 28 + (x + 1)] = 0.6;
+                    }
+                }
+            }
+            
+            drawCurveTop(image, startX, startY, endX, endY) {
+                const steps = Math.abs(endX - startX);
+                for (let i = 0; i <= steps; i++) {
+                    const progress = i / steps;
+                    const x = Math.round(startX + (endX - startX) * progress);
+                    const y = Math.round(startY + Math.sin(progress * Math.PI) * -3);
+                    if (x >= 0 && x < 28 && y >= 0 && y < 28) {
+                        image[y * 28 + x] = 0.8 + Math.random() * 0.2;
+                    }
+                }
+            }
+            
+            drawCurveTopRight(image, startX, startY, endX, endY) {
+                const steps = Math.abs(endX - startX) + Math.abs(endY - startY);
+                for (let i = 0; i <= steps; i++) {
+                    const progress = i / steps;
+                    const x = Math.round(startX + (endX - startX) * progress);
+                    const y = Math.round(startY + (endY - startY) * progress * progress);
+                    if (x >= 0 && x < 28 && y >= 0 && y < 28) {
+                        image[y * 28 + x] = 0.8 + Math.random() * 0.2;
+                    }
+                }
+            }
+            
+            rotateImage(image, angle) {
+                const rotated = new Array(28 * 28).fill(0);
+                const centerX = 14, centerY = 14;
+                const cos = Math.cos(angle), sin = Math.sin(angle);
+                
+                for (let y = 0; y < 28; y++) {
+                    for (let x = 0; x < 28; x++) {
+                        const dx = x - centerX;
+                        const dy = y - centerY;
+                        const srcX = Math.round(centerX + dx * cos - dy * sin);
+                        const srcY = Math.round(centerY + dx * sin + dy * cos);
+                        
+                        if (srcX >= 0 && srcX < 28 && srcY >= 0 && srcY < 28) {
+                            rotated[y * 28 + x] = image[srcY * 28 + srcX];
+                        }
+                    }
+                }
+                
+                // 复制旋转后的图像
+                for (let i = 0; i < image.length; i++) {
+                    image[i] = rotated[i];
+                }
+            }
+            
+            drawCircle(image, centerX, centerY, radius) {
+                for (let angle = 0; angle < 2 * Math.PI; angle += 0.1) {
+                    const x = Math.round(centerX + radius * Math.cos(angle));
+                    const y = Math.round(centerY + radius * Math.sin(angle));
+                    if (x >= 0 && x < 28 && y >= 0 && y < 28) {
+                        image[y * 28 + x] = 0.8 + Math.random() * 0.2;
+                    }
+                }
+            }
+            
+            drawVerticalLine(image, x, startY, endY) {
+                for (let y = startY; y <= endY; y++) {
+                    if (x >= 0 && x < 28 && y >= 0 && y < 28) {
+                        image[y * 28 + x] = 0.8 + Math.random() * 0.2;
+                        if (x > 0) image[y * 28 + (x - 1)] = 0.4;
+                        if (x < 27) image[y * 28 + (x + 1)] = 0.4;
+                    }
+                }
+            }
+            
+            drawHorizontalLine(image, startX, endX, y) {
+                for (let x = startX; x <= endX; x++) {
+                    if (x >= 0 && x < 28 && y >= 0 && y < 28) {
+                        image[y * 28 + x] = 0.8 + Math.random() * 0.2;
+                        if (y > 0) image[(y - 1) * 28 + x] = 0.4;
+                        if (y < 27) image[(y + 1) * 28 + x] = 0.4;
+                    }
+                }
+            }
+            
+            drawDiagonalLine(image, startX, startY, endX, endY) {
+                const steps = Math.max(Math.abs(endX - startX), Math.abs(endY - startY));
+                for (let i = 0; i <= steps; i++) {
+                    const x = Math.round(startX + (endX - startX) * i / steps);
+                    const y = Math.round(startY + (endY - startY) * i / steps);
+                    if (x >= 0 && x < 28 && y >= 0 && y < 28) {
+                        image[y * 28 + x] = 0.8 + Math.random() * 0.2;
+                    }
+                }
+            }
+            
+            drawCurve(image, startX, startY, endX, endY) {
+                const steps = Math.abs(endX - startX);
+                for (let i = 0; i <= steps; i++) {
+                    const x = startX + i;
+                    const y = Math.round(startY + (endY - startY) * (i / steps) * (i / steps));
+                    if (x >= 0 && x < 28 && y >= 0 && y < 28) {
+                        image[y * 28 + x] = 0.8 + Math.random() * 0.2;
+                    }
+                }
+            }
+            
+            drawNeuralNetwork() {
+                const canvas = document.getElementById('networkCanvas');
+                if (!canvas) {
+                    console.log('网络画布不存在');
+                    return;
+                }
+                
+                const ctx = canvas.getContext('2d');
+                canvas.width = canvas.offsetWidth || 400;
+                canvas.height = 300;
+                
+                // 清空画布
+                ctx.fillStyle = '#f8f9fa';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // 绘制多层立体神经网络结构
+                const layers = [
+                    { name: '输入层', neurons: [784], x: 60, ys: [150], colors: ['#ff6b6b'], displayNodes: 12 },
+                    { name: '隐藏层1', neurons: [256], x: 140, ys: [150], colors: ['#4ecdc4'], displayNodes: 10 },
+                    { name: '隐藏层2', neurons: [128], x: 220, ys: [150], colors: ['#45b7d1'], displayNodes: 8 },
+                    { name: '输出层', neurons: [10], x: 300, ys: [150], colors: ['#96ceb4'], displayNodes: 10 }
+                ];
+                
+                // 绘制所有连接线（在节点之前绘制）
+                ctx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+                ctx.lineWidth = 1;
+                for (let i = 0; i < layers.length - 1; i++) {
+                    const currentLayer = layers[i];
+                    const nextLayer = layers[i + 1];
+                    
+                    // 从当前层的每个节点连接到下一层的每个节点
+                    for (let j = 0; j < currentLayer.displayNodes; j++) {
+                        for (let k = 0; k < nextLayer.displayNodes; k++) {
+                            const startY = currentLayer.ys[0] - (currentLayer.displayNodes - 1) * 15 + j * 30;
+                            const endY = nextLayer.ys[0] - (nextLayer.displayNodes - 1) * 15 + k * 30;
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(currentLayer.x + 12, startY);
+                            ctx.lineTo(nextLayer.x - 12, endY);
+                            ctx.stroke();
+                        }
+                    }
+                }
+                
+                // 绘制神经元节点（立体多层显示）
+                layers.forEach((layer, layerIndex) => {
+                    const nodeCount = layer.displayNodes;
+                    const startY = layer.ys[0] - (nodeCount - 1) * 15;
+                    
+                    for (let i = 0; i < nodeCount; i++) {
+                        const y = startY + i * 30;
+                        
+                        // 绘制阴影效果
+                        ctx.beginPath();
+                        ctx.arc(layer.x + 2, y + 2, 12, 0, 2 * Math.PI);
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                        ctx.fill();
+                        
+                        // 绘制主节点
+                        ctx.beginPath();
+                        ctx.arc(layer.x, y, 12, 0, 2 * Math.PI);
+                        
+                        // 渐变填充
+                        const gradient = ctx.createRadialGradient(layer.x - 4, y - 4, 0, layer.x, y, 12);
+                        gradient.addColorStop(0, layer.colors[0]);
+                        gradient.addColorStop(1, this.darkenColor(layer.colors[0], 0.3));
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                        
+                        // 边框
+                        ctx.strokeStyle = '#333';
+                        ctx.lineWidth = 1.5;
+                        ctx.stroke();
+                        
+                        // 高光效果
+                        ctx.beginPath();
+                        ctx.arc(layer.x - 3, y - 3, 3, 0, 2 * Math.PI);
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                        ctx.fill();
+                    }
+                    
+                    // 绘制层标签
+                    ctx.fillStyle = '#333';
+                    ctx.font = 'bold 12px Microsoft YaHei';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(layer.name, layer.x, 60);
+                    
+                    // 绘制神经元数量
+                    ctx.font = '10px Microsoft YaHei';
+                    ctx.fillStyle = '#666';
+                    ctx.fillText(`${layer.neurons[0]}个神经元`, layer.x, 280);
+                    
+                    // 如果显示的节点少于实际数量，添加省略号
+                    if (layer.displayNodes < layer.neurons[0]) {
+                        ctx.fillStyle = '#999';
+                        ctx.font = '16px Microsoft YaHei';
+                        ctx.fillText('⋮', layer.x, startY + nodeCount * 30 + 10);
+                    }
+                });
+                
+                // 绘制数据流动箭头
+                for (let i = 0; i < layers.length - 1; i++) {
+                    const startX = layers[i].x + 15;
+                    const endX = layers[i + 1].x - 15;
+                    const y = 80;
+                    
+                    // 箭头线
+                    ctx.strokeStyle = '#4CAF50';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(startX, y);
+                    ctx.lineTo(endX, y);
+                    ctx.stroke();
+                    
+                    // 箭头头部
+                    ctx.fillStyle = '#4CAF50';
+                    ctx.beginPath();
+                    ctx.moveTo(endX, y);
+                    ctx.lineTo(endX - 8, y - 4);
+                    ctx.lineTo(endX - 8, y + 4);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                
+                // 添加标题
+                ctx.fillStyle = '#333';
+                ctx.font = 'bold 16px Microsoft YaHei';
+                ctx.textAlign = 'center';
+                ctx.fillText('🧠 深度神经网络结构', canvas.width / 2, 25);
+                
+                // 添加数据流向标签
+                ctx.fillStyle = '#4CAF50';
+                ctx.font = '11px Microsoft YaHei';
+                ctx.textAlign = 'center';
+                ctx.fillText('数据流向 →', canvas.width / 2, 95);
+                
+                console.log('立体神经网络图绘制完成');
+            }
+            
+            darkenColor(color, factor) {
+                // 简单的颜色加深函数
+                const colorMap = {
+                    '#ff6b6b': '#cc5555',
+                    '#4ecdc4': '#3ea39d',
+                    '#45b7d1': '#3692a7',
+                    '#96ceb4': '#76a590'
+                };
+                return colorMap[color] || color;
+            }
+            
+            initializeProbabilityBars() {
+                const container = document.getElementById('probabilityBars');
+                container.innerHTML = '';
+                
+                for (let i = 0; i < 10; i++) {
+                    const probItem = document.createElement('div');
+                    probItem.className = 'prob-item';
+                    probItem.innerHTML = `
+                        <div class="prob-digit" id="digit${i}">${i}</div>
+                        <div class="prob-bar">
+                            <div class="prob-fill" id="fill${i}" style="width: 0%"></div>
+                            <div class="prob-value" id="value${i}">0.0%</div>
+                        </div>
+                    `;
+                    container.appendChild(probItem);
+                }
+            }
+            
+            initializeFeatureMaps() {
+                const container = document.getElementById('featureMaps');
+                container.innerHTML = '';
+                
+                for (let i = 0; i < 8; i++) {
+                    const featureDiv = document.createElement('div');
+                    featureDiv.className = 'feature-map';
+                    featureDiv.innerHTML = `
+                        <canvas class="feature-canvas" id="feature${i}" width="60" height="60"></canvas>
+                        <div class="feature-label">特征${i + 1}</div>
+                    `;
+                    container.appendChild(featureDiv);
+                }
+            }
+            
+            getMousePos(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                const scaleX = this.canvas.width / rect.width;
+                const scaleY = this.canvas.height / rect.height;
+                
+                return {
+                    x: (e.clientX - rect.left) * scaleX,
+                    y: (e.clientY - rect.top) * scaleY
+                };
+            }
+            
+            startDrawing(e) {
+                this.isDrawing = true;
+                const pos = this.getMousePos(e);
+                this.ctx.beginPath();
+                this.ctx.moveTo(pos.x, pos.y);
+                this.resetVisualization();
+                
+                console.log('开始绘制，位置:', pos);
+            }
+            
+            draw(e) {
+                if (!this.isDrawing) return;
+                const pos = this.getMousePos(e);
+                this.ctx.lineTo(pos.x, pos.y);
+                this.ctx.stroke();
+            }
+            
+            stopDrawing() {
+                if (this.isDrawing) {
+                    this.isDrawing = false;
+                    console.log('停止绘制');
+                }
+            }
+            
+            clearCanvas() {
+                // 填充白色背景
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                this.resetVisualization();
+                
+                console.log('画布已清除');
+            }
+            
+            resetVisualization() {
+                // 重置所有阶段
+                document.querySelectorAll('.pipeline-stage').forEach(stage => {
+                    stage.classList.remove('active');
+                });
+                
+                // 重置状态信息（安全检查）
+                const preprocessStatus = document.getElementById('preprocessStatus');
+                if (preprocessStatus) preprocessStatus.textContent = '等待输入数据...';
+                
+                const featureStatus = document.getElementById('featureStatus');
+                if (featureStatus) featureStatus.textContent = '神经网络正在提取关键特征...';
+                
+                const outputStatus = document.getElementById('outputStatus');
+                if (outputStatus) outputStatus.textContent = '等待推理完成...';
+                
+                const resultDisplay = document.getElementById('resultDisplay');
+                if (resultDisplay) resultDisplay.style.display = 'none';
+                
+                // 重置网络层状态（安全检查）
+                document.querySelectorAll('.layer-info').forEach(layer => {
+                    layer.classList.remove('active');
+                    const layerStatus = layer.querySelector('.layer-status');
+                    if (layerStatus) layerStatus.textContent = '待处理';
+                });
+                
+                // 重置概率条（安全检查）
+                for (let i = 0; i < 10; i++) {
+                    const fill = document.getElementById(`fill${i}`);
+                    const digit = document.getElementById(`digit${i}`);
+                    const value = document.getElementById(`value${i}`);
+                    
+                    if (fill) {
+                        fill.style.width = '0%';
+                        fill.classList.remove('winner');
+                    }
+                    if (digit) {
+                        digit.classList.remove('winner');
+                    }
+                    if (value) {
+                        value.textContent = '0.0%';
+                    }
+                }
+                
+                // 清空预处理画布（安全检查）
+                ['grayCanvas', 'resizeCanvas', 'normalizeCanvas', 'tensorCanvas'].forEach(id => {
+                    const canvas = document.getElementById(id);
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                            ctx.fillStyle = '#f0f0f0';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        }
+                    }
+                });
+                
+                // 清空特征图（安全检查）
+                for (let i = 0; i < 8; i++) {
+                    const canvas = document.getElementById(`feature${i}`);
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                            ctx.fillStyle = '#f0f0f0';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        }
+                    }
+                }
+            }
+            
+            async startInference() {
+                if (!this.model) {
+                    alert('模型未加载完成');
+                    return;
+                }
+                
+                document.getElementById('recognizeBtn').disabled = true;
+                
+                try {
+                    // 阶段1：激活输入阶段
+                    await this.activateStage(1);
+                    
+                    // 阶段2：数据预处理
+                    await this.activateStage(2);
+                    const preprocessedData = await this.showPreprocessing();
+                    
+                    // 阶段3：神经网络推理
+                    await this.activateStage(3);
+                    const predictions = await this.showNetworkInference(preprocessedData);
+                    
+                    // 阶段4：特征提取可视化
+                    await this.activateStage(4);
+                    await this.showFeatureExtraction();
+                    
+                    // 阶段5：结果输出
+                    await this.activateStage(5);
+                    await this.showResults(predictions);
+                    
+                } catch (error) {
+                    console.error('推理过程出错:', error);
+                } finally {
+                    document.getElementById('recognizeBtn').disabled = false;
+                }
+            }
+            
+            async activateStage(stageNumber) {
+                // 移除所有激活状态
+                document.querySelectorAll('.pipeline-stage').forEach(stage => {
+                    stage.classList.remove('active');
+                });
+                
+                // 激活当前阶段
+                document.getElementById(`stage${stageNumber}`).classList.add('active');
+                
+                // 等待动画效果
+                await this.delay(800);
+            }
+            
+            async showPreprocessing() {
+                document.getElementById('preprocessStatus').textContent = '正在处理输入图像...';
+                
+                // 1. 灰度化
+                await this.delay(500);
+                const grayData = this.convertToGrayscale();
+                this.drawToCanvas('grayCanvas', grayData, 80);
+                
+                // 2. 缩放到28x28
+                await this.delay(500);
+                const resizedData = this.resizeImage(grayData, 28);
+                this.drawToCanvas('resizeCanvas', resizedData, 80);
+                
+                // 3. 归一化
+                await this.delay(500);
+                const normalizedData = this.normalizeData(resizedData);
+                this.drawToCanvas('normalizeCanvas', normalizedData, 80);
+                
+                // 4. 转为张量格式
+                await this.delay(500);
+                this.drawToCanvas('tensorCanvas', normalizedData, 80);
+                
+                document.getElementById('preprocessStatus').textContent = '✅ 数据预处理完成';
+                
+                return tf.tensor4d(normalizedData, [1, 28, 28, 1]);
+            }
+            
+            async showNetworkInference(inputTensor) {
+                // 先激活输入层
+                await this.animateLayerActivation(0);
+                document.querySelector('#layer1 .layer-status').textContent = '处理中...';
+                document.getElementById('layer1').classList.add('active');
+                await this.delay(800);
+                document.querySelector('#layer1 .layer-status').textContent = '✅ 完成';
+                document.getElementById('layer1').classList.remove('active');
+                
+                // 激活隐藏层1
+                await this.animateLayerActivation(1);
+                document.querySelector('#layer2 .layer-status').textContent = '处理中...';
+                document.getElementById('layer2').classList.add('active');
+                await this.delay(800);
+                document.querySelector('#layer2 .layer-status').textContent = '✅ 完成';
+                document.getElementById('layer2').classList.remove('active');
+                
+                // 激活隐藏层2
+                await this.animateLayerActivation(2);
+                document.querySelector('#layer3 .layer-status').textContent = '处理中...';
+                document.getElementById('layer3').classList.add('active');
+                await this.delay(800);
+                document.querySelector('#layer3 .layer-status').textContent = '✅ 完成';
+                document.getElementById('layer3').classList.remove('active');
+                
+                // 激活输出层
+                await this.animateLayerActivation(3);
+                document.querySelector('#layer4 .layer-status').textContent = '处理中...';
+                document.getElementById('layer4').classList.add('active');
+                
+                // 实际推理
+                const predictions = await this.model.predict(inputTensor);
+                const probabilities = await predictions.data();
+                
+                await this.delay(800);
+                document.querySelector('#layer4 .layer-status').textContent = '✅ 完成';
+                document.getElementById('layer4').classList.remove('active');
+                
+                inputTensor.dispose();
+                predictions.dispose();
+                
+                return Array.from(probabilities);
+            }
+            
+            async animateLayerActivation(layerIndex) {
+                const canvas = document.getElementById('networkCanvas');
+                const ctx = canvas.getContext('2d');
+                
+                // 重绘网络结构
+                this.drawNeuralNetwork();
+                
+                // 获取层信息
+                const layers = [
+                    { x: 60, displayNodes: 12, colors: ['#ff6b6b'] },
+                    { x: 140, displayNodes: 10, colors: ['#4ecdc4'] },
+                    { x: 220, displayNodes: 8, colors: ['#45b7d1'] },
+                    { x: 300, displayNodes: 10, colors: ['#96ceb4'] }
+                ];
+                
+                const layer = layers[layerIndex];
+                const nodeCount = layer.displayNodes;
+                const startY = 150 - (nodeCount - 1) * 15;
+                
+                // 动画激活神经元
+                for (let i = 0; i < nodeCount; i++) {
+                    const y = startY + i * 30;
+                    
+                    // 绘制激活效果
+                    ctx.beginPath();
+                    ctx.arc(layer.x, y, 18, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'rgba(255, 215, 0, 0.6)'; // 金色光晕
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.arc(layer.x, y, 12, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#FFD700'; // 激活色
+                    ctx.fill();
+                    ctx.strokeStyle = '#FFA500';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    await this.delay(100);
+                }
+                
+                await this.delay(300);
+                
+                // 恢复原色
+                this.drawNeuralNetwork();
+            }
+            
+            async showFeatureExtraction() {
+                document.getElementById('featureStatus').textContent = '正在提取数字特征...';
+                
+                // 模拟特征图生成
+                for (let i = 0; i < 8; i++) {
+                    await this.delay(200);
+                    this.generateFeatureMap(i);
+                }
+                
+                document.getElementById('featureStatus').textContent = '✅ 特征提取完成，发现关键模式';
+            }
+            
+            async showResults(probabilities) {
+                document.getElementById('outputStatus').textContent = '正在计算最终结果...';
+                
+                // 找到最大概率
+                const maxIndex = probabilities.indexOf(Math.max(...probabilities));
+                const maxProbability = probabilities[maxIndex];
+                
+                // 逐个显示概率条
+                for (let i = 0; i < 10; i++) {
+                    const prob = probabilities[i];
+                    const percentage = (prob * 100).toFixed(1);
+                    
+                    document.getElementById(`fill${i}`).style.width = `${prob * 100}%`;
+                    document.getElementById(`value${i}`).textContent = `${percentage}%`;
+                    
+                    await this.delay(100);
+                }
+                
+                // 高亮胜者
+                await this.delay(500);
+                document.getElementById(`digit${maxIndex}`).classList.add('winner');
+                document.getElementById(`fill${maxIndex}`).classList.add('winner');
+                
+                // 显示最终结果
+                document.getElementById('resultDisplay').style.display = 'block';
+                document.getElementById('resultDigit').textContent = maxIndex;
+                document.getElementById('resultConfidence').textContent = `置信度: ${(maxProbability * 100).toFixed(1)}%`;
+                
+                document.getElementById('outputStatus').textContent = `✅ 识别完成！检测到数字 ${maxIndex}`;
+            }
+            
+            convertToGrayscale() {
+                const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                const data = imageData.data;
+                const grayscale = [];
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    const gray = (r + g + b) / 3;
+                    grayscale.push(gray);
+                }
+                
+                return grayscale;
+            }
+            
+            resizeImage(imageData, newSize) {
+                // 简化的缩放算法
+                const oldSize = Math.sqrt(imageData.length);
+                const resized = [];
+                
+                for (let y = 0; y < newSize; y++) {
+                    for (let x = 0; x < newSize; x++) {
+                        const srcX = Math.floor((x / newSize) * oldSize);
+                        const srcY = Math.floor((y / newSize) * oldSize);
+                        const srcIndex = srcY * oldSize + srcX;
+                        resized.push(imageData[srcIndex] || 0);
+                    }
+                }
+                
+                return resized;
+            }
+            
+            normalizeData(imageData) {
+                return imageData.map(value => (255 - (value || 0)) / 255);
+            }
+            
+            drawToCanvas(canvasId, imageData, displaySize) {
+                const canvas = document.getElementById(canvasId);
+                const ctx = canvas.getContext('2d');
+                const size = Math.sqrt(imageData.length);
+                
+                const imgData = ctx.createImageData(displaySize, displaySize);
+                
+                for (let i = 0; i < displaySize * displaySize; i++) {
+                    const srcIndex = Math.floor((i / (displaySize * displaySize)) * imageData.length);
+                    const value = typeof imageData[srcIndex] === 'number' 
+                        ? Math.floor(imageData[srcIndex] * 255)
+                        : Math.floor((imageData[srcIndex] || 0));
+                    
+                    imgData.data[i * 4] = value;     // R
+                    imgData.data[i * 4 + 1] = value; // G
+                    imgData.data[i * 4 + 2] = value; // B
+                    imgData.data[i * 4 + 3] = 255;   // A
+                }
+                
+                ctx.putImageData(imgData, 0, 0);
+            }
+            
+            generateFeatureMap(index) {
+                const canvas = document.getElementById(`feature${index}`);
+                const ctx = canvas.getContext('2d');
+                
+                // 生成模拟特征图
+                const imageData = ctx.createImageData(60, 60);
+                
+                for (let i = 0; i < imageData.data.length; i += 4) {
+                    const intensity = Math.random() * 255;
+                    imageData.data[i] = intensity;     // R
+                    imageData.data[i + 1] = intensity; // G
+                    imageData.data[i + 2] = 255;       // B (蓝色调)
+                    imageData.data[i + 3] = 255;       // A
+                }
+                
+                ctx.putImageData(imageData, 0, 0);
+            }
+            
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+        }
+        
+        // 初始化推理可视化器的函数
+        function initializeInferenceVisualizer() {
+            if (typeof tf === 'undefined') {
+                console.log('等待TensorFlow.js加载...');
+                setTimeout(initializeInferenceVisualizer, 500);
+                return;
+            }
+            new InferenceVisualizer();
+        }
+        
+        // 页面加载完成后初始化
+        window.addEventListener('load', () => {
+            setTimeout(initializeInferenceVisualizer, 100);
+        });
+    </script>
+</body>
+</html>

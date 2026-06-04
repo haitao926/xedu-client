@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张高级手绘课堂流程信息图底图，横向16:9，用于正式申报报告。主题是典型课堂应用流程。画面是双泳道流程地图，上方一条蓝色教师侧路径，下方一条绿色学生侧路径，中间以一个平台桥梁连接。左到右分为课前、课中、课后三段；上方有三个空白节点，下方有四个空白节点，节点之间用箭头连接，整体像手绘教学流程地图。高级教育科技白皮书风格，精致墨线，轻水彩质感，浅暖白背景，蓝绿主色，橙色强调课后迭代。不要生成任何文字、字母、数字、logo、乱码、水印、二维码、网址、人物照片。所有标签位置必须为空白，方便后期叠加清晰中文。",
+  "original_prompt": "生成一张高级手绘课堂流程信息图底图，横向16:9，用于正式申报报告。主题是典型课堂应用流程。画面是双泳道流程地图，上方一条蓝色教师侧路径，下方一条绿色学生侧路径，中间以一个平台桥梁连接。左到右分为课前、课中、课后三段；上方有三个空白节点，下方有四个空白节点，节点之间用箭头连接，整体像手绘教学流程地图。高级教育科技白皮书风格，精致墨线，轻水彩质感，浅暖白背景，蓝绿主色，橙色强调课后迭代。不要生成任何文字、字母、数字、logo、乱码、水印、二维码、网址、人物照片。所有标签位置必须为空白，方便后期叠加清晰中文。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/55455e90-69a3-4e07-9ca1-5179aef870e4.png",
+  "output_path": "docs/case-application-2026/assets/figures/gpt-image-2-redraw/figure_6_classroom_flow_base.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

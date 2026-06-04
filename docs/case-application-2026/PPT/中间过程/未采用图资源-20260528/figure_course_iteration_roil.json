@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "为 XEdu Client 创AI申报材料绘制一张课程资源迭代示意图。主题是教师围绕同一课程包持续建设：讲解页、Blockly 工作区、Notebook、Python 脚本、素材图片、运行结果、课堂反馈、再次修订。学术报告风格，白底，蓝色主线、绿色反馈线，结构清楚，中文标签简洁，服务项目本身，不参考 figure 5 的构图，不要宣传海报，不要大字标题。",
+  "original_prompt": "为 XEdu Client 创AI申报材料绘制一张课程资源迭代示意图。主题是教师围绕同一课程包持续建设：讲解页、Blockly 工作区、Notebook、Python 脚本、素材图片、运行结果、课堂反馈、再次修订。学术报告风格，白底，蓝色主线、绿色反馈线，结构清楚，中文标签简洁，服务项目本身，不参考 figure 5 的构图，不要宣传海报，不要大字标题。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/为_XEdu_Client_创AI申报材料绘制一张课程资源迭代示意图。主题是教师围绕同一课程包持续建_86915968b725.png",
+  "image_urls": [
+    "/static/generated/为_XEdu_Client_创AI申报材料绘制一张课程资源迭代示意图。主题是教师围绕同一课程包持续建_86915968b725.png"
+  ],
+  "output_path": "docs/case-application-2026/PPT/图资源/figure_course_iteration_roil.png",
+  "output_paths": [
+    "docs/case-application-2026/PPT/图资源/figure_course_iteration_roil.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

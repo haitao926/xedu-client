@@ -2,7 +2,7 @@
   <block type="xeduhub_run_vision" id="legacy_run_vision" x="28" y="28">
     <field name="TASK">detection</field>
     <field name="MODEL">det_body</field>
-    <field name="INPUT">demo.jpg</field>
+    <field name="INPUT">assets/xedu-test-scene-1.png</field>
     <next>
       <block type="xeduhub_show_result" id="legacy_show_result">
         <field name="TITLE">Legacy 人体检测结果</field>

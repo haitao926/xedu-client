@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片、轻颗粒纸张质感、少量手绘箭头和标签，视觉清晰，结构化强，适合直接放入正式汇报PPT。整体风格统一为教育类 editorial infographic，配色以深蓝、墨绿、橙色、米白为主，可加入少量黄绿和珊瑚色点缀。不要纯黑白线框，不要工程蓝图，不要复杂长段文字，不要乱码，只出现指定中文短词。一张“教师课程共享与迭代”的中文信息图，循环流程构图，五步环形箭头：组织课程、共享课程、拉取课程、修改课程、更新课程。外圈可加入教师A、教师B、教研组三个小标签。整体像课程共建海报，强调循环与协作，使用拼贴式卡片和色块，不要线稿。标题“教师课程共享与迭代”，只出现这些短词。",
+  "original_prompt": "面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片、轻颗粒纸张质感、少量手绘箭头和标签，视觉清晰，结构化强，适合直接放入正式汇报PPT。整体风格统一为教育类 editorial infographic，配色以深蓝、墨绿、橙色、米白为主，可加入少量黄绿和珊瑚色点缀。不要纯黑白线框，不要工程蓝图，不要复杂长段文字，不要乱码，只出现指定中文短词。一张“教师课程共享与迭代”的中文信息图，循环流程构图，五步环形箭头：组织课程、共享课程、拉取课程、修改课程、更新课程。外圈可加入教师A、教师B、教研组三个小标签。整体像课程共建海报，强调循环与协作，使用拼贴式卡片和色块，不要线稿。标题“教师课程共享与迭代”，只出现这些短词。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片_c1dc6208d848.png",
+  "image_urls": [
+    "/static/generated/面向教师申报PPT的高质量中文教育信息图，白色或浅米色背景，非线稿，使用大面积柔和色块填充、圆角卡片_c1dc6208d848.png"
+  ],
+  "output_path": "docs/case-application-2026/generated-infographics/07-教师课程共享与迭代图.png",
+  "output_paths": [
+    "docs/case-application-2026/generated-infographics/07-教师课程共享与迭代图.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

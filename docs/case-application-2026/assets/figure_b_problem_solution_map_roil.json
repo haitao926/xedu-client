@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "doubao-seedream-5-0-260128",
+  "requested_model": "doubao-seedream-5-0-260128",
+  "prompt": "Use case: infographic-diagram. Asset type: thesis-grade concept figure. Generate a clean academic infographic on a white background showing a two-column mapping from four educational problems to four platform solutions. Left column contains four stacked problem cards with strong red-orange accents: 实验环境问题, 学习路径断裂问题, AI实验能力分散问题, 课程共享与更新问题. Right column contains four stacked solution cards with green-blue accents: 环境承载与统一入口, HTML—Blockly—Jupyter学习主线, XEduHub完整工具箱, 教师课程分享与更新机制. Each problem card must connect to its matching solution card with a clear arrow. Overall composition must be balanced, readable, and suitable for a formal thesis or project proposal figure. Use very short Chinese labels only, no extra text, no people, no logos, no watermark, no clutter, no decorative poster style.",
+  "original_prompt": "Use case: infographic-diagram. Asset type: thesis-grade concept figure. Generate a clean academic infographic on a white background showing a two-column mapping from four educational problems to four platform solutions. Left column contains four stacked problem cards with strong red-orange accents: 实验环境问题, 学习路径断裂问题, AI实验能力分散问题, 课程共享与更新问题. Right column contains four stacked solution cards with green-blue accents: 环境承载与统一入口, HTML—Blockly—Jupyter学习主线, XEduHub完整工具箱, 教师课程分享与更新机制. Each problem card must connect to its matching solution card with a clear arrow. Overall composition must be balanced, readable, and suitable for a formal thesis or project proposal figure. Use very short Chinese labels only, no extra text, no people, no logos, no watermark, no clutter, no decorative poster style.",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/Use_case_infographic-diagram._Asset_type_thesis-gr_bce3366ab1d3.png",
+  "image_urls": [
+    "/static/generated/Use_case_infographic-diagram._Asset_type_thesis-gr_bce3366ab1d3.png"
+  ],
+  "output_path": "docs/case-application-2026/assets/figure_b_problem_solution_map_roil.png",
+  "output_paths": [
+    "docs/case-application-2026/assets/figure_b_problem_solution_map_roil.png"
+  ],
+  "attempted_models": [
+    "doubao-seedream-5-0-260128"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "doubao-seedream-5-0-260128",
+  "requested_model": "doubao-seedream-5-0-260128",
+  "prompt": "生成一张论文级中文泳道流程图底图，主题是“典型课堂应用流程图”。横向 16:9，白底，分为教师侧和学生侧两条泳道。教师侧步骤：教师备课、开启课堂、课后更新。学生侧步骤：进入当前实验、Blockly理解流程、Jupyter实践修改、结果复盘。用时间箭头从左到右连接，突出课堂前、课堂中、课堂后三个阶段。风格正式、清晰、教育技术论文图，不要手绘，不要人物插画，不要水印，不要额外乱码。",
+  "original_prompt": "生成一张论文级中文泳道流程图底图，主题是“典型课堂应用流程图”。横向 16:9，白底，分为教师侧和学生侧两条泳道。教师侧步骤：教师备课、开启课堂、课后更新。学生侧步骤：进入当前实验、Blockly理解流程、Jupyter实践修改、结果复盘。用时间箭头从左到右连接，突出课堂前、课堂中、课堂后三个阶段。风格正式、清晰、教育技术论文图，不要手绘，不要人物插画，不要水印，不要额外乱码。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/生成一张论文级中文泳道流程图底图，主题是“典型课堂应用流程图”。横向_169，白底，分为教师侧和学生_5c15044eb13b.png",
+  "image_urls": [
+    "/static/generated/生成一张论文级中文泳道流程图底图，主题是“典型课堂应用流程图”。横向_169，白底，分为教师侧和学生_5c15044eb13b.png"
+  ],
+  "output_path": "docs/case-application-2026/assets/figures/roil-base/figure_6_classroom_flow_base.png",
+  "output_paths": [
+    "docs/case-application-2026/assets/figures/roil-base/figure_6_classroom_flow_base.png"
+  ],
+  "attempted_models": [
+    "doubao-seedream-5-0-260128"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

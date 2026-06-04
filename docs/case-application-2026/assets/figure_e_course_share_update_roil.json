@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "doubao-seedream-5-0-260128",
+  "requested_model": "doubao-seedream-5-0-260128",
+  "prompt": "Use case: infographic-diagram. Asset type: thesis-grade platform mechanism figure. Generate a clean academic infographic on a white background showing a cyclical teacher course sharing and updating mechanism. Six steps arranged in a loop or ring: 本地创建课程, 导入与整理课节实验, 上传课程, 课堂使用, 课后修订, 拉取更新与再分享. Use strong numbered badges 1 to 6, clear arrows forming a cycle, and one center label reading 课程持续更新闭环 if text quality allows. If Chinese rendering is weak, keep only the six step labels and numbers. Visual style must be formal, systematic, platform-oriented, suitable for thesis or proposal, no people, no logos, no watermark, no clutter.",
+  "original_prompt": "Use case: infographic-diagram. Asset type: thesis-grade platform mechanism figure. Generate a clean academic infographic on a white background showing a cyclical teacher course sharing and updating mechanism. Six steps arranged in a loop or ring: 本地创建课程, 导入与整理课节实验, 上传课程, 课堂使用, 课后修订, 拉取更新与再分享. Use strong numbered badges 1 to 6, clear arrows forming a cycle, and one center label reading 课程持续更新闭环 if text quality allows. If Chinese rendering is weak, keep only the six step labels and numbers. Visual style must be formal, systematic, platform-oriented, suitable for thesis or proposal, no people, no logos, no watermark, no clutter.",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/Use_case_infographic-diagram._Asset_type_thesis-gr_3a924316b22e.png",
+  "image_urls": [
+    "/static/generated/Use_case_infographic-diagram._Asset_type_thesis-gr_3a924316b22e.png"
+  ],
+  "output_path": "docs/case-application-2026/assets/figure_e_course_share_update_roil.png",
+  "output_paths": [
+    "docs/case-application-2026/assets/figure_e_course_share_update_roil.png"
+  ],
+  "attempted_models": [
+    "doubao-seedream-5-0-260128"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

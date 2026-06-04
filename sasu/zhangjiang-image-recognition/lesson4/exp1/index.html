@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神经网络架构师 | Neural Network Architect</title>
+    <style>
+        :root {
+            --primary: #6366f1; /* Indigo 500 */
+            --primary-hover: #4f46e5;
+            --danger: #f43f5e;
+            --bg-page: #f8fafc; /* Slate 50 */
+            --bg-card: #ffffff;
+            --text-main: #334155; /* Slate 700 */
+            --text-sub: #64748b; /* Slate 500 */
+            --border: #e2e8f0;
+            
+            --canvas-bg: #0f172a; /* Slate 900 */
+            --node-input: #22d3ee; /* Cyan 400 */
+            --node-hidden: #818cf8; /* Indigo 400 */
+            --node-output: #f472b6; /* Pink 400 */
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 24px;
+            background-color: var(--bg-page);
+            color: var(--text-main);
+            height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 顶部导航 */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #6366f1 0%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: var(--text-sub);
+            font-weight: 500;
+        }
+
+        /* 主布局 */
+        .main-container {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 24px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* 左侧面板 */
+        .panel {
+            background: var(--bg-card);
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid white;
+        }
+
+        .panel-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            background: #fdfdfd;
+        }
+        
+        .panel-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .scroll-content {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* 控件样式 */
+        .control-group {
+            margin-bottom: 24px;
+        }
+
+        .label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .value-badge {
+            background: #eff6ff;
+            color: var(--primary);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            min-width: 24px;
+            text-align: center;
+        }
+
+        .desc {
+            font-size: 0.75rem;
+            color: var(--text-sub);
+            margin-top: 6px;
+            line-height: 1.4;
+        }
+
+        /* 自定义 Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]:focus {
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 2px solid var(--primary);
+            cursor: pointer;
+            margin-top: -7px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.1s;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e2e8f0;
+            border-radius: 2px;
+        }
+
+        /* 按钮 */
+        .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: #fee2e2;
+            color: var(--danger);
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            margin-top: 8px;
+        }
+
+        .btn-danger:hover {
+            background: #fecaca;
+        }
+
+        .layer-card {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 12px;
+            position: relative;
+            transition: border-color 0.2s;
+        }
+
+        .layer-card:hover {
+            border-color: #cbd5e1;
+        }
+
+        /* 右侧画布区域 */
+        .viz-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .canvas-container {
+            flex: 1;
+            background: var(--canvas-bg);
+            border-radius: 16px;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.3);
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #1e293b;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* 代码区域 */
+        .code-container {
+            background: #1e1e1e; /* VS Code Dark */
+            border-radius: 12px;
+            padding: 0;
+            height: 220px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        /* 滚动条美化 */
+        pre::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        pre::-webkit-scrollbar-track {
+            background: #1e1e1e; 
+        }
+        pre::-webkit-scrollbar-thumb {
+            background: #424242; 
+            border-radius: 4px;
+        }
+        pre::-webkit-scrollbar-thumb:hover {
+            background: #4f4f4f; 
+        }
+
+        .code-header {
+            background: #252526;
+            padding: 8px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+        }
+
+        .code-title {
+            color: #ccc;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+
+        .copy-btn {
+            background: transparent;
+            border: 1px solid #454545;
+            color: #ccc;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .copy-btn:hover {
+            background: #333;
+            color: white;
+        }
+
+        pre {
+            margin: 0;
+            padding: 16px;
+            color: #d4d4d4;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            overflow: auto;
+            flex: 1;
+        }
+
+        .keyword { color: #569cd6; } /* Blue */
+        .string { color: #ce9178; } /* Orange */
+        .comment { color: #6a9955; } /* Green */
+        .number { color: #b5cea8; } /* Light Green */
+        .func { color: #dcdcaa; } /* Yellow */
+
+        /* 浮动提示 */
+        .canvas-tip {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(4px);
+            color: #94a3b8;
+            font-size: 0.75rem;
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>Neural Network Architect</h1>
+            <div class="subtitle">全连接神经网络 (MLP) 结构可视化设计工具</div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- 左侧控制面板 -->
+        <aside class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                    网络配置
+                </div>
+            </div>
+            
+            <div class="scroll-content">
+                <!-- 输入层 -->
+                <div class="control-group">
+                    <div class="label-row">
+                        <label>输入层 (Features)</label>
+                        <span id="input-val" class="value-badge">17</span>
+                    </div>
+                    <input type="range" id="input-layer" min="1" max="50" value="17" step="1">
+                    <div class="desc">对应身体关键点数据 (x1, y1, ... x17)</div>
+                </div>
+
+                <!-- 隐藏层区域 -->
+                <div class="control-group">
+                    <div class="label-row">
+                        <label>隐藏层 (Hidden Layers)</label>
+                    </div>
+                    <div id="hidden-layers-container">
+                        <!-- 动态生成 -->
+                    </div>
+                    <button class="btn btn-primary" onclick="addHiddenLayer()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        添加隐藏层
+                    </button>
+                </div>
+
+                <!-- 输出层 -->
+                <div class="control-group" style="margin-top: auto; padding-top: 20px; border-top: 1px solid var(--border);">
+                    <div class="label-row">
+                        <label>输出层 (Classes)</label>
+                        <span id="output-val" class="value-badge">2</span>
+                    </div>
+                    <input type="range" id="output-layer" min="2" max="10" value="2" step="1">
+                    <div class="desc">分类目标 (例如: 深蹲, 开合跳)</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右侧可视化 + 代码 -->
+        <main class="viz-wrapper">
+            <div class="canvas-container" id="viz-container">
+                <canvas id="networkCanvas"></canvas>
+                <div class="canvas-tip">
+                    ✨ 节点 > 20 时自动折叠显示
+                </div>
+            </div>
+
+            <div class="code-container">
+                <div class="code-header">
+                    <span class="code-title">PYTHON CODE (Scikit-Learn)</span>
+                    <button class="copy-btn" onclick="copyCode()">Copy Code</button>
+                </div>
+                <pre id="python-code"></pre>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const state = {
+            inputSize: 17,
+            hiddenLayers: [32, 16],
+            outputSize: 2
+        };
+
+        const canvas = document.getElementById('networkCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('hidden-layers-container');
+
+        function init() {
+            // 输入层监听
+            const inputSlider = document.getElementById('input-layer');
+            inputSlider.value = state.inputSize;
+            inputSlider.addEventListener('input', (e) => {
+                state.inputSize = parseInt(e.target.value);
+                document.getElementById('input-val').innerText = state.inputSize;
+                render();
+            });
+
+            // 输出层监听
+            const outputSlider = document.getElementById('output-layer');
+            outputSlider.value = state.outputSize;
+            outputSlider.addEventListener('input', (e) => {
+                state.outputSize = parseInt(e.target.value);
+                document.getElementById('output-val').innerText = state.outputSize;
+                render();
+            });
+
+            renderHiddenLayersControls();
+            render();
+            
+            window.addEventListener('resize', render);
+        }
+
+        function renderHiddenLayersControls() {
+            container.innerHTML = '';
+            
+            if (state.hiddenLayers.length === 0) {
+                container.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #cbd5e1; border-radius:8px;">无隐藏层 (线性模型)</div>';
+            }
+
+            state.hiddenLayers.forEach((size, index) => {
+                const div = document.createElement('div');
+                div.className = 'layer-card';
+                div.innerHTML = `
+                    <div class="label-row" style="margin-bottom:6px;">
+                        <span style="font-size:0.8rem; font-weight:600;">Layer ${index + 1}</span>
+                        <span class="value-badge">${size}</span>
+                    </div>
+                    <input type="range" min="1" max="128" value="${size}" oninput="updateHiddenLayer(${index}, this.value)">
+                    <button class="btn btn-danger" onclick="removeHiddenLayer(${index})">删除</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        window.updateHiddenLayer = function(index, value) {
+            state.hiddenLayers[index] = parseInt(value);
+            const layerCard = container.children[index]; 
+            const badge = layerCard.querySelector('.value-badge');
+            if(badge) badge.innerText = value;
+            render();
+        }
+
+        window.addHiddenLayer = function() {
+            state.hiddenLayers.push(16);
+            renderHiddenLayersControls();
+            render();
+        }
+
+        window.removeHiddenLayer = function(index) {
+            state.hiddenLayers.splice(index, 1);
+            renderHiddenLayersControls();
+            render();
+        }
+
+        function render() {
+            updateCode();
+            
+            const vizContainer = document.getElementById('viz-container');
+            // 处理 High DPI 屏幕
+            const dpr = window.devicePixelRatio || 1;
+            const rect = vizContainer.getBoundingClientRect();
+            
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+
+            const width = rect.width;
+            const height = rect.height;
+
+            ctx.clearRect(0, 0, width, height);
+
+            const layers = [state.inputSize, ...state.hiddenLayers, state.outputSize];
+            const layerLabels = ["Input", ...state.hiddenLayers.map((_, i) => `Hidden ${i+1}`), "Output"];
+            
+            const layerXGap = width / (layers.length + 1);
+            
+            // 绘制
+            layers.forEach((nodeCount, layerIndex) => {
+                if (layerIndex === layers.length - 1) return;
+
+                const nextNodeCount = layers[layerIndex + 1];
+                const x1 = layerXGap * (layerIndex + 1);
+                const x2 = layerXGap * (layerIndex + 2);
+
+                const currentNodes = getVisualNodes(nodeCount, height);
+                const nextNodes = getVisualNodes(nextNodeCount, height);
+
+                // 连线样式
+                ctx.lineWidth = 1;
+                
+                currentNodes.forEach(y1 => {
+                    nextNodes.forEach(y2 => {
+                        // 贝塞尔曲线连线
+                        ctx.beginPath();
+                        ctx.moveTo(x1, y1);
+                        const cp1x = x1 + (x2 - x1) * 0.5;
+                        const cp2x = x2 - (x2 - x1) * 0.5;
+                        ctx.bezierCurveTo(cp1x, y1, cp2x, y2, x2, y2);
+                        
+                        // 渐变连线
+                        const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+                        grad.addColorStop(0, "rgba(255, 255, 255, 0.05)");
+                        grad.addColorStop(1, "rgba(255, 255, 255, 0.05)");
+                        ctx.strokeStyle = grad;
+                        ctx.stroke();
+                    });
+                });
+            });
+
+            // 绘制节点
+            layers.forEach((nodeCount, layerIndex) => {
+                const x = layerXGap * (layerIndex + 1);
+                const nodesY = getVisualNodes(nodeCount, height);
+
+                // 确定颜色
+                let color = "#818cf8"; // hidden
+                let glowColor = "rgba(129, 140, 248, 0.4)";
+                
+                if (layerIndex === 0) { 
+                    color = "#22d3ee"; // input
+                    glowColor = "rgba(34, 211, 238, 0.4)";
+                }
+                else if (layerIndex === layers.length - 1) { 
+                    color = "#f472b6"; // output
+                    glowColor = "rgba(244, 114, 182, 0.4)";
+                }
+
+                // 文字标签
+                ctx.fillStyle = "rgba(255,255,255,0.6)";
+                ctx.font = "600 12px Inter";
+                ctx.textAlign = "center";
+                ctx.fillText(layerLabels[layerIndex].toUpperCase(), x, 30);
+                
+                ctx.fillStyle = "rgba(255,255,255,0.3)";
+                ctx.font = "11px Inter";
+                ctx.fillText(`${nodeCount} Neurons`, x, 46);
+
+                // 画节点
+                nodesY.forEach(y => {
+                    // 光晕
+                    ctx.beginPath();
+                    ctx.arc(x, y, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = glowColor;
+                    ctx.fill();
+
+                    // 核心
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = color;
+                    ctx.fill();
+                });
+
+                // 省略号
+                if (nodeCount > 20) {
+                    ctx.fillStyle = "rgba(255,255,255,0.3)";
+                    ctx.font = "16px monospace";
+                    ctx.fillText("⋮", x, height / 2 + 4);
+                }
+            });
+        }
+
+        function getVisualNodes(count, height) {
+            const maxVisual = 20; 
+            const positions = [];
+            const margin = 80;
+            const availableHeight = height - margin * 2;
+
+            if (count <= maxVisual) {
+                if (count === 1) {
+                    positions.push(height / 2);
+                } else {
+                    const step = availableHeight / (count - 1);
+                    for (let i = 0; i < count; i++) {
+                        positions.push(margin + step * i);
+                    }
+                }
+            } else {
+                const step = availableHeight / (maxVisual - 1);
+                for (let i = 0; i < 8; i++) {
+                    positions.push(margin + step * i);
+                }
+                for (let i = 0; i < 8; i++) {
+                    positions.push(height - margin - step * i);
+                }
+            }
+            return positions;
+        }
+
+        function updateCode() {
+            // 生成 Keras 风格代码
+            let codeHtml = `<span class="keyword">import</span> tensorflow <span class="keyword">as</span> tf\n`;
+            codeHtml += `<span class="keyword">from</span> tensorflow.keras <span class="keyword">import</span> layers, models\n\n`;
+            
+            codeHtml += `<span class="comment"># 1. 构建神经网络 (Sequential Model)</span>\n`;
+            codeHtml += `model = models.Sequential([\n`;
+            
+            // Input Layer (Implicit in Keras or explicit Input layer)
+            codeHtml += `    <span class="comment"># 输入层: ${state.inputSize} 个特征</span>\n`;
+            codeHtml += `    layers.Input(shape=(<span class="number">${state.inputSize}</span>,)),\n\n`;
+
+            // Hidden Layers
+            if (state.hiddenLayers.length > 0) {
+                state.hiddenLayers.forEach((size, i) => {
+                    codeHtml += `    <span class="comment"># 隐藏层 ${i+1}: ${size} 个神经元, ReLU 激活</span>\n`;
+                    codeHtml += `    layers.Dense(<span class="number">${size}</span>, activation=<span class="string">'relu'</span>),\n`;
+                });
+            } else {
+                codeHtml += `    <span class="comment"># 无隐藏层 (线性分类器)</span>\n`;
+            }
+
+            // Output Layer
+            codeHtml += `\n    <span class="comment"># 输出层: ${state.outputSize} 个分类, Softmax 激活</span>\n`;
+            codeHtml += `    layers.Dense(<span class="number">${state.outputSize}</span>, activation=<span class="string">'softmax'</span>)\n`;
+            codeHtml += `])\n\n`;
+
+            codeHtml += `<span class="comment"># 2. 打印模型结构</span>\n`;
+            codeHtml += `model.summary()`;
+
+            document.getElementById('python-code').innerHTML = codeHtml;
+        }
+
+        window.copyCode = function() {
+            const text = document.getElementById('python-code').innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                const originalText = btn.innerText;
+                btn.innerText = "Copied!";
+                btn.style.color = "#4ade80";
+                btn.style.borderColor = "#4ade80";
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.style.color = "";
+                    btn.style.borderColor = "";
+                }, 2000);
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>

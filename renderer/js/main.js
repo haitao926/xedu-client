@@ -1,19 +1,112 @@
 import { log, showTab, showModal, hideModal, initModalListeners, showToast } from './ui.js';
-import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility, openNotebookFile } from './jupyter.js';
+import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility, openNotebookFile, getStoredProjectDir } from './jupyter.js';
 import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown, syncModelBadge } from './ai.js';
-import { initResourcesPage, refreshResources, openSubmitPage, syncTeacherModeUI, toggleTeacherMode, connectStudentClassroomByCode, getChatContext, applyAgentCourseUpdate } from './resources.js';
 import { installPackage, uninstallPackage, updatePackage } from './package-manager.js';
 import { registerNamespace } from './app-context.js';
 import { ProjectWizard } from './project-wizard.js';
+import { createWorkspaceController } from './main/workspace-context.js';
+import { createDashboardController } from './main/dashboard.js';
+import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, ensureTeacherCodeInitialized } from './main/system-config.js';
+import { getExperienceConfig, getExperienceMode, getPageCopy, getTeacherToggleLabel } from './experience-config.js';
 import apiClient from './api.js';
+
+let resourcesModule = null;
+let resourcesModulePromise = null;
+
+function loadResourcesModule() {
+    if (!resourcesModulePromise) {
+        resourcesModulePromise = import('./resources.js')
+            .then((mod) => {
+                resourcesModule = mod;
+                return mod;
+            })
+            .catch((error) => {
+                resourcesModulePromise = null;
+                throw error;
+            });
+    }
+    return resourcesModulePromise;
+}
+
+async function initResourcesPage(...args) {
+    const mod = await loadResourcesModule();
+    return mod.initResourcesPage(...args);
+}
+
+async function refreshResources(...args) {
+    const mod = await loadResourcesModule();
+    return mod.refreshResources(...args);
+}
+
+async function openSubmitPage(...args) {
+    const mod = await loadResourcesModule();
+    return mod.openSubmitPage(...args);
+}
+
+async function syncTeacherModeUI(...args) {
+    const mod = await loadResourcesModule();
+    return mod.syncTeacherModeUI(...args);
+}
+
+async function toggleTeacherMode(...args) {
+    const mod = await loadResourcesModule();
+    return mod.toggleTeacherMode(...args);
+}
+
+async function connectStudentClassroomByCode(...args) {
+    const mod = await loadResourcesModule();
+    return mod.connectStudentClassroomByCode(...args);
+}
+
+function getChatContext() {
+    const isTeacher = sessionStorage.getItem('xedu_teacher_mode') === 'true';
+    if (resourcesModule?.getChatContext) {
+        return resourcesModule.getChatContext();
+    }
+    return {
+        experience_mode: getExperienceMode(isTeacher),
+        teacher_mode: {
+            unlocked: isTeacher,
+            code: sessionStorage.getItem('xedu_teacher_mode_code') || '',
+        },
+        course: null,
+        experiment_context: null,
+    };
+}
+
+function applyAgentCourseUpdate(course) {
+    if (resourcesModule?.applyAgentCourseUpdate) {
+        const changed = resourcesModule.applyAgentCourseUpdate(course);
+        window.dispatchEvent(new CustomEvent('xedu:course-context-updated'));
+        return changed;
+    }
+    loadResourcesModule()
+        .then((mod) => {
+            mod.applyAgentCourseUpdate?.(course);
+            window.dispatchEvent(new CustomEvent('xedu:course-context-updated'));
+        })
+        .catch((error) => console.warn('懒加载 resources 模块失败:', error));
+    return false;
+}
 
 // Initialize the Project Wizard globally
 new ProjectWizard(apiClient);
-
-let lastOpenedJupyterTarget = '';
-let lastOpenedJupyterWorkspace = null;
-let lastOpenedBlocklyWorkspace = null;
-let blocklyViewRevision = 0;
+const workspaceController = createWorkspaceController({ showTab, openNotebookFile });
+const {
+    ensureBlocklyWorkspaceMounted,
+    openResourcesOrClassroomSource,
+    openJupyterWorkspace,
+    openBlocklyWorkspace,
+    renderWorkspacePages,
+    getLastOpenedJupyterWorkspace,
+    isTeacherModeActive,
+} = workspaceController;
+const dashboardController = createDashboardController({ showTab, showSettingsTab });
+const {
+    setDashboardQuickTab,
+    buildClassroomBaseUrl,
+    updateSettingsVisibility,
+} = dashboardController;
 
 // 设置页选项卡切换
 function showSettingsTab(tab) {
@@ -75,6 +168,132 @@ function initSidebarCollapseToggle() {
     });
 }
 
+function renderChipList(container, items = []) {
+    if (!container) return;
+    container.innerHTML = (items || []).map((item) => `<span>${item}</span>`).join('');
+}
+
+let dashboardInputMode = 'project';
+let dashboardProjectPathCache = '';
+let dashboardClassroomCodeCache = '';
+
+function renderDashboardSupportState(isTeacher) {
+    const hintEl = document.getElementById('dashboard-input-hint');
+    if (!hintEl) return;
+    if (isTeacher) {
+        hintEl.textContent = '教师模式下请从课程资源页开启课堂。';
+        hintEl.style.display = 'block';
+        return;
+    }
+    hintEl.textContent = '';
+    hintEl.style.display = 'none';
+}
+
+function syncDashboardInputCache(inputValue) {
+    const value = String(inputValue || '').trim();
+    if (dashboardInputMode === 'classroom') {
+        dashboardClassroomCodeCache = value;
+        try {
+            if (value) {
+                sessionStorage.setItem('xedu-last-classroom-code', value);
+            } else {
+                sessionStorage.removeItem('xedu-last-classroom-code');
+            }
+        } catch (_) {
+            // ignore
+        }
+    } else {
+        dashboardProjectPathCache = value;
+    }
+}
+
+function clearDashboardInput() {
+    const inputEl = document.getElementById('project-path');
+    if (dashboardInputMode === 'classroom') {
+        dashboardClassroomCodeCache = '';
+        try {
+            sessionStorage.removeItem('xedu-last-classroom-code');
+        } catch (_) {
+            // ignore
+        }
+    } else {
+        dashboardProjectPathCache = '';
+        clearProjectPath();
+    }
+    if (inputEl) {
+        inputEl.value = '';
+    }
+}
+
+function setDashboardInputMode(mode, { restoreValue = true } = {}) {
+    dashboardInputMode = mode === 'classroom' ? 'classroom' : 'project';
+    setDashboardQuickTab(dashboardInputMode);
+
+    const titleEl = document.getElementById('dashboard-input-title');
+    const iconEl = document.getElementById('dashboard-input-icon');
+    const inputEl = document.getElementById('project-path');
+    const browseBtn = document.getElementById('project-path-browse-btn');
+    const confirmBtn = document.getElementById('dashboard-input-confirm-btn');
+
+    if (titleEl) {
+        titleEl.textContent = dashboardInputMode === 'classroom' ? '课堂码' : '项目路径';
+    }
+    if (inputEl) {
+        inputEl.placeholder = dashboardInputMode === 'classroom'
+            ? '输入课堂码（留空自动发现）'
+            : '选择工作目录...';
+        if (restoreValue) {
+            inputEl.value = dashboardInputMode === 'classroom'
+                ? dashboardClassroomCodeCache
+                : (dashboardProjectPathCache || getStoredProjectDir() || '');
+        }
+    }
+    if (browseBtn) {
+        browseBtn.style.display = dashboardInputMode === 'classroom' ? 'none' : 'inline-flex';
+    }
+    if (confirmBtn) {
+        confirmBtn.textContent = dashboardInputMode === 'classroom' ? '进入课堂' : '确认路径';
+    }
+    if (iconEl) {
+        iconEl.innerHTML = dashboardInputMode === 'classroom'
+            ? '<rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 3v4"></path><path d="M16 3v4"></path><path d="M4 10h16"></path>'
+            : '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>';
+    }
+    renderDashboardSupportState(isTeacherModeActive());
+}
+
+function syncActivePageTitle() {
+    const activeSection = document.querySelector('.page-section.active');
+    const tabId = activeSection?.id || 'main';
+    const titleConfig = getPageCopy(tabId);
+    const titleEl = document.getElementById('page-title');
+    const subtitleEl = document.getElementById('page-subtitle');
+    if (titleEl && titleConfig?.title) titleEl.textContent = titleConfig.title;
+    if (subtitleEl && titleConfig?.subtitle) subtitleEl.textContent = titleConfig.subtitle;
+}
+
+function applyExperienceCopy(isTeacher) {
+    const config = getExperienceConfig(isTeacher);
+    const textMap = {
+    };
+
+    Object.entries(textMap).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    });
+
+    const topbarTeacherBtn = document.getElementById('topbar-teacher-mode-btn');
+    const topbarTeacherLabel = topbarTeacherBtn?.querySelector('[data-role="teacher-mode-label"]');
+    topbarTeacherBtn?.classList.toggle('is-active', Boolean(isTeacher));
+    if (topbarTeacherLabel) {
+        topbarTeacherLabel.textContent = getTeacherToggleLabel(isTeacher);
+    }
+
+    setDashboardInputMode(isTeacher ? 'project' : 'classroom');
+    syncActivePageTitle();
+    renderDashboardSupportState(isTeacher);
+}
+
 function registerPracticeDeepLinkHandler() {
     if (!window.electronAPI || typeof window.electronAPI.onDeepLinkOpenPractice !== 'function') {
         return;
@@ -110,6 +329,50 @@ function registerPracticeDeepLinkHandler() {
     });
 }
 
+function registerBlocklyImagePickerBridge() {
+    window.addEventListener('message', async (event) => {
+        const payload = event?.data;
+        if (!payload || payload.type !== 'xedu:select-image-file') {
+            return;
+        }
+
+        const frame = document.getElementById('blockly-workspace-frame');
+        if (!frame?.contentWindow || event.source !== frame.contentWindow) {
+            return;
+        }
+
+        const requestId = String(payload.requestId || '').trim();
+        const respond = (message) => {
+            try {
+                frame.contentWindow.postMessage({
+                    type: 'xedu:select-image-file:response',
+                    requestId,
+                    ...message,
+                }, '*');
+            } catch (error) {
+                console.error('发送图片选择结果失败:', error);
+            }
+        };
+
+        if (!requestId) {
+            respond({ error: 'missing-request-id' });
+            return;
+        }
+
+        if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') {
+            respond({ error: 'electron-api-unavailable' });
+            return;
+        }
+
+        try {
+            const selectedPath = await window.electronAPI.invoke('select-image-file');
+            respond({ path: selectedPath || null });
+        } catch (error) {
+            respond({ error: error?.message || 'select-image-file-failed' });
+        }
+    });
+}
+
 registerNamespace('ui', { showTab, showModal, hideModal, log, showToast });
 registerNamespace('jupyter', {
     startJupyter,
@@ -124,7 +387,8 @@ registerNamespace('jupyter', {
     openExternal,
     toggleFullscreen,
     setVisibility,
-    openNotebookFile
+    openNotebookFile,
+    getStoredProjectDir
 });
 registerNamespace('ai', {
     askAI,
@@ -144,566 +408,19 @@ registerNamespace('resources', {
     openSubmitPage,
     syncTeacherModeUI,
     toggleTeacherMode,
+    connectStudentClassroomByCode,
     getChatContext,
     applyAgentCourseUpdate
 });
 
-function setDashboardQuickTab(tabName = 'project') {
-    const normalized = tabName === 'classroom' ? 'classroom' : 'project';
-    const tabs = document.querySelectorAll('[data-quick-tab]');
-    const panes = document.querySelectorAll('.dashboard-quick-pane');
-    tabs.forEach((tab) => {
-        const isActive = tab.dataset.quickTab === normalized;
-        tab.classList.toggle('is-active', isActive);
-        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
-    });
-    panes.forEach((pane) => {
-        const paneTab = pane.id?.replace('dashboard-quick-pane-', '') || '';
-        pane.classList.toggle('is-active', paneTab === normalized);
-    });
-}
-
-function escapeHtml(value = '') {
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
-function buildClassroomBaseUrl(classroom) {
-    const direct = (classroom?.base_url || '').trim();
-    if (direct) return direct.replace(/\/$/, '');
-    const host = (classroom?.host || '').trim();
-    const port = classroom?.port;
-    if (!host || !port) return '';
-    return `http://${host}:${port}`;
-}
-
-function isTeacherModeActive() {
-    const label = document.body.classList.contains('student-mode');
-    return !label;
-}
-
-function formatWorkspaceMeta(items = []) {
-    const validItems = (items || []).filter(Boolean);
-    return validItems.map((item) => `<span>${escapeHtml(item)}</span>`).join('');
-}
-
-function getSourcePageMeta(sourcePage = '') {
-    if (sourcePage === 'resources') {
-        return { label: '课程资源', tabId: 'resources', navId: 'nav-resources-item' };
-    }
-    if (sourcePage === 'main' || sourcePage === 'classroom') {
-        return { label: '总控制台', tabId: 'main', navId: 'nav-main-item' };
-    }
-    return null;
-}
-
-function getBaseName(filePath = '') {
-    const normalized = String(filePath || '').replace(/\\/g, '/');
-    const parts = normalized.split('/').filter(Boolean);
-    return parts.pop() || '';
-}
-
-function normalizeWorkspaceSourceLabel(payload = {}, fallback = '') {
-    return String(payload?.sourceLabel || payload?.originLabel || fallback || '').trim();
-}
-
-function formatRecentOpenMeta(payload = {}, options = {}) {
-    const items = [];
-    const sourceLabel = normalizeWorkspaceSourceLabel(payload);
-    if (sourceLabel) items.push(`导入自：${sourceLabel}`);
-    if (options.kind === 'jupyter') {
-        if (payload?.filePath) items.push(`文件：${getBaseName(payload.filePath)}`);
-        if (payload?.projectDir) items.push(`目录：${payload.projectDir}`);
-    } else if (options.kind === 'blockly') {
-        if (payload?.workspacePath) items.push(`工作区：${getBaseName(payload.workspacePath)}`);
-        if (payload?.practicePath) items.push(`代码练习：${getBaseName(payload.practicePath)}`);
-        if (payload?.localPath) items.push(`目录：${payload.localPath}`);
-    }
-    return items;
-}
-
-async function openResourcesOrClassroomSource(sourcePage = '') {
-    const sourceMeta = getSourcePageMeta(sourcePage);
-    if (sourceMeta) {
-        const navItem = document.getElementById(sourceMeta.navId);
-        if (navItem?.style.display !== 'none') {
-            showTab(sourceMeta.tabId, navItem);
-            return true;
-        }
-    }
-    const resourcesNavItem = document.getElementById('nav-resources-item');
-    const mainNavItem = document.getElementById('nav-main-item');
-    if (isTeacherModeActive() && resourcesNavItem?.style.display !== 'none') {
-        showTab('resources', resourcesNavItem);
-        return true;
-    }
-    if (mainNavItem) {
-        showTab('main', mainNavItem);
-        return true;
-    }
-    return false;
-}
-
-function buildBlocklyWorkspaceUrl(payload = {}) {
-    const projectPath = String(payload?.localPath || '').trim();
-    const workspacePath = String(payload?.workspacePath || '').trim().replace(/^\/+/, '');
-    const apiBase = (window.xeduConfig?.apiBase || 'http://127.0.0.1:5123').replace(/\/$/, '');
-    const revision = Number(payload?.revision || 0);
-    const role = isTeacherModeActive() ? 'teacher' : 'student';
-    if (!projectPath || !workspacePath) {
-        const blankParams = new URLSearchParams();
-        if (revision > 0) blankParams.set('_rev', String(revision));
-        blankParams.set('role', role);
-        return blankParams.toString()
-            ? `${apiBase}/api/resources/blockly-playground-blank?${blankParams.toString()}`
-            : `${apiBase}/api/resources/blockly-playground-blank`;
-    }
-    const params = new URLSearchParams();
-    params.set('workspace', workspacePath);
-    params.set('role', role);
-    if (revision > 0) params.set('_rev', String(revision));
-    const practicePath = String(payload?.practicePath || '').trim().replace(/^\/+/, '');
-    if (practicePath) params.set('practice', practicePath);
-    const rootToken = btoa(unescape(encodeURIComponent(projectPath))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-    return `${apiBase}/api/resources/blockly-playground/${rootToken}?${params.toString()}`;
-}
-
-async function openJupyterWorkspace(payload = {}, options = {}) {
-    const normalizedPayload = {
-        projectDir: String(payload?.projectDir || '').trim(),
-        filePath: String(payload?.filePath || '').trim(),
-        sourceLabel: normalizeWorkspaceSourceLabel(payload),
-        sourcePage: String(payload?.sourcePage || '').trim(),
-    };
-    const mainNavItem = document.getElementById('nav-main-item');
-    if (mainNavItem) {
-        showTab('main', mainNavItem);
-    }
-    if (normalizedPayload.projectDir || normalizedPayload.filePath) {
-        lastOpenedJupyterWorkspace = normalizedPayload;
-    }
-    renderWorkspacePages();
-    if (!normalizedPayload.filePath) {
-        return true;
-    }
-    const targetKey = `${normalizedPayload.projectDir}::${normalizedPayload.filePath}`;
-    if (!options?.force && targetKey && targetKey === lastOpenedJupyterTarget) {
-        return true;
-    }
-    await openNotebookFile(normalizedPayload.filePath, normalizedPayload.projectDir);
-    lastOpenedJupyterTarget = targetKey;
-    return true;
-}
-
-function openBlocklyWorkspace(payload = {}) {
-    blocklyViewRevision += 1;
-    const normalizedPayload = {
-        localPath: String(payload?.localPath || '').trim(),
-        workspacePath: String(payload?.workspacePath || '').trim(),
-        practicePath: String(payload?.practicePath || '').trim(),
-        sourceLabel: normalizeWorkspaceSourceLabel(payload),
-        sourcePage: String(payload?.sourcePage || '').trim(),
-        revision: blocklyViewRevision,
-    };
-    const blocklyNavItem = document.getElementById('nav-blockly-item');
-    if (blocklyNavItem) {
-        showTab('blockly-workspace', blocklyNavItem);
-    }
-    // 保留 revision，确保空白页也能每次强制刷新
-    lastOpenedBlocklyWorkspace = normalizedPayload;
-    renderWorkspacePages();
-    return true;
-}
-
 registerNamespace('workspace', {
+    ensureBlocklyWorkspaceMounted,
     openJupyterWorkspace,
     openBlocklyWorkspace,
 });
 
-function renderJupyterWorkspaceContext() {
-    const titleEl = document.getElementById('jupyter-context-title');
-    const descEl = document.getElementById('jupyter-context-desc');
-    const metaEl = document.getElementById('jupyter-context-meta');
-    const openBtn = document.getElementById('jupyter-open-context-btn');
-    const goSourceBtn = document.getElementById('jupyter-go-resource-btn');
-    if (!titleEl || !descEl || !metaEl || !openBtn || !goSourceBtn) return;
-    const payload = lastOpenedJupyterWorkspace;
-    const sourceMeta = getSourcePageMeta(payload?.sourcePage || '');
-    if (payload?.filePath) {
-        titleEl.textContent = getBaseName(payload.filePath) || '最近打开的实验文件';
-        descEl.textContent = '这里已经准备好最近一次使用的代码文件，你可以直接继续实验。';
-        metaEl.innerHTML = formatWorkspaceMeta(formatRecentOpenMeta(payload, { kind: 'jupyter' }));
-        openBtn.textContent = '重新打开最近文件';
-        goSourceBtn.textContent = sourceMeta ? '查看内容入口' : '导入实验内容';
-        goSourceBtn.disabled = !sourceMeta;
-    } else {
-        titleEl.textContent = '即开 Jupyter Lab';
-        descEl.textContent = '打开后就能开始 Notebook / Python 实验；实验内容可以稍后按需导入。';
-        metaEl.innerHTML = formatWorkspaceMeta(['直接启动并实验', '支持：Notebook / Python']);
-        openBtn.textContent = '立即开始实验';
-        goSourceBtn.textContent = '导入实验内容';
-        goSourceBtn.disabled = false;
-    }
-    openBtn.disabled = false;
-}
-
-function renderBlocklyWorkspaceContext() {
-    const frame = document.getElementById('blockly-workspace-frame');
-    const emptyEl = document.getElementById('blockly-workspace-empty');
-    if (!frame || !emptyEl) return;
-    const payload = lastOpenedBlocklyWorkspace;
-    const workspaceName = payload?.workspacePath
-        ? (getBaseName(payload.workspacePath) || 'Blockly 工作台')
-        : '空白 Blockly 实验台';
-    const blocklySectionActive = Boolean(document.getElementById('blockly-workspace')?.classList.contains('active'));
-    if (blocklySectionActive) {
-        const subtitleEl = document.getElementById('page-subtitle');
-        if (subtitleEl) subtitleEl.textContent = workspaceName;
-    }
-    const frameUrl = buildBlocklyWorkspaceUrl(payload);
-    if (frameUrl) {
-        if (frame.getAttribute('src') !== frameUrl) {
-            frame.setAttribute('src', frameUrl);
-        }
-        frame.style.display = 'block';
-        emptyEl.style.display = 'none';
-    } else {
-        frame.removeAttribute('src');
-        frame.style.display = 'none';
-        emptyEl.style.display = 'flex';
-    }
-}
-
-function renderWorkspacePages() {
-    renderJupyterWorkspaceContext();
-    renderBlocklyWorkspaceContext();
-}
-
-function updateSettingsVisibility(isTeacher) {
-    const settingsNavItem = document.getElementById('nav-settings-item');
-    const resourcesNavItem = document.getElementById('nav-resources-item');
-    const mainNavItem = document.getElementById('nav-main-item');
-    const blocklyNavItem = document.getElementById('nav-blockly-item');
-    const aiNavItem = document.getElementById('nav-ai-item');
-    const systemGroupTitle = document.getElementById('nav-group-system-title');
-    const settingsPage = document.getElementById('settings');
-    const teacherTabs = document.querySelectorAll('.settings-tab[data-teacher-only="true"]');
-    const teacherContents = document.querySelectorAll('.settings-content[data-teacher-only="true"]');
-    const aboutTab = document.querySelector('.settings-tab[data-tab="about"]');
-    const aboutContent = document.querySelector('.settings-content[data-settings-tab="about"]');
-
-    if (isTeacher) {
-        document.body.classList.remove('student-mode');
-        setDashboardQuickTab('project');
-        if (mainNavItem) mainNavItem.style.display = 'flex';
-        if (blocklyNavItem) blocklyNavItem.style.display = 'flex';
-        if (aiNavItem) aiNavItem.style.display = 'flex';
-        if (systemGroupTitle) {
-            systemGroupTitle.style.display = '';
-        }
-        if (resourcesNavItem) {
-            resourcesNavItem.style.display = 'flex';
-        }
-        if (settingsNavItem) {
-            settingsNavItem.style.display = 'flex';
-        }
-        if (settingsPage) {
-            settingsPage.style.display = '';
-        }
-        teacherTabs.forEach((btn) => {
-            btn.style.display = 'inline-flex';
-        });
-        teacherContents.forEach((section) => {
-            section.style.display = '';
-        });
-        // 若当前没有激活的设置 Tab，则默认激活 AI 配置
-        const activeTab = document.querySelector('.settings-tab.active');
-        if (!activeTab) {
-            const aiTab = document.querySelector('.settings-tab[data-tab="ai"]');
-            if (aiTab) {
-                showSettingsTab('ai');
-            }
-        }
-    } else {
-        document.body.classList.add('student-mode');
-        setDashboardQuickTab('classroom');
-        if (mainNavItem) mainNavItem.style.display = 'flex';
-        if (blocklyNavItem) blocklyNavItem.style.display = 'flex';
-        if (aiNavItem) aiNavItem.style.display = 'flex';
-        if (systemGroupTitle) {
-            systemGroupTitle.style.display = 'none';
-        }
-        if (resourcesNavItem) {
-            resourcesNavItem.style.display = 'none';
-            resourcesNavItem.classList.remove('active');
-        }
-        if (settingsNavItem) {
-            settingsNavItem.style.display = 'none';
-            settingsNavItem.classList.remove('active');
-        }
-        if (settingsPage) {
-            settingsPage.style.display = 'none';
-        }
-        if (settingsPage?.classList.contains('active')) {
-            showTab('main', mainNavItem);
-        }
-        const resourcesPage = document.getElementById('resources');
-        if (resourcesPage?.classList.contains('active')) {
-            showTab('main', mainNavItem);
-        }
-        teacherTabs.forEach((btn) => {
-            btn.style.display = 'none';
-            btn.classList.remove('active');
-        });
-        teacherContents.forEach((section) => {
-            section.style.display = 'none';
-            section.classList.remove('active');
-        });
-        if (aboutTab) {
-            aboutTab.style.display = 'inline-flex';
-            aboutTab.classList.add('active');
-        }
-        if (aboutContent) {
-            aboutContent.style.display = '';
-            aboutContent.classList.add('active');
-        }
-    }
-    window.dispatchEvent(new CustomEvent('xedu:teacher-mode-changed', {
-        detail: { isTeacher }
-    }));
-}
-
-function renderStudentClassroomList(classrooms = [], onEnter) {
-    const listEl = document.getElementById('student-classroom-list');
-    const emptyEl = document.getElementById('student-classroom-empty');
-    if (!listEl || !emptyEl) return;
-
-    listEl.innerHTML = '';
-    if (!Array.isArray(classrooms) || classrooms.length === 0) {
-        emptyEl.style.display = 'block';
-        emptyEl.textContent = '当前未发现课堂';
-        return;
-    }
-
-    emptyEl.style.display = 'none';
-    classrooms.forEach((classroom) => {
-        const card = document.createElement('button');
-        card.type = 'button';
-        card.className = 'dashboard-classroom-card';
-        const count = Number(classroom?.course_count || 0);
-        const activeTitle = (classroom?.active_course_title || '').trim();
-        const meta = [];
-        meta.push('<span>直接进入</span>');
-        if (count > 0) meta.push(`<span>${count} 门课程</span>`);
-        if (activeTitle) meta.push(`<span>${escapeHtml(activeTitle)}</span>`);
-
-        card.innerHTML = `
-            <div class="dashboard-classroom-card-head">
-                <div class="dashboard-classroom-card-title">${escapeHtml(classroom?.name || '课堂')}</div>
-                <span class="dashboard-classroom-card-badge">可进入</span>
-            </div>
-            <div class="dashboard-classroom-card-meta">${meta.join('')}</div>
-            <div class="dashboard-classroom-card-action">
-                <span class="btn btn-primary btn-sm">进入课堂</span>
-            </div>
-        `;
-        card.addEventListener('click', () => onEnter?.(classroom, card));
-        listEl.appendChild(card);
-    });
-}
-
-function applySystemConfigToInputs(response) {
-    if (!response?.success) return;
-    const uiConfig = response.config?.ui || {};
-    const aiConfig = response.config?.ai || {};
-    const quickformConfig = uiConfig.quickform || {};
-
-    const resourcesBaseUrl = document.getElementById('resources-base-url');
-    const resourcesRepo = document.getElementById('resources-repo');
-    const resourcesBranch = document.getElementById('resources-branch');
-    const resourcesIndexPath = document.getElementById('resources-index-path');
-    const resourcesSubmitUrl = document.getElementById('resources-submit-url');
-    const resourcesPublishPath = document.getElementById('resources-publish-path');
-    const resourcesPublishToken = document.getElementById('resources-publish-token');
-    const classroomName = document.getElementById('classroom-name');
-    const classroomTeacherCode = document.getElementById('classroom-teacher-code');
-    const classroomAutoDiscover = document.getElementById('classroom-auto-discover');
-    const usePipMirror = document.getElementById('use-tsinghua-mirror');
-    const aiBaseUrl = document.getElementById('ai-base-url');
-    const aiModelInput = document.getElementById('ai-model-input');
-    const quickformEnabled = document.getElementById('quickform-enabled');
-    const quickformBaseUrl = document.getElementById('quickform-base-url');
-    const quickformUsername = document.getElementById('quickform-username');
-    const quickformPassword = document.getElementById('quickform-password');
-
-    if (resourcesBaseUrl) resourcesBaseUrl.value = uiConfig.resources_base_url || '';
-    if (resourcesRepo) resourcesRepo.value = uiConfig.resources_repo || '';
-    if (resourcesBranch) resourcesBranch.value = uiConfig.resources_branch || 'main';
-    if (resourcesIndexPath) resourcesIndexPath.value = uiConfig.resources_index_path || 'index.json';
-    if (resourcesSubmitUrl) resourcesSubmitUrl.value = uiConfig.resources_submit_url || '';
-    if (resourcesPublishPath) resourcesPublishPath.value = uiConfig.resources_publish_path || 'courses';
-    if (resourcesPublishToken) resourcesPublishToken.value = uiConfig.resources_publish_token || '';
-
-    if (classroomName) classroomName.value = uiConfig.classroom_name || '';
-    if (classroomTeacherCode) classroomTeacherCode.value = uiConfig.classroom_teacher_code || '';
-    if (classroomAutoDiscover) {
-        classroomAutoDiscover.value = (uiConfig.classroom_auto_discover === false || uiConfig.classroom_auto_discover === 'false') ? 'false' : 'true';
-    }
-    if (usePipMirror) {
-        usePipMirror.checked = uiConfig.pip_use_mirror !== false && uiConfig.pip_use_mirror !== 'false';
-    }
-    if (aiBaseUrl) aiBaseUrl.value = aiConfig.base_url || '';
-    if (aiModelInput) aiModelInput.value = aiConfig.model || '';
-    if (quickformEnabled) quickformEnabled.checked = quickformConfig.enabled === true || quickformConfig.enabled === 'true';
-    if (quickformBaseUrl) quickformBaseUrl.value = quickformConfig.base_url || 'https://quickform.cn';
-    if (quickformUsername) quickformUsername.value = quickformConfig.username || '';
-    if (quickformPassword) quickformPassword.value = quickformConfig.password || '';
-    if (window.app?.ai?.syncModelBadge) {
-        window.app.ai.syncModelBadge();
-    }
-}
-
-async function loadSystemConfigToInputs() {
-    const response = await apiClient.loadConfig();
-    applySystemConfigToInputs(response);
-}
-
-// 保存系统配置函数
-async function saveSystemConfig() {
-    console.log('saveSystemConfig 被调用');
-    const apiKey = document.getElementById('api-key-input')?.value.trim();
-    const pythonPath = document.getElementById('python-path-input')?.value.trim();
-    const aiBaseUrlInput = document.getElementById('ai-base-url')?.value.trim() || '';
-    const aiModelInput = document.getElementById('ai-model-input')?.value.trim() || '';
-
-    const resourcesBaseUrlInput = document.getElementById('resources-base-url')?.value.trim() || '';
-    const resourcesRepoInput = document.getElementById('resources-repo')?.value.trim() || '';
-    const resourcesBranchInput = document.getElementById('resources-branch')?.value.trim() || '';
-    const resourcesIndexPathInput = document.getElementById('resources-index-path')?.value.trim() || '';
-    const resourcesSubmitUrlInput = document.getElementById('resources-submit-url')?.value.trim() || '';
-    const resourcesPublishPathInput = document.getElementById('resources-publish-path')?.value.trim() || '';
-    const resourcesPublishTokenInput = document.getElementById('resources-publish-token')?.value.trim() || '';
-    const classroomNameInput = document.getElementById('classroom-name')?.value.trim() || '';
-    const classroomTeacherCodeInput = document.getElementById('classroom-teacher-code')?.value.trim() || '';
-    const classroomAutoDiscoverInput = document.getElementById('classroom-auto-discover')?.value || 'true';
-    const usePipMirrorInput = document.getElementById('use-tsinghua-mirror')?.checked ?? true;
-    const quickformEnabledInput = document.getElementById('quickform-enabled')?.checked ?? false;
-    const quickformBaseUrlInput = document.getElementById('quickform-base-url')?.value.trim() || 'https://quickform.cn';
-    const quickformUsernameInput = document.getElementById('quickform-username')?.value.trim() || '';
-    const quickformPasswordInput = document.getElementById('quickform-password')?.value || '';
-
-    const hasResourcesInput = !!(resourcesBaseUrlInput || resourcesRepoInput || resourcesBranchInput || resourcesIndexPathInput || resourcesSubmitUrlInput || resourcesPublishPathInput || resourcesPublishTokenInput);
-    const hasClassroomInput = !!(classroomNameInput || classroomTeacherCodeInput || classroomAutoDiscoverInput);
-    const hasAiInput = !!(apiKey || aiBaseUrlInput || aiModelInput);
-    const hasQuickFormInput = !!(quickformEnabledInput || quickformBaseUrlInput || quickformUsernameInput || quickformPasswordInput);
-    const hasPackageSettingsInput = true;
-
-    if (!hasAiInput && !pythonPath && !hasResourcesInput && !hasClassroomInput && !hasQuickFormInput && !hasPackageSettingsInput) {
-        log('请至少输入一项配置', 'warning');
-        return;
-    }
-
-    try {
-        // 保存 API Key
-        if (hasAiInput) {
-            // AI 配置已经在 input 中，saveAIConfig 会自行读取
-            await saveAIConfig();
-        }
-
-        // 保存 Python 路径 (这里暂时模拟保存，实际可能需要调用后端 API)
-        if (pythonPath) {
-            localStorage.setItem('python_path', pythonPath);
-            log('Python 环境路径已保存', 'success');
-        }
-
-        // 保存课程资源库默认配置（多课程源在“课程资源 -> 云端拉取”中维护）
-        const resourcesBaseUrl = resourcesBaseUrlInput;
-        const resourcesRepo = resourcesRepoInput;
-        const resourcesBranch = resourcesBranchInput || 'main';
-        const resourcesIndexPath = resourcesIndexPathInput || 'index.json';
-        const resourcesSubmitUrl = resourcesSubmitUrlInput;
-        const resourcesPublishPath = resourcesPublishPathInput || 'courses';
-        const resourcesPublishToken = resourcesPublishTokenInput;
-
-        const uiPayload = {
-            resources_base_url: resourcesBaseUrl,
-            resources_repo: resourcesRepo,
-            resources_branch: resourcesBranch,
-            resources_index_path: resourcesIndexPath,
-            resources_submit_url: resourcesSubmitUrl,
-            resources_publish_path: resourcesPublishPath,
-            resources_publish_token: resourcesPublishToken,
-            classroom_name: classroomNameInput,
-            classroom_teacher_code: classroomTeacherCodeInput,
-            classroom_auto_discover: classroomAutoDiscoverInput !== 'false',
-            pip_use_mirror: usePipMirrorInput,
-            quickform: {
-                enabled: quickformEnabledInput,
-                base_url: quickformBaseUrlInput || 'https://quickform.cn',
-                username: quickformUsernameInput,
-                password: quickformPasswordInput,
-            }
-        };
-
-        await apiClient.saveConfig({ ui: uiPayload });
-
-        log('配置保存成功', 'success');
-        showToast('系统配置已保存', 'success');
-    } catch (error) {
-        console.error('保存配置失败:', error);
-        log('保存配置失败: ' + error.message, 'error');
-        showToast('保存失败: ' + error.message, 'error');
-    }
-}
-
-function collectQuickFormConfigFromInputs() {
-    return {
-        enabled: document.getElementById('quickform-enabled')?.checked ?? false,
-        base_url: document.getElementById('quickform-base-url')?.value.trim() || 'https://quickform.cn',
-        username: document.getElementById('quickform-username')?.value.trim() || '',
-        password: document.getElementById('quickform-password')?.value || '',
-    };
-}
-
-async function testQuickFormConfig() {
-    try {
-        const response = await apiClient.testQuickForm(collectQuickFormConfigFromInputs());
-        if (response?.success) {
-            const count = Number(response.count || 0);
-            showToast(`QuickForm 已连接，当前 ${count} 个任务`, 'success');
-            log(`QuickForm 连接成功（${count} 个任务）`, 'success');
-            return;
-        }
-        throw new Error(response?.message || 'QuickForm 测试失败');
-    } catch (error) {
-        console.error('QuickForm 测试失败:', error);
-        showToast(`QuickForm 测试失败: ${error.message}`, 'error');
-        log(`QuickForm 测试失败: ${error.message}`, 'error');
-    }
-}
-
-async function resetSystemConfig() {
-    try {
-        await loadSystemConfigToInputs();
-        const savedPythonPath = localStorage.getItem('python_path');
-        const pythonInput = document.getElementById('python-path-input');
-        if (pythonInput) {
-            pythonInput.value = savedPythonPath || '';
-        }
-        showToast('已恢复未保存的设置修改', 'success');
-    } catch (error) {
-        console.error('恢复设置失败:', error);
-        showToast('恢复失败: ' + error.message, 'error');
-    }
-}
-
 registerNamespace('system', {
     saveSystemConfig,
-    testQuickFormConfig,
     resetSystemConfig,
     installPackage,
     uninstallPackage,
@@ -711,101 +428,6 @@ registerNamespace('system', {
     showSettingsTab,
     updateSettingsVisibility
 });
-
-
-async function ensureTeacherCodeInitialized() {
-    let initialConfig = null;
-    try {
-        initialConfig = await apiClient.loadConfig();
-        if (!initialConfig?.success) return initialConfig;
-        const uiConfig = initialConfig.config?.ui || {};
-        const existing = (uiConfig.classroom_teacher_code || '').trim();
-        if (existing) {
-            return initialConfig;
-        }
-    } catch (error) {
-        console.warn('读取教师口令配置失败，跳过初始化向导:', error);
-        return initialConfig;
-    }
-
-    const modal = document.getElementById('teacher-init-modal');
-    const errorEl = document.getElementById('teacher-init-error');
-    const input1 = document.getElementById('teacher-init-code');
-    const input2 = document.getElementById('teacher-init-code-confirm');
-    const confirmBtn = document.getElementById('teacher-init-confirm');
-
-    if (!modal || !errorEl || !input1 || !input2 || !confirmBtn) {
-        return initialConfig;
-    }
-
-    showModal('teacher-init-modal');
-    errorEl.textContent = '';
-    errorEl.style.display = 'none';
-    input1.value = '';
-    input2.value = '';
-    input1.focus();
-
-    return new Promise((resolve) => {
-        const cleanup = () => {
-            confirmBtn.onclick = null;
-            input1.onkeydown = null;
-            input2.onkeydown = null;
-        };
-        const finish = (configResponse = null) => {
-            hideModal('teacher-init-modal');
-            cleanup();
-            resolve(configResponse || initialConfig);
-        };
-        const validateAndSave = async () => {
-        const code1 = (input1.value || '').trim();
-        const code2 = (input2.value || '').trim();
-        if (!code1 || !code2) {
-            errorEl.textContent = '教师口令不能为空';
-            errorEl.style.display = 'block';
-            return;
-        }
-        if (code1.length < 4) {
-            errorEl.textContent = '教师口令至少 4 位字符';
-            errorEl.style.display = 'block';
-            return;
-        }
-        if (code1 !== code2) {
-            errorEl.textContent = '两次输入的教师口令不一致';
-            errorEl.style.display = 'block';
-            return;
-        }
-        confirmBtn.disabled = true;
-        try {
-            await apiClient.saveConfig({ ui: { classroom_teacher_code: code1 } });
-            const updatedConfig = await apiClient.loadConfig();
-            const classroomTeacherCode = document.getElementById('classroom-teacher-code');
-            if (classroomTeacherCode) {
-                classroomTeacherCode.value = code1;
-            }
-            finish(updatedConfig);
-        } catch (error) {
-            errorEl.textContent = '保存失败: ' + (error.message || '未知错误');
-            errorEl.style.display = 'block';
-            confirmBtn.disabled = false;
-        }
-        };
-        confirmBtn.onclick = (event) => {
-            event.preventDefault();
-            validateAndSave().catch((err) => {
-                console.warn('保存教师口令失败:', err);
-                confirmBtn.disabled = false;
-            });
-        };
-        const handleEnter = (event) => {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                confirmBtn.click();
-            }
-        };
-        input1.onkeydown = handleEnter;
-        input2.onkeydown = handleEnter;
-    });
-}
 
 // 初始化
 window.addEventListener('DOMContentLoaded', () => {
@@ -828,8 +450,10 @@ window.addEventListener('DOMContentLoaded', () => {
         // 初始化模态框事件监听器（点击外部关闭和ESC键关闭）
         initModalListeners();
     initSidebarCollapseToggle();
-    registerPracticeDeepLinkHandler();
-        updateSettingsVisibility(false);
+registerPracticeDeepLinkHandler();
+registerBlocklyImagePickerBridge();
+        const teacherUnlocked = sessionStorage.getItem('xedu_teacher_mode') === 'true';
+        updateSettingsVisibility(teacherUnlocked);
         showSettingsTab('about');
 
         try {
@@ -843,12 +467,6 @@ window.addEventListener('DOMContentLoaded', () => {
             console.warn('加载系统配置失败:', error);
         }
 
-        try {
-            await syncTeacherModeUI();
-        } catch (error) {
-            console.warn('同步教师模式状态失败:', error);
-        }
-
         const topbarTeacherBtn = document.getElementById('topbar-teacher-mode-btn');
         if (topbarTeacherBtn) {
             topbarTeacherBtn.addEventListener('click', async () => {
@@ -860,121 +478,143 @@ window.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        const studentClassroomRefreshBtn = document.getElementById('student-classroom-refresh-btn');
-        const quickProjectTab = document.getElementById('dashboard-quick-tab-project');
-        const quickClassroomTab = document.getElementById('dashboard-quick-tab-classroom');
+        const dashboardInputConfirmBtn = document.getElementById('dashboard-input-confirm-btn');
+        const dashboardInputClearBtn = document.getElementById('project-path-clear-btn');
+        const projectPathInput = document.getElementById('project-path');
+        const dashboardHeroPrimaryBtn = document.getElementById('dashboard-hero-primary-btn');
+        const dashboardHeroTertiaryBtn = document.getElementById('dashboard-hero-tertiary-btn');
         const dashboardLaunchJupyterBtn = document.getElementById('dashboard-launch-jupyter-btn');
         const dashboardLaunchBlocklyBtn = document.getElementById('dashboard-launch-blockly-btn');
-        const dashboardOpenBlocklyBlankBtn = document.getElementById('dashboard-open-blockly-blank-btn');
         const dashboardOpenSourceBtn = document.getElementById('dashboard-open-source-btn');
-        const dashboardGoClassroomBtn = document.getElementById('dashboard-go-classroom-btn');
-        const dashboardGoResourcesBtn = document.getElementById('dashboard-go-resources-btn');
         const mainNavItem = document.getElementById('nav-main-item');
-        const blocklyNavItem = document.getElementById('nav-blockly-item');
         const jupyterOpenBtn = document.getElementById('jupyter-open-context-btn');
         const jupyterSourceBtn = document.getElementById('jupyter-go-resource-btn');
-        let classroomRefreshRunning = false;
+        dashboardProjectPathCache = getStoredProjectDir() || '';
+        try {
+            dashboardClassroomCodeCache = sessionStorage.getItem('xedu-last-classroom-code') || '';
+        } catch (_) {
+            dashboardClassroomCodeCache = '';
+        }
 
-        const refreshStudentClassrooms = async () => {
-            const emptyEl = document.getElementById('student-classroom-empty');
-            if (classroomRefreshRunning) return;
-            classroomRefreshRunning = true;
-            try {
-                if (emptyEl) {
-                    emptyEl.style.display = 'block';
-                    emptyEl.textContent = '正在查找课堂...';
-                }
-                const response = await apiClient.get('/api/classroom/discover?timeout=1.2');
-                const classrooms = Array.isArray(response?.classrooms) ? response.classrooms : [];
-                renderStudentClassroomList(classrooms, handleClassroomEnter);
-            } catch (error) {
-                const listEl = document.getElementById('student-classroom-list');
-                if (listEl) listEl.innerHTML = '';
-                if (emptyEl) {
-                    emptyEl.style.display = 'block';
-                    emptyEl.textContent = '查找课堂失败';
-                }
-            } finally {
-                classroomRefreshRunning = false;
+        document.querySelectorAll('[data-quick-tab]').forEach((button) => {
+            button.addEventListener('click', () => {
+                syncDashboardInputCache(projectPathInput?.value || '');
+                setDashboardInputMode(button.dataset.quickTab || 'project');
+            });
+        });
+
+        const openClassroomLaunch = async (result, fallbackLabel = '课堂') => {
+            if (!result?.success) {
+                showToast(result?.message || '进入课堂失败', 'error');
+                return false;
             }
+            const launch = result?.launch || {};
+            const projectPath = (launch.project_path || '').trim();
+            const notebookPath = (launch.notebook_path || '').trim();
+            if (projectPath) {
+                dashboardProjectPathCache = projectPath;
+                if (projectPathInput) {
+                    projectPathInput.value = projectPath;
+                }
+            }
+            setDashboardInputMode('project', { restoreValue: false });
+            if (notebookPath && window.app?.workspace?.openJupyterWorkspace) {
+                await window.app.workspace.openJupyterWorkspace({
+                    projectDir: projectPath,
+                    filePath: notebookPath,
+                    sourceLabel: `${launch.course_title || fallbackLabel} / ${notebookPath.split('/').pop()}`,
+                    sourcePage: 'main',
+                }, { force: true });
+            } else if (projectPath && window.app?.workspace?.openJupyterWorkspace) {
+                await window.app.workspace.openJupyterWorkspace({
+                    projectDir: projectPath,
+                    sourceLabel: `${launch.course_title || fallbackLabel} / 课堂目录`,
+                    sourcePage: 'main',
+                });
+            }
+            showToast('已进入课堂实验', 'success');
+            if (result?.warning) {
+                showToast(result.warning, 'warning');
+            }
+            return true;
         };
 
-        const handleClassroomEnter = async (classroom, cardEl = null) => {
-            const classroomSource = {
-                ...classroom,
-                base_url: buildClassroomBaseUrl(classroom),
-            };
-
-            if (cardEl) {
-                cardEl.classList.add('is-entering');
+        const submitDashboardInput = async () => {
+            const currentValue = (projectPathInput?.value || '').trim();
+            syncDashboardInputCache(currentValue);
+            if (dashboardInputMode !== 'classroom') {
+                await confirmProjectPath();
+                return;
             }
-            try {
-                const result = await connectStudentClassroomByCode('', {
-                    source: classroomSource,
-                    showResourcesView: false,
-                    prepareConsoleLaunch: true,
-                });
+            const result = await connectStudentClassroomByCode(currentValue, {
+                showResourcesView: false,
+                prepareConsoleLaunch: true,
+            });
+            await openClassroomLaunch(result, currentValue || '课堂');
+        };
 
-                if (!result?.success) {
-                    showToast(result?.message || '连接课堂失败', 'error');
+        if (dashboardHeroPrimaryBtn) {
+            dashboardHeroPrimaryBtn.addEventListener('click', () => {
+                if (isTeacherModeActive()) {
+                    openResourcesOrClassroomSource('resources').catch((error) => {
+                        console.warn('打开课程资源失败:', error);
+                    });
                     return;
                 }
-
-                const launch = result?.launch || {};
-                const projectPath = (launch.project_path || '').trim();
-                const notebookPath = (launch.notebook_path || '').trim();
-                setDashboardQuickTab('project');
-
-                if (notebookPath && window.app?.workspace?.openJupyterWorkspace) {
-                    await window.app.workspace.openJupyterWorkspace({
-                        projectDir: projectPath,
-                        filePath: notebookPath,
-                        sourceLabel: `${classroomSource.name || '课堂'} / ${notebookPath.split('/').pop()}`,
-                        sourcePage: 'main',
-                    }, { force: true });
-                    showToast('已进入课堂实验', 'success');
-                } else if (projectPath && window.app?.workspace?.openJupyterWorkspace) {
-                    await window.app.workspace.openJupyterWorkspace({
-                        projectDir: projectPath,
-                        sourceLabel: `${classroomSource.name || '课堂'} / 课堂目录`,
-                        sourcePage: 'main',
-                    });
-                    if (window.app?.jupyter?.startJupyter) {
-                        await window.app.jupyter.startJupyter();
-                    }
-                    showToast('已进入课堂目录', 'success');
-                } else {
-                    showToast('已连接课堂', 'success');
-                }
-
-                if (result?.warning) {
-                    showToast(result.warning, 'warning');
-                }
-            } catch (error) {
-                showToast('连接课堂失败: ' + (error?.message || '未知错误'), 'error');
-            } finally {
-                if (cardEl) {
-                    cardEl.classList.remove('is-entering');
-                }
-            }
-        };
-
-        if (quickProjectTab) {
-            quickProjectTab.addEventListener('click', () => setDashboardQuickTab('project'));
-        }
-        if (quickClassroomTab) {
-            quickClassroomTab.addEventListener('click', () => {
-                setDashboardQuickTab('classroom');
-                refreshStudentClassrooms().catch((error) => {
-                    console.warn('刷新课堂列表失败:', error);
+                setDashboardInputMode('classroom');
+                submitDashboardInput().catch((error) => {
+                    console.warn('进入课堂失败:', error);
                 });
             });
         }
-        if (studentClassroomRefreshBtn) {
-            studentClassroomRefreshBtn.addEventListener('click', () => {
-                refreshStudentClassrooms().catch((error) => {
-                    console.warn('刷新课堂列表失败:', error);
+        if (dashboardHeroTertiaryBtn) {
+            dashboardHeroTertiaryBtn.addEventListener('click', () => {
+                if (isTeacherModeActive()) {
+                    startJupyter().catch((error) => {
+                        console.warn('启动 Jupyter Lab 失败:', error);
+                    });
+                    return;
+                }
+                const lastOpened = getLastOpenedJupyterWorkspace();
+                if (lastOpened) {
+                    openJupyterWorkspace(lastOpened, { force: true }).catch((error) => {
+                        console.warn('重新打开最近代码文件失败:', error);
+                    });
+                    return;
+                }
+                startJupyter().catch((error) => {
+                    console.warn('启动 Jupyter Lab 失败:', error);
                 });
+            });
+        }
+        if (projectPathInput) {
+            projectPathInput.addEventListener('input', () => {
+                syncDashboardInputCache(projectPathInput.value);
+            });
+            projectPathInput.addEventListener('keydown', async (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    try {
+                        await submitDashboardInput();
+                    } catch (error) {
+                        console.warn('提交首页输入失败:', error);
+                    }
+                }
+            });
+        }
+        if (dashboardInputConfirmBtn) {
+            dashboardInputConfirmBtn.addEventListener('click', async () => {
+                try {
+                    await submitDashboardInput();
+                } catch (error) {
+                    console.warn('提交首页输入失败:', error);
+                }
+            });
+        }
+        if (dashboardInputClearBtn) {
+            dashboardInputClearBtn.addEventListener('click', () => {
+                clearDashboardInput();
+                renderDashboardSupportState(isTeacherModeActive());
             });
         }
         if (dashboardLaunchJupyterBtn) {
@@ -990,11 +630,6 @@ window.addEventListener('DOMContentLoaded', () => {
                 openBlocklyWorkspace({});
             });
         }
-        if (dashboardOpenBlocklyBlankBtn) {
-            dashboardOpenBlocklyBlankBtn.addEventListener('click', () => {
-                openBlocklyWorkspace({});
-            });
-        }
         if (dashboardOpenSourceBtn) {
             dashboardOpenSourceBtn.addEventListener('click', () => {
                 openResourcesOrClassroomSource(isTeacherModeActive() ? 'resources' : 'classroom').catch((error) => {
@@ -1002,25 +637,11 @@ window.addEventListener('DOMContentLoaded', () => {
                 });
             });
         }
-        if (dashboardGoClassroomBtn) {
-            dashboardGoClassroomBtn.addEventListener('click', () => {
-                if (mainNavItem) showTab('main', mainNavItem);
-                refreshStudentClassrooms().catch((error) => {
-                    console.warn('刷新课堂列表失败:', error);
-                });
-            });
-        }
-        if (dashboardGoResourcesBtn) {
-            dashboardGoResourcesBtn.addEventListener('click', () => {
-                openResourcesOrClassroomSource('resources').catch((error) => {
-                    console.warn('打开课程资源失败:', error);
-                });
-            });
-        }
         if (jupyterOpenBtn) {
             jupyterOpenBtn.addEventListener('click', () => {
-                if (lastOpenedJupyterWorkspace?.filePath) {
-                    openJupyterWorkspace(lastOpenedJupyterWorkspace, { force: true }).catch((error) => {
+                const lastOpened = getLastOpenedJupyterWorkspace();
+                if (lastOpened?.filePath) {
+                    openJupyterWorkspace(lastOpened, { force: true }).catch((error) => {
                         console.warn('重新打开最近代码文件失败:', error);
                     });
                     return;
@@ -1032,28 +653,35 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         if (jupyterSourceBtn) {
             jupyterSourceBtn.addEventListener('click', () => {
-                openResourcesOrClassroomSource(lastOpenedJupyterWorkspace?.sourcePage || '').catch((error) => {
+                const lastOpened = getLastOpenedJupyterWorkspace();
+                openResourcesOrClassroomSource(lastOpened?.sourcePage || '').catch((error) => {
                     console.warn('打开来源页失败:', error);
                 });
             });
         }
         window.addEventListener('xedu:tab-changed', (event) => {
+            if (event?.detail?.tabId === 'blockly-workspace') {
+                ensureBlocklyWorkspaceMounted();
+            }
             renderWorkspacePages();
+            syncActivePageTitle();
+        });
+        window.addEventListener('xedu:teacher-mode-changed', (event) => {
+            applyExperienceCopy(Boolean(event?.detail?.isTeacher));
+        });
+        window.addEventListener('xedu:course-context-updated', () => {
+            renderDashboardSupportState(isTeacherModeActive());
         });
         renderWorkspacePages();
+        applyExperienceCopy(teacherUnlocked);
 
         // API Key 出于安全考虑通常不回显，或者需要从后端获取
         log('系统初始化完成', 'success');
 
-        // 初始状态检查
-        await refreshStatus();
-        await refreshStudentClassrooms();
-        setInterval(() => {
-            const classroomPane = document.getElementById('dashboard-quick-pane-classroom');
-            if (!classroomPane || !classroomPane.classList.contains('is-active')) return;
-            refreshStudentClassrooms().catch(() => {});
-        }, 8000);
         hideStartupLoading();
+        refreshStatus().catch((error) => {
+            console.warn('初始状态检查失败:', error);
+        });
     };
 
     startup().catch((error) => {

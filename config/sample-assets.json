@@ -1,0 +1,32 @@
+{
+  "blocklySmoke": {
+    "root": "courses/blockly-smoke",
+    "image": "courses/blockly-smoke/demo.jpg",
+    "video": "courses/blockly-smoke/demo.mp4",
+    "audio": "courses/blockly-smoke/demo.wav",
+    "videoPoster": "courses/blockly-smoke/assets/xedu-test-scene-1.png",
+    "checkpointsRoot": "courses/blockly-smoke/checkpoints",
+    "inputAliases": {
+      "image": [
+        "demo.jpg",
+        "./demo.jpg",
+        "demo.jpeg",
+        "./demo.jpeg",
+        "demo.png",
+        "./demo.png"
+      ],
+      "video": [
+        "demo.mp4",
+        "./demo.mp4"
+      ],
+      "audio": [
+        "demo.wav",
+        "./demo.wav"
+      ]
+    }
+  },
+  "checkpointRoots": [
+    "checkpoint",
+    "backend/checkpoint"
+  ]
+}

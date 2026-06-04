@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "画面目标：生成一张正式申报报告可用的中文 AI 辅助开发过程图，说明教师团队如何借助 DeepSeek 辅助开发 XEdu Client。主体与场景：从真实课堂问题到工具功能、测试清单、申报材料的闭环。构图与镜头：横向16:9，白底，四步流程：真实课堂问题、DeepSeek 辅助梳理、人工筛选修订、形成工具与材料；每步一个圆角模块，中间用箭头连接；底部三类产出标签：需求分析、测试清单、文稿优化。风格与材质：教育技术论文流程图，白底，深蓝线条，浅蓝模块底色，少量绿色强调“人机协同”，正式克制。文字与标签：只出现上述中文和 DeepSeek，不要新增文字、乱码、水印。限制条件：不要机器人形象、不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "original_prompt": "画面目标：生成一张正式申报报告可用的中文 AI 辅助开发过程图，说明教师团队如何借助 DeepSeek 辅助开发 XEdu Client。主体与场景：从真实课堂问题到工具功能、测试清单、申报材料的闭环。构图与镜头：横向16:9，白底，四步流程：真实课堂问题、DeepSeek 辅助梳理、人工筛选修订、形成工具与材料；每步一个圆角模块，中间用箭头连接；底部三类产出标签：需求分析、测试清单、文稿优化。风格与材质：教育技术论文流程图，白底，深蓝线条，浅蓝模块底色，少量绿色强调“人机协同”，正式克制。文字与标签：只出现上述中文和 DeepSeek，不要新增文字、乱码、水印。限制条件：不要机器人形象、不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/画面目标：生成一张正式申报报告可用的中文_AI_辅助开发过程图，说明教师团队如何借助_DeepSee_f694a230139a.png",
+  "image_urls": [
+    "/static/generated/画面目标：生成一张正式申报报告可用的中文_AI_辅助开发过程图，说明教师团队如何借助_DeepSee_f694a230139a.png"
+  ],
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_7_ai_development_process.png",
+  "output_paths": [
+    "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_7_ai_development_process.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

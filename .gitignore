@@ -19,6 +19,9 @@ venv/
 .venv/
 python_env/
 python_env_win/
+checkpoint/
+checkpoints/
+backend/checkpoint/
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -55,3 +58,12 @@ nul
 /course.json
 *.part
 *.backup
+.omx/
+.codex/
+.understand-anything/
+.tmp-classroom-smoke/
+.xedu_backup/
+output/
+courses/.xedu_backup/
+**/__pycache__/
+*.pyc

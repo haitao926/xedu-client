@@ -1,0 +1,14 @@
+<xml xmlns="https://developers.google.com/blockly/xml">
+  <block type="xeduhub_run_embedding_image" id="xeduhub_task_embedding_image_run" x="28" y="28">
+    <value name="INPUT_DATA">
+      <block type="text" id="xeduhub_task_embedding_image_input_path">
+              <field name="TEXT">assets/xedu-test-scene-1.png</field>
+            </block>
+    </value>
+    <next>
+      <block type="xeduhub_show_result_card" id="xeduhub_task_embedding_image_show">
+        <field name="TITLE">图像特征提取</field>
+      </block>
+    </next>
+  </block>
+</xml>

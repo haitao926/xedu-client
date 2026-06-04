@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib import request as urlrequest
+from urllib import error as urlerror, request as urlrequest
 from urllib.parse import quote
 
 from utils.logger import get_logger
@@ -89,6 +89,7 @@ def _iter_course_files(base: Path):
 class ClassroomConfig:
     active: bool = False
     name: str = ""
+    code: str = ""
     port: int = 5123
     active_course_id: str = ""
     active_course_origin_id: str = ""
@@ -197,6 +198,7 @@ class ClassroomService:
         with self._lock:
             self._config.active = True
             self._config.name = (name or "").strip()
+            self._config.code = (code or "").strip()
             if port:
                 self._config.port = int(port)
 
@@ -214,6 +216,7 @@ class ClassroomService:
     def stop(self) -> Dict[str, Any]:
         with self._lock:
             self._config.active = False
+            self._config.code = ""
             self._broadcast_stop.set()
             self._clear_active_course()
         return self.status()
@@ -223,6 +226,7 @@ class ClassroomService:
             return {
                 "active": self._config.active,
                 "name": self._config.name,
+                "code": self._config.code,
                 "port": self._config.port,
                 "course_count": len(self._courses),
                 "server_id": self._server_id,
@@ -254,6 +258,7 @@ class ClassroomService:
                 "type": "xedu-classroom",
                 "server_id": self._server_id,
                 "name": self._config.name or "课堂",
+                "code": self._config.code,
                 "port": self._config.port,
                 "course_count": len(self._courses),
                 "timestamp": int(time.time()),
@@ -272,6 +277,7 @@ class ClassroomService:
             config = ClassroomConfig(
                 active=self._config.active,
                 name=self._config.name,
+                code=self._config.code,
                 port=self._config.port,
                 active_course_id=self._config.active_course_id,
                 active_course_origin_id=self._config.active_course_origin_id,
@@ -288,8 +294,6 @@ class ClassroomService:
             if config.active_course_id and share_id != config.active_course_id:
                 continue
             data = self._load_course_data(entry)
-            if config.active_course_id:
-                data = self._apply_section_filter(data, config.active_section_index)
             share_id = entry.get("share_id") or data.get("id") or entry.get("id")
             if not share_id:
                 continue
@@ -334,6 +338,7 @@ class ClassroomService:
             "resources": resources,
             "classroom": {
                 "name": config.name or "课堂",
+                "code": config.code,
                 "course_count": len(resources),
                 "server_id": self._server_id,
                 "active_course_id": config.active_course_id,
@@ -380,22 +385,9 @@ class ClassroomService:
         data["tags"] = _normalize_tags(data.get("tags"))
         return data
 
-    def _apply_section_filter(self, data: Dict[str, Any], section_index: Optional[int]) -> Dict[str, Any]:
-        if section_index is None:
-            return data
-        sections = data.get("sections")
-        if not isinstance(sections, list):
-            return data
-        if section_index < 0 or section_index >= len(sections):
-            return data
-        filtered = dict(data)
-        filtered["sections"] = [sections[section_index]]
-        return filtered
-
     def build_package(self, share_id: str, version: str) -> Path:
         with self._lock:
             active_course_id = self._config.active_course_id
-            active_section_index = self._config.active_section_index
         if active_course_id and share_id != active_course_id:
             raise ClassroomServiceError("课程未发布")
         course = self.get_course(share_id)
@@ -406,8 +398,6 @@ class ClassroomService:
             raise ClassroomServiceError("课程目录不存在")
 
         data = self._load_course_data(course)
-        if active_course_id:
-            data = self._apply_section_filter(data, active_section_index)
         data["id"] = data.get("id") or share_id
         data["version"] = version or data.get("version") or "1.0"
         course_json_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
@@ -428,15 +418,12 @@ class ClassroomService:
     def read_course_json_bytes(self, share_id: str) -> bytes:
         with self._lock:
             active_course_id = self._config.active_course_id
-            active_section_index = self._config.active_section_index
         if active_course_id and share_id != active_course_id:
             raise ClassroomServiceError("课程未发布")
         course = self.get_course(share_id)
         if not course:
             raise ClassroomServiceError("未找到课程")
         data = self._load_course_data(course)
-        if active_course_id:
-            data = self._apply_section_filter(data, active_section_index)
         return json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
 
     def resolve_file_path(self, share_id: str, rel_path: str) -> Path:
@@ -497,11 +484,12 @@ class ClassroomService:
                     continue
                 results[server_id] = {
                     "server_id": server_id,
-                "name": payload.get("name") or "课堂",
-                "host": host,
-                "port": int(payload.get("port") or 5123),
-                "course_count": int(payload.get("course_count") or 0),
-                "last_seen": int(time.time()),
+                    "name": payload.get("name") or "课堂",
+                    "code": str(payload.get("code") or "").strip(),
+                    "host": host,
+                    "port": int(payload.get("port") or 5123),
+                    "course_count": int(payload.get("course_count") or 0),
+                    "last_seen": int(time.time()),
                 }
         finally:
             try:
@@ -517,9 +505,30 @@ class ClassroomService:
             raise ClassroomServiceError("课堂地址为空")
         base = base_url.rstrip("/")
         req = urlrequest.Request(f"{base}/api/classroom/index")
-        with urlrequest.urlopen(req, timeout=10) as resp:
-            raw = resp.read().decode("utf-8")
-        return json.loads(raw)
+        try:
+            with urlrequest.urlopen(req, timeout=10) as resp:
+                raw = resp.read().decode("utf-8")
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ClassroomServiceError("课堂索引格式错误")
+            if not payload.get("success"):
+                raise ClassroomServiceError(str(payload.get("message") or "课堂索引不可用"))
+            index = payload.get("index")
+            if not isinstance(index, dict):
+                raise ClassroomServiceError("课堂索引格式错误")
+            return {
+                "index": index,
+                "source_url": payload.get("source_url") or f"{base}/api/classroom/index",
+                "branch": payload.get("branch") or "classroom",
+                "repo_url": base,
+                "raw_base_url": base,
+            }
+        except urlerror.HTTPError as exc:
+            raise ClassroomServiceError(f"课堂索引不可用: HTTP {exc.code}") from exc
+        except (urlerror.URLError, TimeoutError, OSError) as exc:
+            raise ClassroomServiceError(f"课堂地址不可达: {base}") from exc
+        except json.JSONDecodeError as exc:
+            raise ClassroomServiceError("课堂索引格式错误") from exc
 
     @staticmethod
     def pull_package(package_url: str, target_path: str) -> Dict[str, Any]:

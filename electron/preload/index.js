@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // 兼容旧的特定方法调用 (如果还有遗留代码使用它们)
     selectFolder: () => ipcRenderer.invoke('select-folder'),
+    selectCoursePackage: () => ipcRenderer.invoke('select-course-package'),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
     getSystemInfo: () => ipcRenderer.invoke('get-system-info')

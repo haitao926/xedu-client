@@ -1,6 +1,6 @@
 <xml xmlns="https://developers.google.com/blockly/xml">
   <block type="xeduhub_set_input_resource" id="xedu_input" x="28" y="28">
-    <field name="INPUT">demo.jpg</field>
+    <field name="INPUT">assets/xedu-test-scene-1.png</field>
     <next>
       <block type="xeduhub_workflow_set_task" id="xedu_task">
         <field name="TASK_ID">det_body</field>

@@ -1,0 +1,11 @@
+Use case: scientific-and-educational
+Asset type: PPT closing slide background
+Primary request: Generate an elegant minimal background for the closing slide of a formal education AI case-application presentation.
+Scene/background: mostly white with very light blue gradient, soft atmosphere, lots of empty space for overlay text.
+Subject: abstract education-technology visual language with subtle geometric nodes, flowing lines, gentle layered shapes, and calm intelligence atmosphere.
+Composition/framing: wide landscape 16:9, visual weight biased to edges and corners, center area kept clean for closing text.
+Style/medium: refined modern presentation background, minimal, premium, restrained.
+Lighting/mood: calm, clean, optimistic, professional.
+Text (verbatim): no text, no letters, no numbers.
+Constraints: no logos, no watermark, no people, no devices as main subject, no clutter, no heavy decoration.
+Avoid: dark cyberpunk, business poster look, overdone glow, busy network mesh.

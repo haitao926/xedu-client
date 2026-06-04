@@ -10,9 +10,16 @@ logger = get_logger(__name__)
 class ProjectService:
     def __init__(self, templates_dir: str = None):
         if templates_dir is None:
-            # Default to data/templates relative to the project root
-            base_dir = Path(__file__).parent.parent.parent
-            self.templates_dir = base_dir / "data" / "templates"
+            env_templates_dir = os.environ.get("XEDU_PROJECT_TEMPLATES_DIR")
+            env_data_dir = os.environ.get("XEDU_DATA_DIR")
+            if env_templates_dir:
+                self.templates_dir = Path(env_templates_dir)
+            elif env_data_dir:
+                self.templates_dir = Path(env_data_dir) / "data" / "templates"
+            else:
+                # Development fallback; packaged apps must use XEDU_DATA_DIR because install dirs may be read-only.
+                base_dir = Path(__file__).parent.parent.parent
+                self.templates_dir = base_dir / "data" / "templates"
         else:
             self.templates_dir = Path(templates_dir)
             

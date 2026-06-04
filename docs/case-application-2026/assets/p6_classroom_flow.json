@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2",
+  "prompt": "Use case: scientific-and-educational\nAsset type: classroom process illustration\nPrimary request: Generate a wide teaching-process illustration for a middle-school AI course showing how one lesson flows through an integrated classroom tool.\nScene/background: light classroom-tech background, mostly white, subtle soft blue gradients, spacious.\nSubject: one four-step classroom flow with teacher preparation and student learning progression.\nComposition/framing: landscape 16:9, left-to-right or slightly curved process path, each step visually distinct but coherent.\nStyle/medium: polished modern educational illustration, clear icons, soft isometric depth, presentation-ready.\nStep design:\n- Step 1: teacher prepares course resources and lesson materials.\n- Step 2: students open a Blockly-style workspace and understand the task workflow.\n- Step 3: students switch into a Jupyter-style notebook to read and run code.\n- Step 4: students review output, discuss results, and reflect.\nText (verbatim): no text, no letters, no numbers.\nConstraints: no real faces, no logos, no watermark, no messy classroom crowd, no fake UI text, high clarity on projector.\nAvoid: photoreal classroom, comic exaggeration, cluttered scenes, dark palettes.",
+  "original_prompt": "Use case: scientific-and-educational\nAsset type: classroom process illustration\nPrimary request: Generate a wide teaching-process illustration for a middle-school AI course showing how one lesson flows through an integrated classroom tool.\nScene/background: light classroom-tech background, mostly white, subtle soft blue gradients, spacious.\nSubject: one four-step classroom flow with teacher preparation and student learning progression.\nComposition/framing: landscape 16:9, left-to-right or slightly curved process path, each step visually distinct but coherent.\nStyle/medium: polished modern educational illustration, clear icons, soft isometric depth, presentation-ready.\nStep design:\n- Step 1: teacher prepares course resources and lesson materials.\n- Step 2: students open a Blockly-style workspace and understand the task workflow.\n- Step 3: students switch into a Jupyter-style notebook to read and run code.\n- Step 4: students review output, discuss results, and reflect.\nText (verbatim): no text, no letters, no numbers.\nConstraints: no real faces, no logos, no watermark, no messy classroom crowd, no fake UI text, high clarity on projector.\nAvoid: photoreal classroom, comic exaggeration, cluttered scenes, dark palettes.",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/Use_case_scientific-and-educational_Asset_type_cla_ffb3e287e9c7.png",
+  "image_urls": [
+    "/static/generated/Use_case_scientific-and-educational_Asset_type_cla_ffb3e287e9c7.png"
+  ],
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/assets/p6_classroom_flow.png",
+  "output_paths": [
+    "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/assets/p6_classroom_flow.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

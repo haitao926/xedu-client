@@ -4,11 +4,14 @@ import { log, showModal, hideModal } from './ui.js';
 let checkTimer = null;
 let currentJupyterUrl = '';
 let isViewAttached = false;
+let isViewVisible = false;
 let isAttaching = false;
 let allowAutoAttach = false;
 let resizeObserver = null;
 const LAST_PROJECT_KEY = 'xedu-last-project-dir';
 let lastProjectDir = loadLastProjectDir();
+let lastStatusErrorKey = '';
+let lastStatusErrorAt = 0;
 
 function loadLastProjectDir() {
     try {
@@ -70,7 +73,58 @@ const DEFAULT_API_BASE = (typeof window !== 'undefined' && window.xeduConfig && 
     ? window.xeduConfig.apiBase
     : 'http://127.0.0.1:5123';
 const API_BASE = (apiClient && apiClient.baseURL ? apiClient.baseURL : DEFAULT_API_BASE).replace(/\/$/, '');
-const apiFetch = (path, options) => fetch(`${API_BASE}${path}`, options);
+const STATUS_FETCH_TIMEOUT_MS = 2000;
+const READY_STATUS_FETCH_TIMEOUT_MS = 2500;
+const apiFetch = (path, options = {}) => {
+    const { timeoutMs = 0, ...fetchOptions } = options || {};
+    if (!timeoutMs || fetchOptions.signal) {
+        return fetch(`${API_BASE}${path}`, fetchOptions);
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(`${API_BASE}${path}`, {
+        ...fetchOptions,
+        signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+};
+
+function setBackendDisconnectedStatus() {
+    const statusEl = document.getElementById('jupyter-status');
+    const valueEl = document.getElementById('status-value');
+    const portEl = document.getElementById('port-value');
+    const pidEl = document.getElementById('pid-value');
+    const stopBtn = document.getElementById('stop-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    if (statusEl) {
+        statusEl.textContent = '后端未连接';
+        statusEl.className = 'badge badge-stopped';
+    }
+    if (valueEl) {
+        valueEl.textContent = 'Disconnected';
+        valueEl.style.color = 'var(--danger-color, #ef4444)';
+    }
+    if (portEl) portEl.textContent = '-';
+    if (pidEl) pidEl.textContent = '-';
+    if (stopBtn) stopBtn.disabled = true;
+    if (restartBtn) restartBtn.disabled = true;
+}
+
+function shouldThrottleStatusErrorLog(error) {
+    const key = `${error?.name || 'Error'}:${error?.message || 'unknown'}`;
+    const now = Date.now();
+    const sameError = key === lastStatusErrorKey;
+    const delta = now - lastStatusErrorAt;
+    lastStatusErrorKey = key;
+    lastStatusErrorAt = now;
+    if (statusFailureCount <= 1) {
+        return false;
+    }
+    if (!sameError) {
+        return false;
+    }
+    return delta < 30000 || (statusFailureCount % 6 !== 0);
+}
 
 async function parseJsonSafe(response, desc = '接口') {
     const text = await response.text();
@@ -105,7 +159,7 @@ function startViewSync() {
     if (!placeholder || resizeObserver) return;
 
     resizeObserver = new ResizeObserver(() => {
-        if (isViewAttached) {
+        if (isViewAttached && isViewVisible) {
             const bounds = getPlaceholderBounds();
             
             // 调试日志：查看实际获取的坐标
@@ -200,6 +254,7 @@ async function attachJupyterView(url, options = {}) {
 
 async function detachJupyterView() {
     isViewAttached = false;
+    isViewVisible = false;
     stopViewSync();
     await window.electronAPI.invoke('jupyter:destroy-view');
     
@@ -217,13 +272,14 @@ async function detachJupyterView() {
 }
 
 export async function setVisibility(visible) {
+    isViewVisible = Boolean(visible);
     // 只有当视图确实已经“挂载”（即Jupyter已启动且未停止）时，才进行显隐切换
     if (isViewAttached) {
         // 通知主进程添加或移除 BrowserView
-        await window.electronAPI.invoke('jupyter:set-visibility', visible);
+        await window.electronAPI.invoke('jupyter:set-visibility', isViewVisible);
         
         // 如果是显示，可能需要重新同步一下位置（防止切换期间窗口大小变了）
-        if (visible) {
+        if (isViewVisible) {
             const bounds = getPlaceholderBounds();
             if (bounds) {
                 window.electronAPI.invoke('jupyter:update-bounds', bounds);
@@ -274,7 +330,7 @@ export function toggleFullscreen() {
     // Trigger resize check immediately after transition
     // We wait a bit for the CSS transition to finish or at least start
     setTimeout(() => {
-        if (isViewAttached) {
+        if (isViewAttached && isViewVisible) {
             const bounds = getPlaceholderBounds();
             window.electronAPI.invoke('jupyter:update-bounds', bounds);
         }
@@ -328,7 +384,10 @@ export async function openNotebookFile(filePath, projectDir) {
 
     let statusData = null;
     try {
-        const response = await apiFetch('/api/status');
+        const response = await apiFetch('/api/status', {
+            cache: 'no-store',
+            timeoutMs: STATUS_FETCH_TIMEOUT_MS,
+        });
         if (response.ok) {
             statusData = await parseJsonSafe(response, '/api/status');
         }
@@ -344,7 +403,10 @@ export async function openNotebookFile(filePath, projectDir) {
     if (!statusData?.running || needsRestart) {
         await startJupyter();
         try {
-            const refreshed = await apiFetch('/api/status');
+            const refreshed = await apiFetch('/api/status', {
+                cache: 'no-store',
+                timeoutMs: STATUS_FETCH_TIMEOUT_MS,
+            });
             if (refreshed.ok) {
                 statusData = await parseJsonSafe(refreshed, '/api/status');
             }
@@ -454,7 +516,10 @@ export async function startJupyter() {
                 attempts++;
                 
                 try {
-                    const statusRes = await apiFetch('/api/status');
+                    const statusRes = await apiFetch('/api/status', {
+                        cache: 'no-store',
+                        timeoutMs: READY_STATUS_FETCH_TIMEOUT_MS,
+                    });
                     if (!statusRes.ok) {
                         throw new Error(`状态接口返回异常 (${statusRes.status})`);
                     }
@@ -543,7 +608,10 @@ export async function restartJupyter() {
 
 export async function refreshStatus() {
     try {
-        const response = await apiFetch('/api/status');
+        const response = await apiFetch('/api/status', {
+            cache: 'no-store',
+            timeoutMs: STATUS_FETCH_TIMEOUT_MS,
+        });
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
@@ -613,9 +681,13 @@ export async function refreshStatus() {
             }
         }
     } catch (error) {
-        console.error('状态检查失败:', error);
+        setBackendDisconnectedStatus();
         
         statusFailureCount++;
+        const throttleLog = shouldThrottleStatusErrorLog(error);
+        if (!throttleLog) {
+            console.warn('状态检查失败，后端不可达:', error);
+        }
         
         // 只有连续失败超过 3 次才销毁视图，避免网络抖动导致闪烁
         if (isViewAttached && statusFailureCount > 3) {
@@ -645,10 +717,18 @@ export async function browseFolder() {
 }
 
 export async function confirmProjectPath() {
-    const path = document.getElementById('project-path').value;
+    const path = document.getElementById('project-path').value.trim();
     if (!path) {
         alert('请先选择项目路径');
         return;
+    }
+
+    if (window.electronAPI?.invoke) {
+        const exists = await window.electronAPI.invoke('path-is-directory', path);
+        if (!exists) {
+            alert('项目目录不存在，请选择本地项目目录');
+            return;
+        }
     }
     
     try {
@@ -678,12 +758,52 @@ export function clearProjectPath() {
     rememberProjectDir('');
 }
 
+export function getStoredProjectDir() {
+    return resolveProjectDir();
+}
+
 export async function testPythonEnvironment() {
-    // ... existing implementation or simplified ...
-    const pythonPath = document.getElementById('python-path-input').value;
-    log(`测试 Python 环境: ${pythonPath}`, 'info');
-    // For now just a mock
-    setTimeout(() => log('Python 环境测试通过 (Mock)', 'success'), 1000);
+    const pythonPath = document.getElementById('python-path-input')?.value.trim() || '';
+    const resultEl = document.getElementById('python-env-check-result');
+    log(`测试 Python 环境: ${pythonPath || '(当前后端解释器)'}`, 'info');
+    if (resultEl) {
+        resultEl.textContent = '正在检测 Python / XEdu 运行时...';
+    }
+
+    try {
+        const query = pythonPath ? `?python_executable=${encodeURIComponent(pythonPath)}` : '';
+        const response = await apiClient.get(`/api/detect_python${query}`);
+        if (!response?.success || !response?.info) {
+            throw new Error(response?.message || '检测失败');
+        }
+
+        const info = response.info;
+        const xeduVersion = info.xedu_version || '未安装';
+        const xeduExpected = info.xedu_expected_version || '2.0.0';
+        const xeduStatus = info.xedu_version_ok ? '通过' : '异常';
+        const jupyterlab = info.jupyterlab_version || '未安装';
+        const notebook = info.jupyter_notebook_version || '未安装';
+        const message = [
+            `Python ${info.python_version || '未知'} (${info.python_executable || '未知路径'})`,
+            `xedu-python: ${xeduVersion}，预期 ${xeduExpected}，检查结果：${xeduStatus}`,
+            `JupyterLab: ${jupyterlab}`,
+            `Notebook: ${notebook}`,
+            info.xedu_runtime_message || '',
+        ].filter(Boolean).join(' | ');
+
+        if (resultEl) {
+            resultEl.textContent = message;
+            resultEl.style.color = info.xedu_version_ok ? 'var(--success-color)' : 'var(--warning-color)';
+        }
+        log(message, info.xedu_version_ok ? 'success' : 'warning');
+    } catch (error) {
+        const message = `Python 环境检测失败: ${error.message}`;
+        if (resultEl) {
+            resultEl.textContent = message;
+            resultEl.style.color = 'var(--danger-color)';
+        }
+        log(message, 'error');
+    }
 }
 
 // 不再需要 openBrowser (open-btn 移除或改用 openExternal)

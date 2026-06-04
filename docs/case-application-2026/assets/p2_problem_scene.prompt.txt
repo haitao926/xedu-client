@@ -1,0 +1,12 @@
+Use case: infographic-diagram
+Asset type: case-application PPT supporting illustration
+Primary request: Generate a wide educational concept illustration that explains the problem scenario in a middle-school AI classroom before and after using one integrated learning tool.
+Scene/background: clean white to very light blue background, presentation-friendly, lots of negative space, bright but restrained.
+Subject: a split before-and-after scene. Left side shows fragmented learning workflow with separated lesson page, visual blocks workspace, notebook/code screen, arrows not aligned, mild confusion and task interruption. Right side shows one unified learning workstation centered around an integrated Jupyter plus Blockly classroom tool, smooth learning flow, stable task context.
+Composition/framing: wide landscape, 16:9 friendly, left-to-right comparison, balanced composition, easy to crop into PPT.
+Style/medium: polished educational infographic illustration, flat plus light isometric depth, clean geometry, professional modern teaching visual.
+Lighting/mood: clear, optimistic, classroom technology atmosphere, not flashy.
+Color palette: white, light blue, soft cyan, gentle green, small orange accents.
+Text (verbatim): no text, no letters, no numbers.
+Constraints: no logos, no watermark, no people, no clutter, no extra icons beyond learning-tool context, high readability on projector.
+Avoid: dark background, photorealism, messy collage, poster typography, fake interface text.

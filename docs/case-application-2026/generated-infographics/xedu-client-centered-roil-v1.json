@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "画面目标：\n为教师申报PPT生成一张清晰、克制、低AI味的教育科技关系图，主题是“以 XEdu Client 为核心的课堂实验平台”。这张图强调本项目 XEdu Client，不是介绍 XEduPro 的总览图。\n\n主体与结构：\n横向16:9画面，浅灰白背景。画面中心最大、最醒目的主体是 XEdu Client，表现为一个桌面课堂工作台或学习平台界面，占据画面中心 45% 到 55% 的视觉面积。XEdu Client 内部连接三个课堂入口：HTML、Blockly、Jupyter，并连接结果复盘。\n\n上方较小区域是 XEduPro，表现为上位人工智能学习工具体系背景，只作为来源和生态支撑，不要抢主角。\n中间靠近 XEdu Client 的位置是 XEduHub，表现为被 XEdu Client 调用的能力模块，属于 XEduPro 工具体系中的模型推理与任务执行工具库。\n用清晰箭头表达：XEduPro 工具体系中包含 XEduHub，XEdu Client 接入 XEduHub 能力并服务课堂实验。\n\n构图要求：\nXEdu Client 必须是画面主角，最大、最清楚、位置居中。\nXEduPro 和 XEduHub 只是支撑层，不要画得比 XEdu Client 更突出。\n不要画成三个并列产品。\n不要把 XEduHub 画成独立平行产品。\n整体结构应一眼看懂：本项目是 XEdu Client，它接入 XEduHub 能力，服务 HTML、Blockly、Jupyter 的课堂实验路径。\n\n视觉风格：\n教育科技白皮书风格，干净、专业、克制。\n半扁平信息图，柔和色块，清晰层级，细腻阴影，适合正式申报PPT。\n配色使用深蓝、青绿、浅灰，少量橙色强调 XEdu Client 的课堂价值。\n不要强烈赛博风，不要卡通风，不要儿童插画风，不要手绘涂鸦风，不要复杂人物，不要机器人形象，不要炫光，不要渐变球，不要AI海报感。\n\n文字要求：\n只允许出现以下短词：\nXEdu Client\nXEduHub\nXEduPro\nHTML\nBlockly\nJupyter\n课堂实验\n模型推理\n任务执行\n结果复盘\n不要出现其他文字，不要生成乱码，不要生成伪中文，不要密集文字。\n如果文字难以保证清晰，优先保留：XEdu Client、XEduHub、XEduPro、HTML、Blockly、Jupyter。\n\n限制条件：\n不要二维码，不要网址，不要联系方式，不要水印。\n不要把 XEduPro 画成普通网页或管理后台。\n不要把画面做成广告海报。\n留出适当空白方便后期加中文说明。",
+  "original_prompt": "画面目标：\n为教师申报PPT生成一张清晰、克制、低AI味的教育科技关系图，主题是“以 XEdu Client 为核心的课堂实验平台”。这张图强调本项目 XEdu Client，不是介绍 XEduPro 的总览图。\n\n主体与结构：\n横向16:9画面，浅灰白背景。画面中心最大、最醒目的主体是 XEdu Client，表现为一个桌面课堂工作台或学习平台界面，占据画面中心 45% 到 55% 的视觉面积。XEdu Client 内部连接三个课堂入口：HTML、Blockly、Jupyter，并连接结果复盘。\n\n上方较小区域是 XEduPro，表现为上位人工智能学习工具体系背景，只作为来源和生态支撑，不要抢主角。\n中间靠近 XEdu Client 的位置是 XEduHub，表现为被 XEdu Client 调用的能力模块，属于 XEduPro 工具体系中的模型推理与任务执行工具库。\n用清晰箭头表达：XEduPro 工具体系中包含 XEduHub，XEdu Client 接入 XEduHub 能力并服务课堂实验。\n\n构图要求：\nXEdu Client 必须是画面主角，最大、最清楚、位置居中。\nXEduPro 和 XEduHub 只是支撑层，不要画得比 XEdu Client 更突出。\n不要画成三个并列产品。\n不要把 XEduHub 画成独立平行产品。\n整体结构应一眼看懂：本项目是 XEdu Client，它接入 XEduHub 能力，服务 HTML、Blockly、Jupyter 的课堂实验路径。\n\n视觉风格：\n教育科技白皮书风格，干净、专业、克制。\n半扁平信息图，柔和色块，清晰层级，细腻阴影，适合正式申报PPT。\n配色使用深蓝、青绿、浅灰，少量橙色强调 XEdu Client 的课堂价值。\n不要强烈赛博风，不要卡通风，不要儿童插画风，不要手绘涂鸦风，不要复杂人物，不要机器人形象，不要炫光，不要渐变球，不要AI海报感。\n\n文字要求：\n只允许出现以下短词：\nXEdu Client\nXEduHub\nXEduPro\nHTML\nBlockly\nJupyter\n课堂实验\n模型推理\n任务执行\n结果复盘\n不要出现其他文字，不要生成乱码，不要生成伪中文，不要密集文字。\n如果文字难以保证清晰，优先保留：XEdu Client、XEduHub、XEduPro、HTML、Blockly、Jupyter。\n\n限制条件：\n不要二维码，不要网址，不要联系方式，不要水印。\n不要把 XEduPro 画成普通网页或管理后台。\n不要把画面做成广告海报。\n留出适当空白方便后期加中文说明。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/画面目标：_为教师申报PPT生成一张清晰、克制、低AI味的教育科技关系图，主题是“以_XEdu_Cl_969ac2269d50.png",
+  "image_urls": [
+    "/static/generated/画面目标：_为教师申报PPT生成一张清晰、克制、低AI味的教育科技关系图，主题是“以_XEdu_Cl_969ac2269d50.png"
+  ],
+  "output_path": "docs/case-application-2026/generated-infographics/xedu-client-centered-roil-v1.png",
+  "output_paths": [
+    "docs/case-application-2026/generated-infographics/xedu-client-centered-roil-v1.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

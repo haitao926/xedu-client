@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "doubao-seedream-5-0-260128",
+  "requested_model": "doubao-seedream-5-0-260128",
+  "prompt": "生成一张论文级中文结构图底图，主题是“XEduHub工具箱支撑图”。横向 16:9，白底，中心模块为 XEduHub工具箱。左侧连接 Blockly实践，右侧连接 Jupyter应用创新。围绕中心有四个能力模块：图像与输入资源、模型调用与任务执行、流程组织与运行、结果展示与反馈。底部连接课程实验样例。用清晰箭头表达 XEduHub 同时支撑 Blockly 和 Jupyter。风格专业、现代、论文信息图，深色文字，蓝绿强调色，留白充足，不要手绘，不要人物，不要水印，不要额外乱码。",
+  "original_prompt": "生成一张论文级中文结构图底图，主题是“XEduHub工具箱支撑图”。横向 16:9，白底，中心模块为 XEduHub工具箱。左侧连接 Blockly实践，右侧连接 Jupyter应用创新。围绕中心有四个能力模块：图像与输入资源、模型调用与任务执行、流程组织与运行、结果展示与反馈。底部连接课程实验样例。用清晰箭头表达 XEduHub 同时支撑 Blockly 和 Jupyter。风格专业、现代、论文信息图，深色文字，蓝绿强调色，留白充足，不要手绘，不要人物，不要水印，不要额外乱码。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/生成一张论文级中文结构图底图，主题是“XEduHub工具箱支撑图”。横向_169，白底，中心模块为__317964e511ee.png",
+  "image_urls": [
+    "/static/generated/生成一张论文级中文结构图底图，主题是“XEduHub工具箱支撑图”。横向_169，白底，中心模块为__317964e511ee.png"
+  ],
+  "output_path": "docs/case-application-2026/assets/figures/roil-base/figure_4_xeduhub_toolbox_base.png",
+  "output_paths": [
+    "docs/case-application-2026/assets/figures/roil-base/figure_4_xeduhub_toolbox_base.png"
+  ],
+  "attempted_models": [
+    "doubao-seedream-5-0-260128"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

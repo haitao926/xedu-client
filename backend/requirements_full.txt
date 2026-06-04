@@ -37,8 +37,10 @@ tiktoken==0.6.0
 kimi-agent-sdk
 
 # Project-specific
-xedu-python==0.0.1
+# xedu-python is installed separately via scripts/setup_portable_python.py with --no-deps.
+pinpong==0.6.2
 
 # Deployment
 onnx>=1.15.0
 onnxruntime>=1.17.0
+rapidocr-onnxruntime

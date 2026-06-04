@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XEdu Client 创AI 开发与应用报告 HTML 版</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <span class="eyebrow">开发与应用报告 · HTML 版</span>
+      <h1>XEdu Client：完整报告草案</h1>
+      <p class="lead">
+        这版报告已经按更像平台的项目主轴重写，核心不再是“一个实验工具”，而是一个面向课堂教学的人工智能实验平台。
+        主轴包括：实验环境承载、HTML—Blockly—Jupyter 学习主线、XEduHub 完整工具箱、教师课程分享与更新机制。
+      </p>
+      <div class="hero-meta">
+        <span class="meta-pill">学段：初中</span>
+        <span class="meta-pill">类别：创AI / 人工智能学习工具</span>
+        <span class="meta-pill">当前形态：带图完整版</span>
+      </div>
+    </section>
+
+    <section class="content">
+      <nav class="nav">
+        <a href="./index.html">返回入口</a>
+        <a href="./figure-system.html">查看图体系</a>
+      </nav>
+
+      <section class="card">
+        <h2>项目一句话定位</h2>
+        <p>
+          <strong>XEdu Client</strong> 是一个以实验环境承载为基础、以 <code>HTML—Blockly—Jupyter</code> 为学习主线、
+          以 <code>XEduHub</code> 为能力工具箱、以教师课程分享与更新机制为平台闭环的人工智能教学实验平台。
+        </p>
+      </section>
+
+      <h2 class="section-title">一、开发背景</h2>
+
+      <section class="card">
+        <h3>四类核心问题</h3>
+        <ol class="number-list">
+          <li><strong>实验环境问题</strong>：Jupyter、Blockly、Python、样例数据和模型资源分散，环境难搭、入口难管、课堂时间被运行问题消耗。</li>
+          <li><strong>学习路径断裂问题</strong>：学生从讲解页到图形化实践，再到代码创新之间缺少连续设计，导致“看过了不等于会做”。</li>
+          <li><strong>AI 实验能力分散问题</strong>：图像输入、模型调用、流程执行、结果展示等能力分散在多个工具和脚本里，难以复用。</li>
+          <li><strong>课程共享与更新问题</strong>：课程资源不是静态文件，而是会随着教学推进不断修订、同步和再分享的动态内容。</li>
+        </ol>
+      </section>
+
+      <figure class="figure">
+        <img src="../assets/figures/figure_b_problem_solution_map.png" alt="核心问题到解决路径映射图" />
+        <figcaption>
+          图 B：核心问题到解决路径映射图。该图是背景部分最关键的论文级图之一，用来把“问题”与“平台回应机制”一一对应讲清楚。
+        </figcaption>
+      </figure>
+
+      <section class="card">
+        <h3>平台化回应</h3>
+        <p>
+          基于上述问题，项目不再被定义为单一实验工具，而是被组织为一个更像平台的人工智能教学实验环境：
+          一方面承载 Jupyter、Blockly 与本地实验运行环境，降低部署和使用门槛；另一方面，以
+          <code>HTML（体验）—Blockly（实践）—Jupyter（应用创新）</code> 组织学生的连续学习路径，并结合
+          <code>XEduHub</code> 提供统一实验能力支撑；同时，面向教师建立课程资源的组织、分享、同步更新与持续迭代机制。
+        </p>
+      </section>
+
+      <h2 class="section-title">二、设计与开发</h2>
+
+      <section class="card">
+        <h3>平台能力四层结构</h3>
+        <ol class="number-list">
+          <li><strong>实验环境承载层</strong>：统一承载 Jupyter、Blockly、本地运行与实验资源。</li>
+          <li><strong>学习路径层</strong>：按 HTML（体验）—Blockly（实践）—Jupyter（应用创新）组织学生 progression。</li>
+          <li><strong>XEduHub 工具箱层</strong>：统一支撑图像输入、模型调用、流程执行与结果呈现。</li>
+          <li><strong>课程与平台机制层</strong>：支撑教师的课程导入、上传更新、拉取同步、课堂接入与持续迭代。</li>
+        </ol>
+      </section>
+
+      <figure class="figure">
+        <img src="../assets/figures/figure_a_architecture.png" alt="项目总体架构图" />
+        <figcaption>
+          图 A：项目总体架构图。用于展示桌面宿主、教学工作台、服务层、XEduHub 工具箱与课程资源层的系统结构。
+        </figcaption>
+      </figure>
+
+      <figure class="figure" style="margin-top: 18px;">
+        <img src="../assets/figures/figure_c_learning_progression.png" alt="HTML-Blockly-Jupyter 学习主线图" />
+        <figcaption>
+          图 C：HTML—Blockly—Jupyter 学习主线图。强调三者不是并列入口，而是体验、实践、应用创新的连续学习路径。
+        </figcaption>
+      </figure>
+
+      <figure class="figure" style="margin-top: 18px;">
+        <img src="../assets/figures/figure_d_xeduhub_toolbox.png" alt="XEduHub 工具箱支撑图" />
+        <figcaption>
+          图 D：XEduHub 工具箱支撑图。强调 XEduHub 在 Blockly 与 Jupyter 两侧都提供统一的实验能力底座。
+        </figcaption>
+      </figure>
+
+      <section class="card">
+        <h3>开发过程要点</h3>
+        <p>
+          开发顺序不是先堆功能，而是先明确平台目标，再依次解决环境承载、学习主线、工具箱统一和教师课程机制。
+          其中，最关键的工程选择并不是某个单点技术，而是让课程、实验、课堂和更新机制在同一工作台里形成闭环。
+        </p>
+      </section>
+
+      <h2 class="section-title">三、应用过程与效果</h2>
+
+      <section class="card">
+        <h3>典型课堂使用路径</h3>
+        <p>
+          教师先在课程资源中准备实验包，再让学生从讲解页进入 `01_目标检测与细粒度分类`，理解任务目标和流程逻辑；
+          随后进入 Blockly 工作区观察“检测、裁剪、分类”的串联关系；再切换到 Jupyter，继续阅读和运行对应代码；
+          最后结合结果图或课堂讨论完成总结与复盘。课后教师还可以继续修订课程、上传更新并同步到后续课堂。
+        </p>
+      </section>
+
+      <figure class="figure">
+        <img src="../assets/figures/figure_f_classroom_flow.png" alt="典型课堂应用流程图" />
+        <figcaption>
+          图 F：典型课堂应用流程图。用于说明教师备课、开启课堂、学生进入当前实验、Blockly 理解、Jupyter 实践与课后更新的完整路径。
+        </figcaption>
+      </figure>
+
+      <figure class="figure" style="margin-top: 18px;">
+        <img src="../../courses/ai-showcase-exam-2025/01_目标检测与细粒度分类/animal.jpg" alt="目标检测与细粒度分类任务样例图" />
+        <figcaption>
+          图 3：目标检测与细粒度分类任务样例输入图片。该图用于说明课堂任务输入素材的真实性与可操作性。
+        </figcaption>
+      </figure>
+
+      <section class="card">
+        <h3>效果表达建议</h3>
+        <p>
+          这部分最终仍建议补真实课堂数据，但即便暂时没有完整量化数据，也要至少写清教师和学生两侧的收益：
+          学生更容易保持任务上下文，教师更容易组织课程并在课后继续更新资源，课程也更容易沉淀为可持续复用的平台资产。
+        </p>
+      </section>
+
+      <h2 class="section-title">四、创新与反思</h2>
+
+      <section class="card">
+        <h3>核心创新</h3>
+        <ol class="number-list">
+          <li>不是多个入口并列，而是 <code>HTML—Blockly—Jupyter</code> 的连续学习主线。</li>
+          <li>不是把 AI 能力散落在脚本里，而是以 <code>XEduHub</code> 建立统一工具箱底座。</li>
+          <li>不是只关心实验能否运行，而是把教师课程分享、同步更新与持续迭代纳入平台闭环。</li>
+          <li>在开发过程中引入生成式人工智能，提升教师或小团队跨界开发教育工具的能力。</li>
+        </ol>
+      </section>
+
+      <figure class="figure">
+        <img src="../assets/figures/figure_e_course_share_update.png" alt="教师课程分享与更新机制图" />
+        <figcaption>
+          图 E：教师课程分享与更新机制图。用于明确“上一节、改一节、同步一节”的动态课程资源机制，是平台定位最关键的一张图之一。
+        </figcaption>
+      </figure>
+
+      <div class="panel-note" style="margin-top: 18px;">
+        正式提交前，仍建议把 AI 生成的辅助图与真实课堂证据图明确区分：论文级核心图可作为结构表达图保留，
+        但课堂照片、学生作品、教师反馈、AI 对话证据仍应使用真实材料。
+      </div>
+    </section>
+
+    <footer class="footer">
+      当前页面用于先把结构和表达讲清楚。确认无误后，再转成 Word 与 PPT 会更顺。
+    </footer>
+  </main>
+</body>
+</html>

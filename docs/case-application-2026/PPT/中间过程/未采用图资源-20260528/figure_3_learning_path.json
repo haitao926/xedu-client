@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "画面目标：生成一张正式申报报告可用的中文学习路径图，说明学生在 XEdu Client 中从情境体验到代码实践的递进过程。主体与场景：一条从左到右的学习路径，分为三个阶段，每个阶段一个大模块。构图与镜头：横向16:9，白底，三段流程结构；左侧模块标题“HTML 讲解页”，副标签“任务情境”；中间模块标题“Blockly 可视化流程”，副标签“理解检测-裁剪-分类”；右侧模块标题“Jupyter 代码实践”，副标签“运行代码与复现实验”；底部一条连续箭头，文字“体验 → 理解 → 实践 → 复盘”。每个模块使用简洁屏幕图标，但不要真实照片。风格与材质：教育技术论文流程图，白底，深蓝线条，浅蓝模块底色，少量绿色强调路径，清晰、正式、克制。文字与标签：只出现上述中文和英文技术名，不要新增文字、乱码、水印。限制条件：不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "original_prompt": "画面目标：生成一张正式申报报告可用的中文学习路径图，说明学生在 XEdu Client 中从情境体验到代码实践的递进过程。主体与场景：一条从左到右的学习路径，分为三个阶段，每个阶段一个大模块。构图与镜头：横向16:9，白底，三段流程结构；左侧模块标题“HTML 讲解页”，副标签“任务情境”；中间模块标题“Blockly 可视化流程”，副标签“理解检测-裁剪-分类”；右侧模块标题“Jupyter 代码实践”，副标签“运行代码与复现实验”；底部一条连续箭头，文字“体验 → 理解 → 实践 → 复盘”。每个模块使用简洁屏幕图标，但不要真实照片。风格与材质：教育技术论文流程图，白底，深蓝线条，浅蓝模块底色，少量绿色强调路径，清晰、正式、克制。文字与标签：只出现上述中文和英文技术名，不要新增文字、乱码、水印。限制条件：不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/画面目标：生成一张正式申报报告可用的中文学习路径图，说明学生在_XEdu_Client_中从情境体验_2cdd7cb6e233.png",
+  "image_urls": [
+    "/static/generated/画面目标：生成一张正式申报报告可用的中文学习路径图，说明学生在_XEdu_Client_中从情境体验_2cdd7cb6e233.png"
+  ],
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_3_learning_path.png",
+  "output_paths": [
+    "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_3_learning_path.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

@@ -2,9 +2,91 @@ import * as Blockly from 'blockly';
 import * as libraryBlocks from 'blockly/blocks';
 import { pythonGenerator } from 'blockly/python';
 import * as ZhHans from 'blockly/msg/zh-hans';
-import JSZip from 'jszip';
 import blocklyColorContract from '../../config/blockly-colors.json';
 import cssText from '../styles/blockly-workspace.css?raw';
+import {
+  CATEGORY_ICON_SVGS,
+  DEFAULT_CATEGORY_COLOUR,
+  DEFAULT_CATEGORY_ICON_SVG,
+  DEFAULT_INPUT_RESOURCE,
+  DEFAULT_INPUT_SEQUENCE,
+  TASK_FIRST_CATEGORY_META,
+  resolveCategoryColour,
+} from './blockly/runtime-appearance.js';
+import {
+  alignDropdownFieldArrows,
+  alignToolboxFlyout,
+  applyCodeDockWidth,
+  bindCodeDockResize,
+  buildSideNavModel,
+  buildToolboxPackList,
+  clampCodeDockWidth,
+  configureRoleScopedToolbar,
+  ensureInitialToolboxSelection,
+  findToolboxItemByName,
+  getAllToolboxItems,
+  getCategoryIconSvg,
+  getSelectedToolboxCategoryMeta,
+  getToolboxCategoryName,
+  getToolboxItemColour,
+  getToolboxRowElement,
+  hexToRgba,
+  isVariableCategorySelected,
+  moveStudentActionsToTopbar,
+  normalizeSelectedToolboxItem,
+  persistCodeDockWidth,
+  queueBlocklyResize,
+  queueToolboxRowStyling,
+  readPersistedCodeDockWidth,
+  renderCustomSideNav,
+  renderGroupDrawer,
+  renderToolboxPacks,
+  resetCategoryVisibility,
+  resetToolboxFlyoutScroll,
+  selectToolboxItem,
+  setCodePanelVisible,
+  setControlPanelOpen,
+  setMoreMenuOpen,
+  styleToolboxCategoryRows,
+  syncCategoryVisuals,
+} from './blockly/runtime-toolbox-ui.js';
+import {
+  buildExperimentalTaskPreflight,
+  buildPreflightError,
+  deriveTaskContext,
+  getResultHint,
+  maybeWarnExperimentalWorkspace,
+  normalizePythonRunPayload,
+  renderMigrationReport,
+  renderResultTerminal,
+  syncWorkspaceTaskContext,
+  updateResultView,
+  updateTaskContext,
+  validateRunnableSpec,
+} from './blockly/runtime-results.js';
+import { bindUIRuntime } from './blockly/runtime-bindings.js';
+import { registerBuiltinToolboxCallbacks as registerBuiltinToolboxCallbacksImpl } from './blockly/runtime-callbacks.js';
+import {
+  findToolboxFileInZip,
+  importToolboxPack as importToolboxPackImpl,
+  normalizeImportedToolboxPayload,
+  parseJsonWithBom,
+  persistCourseToolbox as persistCourseToolboxImpl,
+} from './blockly/runtime-toolbox-import.js';
+import {
+  buildGenericPythonPreflightError as buildGenericPythonPreflightErrorImpl,
+  collectWorkspaceTasks as collectWorkspaceTasksImpl,
+  executeXEduHubFlow,
+  extractXEduHubSpec as extractXEduHubSpecImpl,
+  getBlockVariableName as getBlockVariableNameImpl,
+  getWorkspaceVariableNameById as getWorkspaceVariableNameByIdImpl,
+  hasExecutablePython as hasExecutablePythonImpl,
+  hasRunnableFlow as hasRunnableFlowImpl,
+  hasRuntimeBoundInputSpec as hasRuntimeBoundInputSpecImpl,
+  isStreamLikeInputSpec as isStreamLikeInputSpecImpl,
+  loadToolboxes as loadToolboxesImpl,
+  validateWorkspaceBindings as validateWorkspaceBindingsImpl,
+} from './blockly/runtime-execution.js';
 import {
   RUNNABLE_BLOCK_TYPES,
   clone,
@@ -60,7 +142,203 @@ const CODE_DOCK_WIDTH_STORAGE_KEY = 'xedu-blockly-code-dock-width';
 const CODE_DOCK_WIDTH_MIN = 320;
 const CODE_DOCK_WIDTH_MAX = 760;
 const CODE_DOCK_WIDTH_FALLBACK = 420;
-const DEFAULT_CATEGORY_COLOUR = blocklyColorContract.brand?.primary || '#5f6792';
+
+function setControlPanelOpenLocal(open) {
+  return setControlPanelOpen(open, state, document);
+}
+
+function setMoreMenuOpenLocal(open) {
+  return setMoreMenuOpen(open, state, CLASSROOM_DEFAULTS, document);
+}
+
+function moveStudentActionsToTopbarLocal() {
+  return moveStudentActionsToTopbar(isTeacherMode, STUDENT_QUICK_ACTION_IDS, document);
+}
+
+function configureRoleScopedToolbarLocal() {
+  return configureRoleScopedToolbar({
+    isTeacherMode,
+    setControlPanelOpen: setControlPanelOpenLocal,
+    moveStudentActionsToTopbar: moveStudentActionsToTopbarLocal,
+    documentRef: document,
+  });
+}
+
+function clampCodeDockWidthLocal(width) {
+  return clampCodeDockWidth(width, CODE_DOCK_WIDTH_FALLBACK, CODE_DOCK_WIDTH_MIN, CODE_DOCK_WIDTH_MAX);
+}
+
+function readPersistedCodeDockWidthLocal() {
+  return readPersistedCodeDockWidth(CODE_DOCK_WIDTH_STORAGE_KEY, clampCodeDockWidthLocal, CODE_DOCK_WIDTH_FALLBACK);
+}
+
+function persistCodeDockWidthLocal(width) {
+  return persistCodeDockWidth(width, CODE_DOCK_WIDTH_STORAGE_KEY, clampCodeDockWidthLocal);
+}
+
+function applyCodeDockWidthLocal(width, options = {}) {
+  return applyCodeDockWidth(width, state, options, {
+    clampWidth: clampCodeDockWidthLocal,
+    documentRef: document,
+    minWidth: CODE_DOCK_WIDTH_MIN,
+    maxWidth: CODE_DOCK_WIDTH_MAX,
+    persistWidth: persistCodeDockWidthLocal,
+  });
+}
+
+function queueBlocklyResizeLocal() {
+  return queueBlocklyResize(state, Blockly, document);
+}
+
+function getAllToolboxItemsLocal() {
+  return getAllToolboxItems(state);
+}
+
+function getSelectedToolboxCategoryMetaLocal() {
+  return getSelectedToolboxCategoryMeta(state);
+}
+
+function isVariableCategorySelectedLocal() {
+  return isVariableCategorySelected(state);
+}
+
+function syncCategoryVisualsLocal(container, name, color, selected = false) {
+  return syncCategoryVisuals(container, name, color, selected, {
+    getCategoryIconSvg: (categoryName) => getCategoryIconSvg(categoryName, CATEGORY_ICON_SVGS, DEFAULT_CATEGORY_ICON_SVG),
+  });
+}
+
+function styleToolboxCategoryRowsLocal() {
+  return styleToolboxCategoryRows(state, {
+    getAllItems: getAllToolboxItemsLocal,
+    documentRef: document,
+    syncCategoryVisuals: syncCategoryVisualsLocal,
+    getRow: getToolboxRowElement,
+    getName: getToolboxCategoryName,
+    hexToRgba,
+  });
+}
+
+function alignToolboxFlyoutLocal() {
+  return alignToolboxFlyout(document);
+}
+
+function resetToolboxFlyoutScrollLocal() {
+  return resetToolboxFlyoutScroll(state, document);
+}
+
+function queueToolboxRowStylingLocal() {
+  return queueToolboxRowStyling({
+    styleRows: styleToolboxCategoryRowsLocal,
+    alignFlyout: alignToolboxFlyoutLocal,
+    alignDropdown: alignDropdownFieldArrows,
+  });
+}
+
+function renderToolboxPacksLocal() {
+  return renderToolboxPacks(state, document);
+}
+
+function getToolboxItemColourLocal(item, fallbackName = '') {
+  return getToolboxItemColour(item, fallbackName, state, resolveCategoryColour, DEFAULT_CATEGORY_COLOUR);
+}
+
+function selectToolboxItemLocal(item) {
+  return selectToolboxItem(item, state, resetToolboxFlyoutScrollLocal);
+}
+
+function buildSideNavModelLocal() {
+  return buildSideNavModel(state, {
+    getAllItems: getAllToolboxItemsLocal,
+    getName: getToolboxCategoryName,
+    getSourceToolbox,
+    resolveCategoryColour,
+    defaultCategoryColour: DEFAULT_CATEGORY_COLOUR,
+    getItemColour: getToolboxItemColourLocal,
+  });
+}
+
+function renderCustomSideNavLocal() {
+  const result = renderCustomSideNav(state, {
+    documentRef: document,
+    buildSideNavModel: buildSideNavModelLocal,
+    findItemByName: (name) => findToolboxItemByName(state, getToolboxCategoryName, name),
+    getSelectedMeta: getSelectedToolboxCategoryMetaLocal,
+    getTaskRegistry: getXEduHubTaskRegistry,
+    getCategoryIconSvg: (categoryName) => getCategoryIconSvg(categoryName, CATEGORY_ICON_SVGS, DEFAULT_CATEGORY_ICON_SVG),
+    renderCustomSideNav: renderCustomSideNavLocal,
+    setResultWarningView,
+    buildExperimentalTaskPreflight,
+    selectToolboxItem: selectToolboxItemLocal,
+  });
+  blocklyDebugLog('侧栏渲染完成', {
+    sections: buildSideNavModelLocal().map((section) => ({
+      name: section.name,
+      childNames: (section.children || []).map((child) => child.name),
+      hasLiveItem: Boolean(section.item),
+    })),
+    sideNavChildren: document.getElementById('blocklySideNavBody')?.children?.length || 0,
+  });
+  return result;
+}
+
+function ensureSideNavRendered(attempt = 0) {
+  const root = document.getElementById('blocklySideNavBody');
+  if (!root) {
+    return;
+  }
+  if (root.children.length > 0) {
+    return;
+  }
+  const sections = buildSideNavModelLocal();
+  if (sections.length === 0) {
+    return;
+  }
+  renderCustomSideNavLocal();
+  if (root.children.length > 0) {
+    return;
+  }
+  if (attempt >= 8) {
+    return;
+  }
+  window.setTimeout(() => {
+    ensureSideNavRendered(attempt + 1);
+  }, 120);
+}
+
+function normalizeSelectedToolboxItemLocal() {
+  return normalizeSelectedToolboxItem(state);
+}
+
+function ensureInitialToolboxSelectionLocal() {
+  return ensureInitialToolboxSelection(state);
+}
+
+function renderGroupDrawerLocal() {
+  return renderGroupDrawer({
+    documentRef: document,
+    state,
+    getSourceToolbox,
+    collectCategoryNames,
+    resolveCategoryColour,
+    getCategoryIconSvg: (categoryName) => getCategoryIconSvg(categoryName, CATEGORY_ICON_SVGS, DEFAULT_CATEGORY_ICON_SVG),
+    getActiveToolbox,
+    queueToolboxRowStyling: queueToolboxRowStylingLocal,
+  });
+}
+
+function resetCategoryVisibilityLocal(toolbox) {
+  return resetCategoryVisibility(toolbox, state, walkToolboxItems, resolveCategoryColour, DEFAULT_CATEGORY_COLOUR);
+}
+
+function bindCodeDockResizeLocal() {
+  return bindCodeDockResize(state, {
+    documentRef: document,
+    applyWidth: applyCodeDockWidthLocal,
+    queueResize: queueBlocklyResizeLocal,
+    persistWidth: persistCodeDockWidthLocal,
+  });
+}
 
 function resolveBlocklyMediaPath() {
   const configured = String(getConfigValue('blocklyMediaUrl', '')).trim();
@@ -74,6 +352,94 @@ const STUDENT_QUICK_ACTION_IDS = Object.freeze([
   'openWorkspaceBtn',
   'saveWorkspaceBtn',
 ]);
+
+function renderResultTerminalLocal(text) {
+  return renderResultTerminal(text, document);
+}
+
+function getResultHintLocal(payload) {
+  return getResultHint(payload);
+}
+
+function deriveTaskContextLocal() {
+  return deriveTaskContext(state, {
+    getConfigValue,
+    classroomDefaults: CLASSROOM_DEFAULTS,
+    getResultHint: getResultHintLocal,
+    extractXEduHubSpec,
+    getTaskById,
+    isTeacherMode,
+    hasRunnableFlow,
+  });
+}
+
+function updateTaskContextLocal() {
+  return updateTaskContext(state, {
+    deriveTaskContext: deriveTaskContextLocal,
+  }, document);
+}
+
+function buildPreflightErrorLocal(code, message, hint) {
+  return buildPreflightError(code, message, hint);
+}
+
+function renderMigrationReportLocal(report) {
+  return renderMigrationReport(state, report, {
+    setResultMode,
+    setResultBadge,
+    renderResultTerminal: renderResultTerminalLocal,
+    resetDebugDetails,
+    updateTaskContext: updateTaskContextLocal,
+    blocklyDebugLog,
+  });
+}
+
+function buildExperimentalTaskPreflightLocal(tasks, options = {}) {
+  return buildExperimentalTaskPreflight(tasks, options);
+}
+
+function maybeWarnExperimentalWorkspaceLocal(reason = '已加载包含实验性任务的工作区') {
+  return maybeWarnExperimentalWorkspace(state, reason, {
+    collectWorkspaceTasks,
+    buildExperimentalTaskPreflight: buildExperimentalTaskPreflightLocal,
+    setResultWarningView,
+  });
+}
+
+function syncWorkspaceTaskContextLocal() {
+  return syncWorkspaceTaskContext(state, {
+    updateTaskContext: updateTaskContextLocal,
+    extractXEduHubSpec,
+    classroomDefaults: CLASSROOM_DEFAULTS,
+    renderResultTerminal: renderResultTerminalLocal,
+  });
+}
+
+function validateRunnableSpecLocal(spec) {
+  return validateRunnableSpec(spec, {
+    hasRunnableFlow,
+  });
+}
+
+function updateResultViewLocal(payload) {
+  return updateResultView(state, payload, {
+    collectXEduHubPresentationActionsFromBlocks,
+    setResultMode,
+    setResultBadge,
+    closeResultImageDialog,
+    renderResultTerminal: renderResultTerminalLocal,
+    buildTerminalOutput,
+    getPayloadPreviewImage,
+    isDisplayableImageSource,
+    openResultImageDialog,
+    resetDebugDetails,
+    updateTaskContext: updateTaskContextLocal,
+  });
+}
+
+function normalizePythonRunPayloadLocal(payload) {
+  return normalizePythonRunPayload(payload);
+}
 
 const BLOCKLY_DEBUG_ENABLED = (() => {
   try {
@@ -142,82 +508,12 @@ const state = {
   sideNavCollapsed: {},
 };
 
-function makeCategoryIconSvg(innerMarkup, { strokeWidth = 1.8, scale = 1.14 } = {}) {
-  const inner = String(innerMarkup || '')
-    .replace(/^<svg[^>]*>/, '')
-    .replace(/<\/svg>\s*$/, '');
-  const offset = ((18 - (18 * scale)) / 2).toFixed(2);
-  return `<svg viewBox="0 0 18 18" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(${offset} ${offset}) scale(${scale})">${inner}</g></svg>`;
-}
-
-const ICON_CLUSTER = Object.freeze({
-  blocks: makeCategoryIconSvg('<rect x="2.5" y="2.8" width="4.2" height="4.2" rx="1.1"/><rect x="11.3" y="2.8" width="4.2" height="4.2" rx="1.1"/><rect x="6.9" y="10.8" width="4.2" height="4.2" rx="1.1"/><path d="M7 5h4M9 3v4M8 9.2l1 1 1.8-1.8"/>', { strokeWidth: 1.55, scale: 1.18 }),
-  spark: makeCategoryIconSvg('<path d="M9 2.7 10.6 6l3.7.4-2.7 2.4.7 3.6L9 10.7 5.7 12.4l.7-3.6-2.7-2.4 3.7-.4L9 2.7Z"/>', { strokeWidth: 1.55, scale: 1.24 }),
-  layers: makeCategoryIconSvg('<path d="M9 2.8 14.4 5.9 9 9 3.6 5.9 9 2.8Z"/><path d="M4.4 9.1 9 11.8l4.6-2.7"/><path d="M4.4 11.8 9 14.5l4.6-2.7"/>', { scale: 1.18 }),
-  media: makeCategoryIconSvg('<rect x="3.1" y="4.4" width="8.4" height="6.8" rx="1.8"/><path d="M11.7 6.2 14.7 4.8v6.1l-3-1.4"/><circle cx="7.2" cy="7.7" r="1.1"/><path d="M4.8 12.9h7.7"/>', { scale: 1.18 }),
-  detect: makeCategoryIconSvg('<rect x="4.3" y="4.3" width="9.4" height="9.4" rx="2.1"/><path d="M9 2.9v2M9 13.1v2M2.9 9h2M13.1 9h2"/><rect x="6.6" y="6.6" width="4.8" height="4.8" rx="1.2"/>', { scale: 1.18 }),
-  nodes: makeCategoryIconSvg('<circle cx="9" cy="4.6" r="1.1"/><circle cx="5.5" cy="8.5" r="1"/><circle cx="12.5" cy="8.5" r="1"/><circle cx="7.1" cy="12.6" r=".95"/><circle cx="10.9" cy="12.6" r=".95"/><path d="M9 5.9v2.1M8.3 8.1 6.4 8.8M9.7 8.1l1.9.7M8.7 9.6l-1.1 1.6M9.3 9.6l1.1 1.6"/>', { strokeWidth: 1.5, scale: 1.18 }),
-  text: makeCategoryIconSvg('<path d="M4.7 5.3h8.6M9 5.3v7.2M6.9 12.5h4.2"/>', { scale: 1.18 }),
-  list: makeCategoryIconSvg('<circle cx="5" cy="5.5" r=".9"/><circle cx="5" cy="9" r=".9"/><circle cx="5" cy="12.5" r=".9"/><path d="M7.6 5.5h5.5M7.6 9h6M7.6 12.5h4.5"/>', { scale: 1.18 }),
-  variable: makeCategoryIconSvg('<path d="M4.2 5.3h9.6v7.4H4.2z"/><path d="M9 5.3v7.4M6.2 9h5.6"/>', { scale: 1.18 }),
-  function: makeCategoryIconSvg('<path d="M6.5 3.9c-1.5 1.2-1.5 8.9 0 10.2M11.5 3.9c1.5 1.2 1.5 8.9 0 10.2"/><path d="M8 10.7c.5-1.7 1.5-3 3.1-4M8.2 8.8h3.1"/>', { scale: 1.16 }),
-  math: makeCategoryIconSvg('<path d="M5.4 6.2h4M7.4 4.2v4M5.7 11.9h3.4M11.4 5.4l2.2 2.2M13.6 5.4l-2.2 2.2"/>', { scale: 1.18 }),
-  flow: makeCategoryIconSvg('<rect x="3.5" y="4" width="4.2" height="3" rx="1"/><rect x="10.3" y="7.5" width="4.2" height="3" rx="1"/><rect x="6.9" y="11" width="4.2" height="3" rx="1"/><path d="M7.7 5.5h2c.8 0 1.4.6 1.4 1.4v.3M8.8 12.5h-.7c-.8 0-1.4-.6-1.4-1.4v-.2M11 10.6v.5c0 .8-.6 1.4-1.4 1.4H9"/>', { strokeWidth: 1.55, scale: 1.2 }),
-  result: makeCategoryIconSvg('<path d="M4.4 9.6 7.6 12.1 13.6 5.9"/><path d="M4.4 4.8h4.1M4.4 7.1h2.8"/><path d="M10.6 12.4h3"/>', { strokeWidth: 1.7, scale: 1.26 }),
-  debug: makeCategoryIconSvg('<path d="M9 2.8 14 5.5v5L9 13.2 4 10.5v-5L9 2.8Z"/><path d="m6.9 8.8 1.5 1.5 2.8-3.2"/><path d="M9 13.2v2"/>', { strokeWidth: 1.55, scale: 1.18 }),
-  comms: makeCategoryIconSvg('<path d="M5.3 4.2h5.8a1.8 1.8 0 0 1 1.8 1.8v5.8H7.1l-2.9 2.1v-2.1H5.3A1.8 1.8 0 0 1 3.5 10V6a1.8 1.8 0 0 1 1.8-1.8Z"/><path d="M6.1 7.5h4.2M6.1 9.6h2.8"/>', { scale: 1.18 }),
-  depth: makeCategoryIconSvg('<path d="M4.7 5.5 9 3.3l4.3 2.2v5.3L9 13l-4.3-2.2V5.5Z"/><path d="M9 3.4v9.3M4.8 5.6 9 7.8l4.2-2.2"/>', { scale: 1.18 }),
-});
-
-const CATEGORY_ICON_SVGS = Object.freeze({
-  基础编程: ICON_CLUSTER.blocks,
-  逻辑: ICON_CLUSTER.blocks,
-  循环: ICON_CLUSTER.flow,
-  数学: ICON_CLUSTER.math,
-  文本: ICON_CLUSTER.text,
-  列表: ICON_CLUSTER.list,
-  变量: ICON_CLUSTER.variable,
-  函数: ICON_CLUSTER.function,
-  XEdu: ICON_CLUSTER.spark,
-  'XEdu Hub': ICON_CLUSTER.spark,
-  核心语法: ICON_CLUSTER.flow,
-  AI流程: ICON_CLUSTER.flow,
-  结果处理: ICON_CLUSTER.result,
-  '媒体与设备': ICON_CLUSTER.media,
-  图像视频: ICON_CLUSTER.media,
-  图像与视频: ICON_CLUSTER.media,
-  图像分类: ICON_CLUSTER.result,
-  目标检测: ICON_CLUSTER.detect,
-  关键点识别: ICON_CLUSTER.nodes,
-  OCR: ICON_CLUSTER.text,
-  内容生成: ICON_CLUSTER.spark,
-  图像分割: ICON_CLUSTER.layers,
-  深度估计: ICON_CLUSTER.depth,
-  通信控制: ICON_CLUSTER.comms,
-  '调试与扩展': ICON_CLUSTER.debug,
-  调试扩展: ICON_CLUSTER.debug,
-  进阶调试: ICON_CLUSTER.debug,
-  扩展工具: ICON_CLUSTER.comms,
-});
-
-const DEFAULT_CATEGORY_ICON_SVG = ICON_CLUSTER.blocks;
-
-const CATEGORY_COLOR_PALETTE = Object.freeze(blocklyColorContract.categoryPalette);
-
-function resolveCategoryColour(name, fallback = DEFAULT_CATEGORY_COLOUR) {
-  const normalized = String(name || '').trim();
-  return CATEGORY_COLOR_PALETTE[normalized] || fallback;
-}
-
-const TASK_FIRST_CATEGORY_META = Object.freeze(blocklyColorContract.taskFirstCategories);
-
 const BASIC_PROGRAM_CATEGORY_NAMES = new Set(['逻辑', '循环', '数学', '文本', '列表', '变量', '函数']);
 const ADVANCED_CATEGORY_NAMES = new Set(['图像与视频', '图像视频', '通信控制', '进阶调试', '底层与调试', '扩展包']);
-const DEFAULT_INPUT_RESOURCE = 'courses/blockly-smoke/demo.jpg';
-const DEFAULT_INPUT_SEQUENCE = '["courses/blockly-smoke/demo.jpg","courses/blockly-smoke/demo.jpg"]';
 
 function ensureRuntimeStyles() {
   if (document.getElementById('xedu-blockly-runtime-style')) {
+    document.body.classList.add('xedu-blockly-runtime');
     return;
   }
   const style = document.createElement('style');
@@ -225,6 +521,14 @@ function ensureRuntimeStyles() {
   style.textContent = cssText;
   document.head.appendChild(style);
   document.body.classList.add('xedu-blockly-runtime');
+}
+
+function revealRuntimeShell() {
+  document.body.classList.remove('xedu-blockly-runtime-pending');
+  document.body.classList.add('xedu-blockly-runtime-ready');
+  window.setTimeout(() => {
+    document.querySelector('.xedu-blockly-boot')?.remove();
+  }, 220);
 }
 
 function getConfigValue(key, fallback = '') {
@@ -436,8 +740,8 @@ const scratchLikeTheme = Blockly.Theme.defineTheme('xedu_refined_classroom', {
   componentStyles: blocklyColorContract.componentStyles,
   fontStyle: {
     family: "'Avenir Next', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
-    weight: '700',
-    size: 11.6,
+    weight: '760',
+    size: 12,
   },
   startHats: true,
 });
@@ -866,809 +1170,8 @@ function collectCategoryNames(toolbox) {
     .filter(Boolean);
 }
 
-function getCategoryIconSvg(name) {
-  return CATEGORY_ICON_SVGS[name] || DEFAULT_CATEGORY_ICON_SVG;
-}
-
-function syncCategoryVisuals(container, name, color, selected = false) {
-  if (!container || !name || !color) {
-    return;
-  }
-  container.style.setProperty('--xedu-category-color', color);
-  container.dataset.categoryName = name;
-  container.classList.add('xedu-toolbox-category-row');
-  container.classList.toggle('xedu-toolbox-category-selected', selected);
-
-  const labelEl = container.querySelector('.blocklyToolboxCategoryLabel, .blocklyTreeLabel, .group-item-main');
-  if (labelEl) {
-    labelEl.classList.add('xedu-toolbox-category-label');
-    const iconMarkup = getCategoryIconSvg(name);
-    container.classList.toggle('xedu-toolbox-category-textual', !iconMarkup);
-    const iconEl = container.querySelector('.xedu-toolbox-category-icon');
-    if (iconMarkup) {
-      const nextIconEl = iconEl || document.createElement('span');
-      nextIconEl.className = 'xedu-toolbox-category-icon is-graphic';
-      nextIconEl.innerHTML = iconMarkup;
-      if (!iconEl) {
-        labelEl.parentNode?.insertBefore(nextIconEl, labelEl);
-      }
-    } else {
-      iconEl?.remove();
-    }
-  }
-}
-
-function resetCategoryVisibility(toolbox) {
-  const nextVisibility = {};
-  state.categoryColors = {};
-  state.categoryNotes = {};
-  walkToolboxItems(toolbox?.contents || [], (item) => {
-    if (item?.kind !== 'category' || !item.name) {
-      return;
-    }
-    const name = String(item.name).trim();
-    nextVisibility[name] = name in state.categoryVisibility
-      ? state.categoryVisibility[name]
-      : (typeof item.visible_by_default === 'boolean' ? item.visible_by_default : true);
-    state.categoryColors[name] = resolveCategoryColour(name, item.colour || state.categoryColors[name] || DEFAULT_CATEGORY_COLOUR);
-    if (item.description) {
-      state.categoryNotes[name] = item.description;
-    }
-  });
-  state.categoryVisibility = nextVisibility;
-}
-
-function renderGroupDrawer() {
-  const body = document.getElementById('groupDrawerBody');
-  if (!body) {
-    return;
-  }
-  const sourceToolbox = getSourceToolbox();
-  const names = collectCategoryNames(sourceToolbox);
-  body.innerHTML = names.map((name, index) => {
-    const checked = state.categoryVisibility[name] !== false ? 'checked' : '';
-    const note = state.categoryNotes[name] || '当前工作区工具分组';
-    const color = resolveCategoryColour(name, state.categoryColors[name] || '#3F76CF');
-    const inputId = `group-item-${index}`;
-    return `
-      <label class="group-item" for="${inputId}" style="--xedu-category-color:${color}">
-        <input id="${inputId}" type="checkbox" data-group-name="${name}" ${checked} />
-        <div>
-          <div class="group-item-main-row">
-            <span class="xedu-toolbox-category-icon">${getCategoryIconSvg(name)}</span>
-            <div class="group-item-main">${name}</div>
-          </div>
-          <div class="group-item-sub">${note}</div>
-        </div>
-      </label>
-    `;
-  }).join('');
-  body.querySelectorAll('input[data-group-name]').forEach((input) => {
-    input.addEventListener('change', () => {
-      const name = String(input.getAttribute('data-group-name') || '').trim();
-      if (!name) {
-        return;
-      }
-      state.categoryVisibility[name] = Boolean(input.checked);
-      if (state.workspace) {
-        state.workspace.updateToolbox(getActiveToolbox());
-        queueToolboxRowStyling();
-      }
-    });
-  });
-}
-
-function setControlPanelOpen(open) {
-  state.controlPanelState.open = Boolean(open);
-  document.getElementById('controlPanel')?.classList.toggle('open', state.controlPanelState.open);
-  document.getElementById('controlPanelToggleBtn')?.setAttribute('aria-expanded', state.controlPanelState.open ? 'true' : 'false');
-}
-
-function setMoreMenuOpen(open) {
-  state.toolbarOverflowState.menuOpen = Boolean(open);
-  const menu = document.getElementById('toolbarMoreMenu');
-  const button = document.getElementById('toolbarMoreBtn');
-  if (menu) {
-    menu.classList.toggle('open', state.toolbarOverflowState.menuOpen);
-  }
-  if (button) {
-    button.setAttribute('aria-expanded', state.toolbarOverflowState.menuOpen ? 'true' : 'false');
-    button.textContent = state.toolbarOverflowState.menuOpen
-      ? CLASSROOM_DEFAULTS.toolbarMoreOpenLabel
-      : CLASSROOM_DEFAULTS.toolbarMoreClosedLabel;
-  }
-}
-
-function moveStudentActionsToTopbar() {
-  let quickActions = document.getElementById('toolbarQuickActions');
-  const moreGroup = document.querySelector('.toolbar-more');
-  if (!quickActions && moreGroup?.parentElement) {
-    quickActions = document.createElement('div');
-    quickActions.id = 'toolbarQuickActions';
-    quickActions.className = 'toolbar-quick-actions';
-    quickActions.setAttribute('aria-label', '常用操作');
-    moreGroup.parentElement.insertBefore(quickActions, moreGroup);
-  }
-  if (!quickActions) {
-    return;
-  }
-  if (isTeacherMode()) {
-    quickActions.style.display = 'none';
-    return;
-  }
-  quickActions.style.display = '';
-  STUDENT_QUICK_ACTION_IDS.forEach((id) => {
-    const action = document.getElementById(id);
-    if (!action) {
-      return;
-    }
-    action.classList.add('toolbar-quick-action');
-    quickActions.appendChild(action);
-  });
-}
-
-function configureRoleScopedToolbar() {
-  const studentMode = !isTeacherMode();
-  const controlPanel = document.getElementById('controlPanel');
-  const controlToggle = document.getElementById('controlPanelToggleBtn');
-  if (studentMode) {
-    setControlPanelOpen(false);
-  }
-  if (controlPanel) {
-    controlPanel.style.display = studentMode ? 'none' : '';
-  }
-  if (controlToggle) {
-    controlToggle.style.display = studentMode ? 'none' : '';
-  }
-  moveStudentActionsToTopbar();
-}
-
-function setCodePanelVisible(visible) {
-  state.codePanelVisible = Boolean(visible);
-  document.getElementById('blocklyLayout')?.classList.toggle('code-collapsed', !state.codePanelVisible);
-  const codeDock = document.getElementById('codeDock');
-  codeDock?.classList.toggle('collapsed', !state.codePanelVisible);
-  const button = document.getElementById('codeDockToggleBtn');
-  if (button) {
-    button.setAttribute('aria-expanded', state.codePanelVisible ? 'true' : 'false');
-    button.setAttribute('aria-label', state.codePanelVisible ? '收起右侧工作栏' : '展开右侧工作栏');
-    button.classList.toggle('is-collapsed', !state.codePanelVisible);
-  }
-  queueBlocklyResize();
-}
-
-function clampCodeDockWidth(width) {
-  const numeric = Number(width);
-  if (!Number.isFinite(numeric)) {
-    return CODE_DOCK_WIDTH_FALLBACK;
-  }
-  return Math.min(CODE_DOCK_WIDTH_MAX, Math.max(CODE_DOCK_WIDTH_MIN, Math.round(numeric)));
-}
-
-function readPersistedCodeDockWidth() {
-  try {
-    const raw = window.localStorage?.getItem(CODE_DOCK_WIDTH_STORAGE_KEY);
-    return raw ? clampCodeDockWidth(raw) : CODE_DOCK_WIDTH_FALLBACK;
-  } catch (_) {
-    return CODE_DOCK_WIDTH_FALLBACK;
-  }
-}
-
-function persistCodeDockWidth(width) {
-  try {
-    window.localStorage?.setItem(CODE_DOCK_WIDTH_STORAGE_KEY, String(clampCodeDockWidth(width)));
-  } catch (_) {
-    // ignore storage failures
-  }
-}
-
-function applyCodeDockWidth(width, { persist = false } = {}) {
-  const nextWidth = clampCodeDockWidth(width);
-  state.codeDockWidth = nextWidth;
-  document.documentElement.style.setProperty('--code-dock-open-width', `${nextWidth}px`);
-  const handle = document.getElementById('codeDockResizeHandle');
-  if (handle) {
-    handle.setAttribute('aria-valuemin', String(CODE_DOCK_WIDTH_MIN));
-    handle.setAttribute('aria-valuemax', String(CODE_DOCK_WIDTH_MAX));
-    handle.setAttribute('aria-valuenow', String(nextWidth));
-  }
-  if (persist) {
-    persistCodeDockWidth(nextWidth);
-  }
-}
-
-function bindCodeDockResize() {
-  const handle = document.getElementById('codeDockResizeHandle');
-  const codeDock = document.getElementById('codeDock');
-  const layout = document.getElementById('blocklyLayout');
-  if (!handle || !codeDock || !layout) {
-    return;
-  }
-
-  handle.addEventListener('pointerdown', (event) => {
-    if (!state.codePanelVisible) {
-      return;
-    }
-    event.preventDefault();
-    const pointerId = event.pointerId;
-    const layoutRect = layout.getBoundingClientRect();
-    state.codeDockResizing = {
-      pointerId,
-      layoutLeft: layoutRect.left,
-      layoutWidth: layoutRect.width,
-    };
-    codeDock.classList.add('is-resizing');
-    handle.setPointerCapture(pointerId);
-  });
-
-  handle.addEventListener('pointermove', (event) => {
-    if (!state.codeDockResizing || state.codeDockResizing.pointerId !== event.pointerId || !state.codePanelVisible) {
-      return;
-    }
-    event.preventDefault();
-    const nextWidth = state.codeDockResizing.layoutWidth - (event.clientX - state.codeDockResizing.layoutLeft);
-    applyCodeDockWidth(nextWidth);
-    queueBlocklyResize();
-  });
-
-  const stopResize = (event) => {
-    if (!state.codeDockResizing || state.codeDockResizing.pointerId !== event.pointerId) {
-      return;
-    }
-    event.preventDefault();
-    codeDock.classList.remove('is-resizing');
-    try {
-      handle.releasePointerCapture(event.pointerId);
-    } catch (_) {
-      // ignore release failures
-    }
-    persistCodeDockWidth(state.codeDockWidth);
-    state.codeDockResizing = null;
-    queueBlocklyResize();
-  };
-
-  handle.addEventListener('pointerup', stopResize);
-  handle.addEventListener('pointercancel', stopResize);
-  handle.addEventListener('keydown', (event) => {
-    if (!state.codePanelVisible) {
-      return;
-    }
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
-      return;
-    }
-    event.preventDefault();
-    const delta = event.key === 'ArrowLeft' ? 24 : -24;
-    applyCodeDockWidth(state.codeDockWidth + delta, { persist: true });
-    queueBlocklyResize();
-  });
-}
-
-function queueBlocklyResize() {
-  if (!state.workspace) {
-    return;
-  }
-  window.requestAnimationFrame(() => {
-    if (state.workspace) {
-      Blockly.svgResize(state.workspace);
-    }
-  });
-  if (state.codePanelResizeTimer) {
-    window.clearTimeout(state.codePanelResizeTimer);
-  }
-  state.codePanelResizeTimer = window.setTimeout(() => {
-    state.codePanelResizeTimer = null;
-    if (state.workspace) {
-      Blockly.svgResize(state.workspace);
-    }
-  }, 280);
-}
-
-function hexToRgba(hex, alpha) {
-  const text = String(hex || '').replace('#', '');
-  if (!/^[0-9a-fA-F]{6}$/.test(text)) {
-    return `rgba(79,107,255,${alpha})`;
-  }
-  const red = parseInt(text.slice(0, 2), 16);
-  const green = parseInt(text.slice(2, 4), 16);
-  const blue = parseInt(text.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-}
-
-function getToolboxCategoryName(item) {
-  if (!item || typeof item !== 'object') {
-    return '';
-  }
-  const defName = item.toolboxItemDef_?.name;
-  if (typeof defName === 'string' && defName.trim()) {
-    return defName.trim();
-  }
-  const div = typeof item.getDiv === 'function' ? item.getDiv() : null;
-  const label = div?.querySelector?.('.blocklyToolboxCategoryLabel, .blocklyTreeLabel')?.textContent?.trim();
-  return label || '';
-}
-
-function getToolboxRowElement(item) {
-  const div = typeof item?.getDiv === 'function' ? item.getDiv() : null;
-  if (!div) {
-    return null;
-  }
-  return div.querySelector('.blocklyToolboxCategory, .blocklyTreeRow') || div;
-}
-
-function getAllToolboxItems() {
-  const toolbox = state.workspace?.getToolbox?.();
-  if (!toolbox || typeof toolbox.getToolboxItems !== 'function') {
-    return [];
-  }
-  return toolbox.getToolboxItems() || [];
-}
-
-function getSelectedToolboxCategoryMeta() {
-  const toolbox = state.workspace?.getToolbox?.();
-  if (!toolbox || typeof toolbox.getSelectedItem !== 'function') {
-    return { name: '', custom: '' };
-  }
-  const selected = toolbox.getSelectedItem?.();
-  const name = getToolboxCategoryName(selected);
-  const custom = String(selected?.toolboxItemDef_?.custom || '').trim().toUpperCase();
-  return { name, custom };
-}
-
-function isVariableCategorySelected() {
-  const { name, custom } = getSelectedToolboxCategoryMeta();
-  if (custom === 'VARIABLE' || custom === 'VARIABLE_DYNAMIC') {
-    return true;
-  }
-  return name.includes('变量');
-}
-
-function styleToolboxCategoryRows() {
-  const toolboxItems = getAllToolboxItems();
-  if (toolboxItems.length === 0) {
-    document.querySelectorAll('.blocklyToolboxCategory, .blocklyTreeRow').forEach((row) => {
-      const labelEl = row.querySelector('.blocklyToolboxCategoryLabel, .blocklyTreeLabel');
-      const label = labelEl?.textContent?.trim() || '';
-      const color = state.categoryColors[label];
-      if (!color) {
-        return;
-      }
-      const isSelected = row.classList.contains('blocklyToolboxSelected') || row.classList.contains('blocklyTreeSelected');
-      syncCategoryVisuals(row, label, color, isSelected);
-    });
-    return;
-  }
-  toolboxItems.forEach((item) => {
-    const row = getToolboxRowElement(item);
-    const label = getToolboxCategoryName(item);
-    const color = state.categoryColors[label];
-    if (!row) {
-      return;
-    }
-    row.classList.remove('xedu-toolbox-category-row', 'xedu-toolbox-category-selected');
-    row.style.removeProperty('--xedu-category-color');
-    row.style.removeProperty('background-color');
-    row.style.removeProperty('border-color');
-    row.style.removeProperty('box-shadow');
-    row.style.removeProperty('border-left');
-    if (!color) {
-      return;
-    }
-    const isSelected = row.classList.contains('blocklyToolboxSelected') || row.classList.contains('blocklyTreeSelected');
-    syncCategoryVisuals(row, label, color, isSelected);
-    row.style.borderLeft = `2px solid ${hexToRgba(color, isSelected ? 0.42 : 0.24)}`;
-    row.style.backgroundColor = hexToRgba(color, isSelected ? 0.08 : 0.025);
-    row.style.borderColor = hexToRgba(color, isSelected ? 0.18 : 0.08);
-    row.style.boxShadow = `inset 0 0 0 1px ${hexToRgba(color, isSelected ? 0.10 : 0.04)}`;
-  });
-}
-
-function alignToolboxFlyout() {
-  document.querySelectorAll('.blocklyToolboxFlyout').forEach((flyout) => {
-    flyout.style.setProperty('transform', 'translate(0px, 0px)', 'important');
-  });
-}
-
-function resetToolboxFlyoutScroll() {
-  const flyout = state.workspace?.getFlyout?.();
-  if (flyout && typeof flyout.scrollToStart === 'function') {
-    flyout.scrollToStart();
-    return;
-  }
-  document.querySelectorAll('.blocklyFlyoutScrollbar, .blocklyScrollbarVertical').forEach((node) => {
-    if (typeof node.scrollTo === 'function') {
-      node.scrollTo({ top: 0, left: 0 });
-    }
-  });
-}
-
-function alignDropdownFieldArrows() {
-  // Keep Blockly dropdown rendering native. Rewriting dropdown text nodes
-  // breaks symbol-based fields such as the built-in arithmetic operators.
-  return;
-}
-
-function queueToolboxRowStyling() {
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      styleToolboxCategoryRows();
-      alignToolboxFlyout();
-      alignDropdownFieldArrows();
-    });
-  });
-}
-
-function syncToolboxMeta() {
-  return;
-}
-
-function buildToolboxPackList() {
-  const packs = [{ name: '课程积木', source: '课程' }];
-  const extraCount = Number(state.toolboxVariants.customPackCount || 0);
-  for (let index = 0; index < extraCount; index += 1) {
-    packs.push({ name: `扩展积木包 ${index + 1}`, source: '导入' });
-  }
-  return packs;
-}
-
-function renderToolboxPacks() {
-  state.toolboxPacks = buildToolboxPackList();
-  const list = document.getElementById('toolboxPackList');
-  if (!list) {
-    return;
-  }
-  list.innerHTML = state.toolboxPacks.map((pack) => `<div class="toolbox-pack-item"><span>${pack.name}</span><small>${pack.source}</small></div>`).join('');
-}
-
 function switchToolboxMode(mode) {
   void mode;
-}
-
-function getToolboxItemColour(item, fallbackName = '') {
-  const itemColour = String(item?.toolboxItemDef_?.colour || '').trim();
-  if (itemColour) {
-    return resolveCategoryColour(fallbackName, itemColour);
-  }
-  const fallback = state.categoryColors[String(fallbackName || '').trim()];
-  return resolveCategoryColour(fallbackName, fallback || DEFAULT_CATEGORY_COLOUR);
-}
-
-function selectToolboxItem(item) {
-  const toolbox = state.workspace?.getToolbox?.();
-  if (!toolbox || typeof toolbox.setSelectedItem !== 'function' || !item) {
-    return;
-  }
-  toolbox.setSelectedItem(item);
-  queueMicrotask(() => {
-    resetToolboxFlyoutScroll();
-  });
-}
-
-function buildSideNavModel() {
-  const liveItems = getAllToolboxItems();
-  const liveItemsByName = new Map(liveItems.map((item) => [getToolboxCategoryName(item), item]).filter(([name]) => name));
-  const sourceSections = (getSourceToolbox()?.contents || [])
-    .filter((item) => item && item.kind === 'category');
-
-  const groupedSections = sourceSections
-    .map((section) => {
-      const name = String(section.name || '').trim();
-      const children = (Array.isArray(section.contents) ? section.contents : [])
-        .filter((child) => child && child.kind === 'category');
-      return {
-        item: children.length > 0 ? liveItemsByName.get(String(children[0].name || '').trim()) : liveItemsByName.get(name),
-        name,
-        colour: resolveCategoryColour(name, section.colour || state.categoryColors[name] || DEFAULT_CATEGORY_COLOUR),
-        children: children
-          .map((child) => {
-            const childName = String(child.name || '').trim();
-            const liveItem = liveItemsByName.get(childName);
-            if (!childName) {
-              return null;
-            }
-            return {
-              item: liveItem,
-              name: childName,
-              colour: child.colour || getToolboxItemColour(liveItem, childName),
-            };
-          })
-          .filter((child) => child && child.item),
-      };
-    })
-    .filter((section) => section.name && section.children.length > 0);
-
-  if (groupedSections.length > 0) {
-    return groupedSections;
-  }
-
-  return liveItems
-    .map((item) => {
-      const name = getToolboxCategoryName(item);
-      return {
-        item,
-        name,
-        colour: getToolboxItemColour(item, name),
-        children: [{ item, name, colour: getToolboxItemColour(item, name) }],
-      };
-    })
-    .filter((section) => section.name);
-}
-
-function renderCustomSideNav() {
-  const root = document.getElementById('blocklySideNavBody');
-  if (!root) {
-    return;
-  }
-  const sections = buildSideNavModel();
-  const selectedName = String(getSelectedToolboxCategoryMeta().name || '').trim();
-  const taskRegistry = getXEduHubTaskRegistry();
-  const tasksByFamilyLabel = new Map((taskRegistry.tasks || []).map((task) => [String(task?.family_label || '').trim(), task]));
-  root.innerHTML = '';
-
-  sections.forEach((section) => {
-    const collapsed = Boolean(state.sideNavCollapsed[section.name]);
-    const sectionEl = document.createElement('section');
-    sectionEl.className = 'blockly-side-section';
-    sectionEl.classList.toggle('is-collapsed', collapsed);
-    sectionEl.style.setProperty('--xedu-section-color', section.colour);
-
-    const heading = document.createElement('button');
-    heading.type = 'button';
-    heading.className = 'blockly-side-section-head';
-    heading.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    heading.innerHTML = `
-      <span class="blockly-side-section-icon">${getCategoryIconSvg(section.name)}</span>
-      <span class="blockly-side-section-title">${section.name}</span>
-      <span class="blockly-side-section-chevron" aria-hidden="true">
-        <svg viewBox="0 0 16 16" fill="none">
-          <path d="m5.2 6.4 2.8 2.8 2.8-2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </span>
-    `;
-    heading.addEventListener('click', () => {
-      state.sideNavCollapsed[section.name] = !Boolean(state.sideNavCollapsed[section.name]);
-      renderCustomSideNav();
-    });
-    sectionEl.appendChild(heading);
-
-    const list = document.createElement('div');
-    list.className = 'blockly-side-section-list';
-    section.children.forEach((child) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'blockly-side-leaf';
-      const task = tasksByFamilyLabel.get(child.name);
-      const unavailable = Boolean(task && task.available === false);
-      if (child.name === selectedName) {
-        button.classList.add('is-active');
-      }
-      if (unavailable) {
-        button.classList.add('is-unavailable');
-        button.title = String(task?.support_reason || '当前本地 XEdu 运行环境不支持该任务');
-      }
-      button.style.setProperty('--xedu-leaf-color', child.colour);
-      button.innerHTML = `
-        <span class="blockly-side-leaf-icon">${getCategoryIconSvg(child.name)}</span>
-        <span class="blockly-side-leaf-label">${child.name}</span>
-      `;
-      button.addEventListener('click', () => {
-        if (unavailable) {
-          setResultWarningView(buildExperimentalTaskPreflight([task], { blocked: true }));
-          return;
-        }
-        selectToolboxItem(child.item);
-      });
-      list.appendChild(button);
-    });
-    sectionEl.appendChild(list);
-    root.appendChild(sectionEl);
-  });
-}
-
-function getFirstLeafToolboxItem(item) {
-  if (!item) {
-    return null;
-  }
-  const isSelectable = typeof item.isSelectable === 'function' ? item.isSelectable() : false;
-  const children = typeof item.getChildToolboxItems === 'function' ? (item.getChildToolboxItems() || []) : [];
-  if (children.length > 0) {
-    for (const child of children) {
-      const nested = getFirstLeafToolboxItem(child);
-      if (nested) {
-        return nested;
-      }
-    }
-  }
-  return isSelectable ? item : null;
-}
-
-function normalizeSelectedToolboxItem() {
-  if (state.toolboxSelectionSyncing) {
-    return;
-  }
-  const toolbox = state.workspace?.getToolbox?.();
-  if (!toolbox || typeof toolbox.getSelectedItem !== 'function' || typeof toolbox.setSelectedItem !== 'function') {
-    return;
-  }
-  const selected = toolbox.getSelectedItem();
-  if (!selected || typeof selected.getChildToolboxItems !== 'function') {
-    return;
-  }
-  const children = selected.getChildToolboxItems() || [];
-  if (!children.length) {
-    return;
-  }
-  const firstLeaf = getFirstLeafToolboxItem(children[0]) || children.map((child) => getFirstLeafToolboxItem(child)).find(Boolean);
-  if (!firstLeaf || firstLeaf === selected) {
-    return;
-  }
-  state.toolboxSelectionSyncing = true;
-  try {
-    toolbox.setSelectedItem(firstLeaf);
-  } finally {
-    window.setTimeout(() => {
-      state.toolboxSelectionSyncing = false;
-    }, 0);
-  }
-}
-
-function ensureInitialToolboxSelection() {
-  const toolbox = state.workspace?.getToolbox?.();
-  if (!toolbox || typeof toolbox.getSelectedItem !== 'function' || typeof toolbox.setSelectedItem !== 'function') {
-    return;
-  }
-  if (toolbox.getSelectedItem()) {
-    normalizeSelectedToolboxItem();
-    return;
-  }
-  const firstSelectable = (toolbox.getToolboxItems?.() || [])
-    .map((item) => getFirstLeafToolboxItem(item))
-    .find(Boolean);
-  if (firstSelectable) {
-    toolbox.setSelectedItem(firstSelectable);
-  }
-}
-
-function renderResultTerminal(text) {
-  const terminal = document.getElementById('resultTerminal');
-  if (!terminal) {
-    return;
-  }
-  const normalized = String(text || '').trim();
-  terminal.textContent = normalized || '没有原始终端输出';
-  terminal.dataset.empty = normalized ? 'false' : 'true';
-}
-
-function getResultHint(payload) {
-  const hints = Array.isArray(payload?.result_summary?.hints) ? payload.result_summary.hints : [];
-  return String(hints[0] || '').trim();
-}
-
-function deriveTaskContext() {
-  const workspaceTitle = String(getConfigValue('workspaceTitle', '')).trim() || CLASSROOM_DEFAULTS.workspaceFallbackTitle;
-  const practiceLabel = String(getConfigValue('practiceLabel', '')).trim();
-  const practiceKind = String(getConfigValue('practiceKind', '')).trim();
-  const taskGoal = String(getConfigValue('taskGoal', '')).trim();
-  const taskStage = String(getConfigValue('taskStage', '')).trim();
-  const taskHint = String(getConfigValue('taskHint', '')).trim();
-  const lastTone = String(state.resultRunState.lastTone || 'idle');
-  const lastHint = getResultHint(state.resultRunState.lastPayload);
-  const blockCount = state.workspace?.getAllBlocks(false)?.length || 0;
-  const spec = state.workspace ? extractXEduHubSpec() : null;
-  const task = spec?.task_id ? getTaskById(spec.task_id) : null;
-  const taskLabel = String(task?.label || spec?.task_label || '').trim();
-  const hasExplicitTaskSignal = Boolean(taskGoal) || Boolean(taskLabel) || Boolean(practiceLabel);
-  if (!hasExplicitTaskSignal) {
-    return {
-      visible: false,
-      workspaceTitle,
-      roleLabel: isTeacherMode() ? '教师工作台' : '学生工作台',
-      stage: '',
-      summary: '',
-      description: '',
-      hint: '',
-      practiceLabel,
-    };
-  }
-  let summary = taskGoal;
-  if (!summary) {
-    if (taskLabel) {
-      summary = isTeacherMode()
-        ? `围绕${taskLabel}实验做调试与预演`
-        : `继续完成${taskLabel}实验`;
-    } else if (practiceLabel) {
-      summary = isTeacherMode()
-        ? `围绕${practiceLabel}继续备课与调试`
-        : `继续完成${practiceLabel}`;
-    } else if (hasExplicitTaskSignal && workspaceTitle && !workspaceTitle.includes('Blockly')) {
-      summary = isTeacherMode()
-        ? `围绕${workspaceTitle}继续调试`
-        : `继续完成${workspaceTitle}`;
-    }
-  }
-  let stage = taskStage;
-  if (!stage) {
-    if (lastTone === 'success') {
-      stage = '结果复盘';
-    } else if (lastTone === 'error') {
-      stage = '排查问题';
-    } else if (isTeacherMode()) {
-      stage = hasRunnableFlow() ? '教师预演' : '搭建与调试';
-    } else if (blockCount === 0) {
-      stage = '开始实验';
-    } else if (hasRunnableFlow()) {
-      stage = '运行验证';
-    } else {
-      stage = '完善流程';
-    }
-  }
-  const roleLabel = isTeacherMode() ? '教师工作台' : '学生工作台';
-  let description = '';
-  if (taskLabel) {
-    description = `当前工作区聚焦${taskLabel}。页面会优先把输入、任务、参数和结果组织成一条实验主流程。`;
-  } else if (practiceLabel) {
-    description = `当前工作区关联到${practiceLabel}${practiceKind ? ` · ${practiceKind}` : ''}，先完成主流程，再按需查看代码和调试细节。`;
-  }
-  const hint = taskHint
-    || lastHint
-    || (!hasRunnableFlow()
-      ? '先从“输入资源”和“任务与模型”里拖入关键积木，搭出本节实验的主流程。'
-      : isTeacherMode()
-        ? '需要导入工作区、查看代码或扩展积木时，再从右上角次级入口进入。'
-        : '先点击运行程序查看证据，再决定是否调整参数或补充基础编程积木。');
-  return {
-    visible: true,
-    workspaceTitle,
-    roleLabel,
-    stage,
-    summary,
-    description,
-    hint,
-    practiceLabel,
-  };
-}
-
-function updateTaskContext() {
-  const context = deriveTaskContext();
-  const card = document.getElementById('taskContextCard');
-  if (card) {
-    card.hidden = !context.visible;
-  }
-  const workspaceLabel = document.getElementById('workspaceLabel');
-  if (workspaceLabel) {
-    workspaceLabel.textContent = context.workspaceTitle;
-  }
-  const workspaceMetaLabel = document.getElementById('workspaceMetaLabel');
-  if (workspaceMetaLabel) {
-    workspaceMetaLabel.textContent = context.visible && context.stage
-      ? `${context.roleLabel} · ${context.stage}`
-      : CLASSROOM_DEFAULTS.workspaceMetaLabel;
-  }
-  const mapping = {
-    taskContextRole: context.roleLabel,
-    taskContextStage: context.stage,
-    taskContextSummary: context.summary,
-    taskContextDescription: context.description,
-    taskContextWorkspace: context.workspaceTitle,
-    taskContextHint: context.hint,
-  };
-  Object.entries(mapping).forEach(([id, value]) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.textContent = value;
-    }
-  });
-  const practiceLink = document.getElementById('taskContextPractice');
-  if (practiceLink) {
-    const href = String(getConfigValue('practiceLaunchUrl', '') || getConfigValue('practiceUrl', '') || '').trim();
-    if (context.practiceLabel && href) {
-      practiceLink.style.display = 'inline-flex';
-      practiceLink.href = href;
-      practiceLink.textContent = `查看关联实验：${context.practiceLabel}`;
-    } else {
-      practiceLink.style.display = 'none';
-      practiceLink.removeAttribute('href');
-    }
-  }
 }
 
 function setPythonCode(code) {
@@ -1732,7 +1235,11 @@ async function parseJsonResponse(response, fallbackMessage = '请求失败') {
 
   if (contentType.includes('application/json')) {
     try {
-      return parseJson();
+      const payload = parseJson();
+      if (!response?.ok && payload && typeof payload === 'object') {
+        return payload;
+      }
+      return payload;
     } catch (_) {
       throw new Error(`${fallbackMessage}：返回的 JSON 数据格式不正确`);
     }
@@ -1848,11 +1355,42 @@ function buildTerminalOutput(payload) {
   if (!stdout && !message && headline) {
     appendTerminalText(lines, headline);
   }
-  if (!stdout && output !== undefined && output !== null && output !== '') {
+  const finalResult = payload?.result?.output;
+  if (finalResult !== undefined && finalResult !== null && finalResult !== '') {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    appendTerminalSection(lines, '最终结果:', summarizeTerminalObject(finalResult));
+  } else if (!stdout && output !== undefined && output !== null && output !== '') {
     if (lines.length > 0) {
       lines.push('');
     }
     appendTerminalSection(lines, '运行结果:', summarizeTerminalObject(output));
+  }
+  const runtimeMode = String(payload?.result?.runtime_mode || '').trim();
+  const truthfulness = String(payload?.result?.result_truthfulness || '').trim();
+  const checkpoint = String(payload?.result?.checkpoint || '').trim();
+  const inputPath = String(payload?.result?.input || '').trim();
+  const runtimeMetaLines = [];
+  if (runtimeMode) {
+    runtimeMetaLines.push(`运行模式: ${runtimeMode === 'real' ? '真实推理' : runtimeMode === 'fallback' ? '兼容演示' : runtimeMode}`);
+  }
+  if (truthfulness) {
+    runtimeMetaLines.push(`结果性质: ${truthfulness === 'verified' ? '真实结果' : truthfulness === 'demo_only' ? '演示结果' : truthfulness}`);
+  }
+  if (checkpoint) {
+    const checkpointName = checkpoint.split(/[\\/]/).filter(Boolean).pop() || checkpoint;
+    runtimeMetaLines.push(`模型文件: ${checkpointName}`);
+  }
+  if (inputPath) {
+    const inputName = inputPath.split(/[\\/]/).filter(Boolean).pop() || inputPath;
+    runtimeMetaLines.push(`输入图片: ${inputName}`);
+  }
+  if (runtimeMetaLines.length > 0) {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    lines.push(...runtimeMetaLines);
   }
   const metrics = Array.isArray(payload?.result_summary?.metrics) ? payload.result_summary.metrics : [];
   const metricLines = metrics
@@ -1939,6 +1477,7 @@ function updatePython() {
   }
   const python = getPythonCodeForWorkspace(state.workspace, pythonGenerator, DEFAULT_PYTHON_PLACEHOLDER);
   setPythonCode(python);
+  ensureSideNavRendered();
 }
 
 function getWorkspaceExportPayload() {
@@ -1963,7 +1502,7 @@ function loadWorkspaceSnapshot(serialized, { asInitial = false } = {}) {
     state.initialSerialized = serialized;
   }
   updatePython();
-  updateTaskContext();
+  updateTaskContextLocal();
 }
 
 async function openWorkspaceFile(file) {
@@ -1980,90 +1519,47 @@ async function openWorkspaceFile(file) {
   setResultIdleView();
   resetDebugDetails({ payload: {}, open: false });
   if (migrationReport && ((migrationReport.changed || []).length || (migrationReport.failed || []).length)) {
-    renderMigrationReport(migrationReport);
-    maybeWarnExperimentalWorkspace('已打开并自动迁移实验性任务工作区');
+    renderMigrationReportLocal(migrationReport);
+    maybeWarnExperimentalWorkspaceLocal('已打开并自动迁移实验性任务工作区');
   } else {
-    updateResultView({
+    updateResultViewLocal({
       success: true,
       message: `已打开文件：${file.name}`,
       result: { stdout: '', stderr: '', return_code: 0 },
       artifacts: {},
     });
-    maybeWarnExperimentalWorkspace('已打开包含实验性任务的工作区');
+    maybeWarnExperimentalWorkspaceLocal('已打开包含实验性任务的工作区');
   }
-  updateTaskContext();
+  updateTaskContextLocal();
 }
 
 function hasExecutablePython() {
-  const code = getPythonRaw().trim();
-  if (!code) {
-    return false;
-  }
-  return !code.startsWith('# 在左侧拖入积木开始编程');
+  return hasExecutablePythonImpl(getPythonRaw);
 }
 
 function buildGenericPythonPreflightError() {
-  return buildPreflightError('missing_code', '当前还没有可运行的代码。', '先拖入积木，生成代码后再运行。');
-}
-
-function normalizePythonRunPayload(payload) {
-  const stdout = String(payload?.output || '').replace(/\r\n/g, '\n').trim();
-  const stderr = String(payload?.error_output || '').replace(/\r\n/g, '\n').trim();
-  return {
-    success: Boolean(payload?.success),
-    message: String(payload?.message || ''),
-    result: {
-      stdout,
-      stderr,
-      return_code: payload?.return_code,
-    },
-    error: payload?.success ? '' : stderr,
-  };
+  return buildGenericPythonPreflightErrorImpl(buildPreflightErrorLocal);
 }
 
 async function loadToolboxes() {
-  const official = normalizeCategoryMeta(getConfigValue('defaultXEduHubToolbox', {}));
-  const toolboxUrl = String(getConfigValue('toolboxUrl', ''));
-  if (!toolboxUrl) {
-    return { official, course: official, hasCourseCustom: false, customPackCount: 0 };
-  }
-  try {
-    const custom = JSON.parse(await fetchText(toolboxUrl));
-    const check = await validateToolboxWithApi(custom);
-    if (!check.valid) {
-      throw new Error(`课程 toolbox 非法：${check.errors[0] || '未知错误'}`);
-    }
-    const packs = Array.isArray(custom?.packs) ? custom.packs : [];
-    return {
-      official,
-      course: mergeToolboxes(getConfigValue('defaultXEduHubToolbox', {}), check.normalized || custom),
-      hasCourseCustom: true,
-      customPackCount: packs.length,
-    };
-  } catch (_) {
-    return { official, course: official, hasCourseCustom: false, customPackCount: 0 };
-  }
+  return loadToolboxesImpl(getConfigValue, fetchText, validateToolboxWithApi, mergeToolboxes, normalizeCategoryMeta);
 }
 
 function extractXEduHubSpec() {
-  if (!state.workspace) {
-    return null;
-  }
-  return collectXEduHubSpecFromBlocks(state.workspace.getAllBlocks(false), {
+  return extractXEduHubSpecImpl(state, {
+    collectXEduHubSpecFromBlocks,
     getParamFieldName,
     getTaskById,
     getTaskIdFromRunBlockType,
-    isSemanticRunBlockType,
-    projectRoot: String(getConfigValue('projectRoot', '')),
+    isSemanticRunBlockType, 
+    getConfigValue,
     resolveLegacyTaskId,
   });
 }
 
 function collectWorkspaceTasks() {
-  if (!state.workspace) {
-    return [];
-  }
-  return collectXEduHubTasksFromBlocks(state.workspace.getAllBlocks(false), {
+  return collectWorkspaceTasksImpl(state, {
+    collectXEduHubTasksFromBlocks,
     getTaskById,
     getTaskIdFromRunBlockType,
     isSemanticRunBlockType,
@@ -2072,741 +1568,123 @@ function collectWorkspaceTasks() {
 }
 
 function hasRunnableFlow() {
-  return Boolean(state.workspace) && hasRunnableFlowInBlocks(state.workspace.getAllBlocks(false), {
+  return hasRunnableFlowImpl(state, {
+    hasRunnableFlowInBlocks,
     isSemanticRunBlockType,
     runnableBlockTypes: RUNNABLE_BLOCK_TYPES,
   });
 }
 
 function hasRuntimeBoundInputSpec(spec) {
-  return Boolean(spec && spec.input === '__runtime_bound__');
+  return hasRuntimeBoundInputSpecImpl(spec);
+}
+
+function isStreamLikeInputSpec(spec) {
+  return isStreamLikeInputSpecImpl(spec, { getTaskById });
 }
 
 function getWorkspaceVariableNameById(variableId) {
-  return lookupWorkspaceVariableName(state.workspace, variableId);
+  return getWorkspaceVariableNameByIdImpl(state, lookupWorkspaceVariableName, variableId);
 }
 
 function getBlockVariableName(block, fieldName) {
-  return getRuntimeBlockVariableName(block, fieldName, getWorkspaceVariableNameById);
+  return getBlockVariableNameImpl(getRuntimeBlockVariableName, getWorkspaceVariableNameById, block, fieldName);
 }
 
 function validateWorkspaceBindings() {
-  if (!state.workspace) {
-    return null;
-  }
-  return validateWorkspaceBindingsForBlocks(state.workspace.getAllBlocks(false), {
-    buildPreflightError,
+  return validateWorkspaceBindingsImpl(state, {
+    validateWorkspaceBindingsForBlocks,
+    buildPreflightError: buildPreflightErrorLocal,
     lookupVariableName: getWorkspaceVariableNameById,
   });
 }
 
-function buildPreflightError(code, message, hint) {
-  return {
-    success: false,
-    result_type: 'error',
-    error_code: code,
-    message,
-    result: {},
-    artifacts: {},
-    result_summary: {
-      headline: message,
-      metrics: [],
-      hints: hint ? [hint] : [],
-    },
-    result_artifacts: { preview_image: '', key_fields: {} },
-    result_error: { code },
-  };
-}
-
-function renderMigrationReport(report) {
-  if (!report || (!report.changed?.length && !report.failed?.length)) {
-    return;
-  }
-  state.migrationReport = report;
-  setResultMode('success');
-  setResultBadge('完成', 'is-success');
-  state.resultRunState = {
-    hasRun: true,
-    lastPayload: {
-      success: true,
-      message: '已自动迁移旧版工作区',
-      result_summary: {
-        headline: '已自动迁移旧版工作区',
-        metrics: [
-          { label: '成功迁移', value: report.changed?.length || 0 },
-          { label: '失败项', value: report.failed?.length || 0 },
-        ],
-        hints: ['请继续检查工作区是否符合当前实验目标。'],
-      },
-      result_artifacts: { preview_image: '', key_fields: {} },
-      result: report,
-    },
-    lastTone: 'success',
-  };
-  renderResultTerminal([
-    '# 已自动迁移旧版工作区',
-    `success: ${report.changed?.length || 0}`,
-    `failed: ${report.failed?.length || 0}`,
-  ].join('\n'));
-  resetDebugDetails({ payload: report, open: false });
-  updateTaskContext();
-  blocklyDebugLog('工作区迁移报告', report);
-}
-
-function maybeWarnExperimentalWorkspace(reason = '已加载包含实验性任务的工作区') {
-  const tasks = collectWorkspaceTasks().filter((task) => task?.available === false);
-  if (tasks.length === 0) {
-    return;
-  }
-  const payload = buildExperimentalTaskPreflight(tasks, { blocked: false });
-  payload.success = true;
-  payload.message = reason;
-  payload.result_summary.headline = reason;
-  payload.result_summary.hints = ['这些任务会兼容保留，但默认不会出现在新的快捷任务分类里。'];
-  setResultWarningView(payload);
-}
-
-function syncWorkspaceTaskContext() {
-  updateTaskContext();
-  if (state.workspace && typeof state.workspace.getAllBlocks === 'function') {
-    const hasTask = Boolean(extractXEduHubSpec()?.task_id);
-    const hasBlocks = state.workspace.getAllBlocks(false).length > 0;
-    const shouldHintRun = hasTask || hasBlocks;
-    if (shouldHintRun && state.resultRunState.lastTone === 'idle' && !state.resultRunState.hasRun) {
-      renderResultTerminal(CLASSROOM_DEFAULTS.resultIdleText);
-    }
-  }
-}
-
-function validateRunnableSpec(spec) {
-  if (!hasRunnableFlow()) {
-    return buildPreflightError('missing_flow', '当前工作区里还没有 XEduHub 积木流程，请先拖入相关积木。', '先拖入一个 XEduHub 任务运行积木。');
-  }
-  if (!spec || !spec.task_id) {
-    return buildPreflightError('missing_task', '当前流程缺少任务类型，请先放入运行积木。', '请先放入一个带任务语义的 XEduHub 运行积木。');
-  }
-  if (spec.input === undefined || spec.input === null || spec.input === '') {
-    return buildPreflightError('missing_input', '当前流程缺少输入路径。', '先使用“选择输入图片”积木，或直接在任务块的输入槽接入文本路径。');
-  }
-  return null;
-}
-
-function buildExperimentalTaskPreflight(tasks, { blocked = false } = {}) {
-  const names = tasks.map((task) => String(task?.label || task?.task_id || '').trim()).filter(Boolean);
-  const joined = names.join('、');
-  const firstAction = String(tasks[0]?.recommended_action || '').trim();
-  return {
-    success: false,
-    blocked,
-    result_type: 'error',
-    error_code: blocked ? 'runtime_task_hidden_for_student' : 'runtime_task_experimental',
-    message: blocked
-      ? `当前流程包含本地暂不支持的实验性任务：${joined}`
-      : `当前流程包含实验性任务：${joined}`,
-    result: {},
-    artifacts: {},
-    result_summary: {
-      headline: blocked ? '学生模式下已阻止执行实验性任务' : '检测到实验性任务',
-      metrics: names.length > 0 ? [{ label: '任务数量', value: names.length }] : [],
-      hints: [
-        blocked
-          ? '请改用默认可运行的任务块，或让老师在教师模式下检查该流程。'
-          : (firstAction || '这些任务当前本地环境不支持，请安装对应模型/版本后再试。'),
-      ],
-    },
-    result_artifacts: { preview_image: '', key_fields: names.length > 0 ? { 实验性任务: joined } : {} },
-    result_error: { code: blocked ? 'runtime_task_hidden_for_student' : 'runtime_task_experimental' },
-  };
-}
-
-function collectPresentationActionsFromWorkspace() {
-  if (!state.workspace) {
-    return [];
-  }
-  return collectXEduHubPresentationActionsFromBlocks(state.workspace);
-}
-
-function decoratePayloadWithResultActions(payload) {
-  const nextPayload = payload && typeof payload === 'object' ? payload : {};
-  const actions = collectPresentationActionsFromWorkspace();
-  nextPayload.__xeduPresentationActions = actions;
-  nextPayload.__xeduPresentationCleared = actions.some((action) => action?.type === 'clear_result');
-  return nextPayload;
-}
-
-function getRequestedResultImage(actions, payload) {
-  const imageAction = (actions || []).find((action) => action?.type === 'result_image');
-  const explicitImage = String(imageAction?.image?.value || '').trim();
-  return {
-    src: [getPayloadPreviewImage(payload), explicitImage].find(isDisplayableImageSource) || '',
-    title: String(imageAction?.title || '结果图片').trim() || '结果图片',
-  };
-}
-
-function updateResultView(payload) {
-  const nextPayload = decoratePayloadWithResultActions(payload || {});
-  const success = Boolean(nextPayload && nextPayload.success);
-  const clearedOnly = Boolean(nextPayload?.__xeduPresentationCleared);
-  state.resultRunState.hasRun = true;
-  state.resultRunState.lastPayload = nextPayload;
-  state.resultRunState.lastTone = clearedOnly ? 'idle' : success ? 'success' : 'error';
-  if (clearedOnly) {
-    setResultMode('idle');
-    setResultBadge('已清空');
-    closeResultImageDialog();
-    renderResultTerminal('已清空运行反馈');
-  } else {
-    setResultMode(success ? 'success' : 'error');
-    setResultBadge(success ? '完成' : '异常', success ? 'is-success' : 'is-error');
-    renderResultTerminal(buildTerminalOutput(nextPayload));
-    const imageResult = getRequestedResultImage(nextPayload.__xeduPresentationActions, nextPayload);
-    openResultImageDialog(imageResult.src, imageResult.title);
-  }
-  resetDebugDetails({
-    payload: nextPayload?.result ?? nextPayload ?? {},
-    open: !success && Boolean(nextPayload?.result && Object.keys(nextPayload.result).length > 0),
-  });
-  updateTaskContext();
-}
-
 async function executeXEduHub() {
-  const runBtn = document.getElementById('runXEduHubBtn');
-  if (runBtn) {
-    runBtn.disabled = true;
-    runBtn.textContent = '运行中...';
-  }
-  setResultRunningView();
-  try {
-    if (!hasExecutablePython()) {
-      updateResultView(buildGenericPythonPreflightError());
-      return;
-    }
-
-    const bindingError = validateWorkspaceBindings();
-    if (bindingError) {
-      updateResultView(bindingError);
-      return;
-    }
-
-    if (hasRunnableFlow()) {
-      const spec = extractXEduHubSpec();
-      const workspaceTasks = collectWorkspaceTasks();
-      const experimentalTasks = workspaceTasks.filter((task) => task?.available === false);
-      const specError = validateRunnableSpec(spec);
-      if (specError) {
-        updateResultView(specError);
-        return;
-      }
-      if (experimentalTasks.length > 0) {
-        const payload = buildExperimentalTaskPreflight(experimentalTasks, { blocked: !isTeacherMode() });
-        if (!isTeacherMode()) {
-          setResultWarningView(payload);
-          return;
-        }
-        setResultWarningView(payload);
-      }
-      if (hasRuntimeBoundInputSpec(spec)) {
-        const response = await fetch(String(getConfigValue('pythonRunUrl', '/api/python/run')), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code: getPythonRaw(),
-            project_root: String(getConfigValue('projectRoot', '')),
-          }),
-        });
-        const payload = await parseJsonResponse(response, '运行 Python 代码失败');
-        updateResultView(normalizePythonRunPayload(payload));
-        return;
-      }
-      const response = await fetch(String(getConfigValue('xeduhubExecuteUrl', '/api/resources/blockly/xeduhub/execute')), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: getPythonRaw(),
-          spec,
-          project_root: String(getConfigValue('projectRoot', '')),
-        }),
-      });
-      const payload = await parseJsonResponse(response, '执行 XEduHub 运行时失败');
-      updateResultView(payload);
-      return;
-    }
-
-    const response = await fetch(String(getConfigValue('pythonRunUrl', '/api/python/run')), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: getPythonRaw(),
-        project_root: String(getConfigValue('projectRoot', '')),
-      }),
-    });
-    const payload = await parseJsonResponse(response, '运行 Python 代码失败');
-    updateResultView(normalizePythonRunPayload(payload));
-  } catch (error) {
-    updateResultView({
-      success: false,
-      message: error?.message || '执行失败',
-      result: { error: String(error || '') },
-      artifacts: {},
-    });
-  } finally {
-    if (runBtn) {
-      runBtn.disabled = false;
-      runBtn.textContent = '运行程序';
-    }
-  }
+  return executeXEduHubFlow(state, {
+    documentRef: document,
+    setResultRunningView,
+    hasExecutablePython,
+    buildGenericPythonPreflightError,
+    updateResultView: updateResultViewLocal,
+    validateWorkspaceBindings,
+    hasRunnableFlow,
+    extractXEduHubSpec,
+    collectWorkspaceTasks,
+    validateRunnableSpec: validateRunnableSpecLocal,
+    buildExperimentalTaskPreflight: buildExperimentalTaskPreflightLocal,
+    isTeacherMode,
+    setResultWarningView,
+    hasRuntimeBoundInputSpec,
+    isStreamLikeInputSpec,
+    getConfigValue,
+    getPythonRaw,
+    parseJsonResponse,
+    normalizePythonRunPayload,
+  });
 }
 
 function registerBuiltinToolboxCallbacks(workspace) {
-  if (!workspace || typeof workspace.registerToolboxCategoryCallback !== 'function') {
-    blocklyDebugWarn('workspace 不支持 registerToolboxCategoryCallback，已跳过动态分类注册');
-    return;
-  }
-  blocklyDebugLog('开始注册 builtin toolbox 回调');
-  if (typeof workspace.registerButtonCallback === 'function' && !workspace.__xeduButtonCallbackInstrumented__) {
-    const rawRegisterButtonCallback = workspace.registerButtonCallback.bind(workspace);
-    workspace.registerButtonCallback = (key, callback) => rawRegisterButtonCallback(
-      key,
-      (button) => {
-        state.lastFlyoutButtonInvoke = { key: String(key || ''), at: Date.now() };
-        return callback(button);
-      },
-    );
-    workspace.__xeduButtonCallbackInstrumented__ = true;
-    blocklyDebugLog('已启用 flyout 按钮回调埋点');
-  }
-  const resolveTargetWorkspace = (source) => {
-    let target = source;
-    if (target && typeof target.getTargetWorkspace === 'function') {
-      target = target.getTargetWorkspace();
-    }
-    if (target && typeof target.getRootWorkspace === 'function') {
-      target = target.getRootWorkspace();
-    }
-    return target || workspace;
-  };
-  const resolveUniqueVariableName = (targetWorkspace, preferredName, variableType = '') => {
-    const preferred = String(preferredName || '').trim();
-    if (!preferred) {
-      if (typeof Blockly?.Variables?.generateUniqueName === 'function') {
-        return Blockly.Variables.generateUniqueName(targetWorkspace);
-      }
-      return '变量';
-    }
-    const hasNameUsedWithAnyType = typeof Blockly?.Variables?.nameUsedWithAnyType === 'function';
-    const existing = hasNameUsedWithAnyType
-      ? Blockly.Variables.nameUsedWithAnyType(preferred, targetWorkspace)
-      : targetWorkspace?.getVariable?.(preferred, variableType || '');
-    if (!existing) {
-      return preferred;
-    }
-    if (typeof Blockly?.Variables?.generateUniqueName === 'function') {
-      return Blockly.Variables.generateUniqueName(targetWorkspace);
-    }
-    return `${preferred}_1`;
-  };
-  const ensureVariableByPrompt = async (source, variableType = '') => {
-    const targetWorkspace = resolveTargetWorkspace(source);
-    blocklyDebugLog('触发变量创建回调', {
-      variableType,
-      hasSource: Boolean(source),
-      hasTargetWorkspace: Boolean(targetWorkspace),
-      sourceCtor: source?.constructor?.name || '',
-      targetCtor: targetWorkspace?.constructor?.name || '',
-    });
-    const variableMap = typeof targetWorkspace?.getVariableMap === 'function'
-      ? targetWorkspace.getVariableMap()
-      : null;
-    if (!targetWorkspace || !variableMap || typeof variableMap.createVariable !== 'function') {
-      blocklyDebugWarn('目标 workspace 不可创建变量，已忽略', {
-        variableType,
-        hasCreateVariable: Boolean(variableMap && typeof variableMap.createVariable === 'function'),
-      });
-      return;
-    }
-    const beforeCount = targetWorkspace.getVariableMap?.().getAllVariables?.().length || 0;
-    blocklyDebugLog('变量创建前统计', { variableType, beforeCount });
-    const defaultName = typeof Blockly?.Variables?.generateUniqueName === 'function'
-      ? Blockly.Variables.generateUniqueName(targetWorkspace)
-      : '变量';
-    const title = String(Blockly?.Msg?.NEW_VARIABLE_TITLE || '请输入变量名');
-    const subtitle = variableType
-      ? `正在创建 ${variableType} 类型变量`
-      : '请输入变量名';
-    const rawName = await requestVariableName({
-      title,
-      subtitle,
-      defaultValue: defaultName,
-    });
-    const normalizedName = String(rawName || '')
-      .replace(/[\s\xa0]+/g, ' ')
-      .trim();
-    let finalName = normalizedName;
-    if (!finalName) {
-      blocklyDebugWarn('变量名为空，用户可能取消了创建', { variableType });
-      return;
-    }
-    if (finalName === String(Blockly?.Msg?.NEW_VARIABLE || '').trim() || finalName === String(Blockly?.Msg?.RENAME_VARIABLE || '').trim()) {
-      finalName = defaultName;
-    }
-    finalName = resolveUniqueVariableName(targetWorkspace, finalName, variableType || '');
-    blocklyDebugLog('prompt 返回结果', { variableType, rawName, normalizedName, finalName });
-    if (!finalName) {
-      blocklyDebugWarn('变量名为空，用户可能取消了创建', { variableType });
-      return;
-    }
-    variableMap.createVariable(finalName, variableType || '');
-    const afterCount = targetWorkspace.getVariableMap?.().getAllVariables?.().length || 0;
-    blocklyDebugLog('已手动创建变量', { variableType, finalName, beforeCount, afterCount });
-  };
-  state.createVariableFallback = (variableType = '') => ensureVariableByPrompt(workspace, variableType || '');
-  const registerVariableButtonCallbacks = (targetWorkspace) => {
-    if (!targetWorkspace || typeof targetWorkspace.registerButtonCallback !== 'function') {
-      return;
-    }
-    targetWorkspace.registerButtonCallback('CREATE_VARIABLE', (button) => {
-      blocklyDebugLog('点击 flyout 按钮：CREATE_VARIABLE');
-      ensureVariableByPrompt(button, '');
-    });
-    targetWorkspace.registerButtonCallback('CREATE_VARIABLE_STRING', (button) => {
-      blocklyDebugLog('点击 flyout 按钮：CREATE_VARIABLE_STRING');
-      ensureVariableByPrompt(button, 'String');
-    });
-    targetWorkspace.registerButtonCallback('CREATE_VARIABLE_NUMBER', (button) => {
-      blocklyDebugLog('点击 flyout 按钮：CREATE_VARIABLE_NUMBER');
-      ensureVariableByPrompt(button, 'Number');
-    });
-    targetWorkspace.registerButtonCallback('CREATE_VARIABLE_COLOUR', (button) => {
-      blocklyDebugLog('点击 flyout 按钮：CREATE_VARIABLE_COLOUR');
-      ensureVariableByPrompt(button, 'Colour');
-    });
-  };
-
-  if (typeof workspace.registerButtonCallback === 'function') {
-    registerVariableButtonCallbacks(workspace);
-    blocklyDebugLog('已注册 flyout 按钮回调', [
-      'CREATE_VARIABLE',
-      'CREATE_VARIABLE_STRING',
-      'CREATE_VARIABLE_NUMBER',
-      'CREATE_VARIABLE_COLOUR',
-    ]);
-  } else {
-    blocklyDebugWarn('workspace 不支持 registerButtonCallback，按钮回调未注册');
-  }
-
-  const variableCallback = (targetWorkspace) => {
-    blocklyDebugLog('触发变量分类回调', { callback: 'VARIABLE', workspaceCtor: targetWorkspace?.constructor?.name || '' });
-    const resolvedWorkspace = resolveTargetWorkspace(targetWorkspace);
-    if (typeof Blockly?.Variables?.internalFlyoutCategory === 'function') {
-      const result = Blockly.Variables.internalFlyoutCategory(targetWorkspace);
-      registerVariableButtonCallbacks(resolvedWorkspace);
-      blocklyDebugLog('变量分类回调返回项数量', { callback: 'VARIABLE', count: Array.isArray(result) ? result.length : -1 });
-      return result;
-    }
-    if (typeof Blockly?.Variables?.flyoutCategory === 'function') {
-      const result = Blockly.Variables.flyoutCategory(targetWorkspace, false);
-      registerVariableButtonCallbacks(resolvedWorkspace);
-      blocklyDebugLog('变量分类回调返回项数量', { callback: 'VARIABLE', count: Array.isArray(result) ? result.length : -1 });
-      return result;
-    }
-    blocklyDebugWarn('变量分类回调未找到可用实现');
-    return [];
-  };
-  const variableDynamicCallback = (targetWorkspace) => {
-    blocklyDebugLog('触发动态变量分类回调', { callback: 'VARIABLE_DYNAMIC', workspaceCtor: targetWorkspace?.constructor?.name || '' });
-    const resolvedWorkspace = resolveTargetWorkspace(targetWorkspace);
-    if (typeof Blockly?.VariablesDynamic?.internalFlyoutCategory === 'function') {
-      const result = Blockly.VariablesDynamic.internalFlyoutCategory(targetWorkspace);
-      registerVariableButtonCallbacks(resolvedWorkspace);
-      blocklyDebugLog('动态变量分类回调返回项数量', { callback: 'VARIABLE_DYNAMIC', count: Array.isArray(result) ? result.length : -1 });
-      return result;
-    }
-    if (typeof Blockly?.VariablesDynamic?.flyoutCategory === 'function') {
-      const result = Blockly.VariablesDynamic.flyoutCategory(targetWorkspace, false);
-      registerVariableButtonCallbacks(resolvedWorkspace);
-      blocklyDebugLog('动态变量分类回调返回项数量', { callback: 'VARIABLE_DYNAMIC', count: Array.isArray(result) ? result.length : -1 });
-      return result;
-    }
-    blocklyDebugWarn('动态变量分类回调未找到可用实现，回退到 VARIABLE');
-    return variableCallback(targetWorkspace);
-  };
-  const procedureCallback = (targetWorkspace) => {
-    blocklyDebugLog('触发函数分类回调', { callback: 'PROCEDURE', workspaceCtor: targetWorkspace?.constructor?.name || '' });
-    if (typeof Blockly?.Procedures?.internalFlyoutCategory === 'function') {
-      const result = Blockly.Procedures.internalFlyoutCategory(targetWorkspace);
-      blocklyDebugLog('函数分类回调返回项数量', { callback: 'PROCEDURE', count: Array.isArray(result) ? result.length : -1 });
-      return result;
-    }
-    if (typeof Blockly?.Procedures?.flyoutCategory === 'function') {
-      const result = Blockly.Procedures.flyoutCategory(targetWorkspace, false);
-      blocklyDebugLog('函数分类回调返回项数量', { callback: 'PROCEDURE', count: Array.isArray(result) ? result.length : -1 });
-      return result;
-    }
-    blocklyDebugWarn('函数分类回调未找到可用实现');
-    return [];
-  };
-
-  const normalizeKeyList = (keys) => {
-    const unique = new Set();
-    keys.forEach((value) => {
-      const key = String(value || '').trim();
-      if (key) {
-        unique.add(key);
-      }
-    });
-    return Array.from(unique);
-  };
-
-  const variableKeys = normalizeKeyList([
-    Blockly.VARIABLE_CATEGORY_NAME,
-    'VARIABLE',
-    'variable',
-  ]);
-  blocklyDebugLog('变量分类回调注册 key', variableKeys);
-  variableKeys.forEach((key) => workspace.registerToolboxCategoryCallback(String(key), variableCallback));
-
-  const dynamicVariableKeys = normalizeKeyList([
-    Blockly.VARIABLE_DYNAMIC_CATEGORY_NAME,
-    'VARIABLE_DYNAMIC',
-    'variable_dynamic',
-  ]);
-  blocklyDebugLog('动态变量分类回调注册 key', dynamicVariableKeys);
-  dynamicVariableKeys.forEach((key) => workspace.registerToolboxCategoryCallback(String(key), variableDynamicCallback));
-
-  const procedureKeys = normalizeKeyList([
-    Blockly.PROCEDURE_CATEGORY_NAME,
-    'PROCEDURE',
-    'procedure',
-  ]);
-  blocklyDebugLog('函数分类回调注册 key', procedureKeys);
-  procedureKeys.forEach((key) => workspace.registerToolboxCategoryCallback(String(key), procedureCallback));
+  return registerBuiltinToolboxCallbacksImpl(workspace, {
+    Blockly,
+    state,
+    blocklyDebugLog,
+    blocklyDebugWarn,
+    requestVariableName,
+  });
 }
 
 async function persistCourseToolbox(toolbox) {
-  const endpoint = String(getConfigValue('toolboxSaveUrl', '/api/resources/blockly/toolbox/save'));
-  const rootToken = String(getConfigValue('rootToken', ''));
-  if (!endpoint || !rootToken) {
-    return { success: false, message: '当前页面未绑定课程目录，已保留本次导入结果' };
-  }
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      role: String(getConfigValue('userRole', '')),
-      root_token: rootToken,
-      workspace_rel: String(getConfigValue('workspaceRelPath', '')),
-      toolbox_rel: String(getConfigValue('toolboxRelPath', '')),
-      toolbox,
-    }),
+  return persistCourseToolboxImpl(toolbox, {
+    getConfigValue,
+    parseJsonResponse,
+    setToolboxRelPath: (value) => {
+      runtimeConfig.toolboxRelPath = value;
+    },
   });
-  let payload = null;
-  try {
-    payload = await parseJsonResponse(response, '保存课程积木失败');
-  } catch (_) {
-    payload = null;
-  }
-  if (!response.ok || !payload?.success) {
-    return { success: false, message: payload?.message || `服务返回 ${response.status}` };
-  }
-  if (payload?.toolbox_path) {
-    runtimeConfig.toolboxRelPath = String(payload.toolbox_path);
-  }
-  return { success: true, message: payload?.message || '课程积木已保存' };
-}
-
-function findToolboxFileInZip(zip) {
-  const entries = Object.values(zip?.files || {}).filter((entry) => entry && !entry.dir);
-  return zip.file('toolbox.json')
-    || zip.file('toolbox.toolbox.json')
-    || entries.find((entry) => /(?:^|\/)toolbox\.json$/i.test(entry.name))
-    || entries.find((entry) => /\.toolbox\.json$/i.test(entry.name));
-}
-
-function normalizeImportedToolboxPayload(payload) {
-  if (!payload) {
-    return null;
-  }
-  if (Array.isArray(payload)) {
-    return { kind: 'categoryToolbox', contents: payload };
-  }
-  if (typeof payload !== 'object') {
-    return null;
-  }
-  if (payload.kind === 'categoryToolbox' && Array.isArray(payload.contents)) {
-    return payload;
-  }
-  if (payload.toolbox && typeof payload.toolbox === 'object') {
-    return normalizeImportedToolboxPayload(payload.toolbox);
-  }
-  if (payload.data && typeof payload.data === 'object') {
-    return normalizeImportedToolboxPayload(payload.data);
-  }
-  if (Array.isArray(payload.contents)) {
-    return { ...payload, kind: 'categoryToolbox' };
-  }
-  if (Array.isArray(payload.categories)) {
-    return { kind: 'categoryToolbox', contents: payload.categories };
-  }
-  return null;
-}
-
-function parseJsonWithBom(text) {
-  const clean = String(text || '').replace(/^\uFEFF/, '');
-  return JSON.parse(clean);
 }
 
 async function importToolboxPack(file) {
-  let importedToolbox = null;
-  if (file.name.endsWith('.zip')) {
-    const zip = await JSZip.loadAsync(file);
-    const toolboxFile = findToolboxFileInZip(zip);
-    if (!toolboxFile) {
-      throw new Error('ZIP 中缺少 toolbox.json 或 *.toolbox.json');
-    }
-    const raw = await toolboxFile.async('string');
-    importedToolbox = parseJsonWithBom(raw);
-  } else {
-    importedToolbox = parseJsonWithBom(await file.text());
-  }
-  importedToolbox = normalizeImportedToolboxPayload(importedToolbox);
-  if (!importedToolbox) {
-    throw new Error('积木包不是可识别的 categoryToolbox 格式');
-  }
-  const schema = await validateToolboxWithApi(importedToolbox);
-  if (!schema.valid) {
-    throw new Error(`积木包格式不正确：${schema.errors[0] || '未知错误'}`);
-  }
-  const safeToolbox = schema.normalized || importedToolbox;
-  const currentCourseToolbox = getSourceToolbox();
-  state.toolboxVariants.course = mergeToolboxes(currentCourseToolbox, safeToolbox);
-  state.toolboxVariants.hasCourseCustom = true;
-  state.toolboxVariants.customPackCount = Number(state.toolboxVariants.customPackCount || 0) + 1;
-  resetCategoryVisibility(state.toolboxVariants.course);
-  if (state.workspace) {
-    state.workspace.updateToolbox(getActiveToolbox());
-  }
-  renderToolboxPacks();
-  renderGroupDrawer();
-  syncToolboxMeta();
-  queueToolboxRowStyling();
-  const saved = await persistCourseToolbox(state.toolboxVariants.course);
-  if (!saved.success) {
-    console.warn('Toolbox pack imported but not persisted:', saved.message);
-  }
+  return importToolboxPackImpl(file, {
+    JSZipLoader: async () => (await import('jszip')).default,
+    validateToolboxWithApi,
+    getSourceToolbox,
+    mergeToolboxes,
+    state,
+    resetCategoryVisibility: resetCategoryVisibilityLocal,
+    getActiveToolbox,
+    renderToolboxPacks: renderToolboxPacksLocal,
+    renderGroupDrawer: renderGroupDrawerLocal,
+    syncToolboxMeta,
+    queueToolboxRowStyling: queueToolboxRowStylingLocal,
+    persistCourseToolbox,
+  });
 }
 
 function bindUI() {
-  document.getElementById('openWorkspaceBtn')?.addEventListener('click', () => {
-    setMoreMenuOpen(false);
-    document.getElementById('openWorkspaceInput')?.click();
-  });
-  document.getElementById('saveWorkspaceBtn')?.addEventListener('click', () => {
-    setMoreMenuOpen(false);
-    const payload = getWorkspaceExportPayload();
-    if (!payload) {
-      return;
-    }
-    downloadTextFile(payload.content, payload.filename);
-  });
-  document.getElementById('openWorkspaceInput')?.addEventListener('change', async (event) => {
-    const file = event?.target?.files?.[0];
-    if (!file) {
-      return;
-    }
-    try {
-      await openWorkspaceFile(file);
-    } catch (error) {
-      updateResultView({
-        success: false,
-        message: `打开文件失败：${error?.message || '未知错误'}`,
-        result: { error: String(error || '') },
-        artifacts: {},
-      });
-    } finally {
-      event.target.value = '';
-    }
-  });
-  document.getElementById('copyPythonBtn')?.addEventListener('click', async () => {
-    setMoreMenuOpen(false);
-    await navigator.clipboard.writeText(getPythonRaw());
-  });
-  document.getElementById('codeDockToggleBtn')?.addEventListener('click', () => setCodePanelVisible(!state.codePanelVisible));
-  document.getElementById('controlPanelToggleBtn')?.addEventListener('click', (event) => {
-    event.stopPropagation();
-    setMoreMenuOpen(false);
-    setControlPanelOpen(!state.controlPanelState.open);
-  });
-  document.getElementById('controlPanel')?.addEventListener('click', (event) => event.stopPropagation());
-  document.getElementById('toolbarMoreBtn')?.addEventListener('click', (event) => {
-    event.stopPropagation();
-    setControlPanelOpen(false);
-    setMoreMenuOpen(!state.toolbarOverflowState.menuOpen);
-  });
-  document.addEventListener('click', () => {
-    setMoreMenuOpen(false);
-    setControlPanelOpen(false);
-  });
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      setMoreMenuOpen(false);
-      setControlPanelOpen(false);
-    }
-  });
-  window.addEventListener('resize', () => queueBlocklyResize());
-  document.getElementById('toolbarMoreMenu')?.addEventListener('click', (event) => event.stopPropagation());
-  document.getElementById('blocklyExtendFab')?.addEventListener('click', () => {
-    if (!canImportToolboxPacks()) {
-      return;
-    }
-    document.getElementById('addPackInput')?.click();
-  });
-  document.getElementById('addPackBtn')?.addEventListener('click', () => {
-    if (!canImportToolboxPacks()) {
-      return;
-    }
-    document.getElementById('addPackInput')?.click();
-  });
-  document.getElementById('addPackInput')?.addEventListener('change', async (event) => {
-    if (!canImportToolboxPacks()) {
-      return;
-    }
-    const file = event?.target?.files?.[0];
-    if (!file) {
-      return;
-    }
-    try {
-      await importToolboxPack(file);
-    } catch (error) {
-      updateResultView({
-        success: false,
-        message: `导入积木包失败：${error?.message || '未知错误'}`,
-        result: { error: String(error || '') },
-        artifacts: {},
-      });
-    } finally {
-      event.target.value = '';
-    }
-  });
-  document.getElementById('runXEduHubBtn')?.addEventListener('click', executeXEduHub);
-  document.getElementById('downloadPythonBtn')?.addEventListener('click', () => {
-    const blob = new Blob([getPythonRaw()], { type: 'text/plain;charset=utf-8' });
-    const anchor = document.createElement('a');
-    anchor.href = URL.createObjectURL(blob);
-    anchor.download = `${getConfigValue('workspaceTitle', 'workspace') || 'workspace'}.py`;
-    anchor.click();
-    URL.revokeObjectURL(anchor.href);
-  });
-  document.getElementById('resetWorkspaceBtn')?.addEventListener('click', () => {
-    if (!state.workspace || !state.initialSerialized) {
-      return;
-    }
-    loadWorkspaceSnapshot(state.initialSerialized);
+  return bindUIRuntime({
+    documentRef: document,
+    navigatorRef: navigator,
+    setMoreMenuOpen: setMoreMenuOpenLocal,
+    setControlPanelOpen: setControlPanelOpenLocal,
+    getWorkspaceExportPayload,
+    downloadTextFile,
+    openWorkspaceFile,
+    updateResultView: updateResultViewLocal,
+    getPythonRaw,
+    importToolboxPack,
+    canImportToolboxPacks,
+    setCodePanelVisible: (visible) => setCodePanelVisible(visible, state, queueBlocklyResizeLocal, document),
+    state,
+    queueBlocklyResize: queueBlocklyResizeLocal,
+    executeXEduHub,
+    getConfigValue,
+    loadWorkspaceSnapshot,
   });
 }
 
 async function init() {
   ensureRuntimeStyles();
-  applyCodeDockWidth(readPersistedCodeDockWidth());
+  applyCodeDockWidthLocal(readPersistedCodeDockWidthLocal());
   blocklyDebugLog('Blockly 运行时初始化开始', {
     debugEnabled: BLOCKLY_DEBUG_ENABLED,
     role: String(getConfigValue('userRole', '')),
@@ -2814,10 +1692,10 @@ async function init() {
   });
   defineXEduHubBlocks(Blockly, pythonGenerator);
   bindUI();
-  bindCodeDockResize();
+  bindCodeDockResizeLocal();
   state.toolboxVariants = await loadToolboxes();
   logDynamicCategorySnapshot(state.toolboxVariants?.course || state.toolboxVariants?.official || {}, 'loadToolboxes');
-  resetCategoryVisibility(getSourceToolbox());
+  resetCategoryVisibilityLocal(getSourceToolbox());
   state.sideNavCollapsed = {};
   logDynamicCategorySnapshot(getSourceToolbox(), 'getSourceToolbox');
   state.workspace = Blockly.inject('blocklyDiv', {
@@ -2827,15 +1705,15 @@ async function init() {
     sounds: false,
     rendererOverrides: {
       ADD_START_HATS: true,
-      CORNER_RADIUS: 7,
-      MEDIUM_PADDING: 7,
-      LARGE_PADDING: 13,
-      MIN_BLOCK_HEIGHT: 40,
-      EMPTY_INLINE_INPUT_HEIGHT: 36,
+      CORNER_RADIUS: 9,
+      MEDIUM_PADDING: 8,
+      LARGE_PADDING: 14,
+      MIN_BLOCK_HEIGHT: 42,
+      EMPTY_INLINE_INPUT_HEIGHT: 38,
       FIELD_DROPDOWN_SVG_ARROW: false,
       NOTCH_HEIGHT: 4,
-      NOTCH_WIDTH: 14,
-      STATEMENT_INPUT_NOTCH_OFFSET: 16,
+      NOTCH_WIDTH: 15,
+      STATEMENT_INPUT_NOTCH_OFFSET: 18,
       JAGGED_TEETH_HEIGHT: 7,
       JAGGED_TEETH_WIDTH: 14,
     },
@@ -2877,8 +1755,8 @@ async function init() {
       Blockly.serialization.workspaces.load(JSON.parse(state.initialSerialized.value), state.workspace);
     }
     if (migrationReport && ((migrationReport.changed || []).length || (migrationReport.failed || []).length)) {
-      renderMigrationReport(migrationReport);
-      maybeWarnExperimentalWorkspace('已自动迁移并保留实验性任务工作区');
+      renderMigrationReportLocal(migrationReport);
+      maybeWarnExperimentalWorkspaceLocal('已自动迁移并保留实验性任务工作区');
     }
   } else {
     state.initialSerialized = buildDefaultWorkspaceSerialized();
@@ -2898,15 +1776,15 @@ async function init() {
       });
     }
     if (event?.type === 'toolbox_item_select') {
-      normalizeSelectedToolboxItem();
-      renderCustomSideNav();
-      queueToolboxRowStyling();
+      normalizeSelectedToolboxItemLocal();
+      renderCustomSideNavLocal();
+      queueToolboxRowStylingLocal();
       queueMicrotask(() => {
-        resetToolboxFlyoutScroll();
+        resetToolboxFlyoutScrollLocal();
       });
     }
-    alignToolboxFlyout();
-    syncWorkspaceTaskContext();
+    alignToolboxFlyoutLocal();
+    syncWorkspaceTaskContextLocal();
   });
 
   document.addEventListener('click', (event) => {
@@ -2921,7 +1799,7 @@ async function init() {
       rawText,
       className: button.className || '',
     });
-    if (!isVariableCategorySelected()) {
+    if (!isVariableCategorySelectedLocal()) {
       return;
     }
     const lastInvokeAt = Number(state.lastFlyoutButtonInvoke?.at || 0);
@@ -2941,7 +1819,7 @@ async function init() {
     blocklyDebugWarn('检测到 flyout 点击后未触发 Blockly 按钮回调，启用变量创建兜底', {
       variableType,
       rawText,
-      selectedCategory: getSelectedToolboxCategoryMeta(),
+      selectedCategory: getSelectedToolboxCategoryMetaLocal(),
       lastFlyoutButtonInvoke: state.lastFlyoutButtonInvoke,
     });
     if (typeof state.createVariableFallback === 'function') {
@@ -2949,7 +1827,7 @@ async function init() {
     }
   });
 
-  const observer = new MutationObserver(() => queueToolboxRowStyling());
+  const observer = new MutationObserver(() => queueToolboxRowStylingLocal());
   observer.observe(document.body, {
     subtree: true,
     childList: true,
@@ -2971,7 +1849,7 @@ async function init() {
   const extendFab = document.getElementById('blocklyExtendFab');
   const addPackBtn = document.getElementById('addPackBtn');
   const toolboxLabel = document.getElementById('toolboxLabel');
-  configureRoleScopedToolbar();
+  configureRoleScopedToolbarLocal();
   if (packPanel) {
     packPanel.style.display = toolboxImportEnabled ? '' : 'none';
     packPanel.classList.toggle('is-readonly', !toolboxImportEnabled);
@@ -2989,15 +1867,16 @@ async function init() {
     toolboxLabel.style.display = 'none';
   }
 
-  renderToolboxPacks();
-  renderGroupDrawer();
+  renderToolboxPacksLocal();
+  renderGroupDrawerLocal();
   syncToolboxMeta();
-  setMoreMenuOpen(false);
-  setControlPanelOpen(false);
-  setCodePanelVisible(CLASSROOM_DEFAULTS.codePanelVisible);
-  ensureInitialToolboxSelection();
-  renderCustomSideNav();
-  queueToolboxRowStyling();
+  setMoreMenuOpenLocal(false);
+  setControlPanelOpenLocal(false);
+  setCodePanelVisible(CLASSROOM_DEFAULTS.codePanelVisible, state, queueBlocklyResizeLocal, document);
+  ensureInitialToolboxSelectionLocal();
+  renderCustomSideNavLocal();
+  ensureSideNavRendered();
+  queueToolboxRowStylingLocal();
 
   setResultIdleView();
 
@@ -3015,9 +1894,12 @@ async function init() {
   }
 
   updatePython();
-  updateTaskContext();
+  updateTaskContextLocal();
+  revealRuntimeShell();
 }
 
 init().catch((error) => {
+  ensureRuntimeStyles();
   setPythonCode(`# Blockly 初始化失败\n# ${error.message || '未知错误'}`);
+  revealRuntimeShell();
 });

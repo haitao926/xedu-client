@@ -152,6 +152,12 @@ body {
     background: linear-gradient(180deg, #4f46e5, #6366f1);
 }
 .nav-item .icon { width: 20px; height: 20px; display: flex; justify-content: center; align-items: center; stroke-width: 2px; }
+.nav-icon-img {
+    display: block;
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
 
 body.student-mode #nav-group-system-title {
     display: none !important;
@@ -651,8 +657,38 @@ body.focus-mode {
 }
 
 .jupyter-view-container { flex: 1; position: relative; background: #ffffff; }
-.jupyter-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); text-align: center; padding: 24px; }
+.jupyter-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 28px;
+    background:
+        radial-gradient(circle at 16% 18%, rgba(99, 102, 241, 0.06), transparent 22%),
+        radial-gradient(circle at 82% 10%, rgba(79, 124, 168, 0.06), transparent 24%),
+        linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,254,0.96) 100%);
+}
 .placeholder-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; color: var(--primary-color); }
+.placeholder-art {
+    display: block;
+    width: min(520px, 72%);
+    max-width: 520px;
+    margin-bottom: 22px;
+    object-fit: contain;
+    filter: drop-shadow(0 20px 34px rgba(15, 23, 42, 0.10));
+}
+.placeholder-art-jupyter {
+    width: min(360px, 58%);
+    max-width: 360px;
+}
+.placeholder-art-blockly {
+    width: min(560px, 76%);
+    max-width: 560px;
+}
 .placeholder-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-heading); }
 .placeholder-desc { font-size: 13px; color: var(--text-secondary); max-width: 420px; line-height: 1.6; }
 .workspace-page {
@@ -733,6 +769,7 @@ body.focus-mode {
     flex: 1;
     min-height: 0;
     background: #ffffff;
+    overflow: hidden;
 }
 .workspace-iframe {
     width: 100%;
@@ -2931,6 +2968,18 @@ body.focus-mode {
     background: white;
     border-color: rgba(148, 163, 184, 0.45);
     color: #334155;
+}
+.resources-detail-classroom-code {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #4338ca;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.18);
 }
 .btn.is-active {
     background: #0ea5e9;

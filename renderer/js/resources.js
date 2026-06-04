@@ -24,21 +24,113 @@ import {
     parseRepoUrlParts,
 } from "./resources/source-utils.js";
 import {
-    buildExperimentPathHint,
+    connectStudentClassroomByCodeFlow,
+    getStoredProjectDirFallback,
+    prepareStudentClassroomLaunchFlow,
+} from "./resources/classroom-connect.js";
+import {
     buildExperimentFilesCard,
     buildCourseDirectoryCard,
 } from "./resources/detail-renderer.js";
+import {
+    buildLocalQuickFormPreviewUrl,
+    buildQuickFormTaskConfig,
+    encodePathToken,
+    getApiBaseUrl,
+    getCourseQuickFormDefaults,
+    getEffectiveExperimentQuickForm,
+    getExperimentHtmlOptions,
+    getMutableExperiment,
+    isExperimentQuickFormEnabled,
+    normalizeCourseQuickFormDefaults,
+    normalizeQuickFormConfig,
+    normalizeQuickFormSettings,
+} from "./resources/quickform-utils.js";
+import {
+    isCreateInfoCompleteFlow,
+    updateCreateFormStateFlow,
+} from "./resources/course-edit-state.js";
+import {
+    buildInspectCoursePayload,
+    inspectCourseResourceFlow,
+    mergeInspectionCourse,
+    renderCourseInspectionCardFlow,
+    shouldAutoInspectRemoteCourse as shouldAutoInspectRemoteCourseAction,
+} from "./resources/course-inspection-actions.js";
+import {
+    applyResourcesIndexFlow,
+    deleteCourseFlow,
+    importRemoteCourseForTestingFlow,
+    openExternalFlow,
+    openLocalPathFlow,
+    renderEmptyStateFlow,
+    resolveLocalPathFlow,
+    resolveRepoBrowserUrlFlow,
+    updateSourceInfoFlow,
+} from "./resources/course-actions.js";
+import {
+    addExperimentToSectionFlow,
+    addSectionFlow,
+    deleteExperimentFlow,
+    deleteSectionFlow,
+    editExperimentFlow,
+    manageExperimentFlow,
+    manageSectionFlow,
+    renameSectionFlow,
+} from "./resources/course-structure-actions.js";
+import { loadResourcesIndexFlow } from "./resources/resource-index-flow.js";
+import { bindResourcesUI } from "./resources/resource-bindings.js";
 import {
     getInspectionExperiment,
     mapRemoteExperimentToLocalCourse,
     pickAutoTestEntry,
 } from "./resources/course-inspection-utils.js";
 import {
+    buildCourseSyncFingerprint,
+    getCourseOrigin,
+    getLocalCourseChangeState,
+    getResourceSourceContext,
+    normalizeOrigin,
+    persistCourseToDisk,
+    persistLocalCourses,
+    resolveResourceUrl,
+    withCourseSyncFingerprint,
+} from "./resources/course-storage.js";
+import {
+    addCourseFlow,
+    buildCourseFromFormFlow,
+    buildQuickCourseFlow,
+    fetchCloudCourseFlow,
+    fillCreateFormFromCourseFlow,
+    importCloudCourseAndSaveFlow,
+    importLocalPackageToPathFlow,
+    importLocalCourseFromPathFlow,
+    pickLocalCourseFlow,
+    pickLocalPackageFlow,
+    quickAddCloudCourseFlow,
+    quickAddLocalCourseFlow,
+    saveLocalCourseFlow,
+    updateCourseFlow,
+} from "./resources/course-create-flow.js";
+import {
     computeAutoCourseId,
     buildDefaultTemplate,
     buildQuickCoursePayload,
     buildCourseFromFormPayload,
 } from "./resources/course-create-utils.js";
+import {
+    importRemoteCourseFlow,
+    mergeOriginAndSync,
+    publishCourseFromDetailFlow,
+    pullLatestForLocalCourseFlow,
+    upsertLocalCourseRecord,
+} from "./resources/course-sync.js";
+import {
+    extractResourcesFromClassroomIndex,
+    findFirstNotebookPathInCourse,
+    pickClassroomLaunchResource,
+    resolveClassroomPullTargetPath,
+} from "./resources/classroom-utils.js";
 import { getExperienceMode, getTeacherToggleLabel } from "./experience-config.js";
 
 let resourcesCache = [];
@@ -535,12 +627,12 @@ function getCreateMetaFromForm() {
 }
 
 function getCreateRequiredFields() {
-    if (createSource === "cloud" || createEntryMode === "local-import") return [];
+    if (createSource === "cloud" || createEntryMode === "pack-import") return [];
     return createRequiredFields;
 }
 
 function isStep1Complete() {
-    if (createSource === "cloud" || createEntryMode === "local-import") {
+    if (createSource === "cloud" || createEntryMode === "pack-import") {
         return true;
     }
     return getCreateRequiredFields().every((fieldId) => {
@@ -550,9 +642,8 @@ function isStep1Complete() {
 }
 
 function isStep2Complete() {
-    if (createSource === "cloud") {
-        const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
-        return Boolean(localPath && scannedCourse && !scanError);
+    if (createSource === "cloud" || createEntryMode === "pack-import") {
+        return Boolean(scannedCourse && !scanError);
     }
     // Local creation: step 2 is optional and should not block navigation.
     return true;
@@ -851,12 +942,15 @@ function renderLocalPathSummary() {
 
     const localPath = (input.value || "").trim();
     const isCloud = createSource === "cloud";
-    caption.textContent = isCloud ? "导入后保存位置" : "课程目录位置";
+    const isPackImport = createEntryMode === "pack-import";
+    caption.textContent = isCloud || isPackImport ? "导入后保存位置" : "课程目录位置";
 
     if (!localPath) {
         summary.innerHTML = isCloud
-            ? "导入时再选择本地目录。"
-            : "这里选择的是整门课程根目录；没有 course.json 也可以先选目录再初始化。";
+            ? "将自动保存到默认课程目录。"
+            : isPackImport
+                ? "将自动保存到默认课程目录。"
+                : "这里选择的是整门课程根目录；没有 course.json 也可以先选目录再初始化。";
         return;
     }
 
@@ -864,14 +958,50 @@ function renderLocalPathSummary() {
     const name = parts[parts.length - 1] || localPath;
     summary.innerHTML = isCloud
         ? `将导入到 <strong>${escapeAttr(name)}</strong> 目录。`
-        : `当前课程根目录：<strong>${escapeAttr(name)}</strong>。后续每个实验再单独选择材料文件夹。`;
+        : isPackImport
+            ? `课程包将导入到 <strong>${escapeAttr(name)}</strong> 目录。`
+            : `当前课程根目录：<strong>${escapeAttr(name)}</strong>。后续每个实验再单独选择材料文件夹。`;
+}
+
+function renderPackagePathSummary() {
+    const summary = document.getElementById("resources-package-path-summary");
+    const input = document.getElementById("resources-create-package-path");
+    if (!summary || !input) return;
+
+    const packagePath = (input.value || "").trim();
+    if (!packagePath) {
+        summary.innerHTML = "未选择课程包。";
+        return;
+    }
+
+    const parts = packagePath.split(/[\\/]/).filter(Boolean);
+    const name = parts[parts.length - 1] || packagePath;
+    summary.innerHTML = `当前课程包：<strong>${escapeAttr(name)}</strong>。`;
+}
+
+async function useDefaultSampleCourse() {
+    try {
+        const response = await apiClient.get("/api/resources/default-sample");
+        if (!response?.success || !response?.sample?.path) {
+            throw new Error(response?.message || "默认测试样例不可用");
+        }
+        const packagePathInput = document.getElementById("resources-create-package-path");
+        if (packagePathInput) {
+            packagePathInput.value = response.sample.path;
+        }
+        renderPackagePathSummary();
+        updateCreateFormState();
+        alert(`已填入默认测试样例：${response.sample.course?.title || response.sample.label || "默认测试样例"}`);
+    } catch (error) {
+        alert(error.message || "读取默认测试样例失败");
+    }
 }
 
 function renderLocalStructureSummary() {
     const intro = document.getElementById("resources-local-structure-intro");
     const summary = document.getElementById("resources-local-structure-summary");
     if (!summary || !intro) return;
-    if (createSource === "cloud" || createEntryMode === "local-import") {
+    if (createSource === "cloud" || createEntryMode === "pack-import") {
         intro.style.display = "none";
         intro.innerHTML = "";
         summary.style.display = "none";
@@ -920,6 +1050,10 @@ function shouldShowCloudLocalPathPanel() {
 function updateLocalPathVisibility() {
     const localGroup = document.getElementById("resources-local-group");
     if (!localGroup) return;
+    if (createEntryMode === "pack-import") {
+        localGroup.style.display = "block";
+        return;
+    }
     if (createSource !== "cloud") {
         localGroup.style.display = "block";
         return;
@@ -938,6 +1072,7 @@ function updateCreateStep3UI() {
     const publishBtn = document.getElementById("resources-publish-btn");
     const saveBtn = document.getElementById("resources-create-save-btn");
     const statusEl = document.getElementById("resources-publish-status");
+    const packImportMode = createEntryMode === "pack-import";
 
     if (createSource === "cloud") {
         if (stepLabel1) {
@@ -947,9 +1082,9 @@ function updateCreateStep3UI() {
         if (stepLabel2) stepLabel2.textContent = "1 云端导入";
         if (stepLabel3) stepLabel3.style.display = "none";
         if (mainTitle) mainTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>课程内容`;
-        if (mainHint) mainHint.textContent = "当前仓库课程会按现有文件结构导入到所选目录，无需在这里重新上传材料文件夹。";
+        if (mainHint) mainHint.textContent = "当前仓库课程会按现有文件结构自动导入到默认课程目录，无需手动选文件夹，也无需重新上传材料文件夹。";
         if (structureTitle) structureTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>导入结构`;
-        if (actionTitle) actionTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>导入到本地`;
+        if (actionTitle) actionTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>保存到本地`;
         if (publishBtn) publishBtn.style.display = "none";
         if (saveBtn) saveBtn.textContent = "导入并保存";
         if (statusEl && publishStatus === "idle") statusEl.textContent = "准备导入";
@@ -960,17 +1095,17 @@ function updateCreateStep3UI() {
         stepLabel1.textContent = "1 课程信息";
         stepLabel1.style.display = "";
     }
-    if (stepLabel2) stepLabel2.textContent = "2 课程结构";
+    if (stepLabel2) stepLabel2.textContent = packImportMode ? "2 课程导入" : "2 课程结构";
     if (stepLabel3) {
         stepLabel3.style.display = "";
         stepLabel3.textContent = "3 材料整理";
     }
     if (mainTitle) mainTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>材料文件夹`;
-    if (mainHint) mainHint.textContent = "一个实验对应一个材料文件夹；未准备好可先留空，后续再补。";
+    if (mainHint) mainHint.textContent = packImportMode ? "课程包内容已导入本地目录，可直接保存到课程列表，必要时再补材料文件夹。" : "一个实验对应一个材料文件夹；未准备好可先留空，后续再补。";
     if (structureTitle) structureTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>结构预览`;
-    if (actionTitle) actionTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>发布当前课程目录`;
+    if (actionTitle) actionTitle.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5"></path><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 002-2v-6l-3.4-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.8 1.1z"></path></svg>${packImportMode ? "保存导入结果" : "发布当前课程目录"}`;
     if (publishBtn) publishBtn.style.display = "";
-    if (saveBtn) saveBtn.textContent = editingCourseId ? "保存修改" : "保存为本地课程";
+    if (saveBtn) saveBtn.textContent = editingCourseId ? "保存修改" : packImportMode ? "导入并保存" : "保存为本地课程";
     if (statusEl && publishStatus === "idle") statusEl.textContent = "准备发布";
 }
 
@@ -1337,7 +1472,7 @@ function renderCreateGuide() {
                 <line x1="12" y1="16" x2="12" y2="12"></line>
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            创建指南
+            课程指南
         `;
     }
 
@@ -1372,10 +1507,10 @@ function renderCreateGuide() {
             }
             return;
         }
-        if (createEntryMode === "local-import") {
-            items.push({ done: true, text: "导入本地课程模式无需手工填写课程信息" });
-            notes.push("课程信息将在选择整门课程根目录后自动读取并填充。");
-            notes.push("目录里至少应有 course.json；如果缺失请先用“创建新课程”初始化。");
+        if (createEntryMode === "pack-import") {
+            items.push({ done: true, text: "本地导入模式无需手工填写课程信息" });
+            notes.push("课程信息会从课程包中的 course.json 自动读取并填充。");
+            notes.push("仅支持 xedu-pack 生成的 zip 课程包或已解压目录。");
             items.forEach((item) => {
                 const row = document.createElement("div");
                 row.className = `resources-guide-item${item.done ? " is-done" : ""}`;
@@ -1407,16 +1542,17 @@ function renderCreateGuide() {
         return;
     } else if (createStep === 2) {
         if (createSource !== "cloud") {
-            if (createEntryMode === "local-import") {
-                items.push({ done: Boolean(localPath), text: "选择本地课程根目录" });
-                items.push({ done: Boolean(scannedCourse && !scanError), text: "读取课程结构与元信息" });
-                items.push({ done: Boolean(scannedCourse && localPath), text: "继续到下一步保存到课程列表" });
+            if (createEntryMode === "pack-import") {
+                const packagePath = document.getElementById("resources-create-package-path")?.value.trim() || "";
+                items.push({ done: Boolean(packagePath), text: "选择本地课程包" });
+                items.push({ done: Boolean(localPath), text: "选择本地保存位置" });
+                items.push({ done: Boolean(scannedCourse && !scanError), text: "导入课程包并读取课程结构" });
                 if (scanError) {
-                    notes.push(`读取失败：${scanError}`);
+                    notes.push(`导入失败：${scanError}`);
                 } else if (scannedCourse) {
-                    notes.push(`已读取 ${sectionCount} 课 / ${experimentCount} 个实验。可继续下一步保存。`);
+                    notes.push(`已导入 ${sectionCount} 课 / ${experimentCount} 个实验。可继续下一步保存。`);
                 } else {
-                    notes.push("点击“选择目录”并选中整门课程根目录后，系统会自动读取 course.json 和课程结构。");
+                    notes.push("先选择本地课程包，再选择本地保存位置并执行导入。");
                 }
             } else {
                 items.push({ done: Boolean(localPath), text: "选择课程根目录" });
@@ -1440,8 +1576,8 @@ function renderCreateGuide() {
         });
         if (createSource === "cloud") {
             notes.push("云端课程已是完整结构，确认后直接保存为本地课程即可。");
-        } else if (createEntryMode === "local-import") {
-            notes.push("本地课程已读取后可直接保存到课程列表，再按需编辑或发布。");
+        } else if (createEntryMode === "pack-import") {
+            notes.push("本地课程包已导入后可直接保存到课程列表，再按需编辑或发布。");
         } else {
             notes.push("可以一个实验一个实验添加：点击每课下方“添加实验”。");
             notes.push("每个实验建议关联一个材料文件夹，可包含 Notebook、HTML、Blockly、图片和数据文件。");
@@ -1480,7 +1616,7 @@ function updateCreateFlowLayout() {
     const guideCard = document.getElementById("resources-create-guide");
     const step2Grid = document.getElementById("resources-create-step2-grid");
     const isCloud = createSource === "cloud";
-    const hideGuide = !isCloud && createEntryMode === "new";
+    const hideGuide = false;
     if (stepsWrap) {
         stepsWrap.style.display = isCloud ? "none" : "flex";
     }
@@ -1536,16 +1672,20 @@ function updateStepperUI() {
         } else {
             const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
             const sections = getEffectiveSections();
-            publishBtn.disabled = !(isStep1Complete() && localPath && countExperimentsInSections(sections) >= 1);
+            const hasScannedCourse = Boolean(scannedCourse);
+            publishBtn.disabled = createEntryMode === "pack-import"
+                ? !(hasScannedCourse && localPath && countExperimentsInSections(sections) >= 1)
+                : !(isStep1Complete() && localPath && countExperimentsInSections(sections) >= 1);
         }
     }
     if (saveBtn) {
         if (createSource === "cloud") {
-            const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
-            saveBtn.disabled = !(cloudImported && localPath && scannedCourse);
+            saveBtn.disabled = !(cloudImported && scannedCourse);
         } else {
             const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
-            saveBtn.disabled = !(isStep1Complete() && localPath);
+            saveBtn.disabled = createEntryMode === "pack-import"
+                ? !(scannedCourse && localPath)
+                : !(isStep1Complete() && localPath);
         }
     }
 
@@ -2350,45 +2490,6 @@ async function openPublishSourceConfigModal(initialSource = null) {
     };
 }
 
-function upsertLocalCourseRecord(course, { showDetail = false } = {}) {
-    if (!course) return;
-    addCourse(course, { silent: true });
-    if (showDetail) {
-        showDetailView(course);
-    }
-}
-
-function mergeOriginAndSync(resource, apiResponse, fallbackOrigin = null) {
-    const next = { ...(resource || {}) };
-    const origin = normalizeOrigin(apiResponse?.origin || fallbackOrigin || {});
-    if (origin) {
-        next.origin = {
-            ...origin,
-            source_id: origin.source_id || next.origin?.source_id || "",
-            course_id: origin.course_id || next.id || "",
-            course_url: origin.course_url || next.origin?.course_url || "",
-            package_url: origin.package_url || next.origin?.package_url || "",
-        };
-    }
-    const nowIso = new Date().toISOString();
-    const nowDate = nowIso.slice(0, 10);
-    const prUrl =
-        apiResponse?.result?.pull_request?.url ||
-        apiResponse?.pr_url ||
-        "";
-    next.sync = {
-        ...(next.sync || {}),
-        last_push_at: nowIso,
-        last_pr_url: prUrl || (next.sync?.last_pr_url || ""),
-    };
-    if (apiResponse?.result?.version) {
-        next.version = apiResponse.result.version;
-    }
-    const entryUpdatedAt = apiResponse?.result?.entry?.updated_at;
-    next.updated_at = entryUpdatedAt || nowDate;
-    return withCourseSyncFingerprint(next);
-}
-
 async function publishCourse() {
     const meta = getCreateMetaFromForm();
     const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
@@ -2487,7 +2588,7 @@ async function publishCourse() {
         const prUrl = response?.result?.pull_request?.url || response?.pr_url || "";
         const reusedPr = Boolean(response?.result?.pull_request?.existing);
         const mergedCourse = mergeOriginAndSync(resourceToPublish, response, publishSource);
-        await persistCourseToDisk(mergedCourse);
+        await persistCourseToDisk(mergedCourse, apiClient);
         upsertLocalCourseRecord(mergedCourse);
         if (statusEl) {
             statusEl.textContent = prUrl
@@ -2547,7 +2648,7 @@ async function publishCourse() {
                     });
                     if (!retry.success) throw new Error(retry.message || "发布失败");
                     const mergedCourse = mergeOriginAndSync(resourceToPublish, retry, publishSource);
-                    await persistCourseToDisk(mergedCourse);
+                    await persistCourseToDisk(mergedCourse, apiClient);
                     upsertLocalCourseRecord(mergedCourse);
                     const retryPrUrl = retry?.result?.pull_request?.url || retry?.pr_url || "";
                     if (statusEl) statusEl.textContent = "发布成功，已创建或更新 PR";
@@ -2650,7 +2751,7 @@ async function clearDemoCourseBindingIfNeeded(courses = []) {
         saveLocalCourses(next);
         localStorage.setItem(clearDemoCourseBindingMigrationKey, "done");
         for (const course of changedCourses) {
-            await persistCourseToDisk(course);
+            await persistCourseToDisk(course, apiClient);
         }
         return next;
     } catch (error) {
@@ -3008,6 +3109,9 @@ async function startClassroomForResource(resource, forcedSectionIndex = null) {
                 ? Number(response.status.active_section_index)
                 : sectionIndex;
         classroomState.activeSectionTitle = response.status?.active_section_title || sectionTitle || "";
+        if (classroomConfig.teacherCode) {
+            alert(`课堂已开启，课堂码：${classroomConfig.teacherCode}`);
+        }
         await loadResourcesIndex();
     } catch (error) {
         if (error?.status === 401) {
@@ -3211,143 +3315,6 @@ function getCoverUrl(resource) {
     return resolveResourceUrl(cover, resource);
 }
 
-function normalizeOrigin(origin = {}) {
-    if (!origin || typeof origin !== "object") return null;
-    const base_url = (origin.base_url || "").toString().trim().replace(/\/+$/, "");
-    const repo = (origin.repo || "").toString().trim().replace(/^\/+|\/+$/g, "");
-    if (!base_url || !repo) return null;
-    const singleCourseRepo = Boolean(origin.single_course_repo);
-    const rawPublishPath = (origin.publish_path ?? "").toString().trim().replace(/^\/+|\/+$/g, "");
-    return {
-        source_id: (origin.source_id || "").toString().trim(),
-        base_url,
-        repo,
-        branch: (origin.branch || "main").toString().trim() || "main",
-        index_path: (origin.index_path || "index.json").toString().trim().replace(/^\/+/, "") || "index.json",
-        publish_path: singleCourseRepo ? rawPublishPath : (rawPublishPath || "courses"),
-        course_id: (origin.course_id || "").toString().trim(),
-        course_url: (origin.course_url || "").toString().trim(),
-        package_url: (origin.package_url || "").toString().trim(),
-        single_course_repo: singleCourseRepo,
-    };
-}
-
-const courseSyncFingerprintIgnoredKeys = new Set([
-    "sync",
-    "origin",
-    "local_path",
-    "updated_at",
-    "created_at",
-    "last_pull_at",
-    "last_push_at",
-    "last_backup_path",
-    "last_pr_url",
-    "last_local_fingerprint",
-]);
-
-function normalizeCourseValueForFingerprint(value, key = "") {
-    if (key && (courseSyncFingerprintIgnoredKeys.has(key) || key.startsWith("_source_"))) {
-        return undefined;
-    }
-    if (Array.isArray(value)) {
-        return value
-            .map((item) => normalizeCourseValueForFingerprint(item))
-            .filter((item) => item !== undefined);
-    }
-    if (value && typeof value === "object") {
-        const normalized = {};
-        Object.keys(value)
-            .sort((a, b) => a.localeCompare(b))
-            .forEach((childKey) => {
-                const childValue = normalizeCourseValueForFingerprint(value[childKey], childKey);
-                if (childValue !== undefined) {
-                    normalized[childKey] = childValue;
-                }
-            });
-        return normalized;
-    }
-    if (typeof value === "string") {
-        return value.trim();
-    }
-    if (value === undefined || typeof value === "function") {
-        return undefined;
-    }
-    return value;
-}
-
-function buildCourseSyncFingerprint(course) {
-    if (!course || typeof course !== "object") return "";
-    return JSON.stringify(normalizeCourseValueForFingerprint(course));
-}
-
-function withCourseSyncFingerprint(course, extraSync = {}) {
-    const next = { ...(course || {}) };
-    next.sync = {
-        ...(next.sync || {}),
-        ...extraSync,
-    };
-    next.sync.last_local_fingerprint = buildCourseSyncFingerprint(next);
-    return next;
-}
-
-function getLocalCourseChangeState(course) {
-    const lastFingerprint = (course?.sync?.last_local_fingerprint || "").toString().trim();
-    const currentFingerprint = buildCourseSyncFingerprint(course);
-    if (!lastFingerprint) {
-        return {
-            state: "unknown",
-            currentFingerprint,
-            lastFingerprint,
-        };
-    }
-    return {
-        state: lastFingerprint === currentFingerprint ? "clean" : "modified",
-        currentFingerprint,
-        lastFingerprint,
-    };
-}
-
-function getCourseOrigin(resource) {
-    if (!resource) return null;
-    const fromOrigin = normalizeOrigin(resource.origin || {});
-    if (fromOrigin) return fromOrigin;
-    if (resource.source === "local") return null;
-    const base_url = (() => {
-        const repoUrl = (resource._source_repo_url || "").toString().trim();
-        if (repoUrl) {
-            try {
-                const parsed = new URL(repoUrl);
-                return `${parsed.protocol}//${parsed.host}`;
-            } catch (_) {
-                // fall through
-            }
-        }
-        const raw = (resource._source_raw_base_url || "").toString().trim();
-        if (!raw) return "";
-        return raw.split("/raw/")[0] || "";
-    })();
-    const repo = (() => {
-        const repoUrl = (resource._source_repo_url || "").toString().trim();
-        if (!repoUrl) return "";
-        try {
-            const parsed = new URL(repoUrl);
-            return parsed.pathname.replace(/^\/+/, "");
-        } catch (_) {
-            return repoUrl.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
-        }
-    })();
-    return normalizeOrigin({
-        source_id: resource._source_id || "",
-        base_url,
-        repo,
-        branch: resource._source_branch || "main",
-        course_id: resource.id || "",
-        course_url: resource.course_url || "",
-        package_url: resource.package_url || "",
-        single_course_repo: Boolean(resource.single_course_repo),
-    });
-}
-
 function isLocalBoundCourse(resource) {
     if (!resource || resource.source !== "local") return false;
     return Boolean(getCourseOrigin(resource));
@@ -3423,125 +3390,18 @@ function getMutableExperiments(section) {
     return null;
 }
 
-function normalizeQuickFormSettings(raw = {}) {
-    return {
-        enabled: raw?.enabled === true || raw?.enabled === "true",
-        base_url: (raw?.base_url || QUICKFORM_DEFAULT_SETTINGS.base_url || "").trim() || QUICKFORM_DEFAULT_SETTINGS.base_url,
-        username: (raw?.username || "").trim(),
-        password: raw?.password || "",
-    };
-}
-
-function normalizeQuickFormConfig(raw = {}, fallbackBaseUrl = "") {
-    const config = {
-        enabled: raw?.enabled !== false && raw?.enabled !== "false",
-        apiid: (raw?.apiid || "").trim(),
-        task_name: (raw?.task_name || raw?.name || "").trim(),
-        task_intro: (raw?.task_intro || "").trim(),
-        submit_url: (raw?.submit_url || "").trim(),
-        query_url: (raw?.query_url || "").trim(),
-        summary_url: (raw?.summary_url || "").trim(),
-        report_url: (raw?.report_url || "").trim(),
-        html_path: (raw?.html_path || "").trim(),
-    };
-    const baseUrl = (fallbackBaseUrl || quickFormSettings.base_url || QUICKFORM_DEFAULT_SETTINGS.base_url).trim().replace(/\/$/, "");
-    if (config.apiid && baseUrl) {
-        if (!config.submit_url) config.submit_url = `${baseUrl}/api/${config.apiid}`;
-        if (!config.query_url) config.query_url = `${config.submit_url}/all`;
-        if (!config.summary_url) config.summary_url = config.submit_url;
-    }
-    return config;
-}
-
-function normalizeCourseQuickFormDefaults(raw = {}) {
-    return {
-        enabled: raw?.enabled === true || raw?.enabled === "true",
-        html_path: (raw?.html_path || "").trim(),
-    };
-}
-
 async function loadQuickFormSettings() {
     try {
         const response = await apiClient.loadConfig();
-        quickFormSettings = normalizeQuickFormSettings(response?.config?.ui?.quickform || {});
+        quickFormSettings = normalizeQuickFormSettings(
+            response?.config?.ui?.quickform || {},
+            QUICKFORM_DEFAULT_SETTINGS.base_url,
+        );
     } catch (error) {
         console.warn("读取 QuickForm 设置失败:", error);
         quickFormSettings = { ...QUICKFORM_DEFAULT_SETTINGS };
     }
     return quickFormSettings;
-}
-
-function getCourseQuickFormDefaults(resource = {}) {
-    return normalizeCourseQuickFormDefaults(resource?.quickform_defaults || {});
-}
-
-function getMutableExperiment(resource, sectionIndex, expIndex) {
-    const sections = getMutableSections(resource);
-    const section = Array.isArray(sections) ? sections[sectionIndex] : null;
-    const experiments = getMutableExperiments(section);
-    const experiment = experiments?.list?.[expIndex] || null;
-    return { sections, section, experiments, experiment };
-}
-
-function getEffectiveExperimentQuickForm(resource, sectionIndex, expIndex, experimentOverride = null) {
-    const defaults = getCourseQuickFormDefaults(resource);
-    const experiment = experimentOverride || getMutableExperiment(resource, sectionIndex, expIndex).experiment || {};
-    const merged = normalizeQuickFormConfig({
-        ...(defaults || {}),
-        ...(experiment?.quickform || {}),
-        html_path: (experiment?.quickform?.html_path || defaults?.html_path || "").trim(),
-    });
-    return merged;
-}
-
-function isExperimentQuickFormEnabled(resource, sectionIndex, expIndex, experimentOverride = null) {
-    const config = getEffectiveExperimentQuickForm(resource, sectionIndex, expIndex, experimentOverride);
-    return Boolean(config.enabled && config.submit_url);
-}
-
-function getExperimentHtmlOptions(experiment) {
-    const overview = getExperimentFileOverview(experiment || {});
-    return (overview?.htmlFiles || [])
-        .map((file) => (file?.path || "").trim())
-        .filter(Boolean);
-}
-
-function buildQuickFormTaskConfig(task = {}, htmlPath = "") {
-    return normalizeQuickFormConfig({
-        enabled: true,
-        apiid: task.apiid || "",
-        task_name: task.task_name || task.name || "",
-        task_intro: task.task_intro || "",
-        submit_url: task.submit_url || "",
-        query_url: task.query_url || "",
-        summary_url: task.summary_url || "",
-        report_url: task.report_url || "",
-        html_path: htmlPath || task.html_path || "",
-    });
-}
-
-function getApiBaseUrl() {
-    return (apiClient.baseURL || "http://127.0.0.1:5123").replace(/\/$/, "");
-}
-
-function encodePathToken(value = "") {
-    const bytes = new TextEncoder().encode(String(value || ""));
-    let binary = "";
-    bytes.forEach((byte) => {
-        binary += String.fromCharCode(byte);
-    });
-    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function buildLocalQuickFormPreviewUrl(resource, filePath = "") {
-    const basePath = (resource?.local_path || "").trim();
-    const relPath = String(filePath || "").replace(/^\/+/, "");
-    if (!basePath || !relPath) return "";
-    const encodedRelPath = relPath
-        .split("/")
-        .map((segment) => encodeURIComponent(segment))
-        .join("/");
-    return `${getApiBaseUrl()}/api/resources/local-file/${encodePathToken(basePath)}/${encodedRelPath}`;
 }
 
 async function ensureQuickFormAvailable() {
@@ -3566,9 +3426,12 @@ async function bindQuickFormToExperiment(resource, sectionIndex, expIndex) {
         alert("未找到实验");
         return false;
     }
-    const htmlOptions = getExperimentHtmlOptions(experiment);
+    const htmlOptions = getExperimentHtmlOptions(experiment, getExperimentFileOverview);
     const defaults = getCourseQuickFormDefaults(resource);
-    const currentQuickForm = getEffectiveExperimentQuickForm(resource, sectionIndex, expIndex, experiment);
+    const currentQuickForm = getEffectiveExperimentQuickForm(resource, sectionIndex, expIndex, experiment, {
+        quickFormSettings,
+        normalizeConfig: normalizeQuickFormConfig,
+    });
     const defaultHtmlPath = currentQuickForm.html_path || defaults.html_path || htmlOptions[0] || "";
     if (!htmlOptions.length && !defaultHtmlPath) {
         alert("当前实验没有可绑定的 HTML 文件");
@@ -3644,7 +3507,11 @@ async function bindQuickFormToExperiment(resource, sectionIndex, expIndex) {
             if (!response?.success || !response.task) {
                 throw new Error(response?.message || "创建 QuickForm 任务失败");
             }
-            experiment.quickform = buildQuickFormTaskConfig(response.task, createResult.values.html_path || defaultHtmlPath);
+            experiment.quickform = buildQuickFormTaskConfig(
+                response.task,
+                createResult.values.html_path || defaultHtmlPath,
+                quickFormSettings.base_url || QUICKFORM_DEFAULT_SETTINGS.base_url,
+            );
         } else {
             const listResponse = await apiClient.listQuickFormTasks();
             const tasks = Array.isArray(listResponse?.tasks) ? listResponse.tasks : [];
@@ -3686,12 +3553,16 @@ async function bindQuickFormToExperiment(resource, sectionIndex, expIndex) {
             });
             if (!pickResult?.confirmed) return false;
             const selectedTask = tasks.find((task) => task.apiid === pickResult.values.apiid) || tasks[0];
-            experiment.quickform = buildQuickFormTaskConfig(selectedTask, pickResult.values.html_path || defaultHtmlPath);
+            experiment.quickform = buildQuickFormTaskConfig(
+                selectedTask,
+                pickResult.values.html_path || defaultHtmlPath,
+                quickFormSettings.base_url || QUICKFORM_DEFAULT_SETTINGS.base_url,
+            );
         }
 
         resource.updated_at = new Date().toISOString().slice(0, 10);
-        await persistCourseToDisk(resource);
-        persistLocalCourses();
+        await persistCourseToDisk(resource, apiClient);
+        persistLocalCoursesState();
         renderResourceDetail(resource);
         alert("QuickForm 已绑定到当前实验。");
         return true;
@@ -3712,7 +3583,10 @@ async function injectQuickFormIntoExperiment(resource, sectionIndex, expIndex) {
         alert("未找到实验");
         return false;
     }
-    const quickform = getEffectiveExperimentQuickForm(resource, sectionIndex, expIndex, experiment);
+    const quickform = getEffectiveExperimentQuickForm(resource, sectionIndex, expIndex, experiment, {
+        quickFormSettings,
+        normalizeConfig: normalizeQuickFormConfig,
+    });
     if (!quickform.submit_url) {
         alert("请先为该实验绑定 QuickForm 任务");
         return false;
@@ -3739,64 +3613,9 @@ async function injectQuickFormIntoExperiment(resource, sectionIndex, expIndex) {
     }
 }
 
-function persistLocalCourses() {
-    saveLocalCourses(localCourses);
+function persistLocalCoursesState() {
+        persistLocalCourses(localCourses, saveLocalCourses, scheduleClassroomSync);
     resourcesCache = localCourses.slice();
-    scheduleClassroomSync();
-}
-
-async function persistCourseToDisk(resource) {
-    if (!resource || resource.source !== "local") return;
-    const localPath = (resource.local_path || "").trim();
-    if (!localPath) return;
-    try {
-        const response = await apiClient.post("/api/resources/save-course", {
-            local_path: localPath,
-            course: resource
-        });
-        if (response?.success && response.course) {
-            return {
-                ...response.course,
-                local_path: localPath,
-                source: "local",
-                origin: resource.origin || undefined,
-                sync: resource.sync || undefined,
-            };
-        }
-    } catch (error) {
-        console.warn("同步课程到磁盘失败:", error);
-    }
-    return null;
-}
-
-function getResourceSourceContext(resource = null) {
-    const target = resource || currentResource || {};
-    const origin = getCourseOrigin(target);
-    const originRepoUrl = origin ? `${origin.base_url}/${origin.repo}` : "";
-    const originRawBaseUrl = origin ? `${originRepoUrl}/raw/${origin.branch || "main"}` : "";
-    return {
-        repoUrl: originRepoUrl || target._source_repo_url || repoUrl || "",
-        rawBaseUrl: originRawBaseUrl || target._source_raw_base_url || rawBaseUrl || "",
-        branch: (origin && origin.branch) || target._source_branch || indexBranch || "main"
-    };
-}
-
-function resolveResourceUrl(url, resource = null) {
-    if (!url) return "";
-    const source = getResourceSourceContext(resource);
-    if (url.startsWith("http://") || url.startsWith("https://")) {
-        return url;
-    }
-    if (url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("file://")) {
-        return url;
-    }
-    if (url.startsWith("/")) {
-        return source.repoUrl ? `${source.repoUrl}${url}` : url;
-    }
-    if (source.rawBaseUrl) {
-        return `${source.rawBaseUrl}/${url}`;
-    }
-    return url;
 }
 
 function uniqueValues(list) {
@@ -3926,12 +3745,12 @@ function buildAddCard() {
 
     const title = document.createElement("div");
     title.className = "resource-add-title";
-    title.textContent = "创建课程";
+    title.textContent = "导入课程";
     card.appendChild(title);
 
     const hint = document.createElement("div");
     hint.className = "resource-add-hint";
-    hint.textContent = "填写信息后导入本地课程";
+    hint.textContent = "导入本地课程包或云端课程";
     card.appendChild(hint);
 
     return card;
@@ -4253,8 +4072,8 @@ function renderResourceDetailSplitContent(resource, contentEl) {
                 activeSectionIndex = sectionIndex;
                 activeExperimentIndex = 0;
                 resource.updated_at = new Date().toISOString().slice(0, 10);
-                await persistCourseToDisk(resource);
-                persistLocalCourses();
+                await persistCourseToDisk(resource, apiClient);
+                persistLocalCoursesState();
                 renderResourceDetail(resource);
             });
         }
@@ -4302,8 +4121,8 @@ function renderResourceDetailSplitContent(resource, contentEl) {
                     activeSectionIndex = sectionIndex;
                     activeExperimentIndex = expIndex;
                     resource.updated_at = new Date().toISOString().slice(0, 10);
-                    await persistCourseToDisk(resource);
-                    persistLocalCourses();
+                    await persistCourseToDisk(resource, apiClient);
+                    persistLocalCoursesState();
                     renderResourceDetail(resource);
                 });
             }
@@ -4401,143 +4220,7 @@ function renderResourceDetailSplitContent(resource, contentEl) {
         expCard.appendChild(expDesc);
     }
 
-    const quickActions = document.createElement("div");
-    quickActions.className = "resource-card-actions";
     const overview = getExperimentFileOverview(selectedExperiment);
-    const primaryPythonFile = overview.primaryPythonFile;
-    const primaryBlocklyFile = overview.primaryBlocklyFile;
-    let hasPrimaryAction = false;
-    if (teacherMode.unlocked) {
-        const inspectBtn = document.createElement("button");
-        inspectBtn.className = "btn btn-secondary";
-        inspectBtn.textContent = courseInspectionState.loading ? "巡检中..." : "课程巡检";
-        inspectBtn.disabled = courseInspectionState.loading;
-        inspectBtn.addEventListener("click", async () => {
-            await inspectCourseResource(resource);
-        });
-        quickActions.appendChild(inspectBtn);
-
-        const testBtn = document.createElement("button");
-        testBtn.className = "btn btn-primary";
-        testBtn.textContent = resource.source === "local" ? "测试当前实验" : "导入并测试当前实验";
-        testBtn.addEventListener("click", async () => {
-            if (resource.source === "local") {
-                await testCurrentExperiment(resource);
-            } else {
-                await importRemoteCourseForTesting(resource);
-            }
-        });
-        quickActions.appendChild(testBtn);
-        hasPrimaryAction = true;
-    }
-    if (overview.htmlFiles[0]) {
-        const htmlBtn = document.createElement("button");
-        htmlBtn.className = "btn btn-primary";
-        htmlBtn.textContent = "打开 HTML";
-        htmlBtn.addEventListener("click", async () => {
-            await openExperimentEntry(overview.htmlFiles[0], "html", {
-                resource,
-                sectionIndex: activeSectionIndex,
-                expIndex: activeExperimentIndex,
-            });
-        });
-        quickActions.appendChild(htmlBtn);
-        hasPrimaryAction = true;
-    }
-    if (primaryBlocklyFile) {
-        const blocklyBtn = document.createElement("button");
-        blocklyBtn.className = `btn ${hasPrimaryAction ? "btn-secondary" : "btn-primary"}`;
-        blocklyBtn.textContent = "在 Blockly 中打开";
-        blocklyBtn.addEventListener("click", async () => {
-            await openExperimentEntry(primaryBlocklyFile, "blockly", {
-                resource,
-                sectionIndex: activeSectionIndex,
-                expIndex: activeExperimentIndex,
-                experimentOverview: overview,
-            });
-        });
-        quickActions.appendChild(blocklyBtn);
-        hasPrimaryAction = true;
-    }
-    if (primaryPythonFile) {
-        const nbBtn = document.createElement("button");
-        nbBtn.className = `btn ${hasPrimaryAction ? "btn-secondary" : "btn-primary"}`;
-        nbBtn.textContent = "在 Jupyter Lab 中打开";
-        nbBtn.addEventListener("click", async () => {
-            await openExperimentEntry(primaryPythonFile, getEntryKindForFile(primaryPythonFile), {
-                resource,
-                sectionIndex: activeSectionIndex,
-                expIndex: activeExperimentIndex,
-                experimentOverview: overview,
-            });
-        });
-        quickActions.appendChild(nbBtn);
-        hasPrimaryAction = true;
-    }
-    const quickFormBtn = document.createElement("button");
-    quickFormBtn.className = `btn ${quickFormConfig.submit_url ? "btn-secondary" : "btn-primary"}`;
-    quickFormBtn.textContent = quickFormConfig.submit_url ? "重新绑定 QuickForm" : "绑定 QuickForm";
-    quickFormBtn.addEventListener("click", async () => {
-        await bindQuickFormToExperiment(resource, activeSectionIndex, activeExperimentIndex);
-    });
-    quickActions.appendChild(quickFormBtn);
-
-    if (quickFormConfig.summary_url) {
-        const summaryBtn = document.createElement("button");
-        summaryBtn.className = "btn btn-secondary";
-        summaryBtn.textContent = "查看最新数据";
-        summaryBtn.addEventListener("click", () => {
-            openExternal(quickFormConfig.summary_url);
-        });
-        quickActions.appendChild(summaryBtn);
-    }
-
-    if (quickFormConfig.query_url) {
-        const queryBtn = document.createElement("button");
-        queryBtn.className = "btn btn-secondary";
-        queryBtn.textContent = "查看全部数据";
-        queryBtn.addEventListener("click", () => {
-            openExternal(quickFormConfig.query_url);
-        });
-        quickActions.appendChild(queryBtn);
-    }
-
-    if (quickFormConfig.submit_url && quickFormConfig.html_path && resource.local_path) {
-        const injectBtn = document.createElement("button");
-        injectBtn.className = "btn btn-secondary";
-        injectBtn.textContent = "注入 QuickForm";
-        injectBtn.addEventListener("click", async () => {
-            await injectQuickFormIntoExperiment(resource, activeSectionIndex, activeExperimentIndex);
-        });
-        quickActions.appendChild(injectBtn);
-    }
-
-    const status = getExperimentProgress(resource, activeSectionIndex, activeExperimentIndex);
-    const doneBtn = document.createElement("button");
-    doneBtn.className = `btn ${status === "done" ? "btn-primary" : "btn-secondary"}`;
-    doneBtn.textContent = status === "done" ? "已完成" : "标记完成";
-    doneBtn.addEventListener("click", () => {
-        const next = status === "done" ? "in_progress" : "done";
-        setExperimentProgress(resource, activeSectionIndex, activeExperimentIndex, next);
-        renderResourceDetail(resource);
-    });
-    quickActions.appendChild(doneBtn);
-
-    if (canManageCourse) {
-        const editExpBtn = document.createElement("button");
-        editExpBtn.className = "btn btn-secondary";
-        editExpBtn.textContent = "编辑实验";
-        editExpBtn.addEventListener("click", async () => {
-            await editExperiment(resource, mutableSections, activeSectionIndex, activeExperimentIndex);
-        });
-        quickActions.appendChild(editExpBtn);
-    }
-    expCard.appendChild(quickActions);
-
-    expCard.appendChild(buildExperimentPathHint({
-        primaryBlocklyFile,
-        primaryPythonFile,
-    }));
     mainPane.appendChild(expCard);
 
     mainPane.appendChild(buildExperimentFilesCard({
@@ -4553,20 +4236,6 @@ function renderResourceDetailSplitContent(resource, contentEl) {
                     experimentOverview: overview,
                 }
             );
-        },
-    }));
-
-    mainPane.appendChild(buildCourseDirectoryCard({
-        sections,
-        activeSectionIndex,
-        activeExperimentIndex,
-        getExperimentFileOverview,
-        sortFiles,
-        renderFileItem: (file, depth) => renderFileItem(file, depth),
-        onJumpToExperiment: (sectionIndex, expIndex) => {
-            activeSectionIndex = sectionIndex;
-            activeExperimentIndex = expIndex;
-            renderResourceDetail(resource);
         },
     }));
 
@@ -4594,6 +4263,7 @@ function renderResourceDetail(resource) {
     const openBtn = document.getElementById("resources-detail-open");
     const classroomStartBtn = document.getElementById("resources-detail-classroom-start");
     const classroomStopBtn = document.getElementById("resources-detail-classroom-stop");
+    const classroomCodeEl = document.getElementById("resources-detail-classroom-code");
     const moreBtn = document.getElementById("resources-detail-more-btn");
     const moreMenu = document.getElementById("resources-detail-more-menu");
 
@@ -4755,6 +4425,14 @@ function renderResourceDetail(resource) {
         classroomStopBtn.disabled = !canStop;
     }
 
+    if (classroomCodeEl) {
+        const active = teacherMode.unlocked && classroomState.active && isActiveCourse(resource);
+        classroomCodeEl.style.display = active ? "inline-flex" : "none";
+        classroomCodeEl.textContent = active && classroomConfig.teacherCode
+            ? `课堂码：${classroomConfig.teacherCode}`
+            : "";
+    }
+
     if (moreBtn && moreMenu) {
         const menuButtons = Array.from(moreMenu.querySelectorAll("button"));
         const hasVisible = menuButtons.some((btn) => btn.style.display !== "none");
@@ -4780,202 +4458,100 @@ function renderResourceDetail(resource) {
 }
 
 async function editExperiment(resource, mutableSections, sectionIndex, expIndex) {
-    if (!(await ensureTeacherModeForEdit("编辑实验"))) return;
-    if (!canEditResource(resource)) {
-        alert("仅支持编辑本地课程实验");
-        return;
-    }
-    const section = mutableSections?.[sectionIndex];
-    const experiments = getMutableExperiments(section);
-    if (!experiments || !experiments.list[expIndex]) {
-        alert("未找到实验");
-        return;
-    }
-    const exp = experiments.list[expIndex];
-    const result = await openResourcesForm({
-        title: "编辑实验",
-        message: "更新实验标题与描述",
-        confirmText: "保存",
-        cancelText: "取消",
-        fields: [
-            {
-                name: "title",
-                label: "实验标题",
-                value: exp.title || "",
-                placeholder: "请输入实验标题",
-                required: true,
-            },
-            {
-                name: "description",
-                label: "实验描述",
-                type: "textarea",
-                value: exp.description || "",
-                placeholder: "请输入实验描述（可选）",
-                required: false,
-                rows: 3,
-            },
-        ],
+    return editExperimentFlow(resource, mutableSections, sectionIndex, expIndex, {
+        ensureTeacherModeForEdit,
+        canEditResource,
+        getMutableExperiments,
+        openResourcesForm,
+        persistCourseToDisk,
+        apiClient,
+        persistLocalCoursesState,
+        renderResourceDetail,
+        alertUser: alert,
     });
-    if (!result?.confirmed) return;
-    exp.title = (result.values.title || "").trim() || exp.title || "未命名实验";
-    exp.description = (result.values.description || "").trim();
-    resource.updated_at = new Date().toISOString().slice(0, 10);
-    await persistCourseToDisk(resource);
-    persistLocalCourses();
-    renderResourceDetail(resource);
 }
 
 async function deleteExperiment(resource, mutableSections, sectionIndex, expIndex) {
-    if (!(await ensureTeacherModeForEdit("删除实验"))) return;
-    if (!canEditResource(resource)) {
-        alert("仅支持编辑本地课程实验");
-        return;
-    }
-    const section = mutableSections?.[sectionIndex];
-    const experiments = getMutableExperiments(section);
-    if (!experiments || !experiments.list[expIndex]) {
-        alert("未找到实验");
-        return;
-    }
-    const exp = experiments.list[expIndex];
-    const ok = await openResourcesConfirm({
-        title: "删除实验",
-        message: `确认删除实验「${exp.title || "未命名实验"}」？`,
-        confirmText: "删除",
-        cancelText: "取消",
+    return deleteExperimentFlow(resource, mutableSections, sectionIndex, expIndex, {
+        ensureTeacherModeForEdit,
+        canEditResource,
+        getMutableExperiments,
+        openResourcesConfirm,
+        persistCourseToDisk,
+        apiClient,
+        persistLocalCoursesState,
+        renderResourceDetail,
+        alertUser: alert,
     });
-    if (!ok) return;
-    experiments.list.splice(expIndex, 1);
-    resource.updated_at = new Date().toISOString().slice(0, 10);
-    await persistCourseToDisk(resource);
-    persistLocalCourses();
-    renderResourceDetail(resource);
 }
 
 async function addSection(resource, mutableSections) {
-    if (!(await ensureTeacherModeForEdit("添加课节"))) return;
-    if (!canEditResource(resource)) {
-        alert("仅支持编辑本地课程");
-        return;
-    }
-    const sections = Array.isArray(mutableSections) ? mutableSections : getMutableSections(resource);
-    if (!Array.isArray(sections)) {
-        alert("课程结构异常，无法添加课节");
-        return;
-    }
-    const next = sections.length + 1;
-    sections.push({
-        title: `第 ${next} 课`,
-        description: "",
-        experiments: [
-            {
-                title: "实验 1",
-                description: "",
-                files: []
-            }
-        ]
+    return addSectionFlow(resource, mutableSections, {
+        ensureTeacherModeForEdit,
+        canEditResource,
+        getMutableSections,
+        persistCourseToDisk,
+        apiClient,
+        persistLocalCoursesState,
+        setActiveSectionIndex: (value) => { activeSectionIndex = value; },
+        renderResourceDetail,
+        alertUser: alert,
     });
-    resource.updated_at = new Date().toISOString().slice(0, 10);
-    await persistCourseToDisk(resource);
-    persistLocalCourses();
-    activeSectionIndex = sections.length - 1;
-    renderResourceDetail(resource);
 }
 
 async function renameSection(resource, mutableSections, sectionIndex) {
-    if (!(await ensureTeacherModeForEdit("重命名课节"))) return;
-    if (!canEditResource(resource)) {
-        alert("仅支持编辑本地课程");
-        return;
-    }
-    const section = mutableSections?.[sectionIndex];
-    if (!section) {
-        alert("未找到课节");
-        return;
-    }
-    const title = await openResourcesInput({
-        title: "重命名课节",
-        message: "",
-        label: "课节名称",
-        placeholder: "请输入课节名称",
-        defaultValue: section.title || `第 ${sectionIndex + 1} 课`,
-        required: true,
-        confirmText: "保存",
-        cancelText: "取消",
+    return renameSectionFlow(resource, mutableSections, sectionIndex, {
+        ensureTeacherModeForEdit,
+        canEditResource,
+        openResourcesInput,
+        persistCourseToDisk,
+        apiClient,
+        persistLocalCoursesState,
+        renderResourceDetail,
+        alertUser: alert,
     });
-    if (title === null) return;
-    section.title = title.trim() || section.title || `第 ${sectionIndex + 1} 课`;
-    resource.updated_at = new Date().toISOString().slice(0, 10);
-    await persistCourseToDisk(resource);
-    persistLocalCourses();
-    renderResourceDetail(resource);
 }
 
 async function deleteSection(resource, mutableSections, sectionIndex) {
-    if (!(await ensureTeacherModeForEdit("删除课节"))) return;
-    if (!canEditResource(resource)) {
-        alert("仅支持编辑本地课程");
-        return;
-    }
-    if (!Array.isArray(mutableSections) || !mutableSections[sectionIndex]) {
-        alert("未找到课节");
-        return;
-    }
-    const section = mutableSections[sectionIndex];
-    const ok = await openResourcesConfirm({
-        title: "删除课节",
-        message: `确认删除课节「${section.title || `第 ${sectionIndex + 1} 课`}」？`,
-        confirmText: "删除",
-        cancelText: "取消",
+    return deleteSectionFlow(resource, mutableSections, sectionIndex, {
+        ensureTeacherModeForEdit,
+        canEditResource,
+        openResourcesConfirm,
+        persistCourseToDisk,
+        apiClient,
+        persistLocalCoursesState,
+        activeSectionIndex: () => activeSectionIndex,
+        setActiveSectionIndex: (value) => { activeSectionIndex = value; },
+        renderResourceDetail,
+        alertUser: alert,
     });
-    if (!ok) return;
-    mutableSections.splice(sectionIndex, 1);
-    if (activeSectionIndex >= mutableSections.length) {
-        activeSectionIndex = Math.max(0, mutableSections.length - 1);
-    }
-    resource.updated_at = new Date().toISOString().slice(0, 10);
-    await persistCourseToDisk(resource);
-    persistLocalCourses();
-    renderResourceDetail(resource);
 }
 
 async function manageSection(resource, mutableSections, sectionIndex) {
-    const ok = await ensureTeacherModeForEdit("管理课节");
-    if (!ok) return;
-    openCreateEditorForManage(resource, 2, "已进入编辑页，可重命名或删除课节。");
+    return manageSectionFlow(resource, mutableSections, sectionIndex, {
+        ensureTeacherModeForEdit,
+        openCreateEditorForManage,
+    });
 }
 
 async function addExperimentToSection(resource, mutableSections, sectionIndex) {
-    if (!(await ensureTeacherModeForEdit("添加实验"))) return;
-    if (!canEditResource(resource)) {
-        alert("仅支持编辑本地课程");
-        return;
-    }
-    const section = mutableSections?.[sectionIndex];
-    if (!section) {
-        alert("未找到课节");
-        return;
-    }
-    if (!Array.isArray(section.experiments)) {
-        section.experiments = [];
-    }
-    const next = section.experiments.length + 1;
-    section.experiments.push({
-        title: `实验 ${next}`,
-        description: "",
-        files: []
+    return addExperimentToSectionFlow(resource, mutableSections, sectionIndex, {
+        ensureTeacherModeForEdit,
+        canEditResource,
+        persistCourseToDisk,
+        apiClient,
+        persistLocalCoursesState,
+        setActiveSectionIndex: (value) => { activeSectionIndex = value; },
+        renderResourceDetail,
+        alertUser: alert,
     });
-    resource.updated_at = new Date().toISOString().slice(0, 10);
-    await persistCourseToDisk(resource);
-    persistLocalCourses();
-    activeSectionIndex = sectionIndex;
-    renderResourceDetail(resource);
 }
 
 async function manageExperiment(resource, mutableSections, sectionIndex, expIndex) {
-    const ok = await ensureTeacherModeForEdit("管理实验");
-    if (!ok) return;
-    openCreateEditorForManage(resource, 2, "已进入编辑页，可编辑或删除实验。");
+    return manageExperimentFlow(resource, mutableSections, sectionIndex, expIndex, {
+        ensureTeacherModeForEdit,
+        openCreateEditorForManage,
+    });
 }
 
 function normalizeSections(resource) {
@@ -5515,6 +5091,12 @@ function renderFileItem(file, depth = 0) {
 
 function setCreateSource(source) {
     createSource = source;
+    const effectiveEntryMode = editingCourseId
+        ? createEntryMode
+        : source === "cloud"
+            ? "cloud-import"
+            : "pack-import";
+    const packageGroup = document.getElementById("resources-package-group");
     const localGroup = document.getElementById("resources-local-group");
     const localPathLabel = document.getElementById("resources-local-path-label");
     const localPathInput = document.getElementById("resources-create-local-path");
@@ -5530,40 +5112,56 @@ function setCreateSource(source) {
     const sourceHint = document.getElementById("resources-create-source-hint");
     const localBtn = document.getElementById("resources-source-local");
     const cloudBtn = document.getElementById("resources-source-cloud");
-    const localImportMode = createEntryMode === "local-import";
-    const newCourseMode = createEntryMode === "new";
+    const localPathHint = document.getElementById("resources-local-path-hint");
+    const localPathButton = document.getElementById("resources-pick-local-btn");
+    const packImportMode = effectiveEntryMode === "pack-import";
 
+    if (packageGroup) packageGroup.style.display = source === "local" && packImportMode ? "block" : "none";
     if (localGroup) localGroup.style.display = "block";
     if (cloudGroup) cloudGroup.style.display = source === "cloud" ? "block" : "none";
-    if (switchRow) switchRow.style.display = source === "local" && !localImportMode && !newCourseMode ? "flex" : "none";
+    if (switchRow) switchRow.style.display = "flex";
     if (step2ModeHint) {
-        step2ModeHint.style.display = source === "cloud" || newCourseMode ? "none" : "block";
-        step2ModeHint.textContent = localImportMode ? "选择本地课程根目录" : "课程目录与结构（先选整门课程根目录，再补课节结构）";
+        step2ModeHint.style.display = source === "cloud" ? "none" : "block";
+        step2ModeHint.textContent = packImportMode ? "本地导入" : "课程目录与结构（先选整门课程根目录，再补课节结构）";
     }
     if (sourceTitleText) {
-        sourceTitleText.textContent = source === "cloud" ? "云端课程导入" : localImportMode ? "导入本地课程" : "课程目录";
+        sourceTitleText.textContent = source === "cloud" ? "云端导入" : packImportMode ? "本地导入" : "课程目录";
     }
-    if (structureCard) structureCard.style.display = (!localImportMode && (source === "local" || source === "cloud")) ? "block" : "none";
-    if (structureEditorPane) structureEditorPane.style.display = source === "local" && !localImportMode ? "block" : "none";
+    if (structureCard) structureCard.style.display = (!packImportMode && (source === "local" || source === "cloud")) ? "block" : "none";
+    if (structureEditorPane) structureEditorPane.style.display = source === "local" && !packImportMode ? "block" : "none";
     if (cloudDetailPanel) cloudDetailPanel.style.display = source === "cloud" ? "flex" : "none";
     if (cloudInlineActions) cloudInlineActions.style.display = source === "cloud" ? "none" : "flex";
-    if (structureSaveRow) structureSaveRow.style.display = source === "local" && !localImportMode ? "flex" : "none";
+    if (structureSaveRow) structureSaveRow.style.display = source === "local" && !packImportMode ? "flex" : "none";
     if (sourceHint) {
         sourceHint.textContent =
             source === "cloud"
                 ? ""
-                : localImportMode
-                    ? "选择已有课程根目录后，系统会自动读取内容。"
+                : packImportMode
+                    ? "选择本地课程包后，系统会导入并读取内容。"
                     : "先选整门课程根目录，再按需添加课节和实验。";
-        sourceHint.style.display = source === "cloud" || newCourseMode ? "none" : "block";
+        sourceHint.style.display = source === "cloud" ? "none" : "block";
     }
     if (localPathLabel) {
-        localPathLabel.textContent = source === "cloud" ? "本地保存目录" : localImportMode ? "课程目录" : "课程目录";
+        localPathLabel.textContent = source === "cloud" || packImportMode ? "本地保存位置" : "课程目录";
     }
     if (localPathInput) {
-        localPathInput.placeholder = source === "cloud" ? "请选择云端课程保存目录" : "请选择课程文件夹";
+        localPathInput.placeholder = source === "cloud"
+            ? "请选择导入后的课程目录"
+            : packImportMode
+                ? "将自动使用默认课程目录"
+                : "请选择课程文件夹";
+        localPathInput.readOnly = packImportMode;
+    }
+    if (localPathButton) {
+        localPathButton.style.display = packImportMode ? "none" : "inline-flex";
+    }
+    if (localPathHint) {
+        localPathHint.textContent = packImportMode
+            ? "本地导入会自动保存到默认课程目录。"
+            : "这里选择的是课程导入后的本地保存位置。";
     }
     renderLocalPathSummary();
+    renderPackagePathSummary();
     renderLocalStructureSummary();
     updateCreateStep3UI();
     updateCreateFlowLayout();
@@ -5585,11 +5183,7 @@ function setCreateSource(source) {
         renderCloudCoursePreview();
     }
     if (!editingCourseId) {
-        if (source === "cloud") {
-            createEntryMode = "cloud-import";
-        } else if (createEntryMode === "cloud-import") {
-            createEntryMode = "new";
-        }
+        createEntryMode = effectiveEntryMode;
         updateCreateEntryModeUI();
     }
     updateCreateFormState();
@@ -5609,25 +5203,21 @@ function chooseCreateEntryMode(mode) {
             const select = document.getElementById("resources-cloud-course-select");
             if (select) select.focus();
         }, 80);
-    } else if (mode === "local-import") {
+    } else if (mode === "pack-import") {
         setCreateSource("local");
         setCreateStep(2);
         scannedCourse = null;
         scanSummary = null;
         draftSections = [];
+        const localPathInput = document.getElementById("resources-create-local-path");
+        if (localPathInput) localPathInput.value = "";
+        renderLocalPathSummary();
         updateCreateEntryModeUI();
         window.setTimeout(() => {
-            const pickBtn = document.getElementById("resources-pick-local-btn");
+            const pickBtn = document.getElementById("resources-pick-package-btn");
             if (pickBtn) pickBtn.focus();
         }, 80);
         return;
-    } else {
-        setCreateSource("local");
-        setCreateStep(1);
-        window.setTimeout(() => {
-            const titleInput = document.getElementById("resources-create-title");
-            if (titleInput) titleInput.focus();
-        }, 80);
     }
     updateCreateEntryModeUI();
 }
@@ -5637,14 +5227,14 @@ function setCreateViewMode(mode) {
     const metaEl = document.querySelector("#resources-create-view .resources-detail-meta");
     const saveBtn = document.getElementById("resources-create-save-btn");
     if (titleEl) {
-        titleEl.textContent = mode === "edit" ? "编辑课程" : "创建课程";
+        titleEl.textContent = mode === "edit" ? "编辑课程" : "导入课程";
     }
     if (metaEl) {
         metaEl.textContent =
-            mode === "edit" ? "修改课程信息后保存，可再次上传" : "可选择创建新课程、导入本地课程或云端导入";
+            mode === "edit" ? "修改课程信息后保存，可再次上传" : "仅支持本地导入与云端导入";
     }
     if (saveBtn) {
-        saveBtn.textContent = mode === "edit" ? "保存修改" : "保存为本地课程";
+        saveBtn.textContent = mode === "edit" ? "保存修改" : "导入并保存";
     }
 }
 
@@ -5657,10 +5247,10 @@ function resetCreateForm() {
         "resources-create-tags",
         "resources-create-cover",
         "resources-create-local-path",
+        "resources-create-package-path",
         "resources-create-author",
         "resources-create-version",
-        "resources-create-id",
-        "resources-create-quickform-html-path"
+        "resources-create-id"
     ];
     ids.forEach((id) => {
         const input = document.getElementById(id);
@@ -5668,8 +5258,6 @@ function resetCreateForm() {
     });
     const versionInput = document.getElementById("resources-create-version");
     if (versionInput) versionInput.value = "1.0";
-    const quickFormEnabledInput = document.getElementById("resources-create-quickform-enabled");
-    if (quickFormEnabledInput) quickFormEnabledInput.checked = false;
 
     const coverFileInput = document.getElementById("resources-cover-file");
     const coverPreview = document.getElementById("resources-cover-preview");
@@ -5696,8 +5284,6 @@ function populateCreateForm(resource) {
     const authorInput = document.getElementById("resources-create-author");
     const versionInput = document.getElementById("resources-create-version");
     const idInput = document.getElementById("resources-create-id");
-    const quickFormEnabledInput = document.getElementById("resources-create-quickform-enabled");
-    const quickFormHtmlPathInput = document.getElementById("resources-create-quickform-html-path");
 
     if (titleInput) titleInput.value = resource.title || "";
     if (descInput) descInput.value = resource.description || "";
@@ -5708,9 +5294,6 @@ function populateCreateForm(resource) {
     if (authorInput) authorInput.value = resource.author || "";
     if (versionInput) versionInput.value = resource.version || "";
     if (idInput) idInput.value = resource.id || "";
-    const quickformDefaults = getCourseQuickFormDefaults(resource);
-    if (quickFormEnabledInput) quickFormEnabledInput.checked = Boolean(quickformDefaults.enabled);
-    if (quickFormHtmlPathInput) quickFormHtmlPathInput.value = quickformDefaults.html_path || "";
 
     const coverValue = resource.cover || resource.cover_url || "";
     if (coverInput) coverInput.value = coverValue || "";
@@ -5718,27 +5301,23 @@ function populateCreateForm(resource) {
 }
 
 function openCreateView(resource = null) {
-    closeCreateEntryMenu();
     const listView = document.getElementById("resources-list-view");
     const detailView = document.getElementById("resources-detail-view");
     const createView = document.getElementById("resources-create-view");
     if (listView) listView.style.display = "none";
     if (detailView) detailView.style.display = "none";
     if (createView) createView.style.display = "flex";
-    createEntryMode = "new";
-    if (resource) {
-        // Editing local courses should always use local mode and local save conditions.
-        createSource = "local";
-    }
+    editingCourseId = resource ? resource.id || null : null;
+    createEntryMode = resource ? "new" : "pack-import";
+    createSource = "local";
     setCreateSource(createSource);
-    createStep = 1;
+    createStep = resource ? 1 : 2;
     scannedCourse = null;
     scanSummary = null;
     scanError = "";
     publishStatus = "idle";
     cloudImported = false;
     if (resource) {
-        editingCourseId = resource.id || null;
         setCreateViewMode("edit");
         populateCreateForm(resource);
         if (resource.sections) {
@@ -5751,10 +5330,9 @@ function openCreateView(resource = null) {
             draftSections = scannedCourse.sections || [];
         }
     } else {
-        editingCourseId = null;
-        setCreateViewMode("create");
+        setCreateViewMode("import");
         resetCreateForm();
-        draftSections = buildDefaultSections(1, 1);
+        draftSections = [];
     }
     updateCreateEntryModeUI();
     renderCoursePreview();
@@ -5762,6 +5340,7 @@ function openCreateView(resource = null) {
     renderMaterialList();
     renderScanStatus();
     renderStructurePreview();
+    renderPackagePathSummary();
     const publishEl = document.getElementById("resources-publish-status");
     if (publishEl) publishEl.textContent = "准备发布";
     updateCreateFormState();
@@ -5795,70 +5374,26 @@ function toggleAdvancedPanel() {
 }
 
 function isCreateInfoComplete() {
-    return getCreateRequiredFields().every((fieldId) => {
-        const value = document.getElementById(fieldId)?.value || "";
-        return value.trim().length > 0;
-    });
+    return isCreateInfoCompleteFlow(getCreateRequiredFields, document);
 }
 
 function updateCreateFormState() {
-    const pickLocalBtn = document.getElementById("resources-pick-local-btn");
-    const saveBtn = document.getElementById("resources-create-save-btn");
-    const scanBtn = document.getElementById("resources-scan-btn");
-    const rescanBtn = document.getElementById("resources-rescan-btn");
-    const structureSaveBtn = document.getElementById("resources-structure-save-btn");
-    const importCloudBtn = document.getElementById("resources-cloud-import-btn");
-    const importCloudDetailBtn = document.getElementById("resources-cloud-detail-import-btn");
-    const cloudSelect = document.getElementById("resources-cloud-course-select");
-    const localPathInput = document.getElementById("resources-create-local-path");
-    const localPath = localPathInput?.value.trim() || "";
-    const editCourseFallbackPath =
-        editingCourseId && localCourses.length
-            ? (localCourses.find((item) => item.id === editingCourseId)?.local_path || "").trim()
-            : "";
-    const effectiveLocalPath = localPath || editCourseFallbackPath;
-    const infoComplete = isCreateInfoComplete();
-
-    maybeAutoFillCourseId();
-
-    if (pickLocalBtn) {
-        const allowPickInLocalImport = createEntryMode === "local-import";
-        pickLocalBtn.disabled = createSource === "local" ? !(allowPickInLocalImport || infoComplete) : true;
-    }
-
-    if (saveBtn) {
-        if (createSource === "cloud") {
-            saveBtn.disabled = !(cloudImported && effectiveLocalPath && scannedCourse);
-        } else if (createEntryMode === "local-import") {
-            saveBtn.disabled = !(effectiveLocalPath && scannedCourse);
-        } else {
-            saveBtn.disabled = !(infoComplete && effectiveLocalPath);
-        }
-    }
-
-    if (scanBtn) {
-        scanBtn.disabled = createSource === "local" ? !(infoComplete && effectiveLocalPath) : true;
-    }
-    if (rescanBtn) {
-        rescanBtn.disabled = createSource === "local" ? !(infoComplete && effectiveLocalPath) : true;
-    }
-    if (structureSaveBtn) {
-        structureSaveBtn.disabled =
-            createSource === "local" ? !(infoComplete && effectiveLocalPath && draftSections.length) : true;
-    }
-    if (importCloudBtn) {
-        const selected = cloudSelect?.value || "";
-        importCloudBtn.disabled = createSource !== "cloud" || !selected;
-    }
-    if (importCloudDetailBtn) {
-        const selected = cloudSelect?.value || "";
-        importCloudDetailBtn.disabled = createSource !== "cloud" || !selected;
-    }
-
-    renderCoursePreview();
-    updateCreateCoverPreview();
-    updateLocalPathVisibility();
-    updateStepperUI();
+    return updateCreateFormStateFlow({
+        documentRef: document,
+        editingCourseId,
+        localCourses,
+        createEntryMode,
+        createSource,
+        cloudImported,
+        scannedCourse,
+        draftSections,
+        isCreateInfoComplete,
+        maybeAutoFillCourseId,
+        renderCoursePreview,
+        updateCreateCoverPreview,
+        updateLocalPathVisibility,
+        updateStepperUI,
+    });
 }
 
 function prepareTemplate() {
@@ -5866,337 +5401,143 @@ function prepareTemplate() {
 }
 
 function fillCreateFormFromCourse(course, fillEmptyOnly = true) {
-    if (!course) return;
-    const idInput = document.getElementById("resources-create-id");
-    const versionInput = document.getElementById("resources-create-version");
-    const titleInput = document.getElementById("resources-create-title");
-    const descInput = document.getElementById("resources-create-desc");
-    const gradeInput = document.getElementById("resources-create-grade");
-    const subjectInput = document.getElementById("resources-create-subject");
-    const authorInput = document.getElementById("resources-create-author");
-    const tagsInput = document.getElementById("resources-create-tags");
-    const coverInput = document.getElementById("resources-create-cover");
-    const quickFormEnabledInput = document.getElementById("resources-create-quickform-enabled");
-    const quickFormHtmlPathInput = document.getElementById("resources-create-quickform-html-path");
-
-    const assign = (el, value) => {
-        if (!el) return;
-        if (fillEmptyOnly && el.value) return;
-        el.value = value || "";
-    };
-
-    assign(idInput, course.id || "");
-    assign(versionInput, course.version || "1.0");
-    assign(titleInput, course.title || "");
-    assign(descInput, course.description || "");
-    assign(gradeInput, course.grade || "");
-    assign(subjectInput, course.subject || "");
-    assign(authorInput, course.author || "");
-    if (tagsInput && Array.isArray(course.tags)) {
-        if (!(fillEmptyOnly && tagsInput.value)) {
-            tagsInput.value = course.tags.join(", ");
-        }
-    }
-    const cover = course.cover || course.cover_url || "";
-    if (coverInput && cover && !(fillEmptyOnly && coverInput.value)) {
-        coverInput.value = cover;
-    }
-    const quickformDefaults = getCourseQuickFormDefaults(course);
-    if (quickFormEnabledInput && !(fillEmptyOnly && quickFormEnabledInput.checked)) {
-        quickFormEnabledInput.checked = Boolean(quickformDefaults.enabled);
-    }
-    if (quickFormHtmlPathInput && !(fillEmptyOnly && quickFormHtmlPathInput.value)) {
-        quickFormHtmlPathInput.value = quickformDefaults.html_path || "";
-    }
-    updateCreateCoverPreview();
+    return fillCreateFormFromCourseFlow(course, {
+        documentRef: document,
+        getCourseQuickFormDefaults,
+        updateCreateCoverPreview,
+        fillEmptyOnly,
+    });
 }
 
 async function importLocalCourseFromPath(path) {
-    if (!path) return false;
-    try {
-        const title = deriveTitleFromPath(path);
-        const response = await apiClient.post("/api/resources/scan", {
-            local_path: path,
-            init_if_missing: true,
-            auto_build: true,
-            meta: { title }
-        });
-        if (!response?.success || !response.course) {
-            throw new Error(response?.message || "读取本地课程失败");
-        }
-        scannedCourse = response.course;
-        scanSummary = response.summary || null;
-        scanError = "";
-        draftSections = Array.isArray(scannedCourse.sections) ? scannedCourse.sections : [];
-        fillCreateFormFromCourse(scannedCourse, true);
-        renderSectionEditor();
-        renderMaterialList();
-        renderScanStatus();
-        renderStructurePreview();
-        renderCoursePreview();
-        updateCreateFormState();
-        return true;
-    } catch (error) {
-        scanError = error?.message || "读取本地课程失败";
-        renderCreateGuide();
-        alert(scanError);
-        return false;
-    }
+    return importLocalCourseFromPathFlow(path, {
+        apiClient,
+        deriveTitleFromPath,
+        setScannedCourse: (value) => { scannedCourse = value; },
+        setScanSummary: (value) => { scanSummary = value; },
+        setScanError: (value) => { scanError = value; },
+        setDraftSections: (value) => { draftSections = value; },
+        fillCreateFormFromCourse,
+        renderSectionEditor,
+        renderMaterialList,
+        renderScanStatus,
+        renderStructurePreview,
+        renderCoursePreview,
+        updateCreateFormState,
+        renderCreateGuide,
+    });
+}
+
+async function importLocalPackageToPath() {
+    return importLocalPackageToPathFlow({
+        documentRef: document,
+        apiClient,
+        setScannedCourse: (value) => { scannedCourse = value; },
+        setScanSummary: (value) => { scanSummary = value; },
+        setScanError: (value) => { scanError = value; },
+        setDraftSections: (value) => { draftSections = value; },
+        fillCreateFormFromCourse,
+        renderSectionEditor,
+        renderMaterialList,
+        renderScanStatus,
+        renderStructurePreview,
+        renderCoursePreview,
+        renderLocalPathSummary,
+        updateCreateFormState,
+        renderCreateGuide,
+    });
 }
 
 async function pickLocalCourse() {
-    if (window.electronAPI && typeof window.electronAPI.invoke === "function") {
-        try {
-            const path = await window.electronAPI.invoke("select-folder");
-            if (path) {
-                const input = document.getElementById("resources-create-local-path");
-                if (input) input.value = path;
-                renderLocalPathSummary();
-                if (createEntryMode === "local-import") {
-                    await importLocalCourseFromPath(path);
-                } else if (createEntryMode === "new") {
-                    const meta = getCreateMetaFromForm();
-                    const title = meta.title || deriveTitleFromPath(path);
-                    const response = await apiClient.post("/api/resources/scan", {
-                        local_path: path,
-                        init_if_missing: true,
-                        auto_build: false,
-                        meta: {
-                            ...meta,
-                            title
-                        }
-                    });
-                    if (!response?.success || !response.course) {
-                        throw new Error(response?.message || "初始化课程失败");
-                    }
-                    scannedCourse = response.course;
-                    scanSummary = response.summary || null;
-                    scanError = "";
-                    if (!draftSections.length) {
-                        draftSections = buildDefaultSections(1, 1);
-                    }
-                    fillCreateFormFromCourse(scannedCourse, true);
-                    renderSectionEditor();
-                    renderMaterialList();
-                    renderScanStatus();
-                    renderStructurePreview();
-                    renderCoursePreview();
-                }
-                updateCreateFormState();
-            }
-        } catch (error) {
-            console.error("选择本地课程失败:", error);
-            alert(error?.message || "选择本地课程失败");
-        }
-    } else {
-        alert("请在桌面应用中使用本地上传功能");
-    }
+    return pickLocalCourseFlow({
+        electronAPI: window.electronAPI,
+        documentRef: document,
+        renderLocalPathSummary,
+        createEntryMode,
+        getCreateMetaFromForm,
+        deriveTitleFromPath,
+        apiClient,
+        setScannedCourse: (value) => { scannedCourse = value; },
+        setScanSummary: (value) => { scanSummary = value; },
+        setScanError: (value) => { scanError = value; },
+        draftSections: () => draftSections,
+        setDraftSections: (value) => { draftSections = value; },
+        buildDefaultSections,
+        fillCreateFormFromCourse,
+        renderSectionEditor,
+        renderMaterialList,
+        renderScanStatus,
+        renderStructurePreview,
+        renderCoursePreview,
+        updateCreateFormState,
+    });
+}
+
+async function pickLocalPackage() {
+    return pickLocalPackageFlow({
+        electronAPI: window.electronAPI,
+        documentRef: document,
+        renderPackagePathSummary,
+        updateCreateFormState,
+    });
 }
 
 async function fetchCloudCourse() {
-    const selectedValue = document.getElementById("resources-cloud-course-select")?.value || "";
-    const selectedCourse = cloudCourseOptions.find((item) => (item.id || item.package_url || item.course_url) === selectedValue);
-    if (!selectedCourse) {
-        alert("请先选择云端课程");
-        return;
-    }
-
-    let targetPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
-    if (!targetPath && window.electronAPI && typeof window.electronAPI.invoke === "function") {
-        try {
-            const base = await window.electronAPI.invoke("select-folder");
-                if (base) {
-                    targetPath = base;
-                    const localPathInput = document.getElementById("resources-create-local-path");
-                    if (localPathInput) {
-                        localPathInput.value = base;
-                    }
-                    renderLocalPathSummary();
-                }
-            } catch (error) {
-                console.warn("选择导入目录失败:", error);
-        }
-    }
-    if (!targetPath) {
-        alert("请先选择本地保存目录");
-        return;
-    }
-
-    try {
-        const pullPayload = {
-            course_url: selectedCourse.course_url || "",
-            package_url: selectedCourse.package_url || "",
-            target_path: targetPath,
-            replace_existing: true,
-            source_id: selectedCourse.source_id || "",
-            course_id: selectedCourse.id || "",
-        };
-        const selectedSourceOverride = cloudTempSource
-            ? normalizeOrigin({
-                source_id: cloudTempSource.source_id || "override",
-                base_url: cloudTempSource.base_url,
-                repo: cloudTempSource.repo,
-                branch: cloudTempSource.branch || "main",
-                index_path: cloudTempSource.index_path || "index.json",
-                publish_path: cloudTempSource.publish_path || "courses",
-                single_course_repo: Boolean(cloudTempSource.single_course_repo),
-            })
-            : buildSourceOverrideFromCourseMeta(selectedCourse);
-        if (selectedSourceOverride) {
-            pullPayload.source_override = {
-                id: selectedSourceOverride.source_id || "override",
-                ...selectedSourceOverride,
-            };
-            if (cloudTempToken) {
-                pullPayload.token_override = cloudTempToken;
-            }
-        }
-
-        const response = await apiClient.post("/api/resources/pull", pullPayload);
-        if (!response?.success || !response.course) {
-            throw new Error(response?.message || "云端导入失败");
-        }
-
-        const course = {
-            ...(response.course || {}),
-            origin: normalizeOrigin(response.origin || buildSourceOverrideFromCourseMeta(selectedCourse))
-        };
-        scannedCourse = course;
-        scanSummary = response.summary || null;
-        scanError = "";
-        draftSections = Array.isArray(course.sections) ? course.sections : [];
-        cloudImported = true;
-
-        const localPathInput = document.getElementById("resources-create-local-path");
-        if (localPathInput) localPathInput.value = response.local_path || "";
-        renderLocalPathSummary();
-
-        const idInput = document.getElementById("resources-create-id");
-        const versionInput = document.getElementById("resources-create-version");
-        const titleInput = document.getElementById("resources-create-title");
-        const descInput = document.getElementById("resources-create-desc");
-        const gradeInput = document.getElementById("resources-create-grade");
-        const subjectInput = document.getElementById("resources-create-subject");
-        const authorInput = document.getElementById("resources-create-author");
-        const tagsInput = document.getElementById("resources-create-tags");
-        const coverInput = document.getElementById("resources-create-cover");
-
-        if (idInput && !idInput.value) idInput.value = course.id || "";
-        if (versionInput && !versionInput.value) versionInput.value = course.version || "1.0";
-        if (titleInput && !titleInput.value) titleInput.value = course.title || "";
-        if (descInput && !descInput.value) descInput.value = course.description || "";
-        if (gradeInput && !gradeInput.value) gradeInput.value = course.grade || "";
-        if (subjectInput && !subjectInput.value) subjectInput.value = course.subject || "";
-        if (authorInput && !authorInput.value) authorInput.value = course.author || "";
-        if (tagsInput && !tagsInput.value && Array.isArray(course.tags)) tagsInput.value = course.tags.join(", ");
-
-        const cover = course.cover || course.cover_url || "";
-        if (coverInput && cover && !coverInput.value) {
-            coverInput.value = cover;
-        }
-        updateCreateCoverPreview();
-    } catch (error) {
-        console.warn("拉取云端课程失败:", error);
-        let message = error?.message || "拉取失败，请检查资源库配置";
-        if (error?.details) {
-            try {
-                const parsed = JSON.parse(error.details);
-                if (parsed?.message) {
-                    message = parsed.message;
-                }
-            } catch (_) {
-                // keep default
-            }
-        }
-        alert(message);
-        scanError = error?.message || "云端拉取失败";
-    } finally {
-        renderSectionEditor();
-        renderMaterialList();
-        renderScanStatus();
-        renderStructurePreview();
-        renderCoursePreview();
-        updateCreateFormState();
-    }
+    return fetchCloudCourseFlow({
+        documentRef: document,
+        cloudCourseOptions,
+        electronAPI: window.electronAPI,
+        renderLocalPathSummary,
+        normalizeOrigin,
+        cloudTempSource,
+        buildSourceOverrideFromCourseMeta,
+        cloudTempToken,
+        apiClient,
+        setScannedCourse: (value) => { scannedCourse = value; },
+        setScanSummary: (value) => { scanSummary = value; },
+        setScanError: (value) => { scanError = value; },
+        setDraftSections: (value) => { draftSections = value; },
+        setCloudImported: (value) => { cloudImported = value; },
+        updateCreateCoverPreview,
+        renderSectionEditor,
+        renderMaterialList,
+        renderScanStatus,
+        renderStructurePreview,
+        renderCoursePreview,
+        updateCreateFormState,
+    });
 }
 
 async function importCloudCourseAndSave() {
-    await fetchCloudCourse();
-    if (cloudImported && scannedCourse) {
-        await saveLocalCourse();
-    }
+    return importCloudCourseAndSaveFlow(fetchCloudCourse, async () => {
+        if (cloudImported && scannedCourse) {
+            await saveLocalCourse();
+        }
+    });
 }
 
 async function quickAddLocalCourse() {
-    if (window.electronAPI && typeof window.electronAPI.invoke === "function") {
-        try {
-            const path = await window.electronAPI.invoke("select-folder");
-            if (!path) return null;
-            const title = deriveTitleFromPath(path);
-            try {
-                const response = await apiClient.post("/api/resources/scan", {
-                    local_path: path,
-                    init_if_missing: true,
-                    auto_build: true,
-                    meta: { title }
-                });
-                if (response?.success && response.course) {
-                    const course = {
-                        ...response.course,
-                        local_path: path,
-                        source: "local",
-                        updated_at: new Date().toISOString().slice(0, 10)
-                    };
-                    addCourse(course);
-                    return course;
-                }
-            } catch (scanError) {
-                console.warn("快速导入解析失败，使用默认模板:", scanError);
-            }
-
-            const fallback = buildQuickCourse({
-                title,
-                localPath: path
-            });
-            addCourse(fallback);
-            return fallback;
-        } catch (error) {
-            console.error("快速导入本地课程失败:", error);
-            return null;
-        }
-    } else {
-        alert("请在桌面应用中使用本地上传功能");
-        return null;
-    }
+    return quickAddLocalCourseFlow({
+        electronAPI: window.electronAPI,
+        deriveTitleFromPath,
+        apiClient,
+        addCourse,
+        buildQuickCourse,
+    });
 }
 
 async function quickAddCloudCourse() {
-    const url = document.getElementById("resources-quick-cloud-url")?.value.trim();
-    if (!url) return;
-    let data = null;
-    try {
-        const response = await fetch(url);
-        if (response.ok) {
-            data = await response.json();
-        }
-    } catch (error) {
-        console.warn("拉取云端课程失败，使用链接创建:", error);
-    }
-
-    const course = buildQuickCourse({
-        title: data?.title || deriveTitleFromUrl(url),
-        cloudUrl: url,
-        templateData: data
+    return quickAddCloudCourseFlow({
+        documentRef: document,
+        deriveTitleFromUrl,
+        buildQuickCourse,
+        addCourse,
     });
-    addCourse(course);
 }
 
 function buildQuickCourse({ title, localPath = "", cloudUrl = "", templateData = null }) {
-    return buildQuickCoursePayload({
-        title,
-        localPath,
-        cloudUrl,
-        templateData,
+    return buildQuickCourseFlow({ title, localPath, cloudUrl, templateData }, {
+        buildQuickCoursePayload,
         normalizeTagsInput,
         isPackageUrl,
         normalizeCourseQuickFormDefaults,
@@ -6204,22 +5545,10 @@ function buildQuickCourse({ title, localPath = "", cloudUrl = "", templateData =
 }
 
 function buildCourseFromForm(baseCourse = null) {
-    return buildCourseFromFormPayload({
-        formValues: {
-            title: document.getElementById("resources-create-title")?.value.trim() || "未命名课程",
-            description: document.getElementById("resources-create-desc")?.value.trim() || "",
-            grade: document.getElementById("resources-create-grade")?.value.trim() || "",
-            subject: document.getElementById("resources-create-subject")?.value.trim() || "",
-            author: document.getElementById("resources-create-author")?.value.trim() || "",
-            version: document.getElementById("resources-create-version")?.value.trim() || "",
-            courseId: document.getElementById("resources-create-id")?.value.trim() || "",
-            tags: parseTags(document.getElementById("resources-create-tags")?.value || ""),
-            cover: document.getElementById("resources-create-cover")?.value.trim() || "",
-            localPath: document.getElementById("resources-create-local-path")?.value.trim() || "",
-            quickFormEnabled: document.getElementById("resources-create-quickform-enabled")?.checked ?? false,
-            quickFormHtmlPath: document.getElementById("resources-create-quickform-html-path")?.value.trim() || "",
-        },
-        baseCourse,
+    return buildCourseFromFormFlow(baseCourse, {
+        documentRef: document,
+        buildCourseFromFormPayload,
+        parseTags,
         scannedCourse,
         normalizeOrigin,
         normalizeCourseQuickFormDefaults,
@@ -6227,42 +5556,61 @@ function buildCourseFromForm(baseCourse = null) {
 }
 
 function addCourse(course, options = {}) {
-    const normalizedCourse = {
-        ...(course || {}),
-        source: "local",
-    };
-    const normalizedOrigin = normalizeOrigin(normalizedCourse.origin || {});
-    if (normalizedOrigin) {
-        normalizedCourse.origin = normalizedOrigin;
-    }
-    const courseId = (normalizedCourse?.id || "").trim();
-    const localPath = (normalizedCourse?.local_path || "").trim();
-    const existingIndex = localCourses.findIndex((item) => {
-        if (!item) return false;
-        if (courseId && item.id === courseId) return true;
-        if (localPath && item.local_path === localPath) return true;
-        return false;
+    return addCourseFlow(course, options, {
+        normalizeOrigin,
+        localCourses,
+        setLocalCourses: (value) => { localCourses = value; },
+        persistLocalCoursesState,
+        buildFilterOptions,
+        applyFilters,
+        closeCreateView,
+        currentResource,
+        setCurrentResource: (value) => { currentResource = value; },
+        notifyCourseUpdated,
+        notifyCourseCreated,
     });
+}
 
-    if (existingIndex >= 0) {
-        localCourses.splice(existingIndex, 1);
-    }
-    localCourses = [normalizedCourse, ...localCourses];
-    persistLocalCourses();
-    buildFilterOptions();
-    applyFilters();
-    closeCreateView();
-    if (currentResource && ((courseId && currentResource.id === courseId) || (localPath && currentResource.local_path === localPath))) {
-        currentResource = normalizedCourse;
-    }
-    if (!options.silent) {
-        if (existingIndex >= 0) {
-            notifyCourseUpdated(normalizedCourse);
-        } else {
-            notifyCourseCreated(normalizedCourse);
-        }
-    }
-    return existingIndex >= 0;
+async function saveLocalCourse() {
+    return saveLocalCourseFlow({
+        createEntryMode,
+        scannedCourse: () => scannedCourse,
+        isCreateInfoComplete,
+        updateCreateFormState,
+        createSource,
+        draftSections: () => draftSections,
+        setDraftSections: (value) => { draftSections = value; },
+        ensureMinimumSections,
+        renderSectionEditor,
+        renderMaterialList,
+        renderStructurePreview,
+        saveCourseStructure,
+        editingCourseId,
+        localCourses,
+        documentRef: document,
+        buildCourseFromForm,
+        cloudImported: () => cloudImported,
+        withCourseSyncFingerprint,
+        persistCourseToDisk,
+        apiClient,
+        updateCourse,
+        addCourse,
+    });
+}
+
+function updateCourse(course) {
+    return updateCourseFlow(course, {
+        title,
+        normalizeOrigin,
+        localCourses,
+        setLocalCourses: (value) => { localCourses = value; },
+        persistLocalCoursesState,
+        buildFilterOptions,
+        applyFilters,
+        clearEditingCourseId: () => { editingCourseId = null; },
+        showDetailView,
+        notifyCourseUpdated,
+    });
 }
 
 function notifyCourseCreated(course) {
@@ -6270,237 +5618,36 @@ function notifyCourseCreated(course) {
     alert("课程已创建。");
 }
 
-async function saveLocalCourse() {
-    if (createEntryMode === "local-import" && !scannedCourse) {
-        alert("请先选择并读取本地课程目录。");
-        return;
-    }
-    if (!isCreateInfoComplete()) {
-        alert("请先填写课程名称。");
-        updateCreateFormState();
-        return;
-    }
-    if (!scannedCourse) {
-        if (createSource === "local") {
-            // Local quick-save: auto-create a minimal section/experiment when empty.
-            draftSections = ensureMinimumSections(draftSections);
-            renderSectionEditor();
-            renderMaterialList();
-            renderStructurePreview();
-        }
-        await saveCourseStructure();
-    }
-    if (!scannedCourse) {
-        alert("保存课程结构失败，请先检查本地课程目录。");
-        return;
-    }
-    const baseCourse =
-        editingCourseId && localCourses.length
-            ? localCourses.find((item) => item.id === editingCourseId)
-            : null;
-    const localPathInput = document.getElementById("resources-create-local-path");
-    const localPath = localPathInput?.value.trim() || "";
-    const fallbackPath = (baseCourse?.local_path || "").trim();
-    const resolvedLocalPath = localPath || fallbackPath;
-    if (!resolvedLocalPath) {
-        alert("请先选择本地课程目录。");
-        updateCreateFormState();
-        return;
-    }
-    if (!localPath && localPathInput && fallbackPath) {
-        localPathInput.value = fallbackPath;
-    }
-    const course = buildCourseFromForm(baseCourse);
-    const courseToStore = cloudImported ? withCourseSyncFingerprint(course) : course;
-    const persistedCourse = await persistCourseToDisk(courseToStore);
-    const finalCourse = persistedCourse
-        ? {
-            ...courseToStore,
-            ...persistedCourse,
-            local_path: courseToStore.local_path,
-            source: "local",
-            origin: courseToStore.origin || persistedCourse.origin || undefined,
-            sync: courseToStore.sync || persistedCourse.sync || undefined,
-        }
-        : courseToStore;
-    if (editingCourseId) {
-        updateCourse(finalCourse);
-    } else {
-        addCourse(finalCourse);
-    }
-}
-
-function updateCourse(course) {
-    const normalizedCourse = {
-        ...(course || {}),
-        source: "local",
-    };
-    const normalizedOrigin = normalizeOrigin(normalizedCourse.origin || {});
-    if (normalizedOrigin) {
-        normalizedCourse.origin = normalizedOrigin;
-    }
-    const index = localCourses.findIndex((item) => item.id === normalizedCourse.id);
-    if (index >= 0) {
-        localCourses[index] = normalizedCourse;
-    } else {
-        localCourses = [normalizedCourse, ...localCourses];
-    }
-    persistLocalCourses();
-    buildFilterOptions();
-    applyFilters();
-    editingCourseId = null;
-    showDetailView(normalizedCourse);
-    notifyCourseUpdated(normalizedCourse);
-}
-
-function buildInspectCoursePayload(resource) {
-    if (!resource) return null;
-    if (resource.source === "local") {
-        if (!resource.local_path) return null;
-        return { local_path: resource.local_path };
-    }
-    const origin = getCourseOrigin(resource) || buildSourceOverrideFromCourseMeta(resource);
-    if (!origin) return null;
-    return {
-        source_id: origin.source_id || resource._source_id || "",
-        source_override: {
-            id: origin.source_id || resource._source_id || "override",
-            ...origin,
-        },
-        course_id: origin.course_id || resource.id || "",
-        course_url: origin.course_url || resource.course_url || "",
-        package_url: origin.package_url || resource.package_url || "",
-        token_override: origin.source_id === "override" ? cloudTempToken || undefined : undefined,
-    };
-}
-
-function mergeInspectionCourse(resource, response) {
-    const course = response?.course || {};
-    if (!course || typeof course !== "object") return resource;
-    return {
-        ...(resource || {}),
-        ...course,
-        source: resource?.source || course.source || "remote",
-        _source_id: course._source_id || resource?._source_id || "",
-        _source_name: course._source_name || resource?._source_name || "",
-        _source_repo_url: course._source_repo_url || resource?._source_repo_url || "",
-        _source_raw_base_url: course._source_raw_base_url || resource?._source_raw_base_url || "",
-        _source_branch: course._source_branch || resource?._source_branch || "",
-        course_url: course.course_url || resource?.course_url || "",
-        package_url: course.package_url || resource?.package_url || "",
-        single_course_repo: Boolean(course.single_course_repo || resource?.single_course_repo),
-    };
-}
 
 async function inspectCourseResource(resource, { silent = false } = {}) {
-    if (!resource) return null;
-    ensureCourseInspectionIdentity(resource);
-    const payload = buildInspectCoursePayload(resource);
-    if (!payload) {
-        courseInspectionState.error = "缺少课程路径或资源库配置，无法巡检";
-        renderResourceDetail(resource);
-        return null;
-    }
-    courseInspectionState.loading = true;
-    courseInspectionState.error = "";
-    renderResourceDetail(resource);
-    try {
-        const response = await apiClient.post("/api/resources/inspect-course", payload);
-        if (!response?.success) {
-            throw new Error(response?.message || "课程巡检失败");
-        }
-        const merged = mergeInspectionCourse(resource, response);
-        courseInspectionState.courseId = getResourceIdentity(merged);
-        courseInspectionState.summary = response.summary || null;
-        courseInspectionState.inspection = response.inspection || null;
-        courseInspectionState.loading = false;
-        courseInspectionState.error = "";
-        if (currentResource === resource || getResourceIdentity(currentResource) === getResourceIdentity(resource)) {
-            currentResource = merged;
-        }
-        renderResourceDetail(merged);
-        return { response, resource: merged };
-    } catch (error) {
-        courseInspectionState.loading = false;
-        courseInspectionState.error = extractApiErrorMessage(error, "课程巡检失败");
-        renderResourceDetail(resource);
-        if (!silent) {
-            alert(courseInspectionState.error);
-        }
-        return null;
-    }
+    return inspectCourseResourceFlow(resource, {
+        apiClient,
+        ensureCourseInspectionIdentity,
+        buildInspectCoursePayload: (target) =>
+            buildInspectCoursePayload(target, { getCourseOrigin, buildSourceOverrideFromCourseMeta, cloudTempToken }),
+        renderResourceDetail,
+        courseInspectionState,
+        mergeInspectionCourse,
+        getResourceIdentity,
+        currentResource,
+        setCurrentResource: (value) => {
+            currentResource = value;
+        },
+        extractApiErrorMessage,
+        silent,
+    });
 }
 
 function shouldAutoInspectRemoteCourse(resource) {
-    return Boolean(
-        teacherMode.unlocked &&
-        resource &&
-        resource.source !== "local" &&
-        (!Array.isArray(resource.sections) || !resource.sections.length) &&
-        !courseInspectionState.loading &&
-        !courseInspectionState.inspection &&
-        !courseInspectionState.error
-    );
+    return shouldAutoInspectRemoteCourseAction(resource, courseInspectionState, teacherMode);
 }
 
 function renderCourseInspectionCard(resource) {
-    ensureCourseInspectionIdentity(resource);
-    const card = document.createElement("div");
-    card.className = "resource-card resources-inspection-card";
-    const header = document.createElement("div");
-    header.className = "resource-card-header";
-    const title = document.createElement("div");
-    title.className = "resource-card-title";
-    title.textContent = "课程巡检";
-    header.appendChild(title);
-    const badge = document.createElement("div");
-    badge.className = "resource-card-badge";
-    badge.textContent = courseInspectionState.loading
-        ? "巡检中"
-        : courseInspectionState.error
-            ? "需处理"
-            : courseInspectionState.inspection
-                ? "已完成"
-                : "未巡检";
-    header.appendChild(badge);
-    card.appendChild(header);
-
-    const summary = courseInspectionState.summary || {};
-    const stats = document.createElement("div");
-    stats.className = "resources-inspection-stats";
-    const statItems = [
-        ["课节", summary.section_count ?? "-"],
-        ["实验", summary.experiment_count ?? "-"],
-        ["文件", summary.file_count ?? "-"],
-        ["可测", summary.ready_count ?? 0],
-        ["待补", summary.partial_count ?? 0],
-        ["异常", summary.broken_count ?? 0],
-    ];
-    statItems.forEach(([label, value]) => {
-        const item = document.createElement("div");
-        item.className = "resources-inspection-stat";
-        const strong = document.createElement("strong");
-        strong.textContent = String(value);
-        const span = document.createElement("span");
-        span.textContent = label;
-        item.appendChild(strong);
-        item.appendChild(span);
-        stats.appendChild(item);
+    return renderCourseInspectionCardFlow(resource, {
+        ensureCourseInspectionIdentity,
+        courseInspectionState,
+        documentRef: document,
     });
-    card.appendChild(stats);
-
-    const message = document.createElement("div");
-    message.className = courseInspectionState.error ? "resources-scan-status error" : "resource-card-desc";
-    message.textContent = courseInspectionState.loading
-        ? "正在读取课程结构并检查实验入口..."
-        : courseInspectionState.error
-            ? courseInspectionState.error
-            : courseInspectionState.inspection
-                ? "已完成整课只读巡检，异常实验会在大纲中标记。"
-                : "点击课程巡检，检查整门课程的实验入口与缺失文件。";
-    card.appendChild(message);
-
-    return card;
 }
 
 async function testCurrentExperiment(resource = currentResource) {
@@ -6523,19 +5670,18 @@ async function testCurrentExperiment(resource = currentResource) {
 }
 
 async function importRemoteCourseForTesting(resource) {
-    let imported = null;
-    try {
-        imported = await importRemoteCourse(resource, { silent: true });
-    } catch (error) {
-        alert(extractApiErrorMessage(error, "导入失败"));
-        return;
-    }
-    if (!imported) return;
-    const mapped = mapRemoteExperimentToLocalCourse(imported, activeSectionIndex, activeExperimentIndex);
-    activeSectionIndex = mapped.sectionIndex;
-    activeExperimentIndex = mapped.experimentIndex;
-    showDetailView(imported);
-    await testCurrentExperiment(imported);
+    return importRemoteCourseForTestingFlow(resource, {
+        importRemoteCourse,
+        alertUser: alert,
+        extractApiErrorMessage,
+        mapRemoteExperimentToLocalCourse,
+        activeSectionIndex: () => activeSectionIndex,
+        activeExperimentIndex: () => activeExperimentIndex,
+        setActiveSectionIndex: (value) => { activeSectionIndex = value; },
+        setActiveExperimentIndex: (value) => { activeExperimentIndex = value; },
+        showDetailView,
+        testCurrentExperiment,
+    });
 }
 
 function notifyCourseUpdated(course) {
@@ -6544,21 +5690,16 @@ function notifyCourseUpdated(course) {
 }
 
 async function deleteCourse(course) {
-    if (!course || course.source !== "local") return;
-    const title = course.title || "未命名课程";
-    const ok = await openResourcesConfirm({
-        title: "删除课程",
-        message: `确认删除课程「${title}」？仅从列表移除，不会删除磁盘文件。`,
-        confirmText: "删除",
-        cancelText: "取消",
+    return deleteCourseFlow(course, {
+        localCourses,
+        setLocalCourses: (value) => { localCourses = value; },
+        persistLocalCoursesState,
+        buildFilterOptions,
+        applyFilters,
+        showListView,
+        openResourcesConfirm,
+        alertUser: alert,
     });
-    if (!ok) return;
-    localCourses = localCourses.filter((item) => item.id !== course.id);
-    persistLocalCourses();
-    buildFilterOptions();
-    applyFilters();
-    showListView();
-    alert("课程已删除。");
 }
 
 function isDirectory(file) {
@@ -6569,482 +5710,126 @@ function isDirectory(file) {
 }
 
 function resolveRepoBrowserUrl(path, resource = null) {
-    const cleanPath = path.replace(/^\/+/, "");
-    const source = getResourceSourceContext(resource);
-    if (!source.repoUrl) return resolveResourceUrl(cleanPath, resource);
-    const branch = source.branch || "main";
-    return `${source.repoUrl}/src/${branch}/${cleanPath}`;
+    return resolveRepoBrowserUrlFlow(path, resource, {
+        getResourceSourceContext,
+        resolveResourceUrl,
+    });
 }
 
 function resolveLocalPath(basePath, targetPath) {
-    if (!basePath) return "";
-    const normalizedBase = basePath.toString();
-    const normalizedTarget = (targetPath || "").toString();
-    if (!normalizedTarget) return normalizedBase;
-    if (/^[a-zA-Z]:[\\/]/.test(normalizedTarget) || normalizedTarget.startsWith("/")) {
-        return normalizedTarget;
-    }
-    const separator = normalizedBase.includes("\\") ? "\\" : "/";
-    const cleanBase = normalizedBase.replace(/[\\/]+$/, "");
-    const cleanTarget = normalizedTarget.replace(/^[\\/]+/, "");
-    return `${cleanBase}${separator}${cleanTarget}`;
+    return resolveLocalPathFlow(basePath, targetPath);
 }
 
 async function openLocalPath(targetPath) {
-    if (!targetPath) return;
-    try {
-        if (window.electronAPI && typeof window.electronAPI.invoke === "function") {
-            await window.electronAPI.invoke("open-path", targetPath);
-            return;
-        }
-    } catch (error) {
-        console.error("打开本地路径失败:", error);
-    }
+    return openLocalPathFlow(targetPath, window.electronAPI);
 }
 
 function updateSourceInfo() {
-    const hint = document.getElementById("resources-source-hint");
-    const repoBtn = document.getElementById("resources-repo-btn");
-    const submitBtn = document.getElementById("resources-submit-btn");
-    const createSubmitBtn = document.getElementById("resources-create-submit-btn");
-
-    if (hint) {
-        if (isMockData) {
-            hint.textContent = "当前为示例数据（未连接资源库）";
-        } else if (remoteSources.length > 1) {
-            hint.textContent = `课程源: 已连接 ${remoteSources.length} 个`;
-        } else if (repoUrl) {
-            hint.textContent = `资源库: ${repoUrl}`;
-        } else {
-            hint.textContent = "未配置资源库";
-        }
-    }
-
-    if (repoBtn) {
-        repoBtn.disabled = isMockData || !repoUrl;
-    }
-
-    if (submitBtn) {
-        submitBtn.disabled = isMockData || !submitUrl;
-    }
-
-    if (createSubmitBtn) {
-        createSubmitBtn.disabled = isMockData || !submitUrl;
-    }
+    return updateSourceInfoFlow({
+        documentRef: document,
+        isMockData,
+        remoteSources,
+        repoUrl,
+        submitUrl,
+    });
 }
 
 function renderEmptyState(message) {
-    const container = document.getElementById("resources-list");
-    const empty = document.getElementById("resources-empty");
-    const count = document.getElementById("resources-count");
-
-    if (!container || !empty) return;
-
-    container.innerHTML = "";
-    empty.style.display = "flex";
-    empty.textContent = message;
-    if (count) {
-        count.textContent = "0 门课程";
-    }
+    return renderEmptyStateFlow(message, { documentRef: document });
 }
 
 function applyResourcesIndex(indexData, options = {}) {
-    resourcesMeta = indexData || {};
-    let remoteList = [];
-    if (Array.isArray(resourcesMeta)) {
-        remoteList = resourcesMeta;
-    } else if (Array.isArray(resourcesMeta.resources)) {
-        remoteList = resourcesMeta.resources;
-    } else if (Array.isArray(resourcesMeta.items)) {
-        remoteList = resourcesMeta.items;
-    }
-
-    submitUrl = options.submitUrl || "";
-    repoUrl = options.repoUrl || "";
-    rawBaseUrl = options.rawBaseUrl || "";
-    indexBranch = options.branch || indexBranch || "main";
-    remoteSources = Array.isArray(options.sources) ? options.sources : [];
-    isMockData = Boolean(options.isMock);
-    remoteSource = options.remoteSource || "remote";
-
-    const normalizedRemote = remoteList.map((item) => ({ ...item, source: remoteSource }));
-    const normalizedLocal = localCourses.map((item) => ({ ...item, source: "local" }));
-    const localIds = new Set(normalizedLocal.map((item) => item.id));
-    const merged = [...normalizedLocal, ...normalizedRemote.filter((item) => !localIds.has(item.id))];
-    resourcesCache = merged;
-
-    buildFilterOptions();
-    updateSourceInfo();
-    applyFilters();
+    return applyResourcesIndexFlow(indexData, options, {
+        localCourses,
+        indexBranch,
+        setResourcesMeta: (value) => { resourcesMeta = value; },
+        setSubmitUrl: (value) => { submitUrl = value; },
+        setRepoUrl: (value) => { repoUrl = value; },
+        setRawBaseUrl: (value) => { rawBaseUrl = value; },
+        setIndexBranch: (value) => { indexBranch = value; },
+        setRemoteSources: (value) => { remoteSources = value; },
+        setIsMockData: (value) => { isMockData = value; },
+        setRemoteSource: (value) => { remoteSource = value; },
+        setResourcesCache: (value) => { resourcesCache = value; },
+        buildFilterOptions,
+        updateSourceInfo,
+        applyFilters,
+    });
 }
 
 async function openExternal(url) {
-    if (!url) return;
-    try {
-        if (window.electronAPI && typeof window.electronAPI.openExternal === "function") {
-            await window.electronAPI.openExternal(url);
-            return;
-        }
-        if (window.electronAPI && typeof window.electronAPI.invoke === "function") {
-            await window.electronAPI.invoke("open-external", url);
-            return;
-        }
-    } catch (error) {
-        console.error("打开外部链接失败:", error);
-    }
-
-    window.open(url, "_blank");
+    return openExternalFlow(url, window.electronAPI);
 }
 
 async function publishCourseFromDetail(resource) {
-    if (!resource || resource.source !== "local") return;
-    if (!resource.local_path) {
-        alert("本地课程目录缺失，无法上传");
-        return;
-    }
-
-    let publishSource = getCourseOrigin(resource);
-    let tokenOverride = "";
-    let createRepoIfMissing = true;
-    let repoPrivate = false;
-
-    if (!publishSource) {
-        const promptResult = await openPublishSourceConfigModal(null);
-        if (!promptResult) return;
-        publishSource = promptResult.source;
-        tokenOverride = promptResult.token_override;
-        createRepoIfMissing = promptResult.create_repo_if_missing;
-        repoPrivate = promptResult.repo_private;
-    }
-
-    const preparedToken = await ensureTokenForPublishFlow(publishSource, tokenOverride);
-    if (preparedToken === null) return;
-    tokenOverride = preparedToken;
-    const writeToken = await ensureWriteTokenForPublish(tokenOverride);
-    if (!writeToken) {
-        alert("已取消上传（未填写访问令牌）");
-        return;
-    }
-    tokenOverride = writeToken;
-
-    const callPublish = async (token = tokenOverride) =>
-        apiClient.post("/api/resources/publish", {
-            local_path: resource.local_path,
-            course_id: resource.id || (publishSource && publishSource.course_id) || "",
-            version: resource.version || "",
-            publish_mode: "pr",
-            single_course_repo: true,
-            publish_source: publishSource
-                ? {
-                    id: publishSource.source_id || "override",
-                    ...publishSource,
-                }
-                : undefined,
-            token_override: token || undefined,
-            create_repo_if_missing: createRepoIfMissing,
-            repo_private: repoPrivate,
-            meta_override: {
-                title: resource.title || "",
-                description: resource.description || "",
-                grade: resource.grade || "",
-                subject: resource.subject || "",
-                author: resource.author || "",
-                tags: Array.isArray(resource.tags) ? resource.tags : [],
-                version: resource.version || "",
-            },
-        });
-
-    let response = null;
-    try {
-        response = await callPublish(tokenOverride);
-        if (!response?.success) {
-            throw new Error(response?.message || "发布失败");
-        }
-    } catch (error) {
-        const message = extractApiErrorMessage(error, "发布失败");
-        if (message.includes("写操作需要 Token") || isAuthRelatedErrorMessage(message)) {
-            const token = await promptTokenForPublish({
-                title: "上传课程需要访问令牌",
-                message: "仓库可读取，但上传更新需要写权限。请输入访问令牌后重试。",
-                confirmText: "继续上传",
-                defaultValue: tokenOverride || (await resolvePublishRetryToken("")),
-            });
-            if (!token) {
-                alert("已取消上传（未填写访问令牌）");
-                return;
-            }
-            try {
-                response = await callPublish(token.trim());
-                if (!response?.success) {
-                    alert(`发布失败：${response?.message || "未知错误"}`);
-                    return;
-                }
-            } catch (retryError) {
-                const retryMessage = extractApiErrorMessage(retryError, "发布失败");
-                alert(`发布失败：${retryMessage}`);
-                return;
-            }
-        } else {
-            alert(`发布失败：${message}`);
-            return;
-        }
-    }
-
-    const mergedCourse = mergeOriginAndSync(resource, response, publishSource);
-    await persistCourseToDisk(mergedCourse);
-    upsertLocalCourseRecord(mergedCourse, { showDetail: true });
-
-    const prUrl = response?.result?.pull_request?.url || response?.pr_url || "";
-    const reusedPr = Boolean(response?.result?.pull_request?.existing);
-    if (prUrl) {
-        alert(reusedPr ? "上传成功，已更新现有 PR" : "上传成功，已创建 PR");
-        const shouldOpenPr = await openResourcesConfirm({
-            title: "上传成功",
-            message: "是否打开 PR 页面？",
-            confirmText: "打开",
-            cancelText: "稍后",
-        });
-        if (shouldOpenPr) {
-            await openExternal(prUrl);
-        }
-    } else {
-        alert("上传成功，已同步到仓库主分支");
-    }
-    await loadResourcesIndex();
-    showDetailView(mergedCourse);
+    return publishCourseFromDetailFlow(resource, {
+        apiClient,
+        getCourseOrigin,
+        openPublishSourceConfigModal,
+        ensureTokenForPublishFlow,
+        ensureWriteTokenForPublish,
+        extractApiErrorMessage,
+        isAuthRelatedErrorMessage,
+        promptTokenForPublish,
+        resolvePublishRetryToken,
+        mergeOriginAndSync: (target, response, fallbackOrigin) =>
+            mergeOriginAndSync(target, response, fallbackOrigin, { normalizeOrigin, withCourseSyncFingerprint }),
+        persistCourseToDisk,
+        upsertLocalCourseRecord: (course, options = {}) =>
+            upsertLocalCourseRecord(course, { ...options, addCourse, showDetailView }),
+        openResourcesConfirm,
+        openExternal,
+        loadResourcesIndex,
+        showDetailView,
+    });
 }
 
 async function pullLatestForLocalCourse(resource) {
-    if (!resource || resource.source !== "local") return;
-    const origin = getCourseOrigin(resource);
-    if (!origin) {
-        alert("该课程未绑定远端仓库，请先上传课程完成绑定。");
-        return;
-    }
-    if (!resource.local_path) {
-        alert("本地课程目录缺失，无法拉取更新");
-        return;
-    }
-
-    const changeState = getLocalCourseChangeState(resource);
-    if (changeState.state !== "clean") {
-        const message = changeState.state === "modified"
-            ? "检测到这门课程在本地还有未同步修改。继续拉取会先自动备份当前内容，再覆盖为线上最新版本。"
-            : "这门课程还没有同步基线记录。继续拉取会先自动备份当前内容，再覆盖为线上最新版本。";
-        const ok = await openResourcesConfirm({
-            title: "确认拉取更新",
-            message,
-            confirmText: "继续更新",
-            cancelText: "取消",
-        });
-        if (!ok) {
-            return;
-        }
-    }
-
-    const resolveLatest = origin.single_course_repo ? false : true;
-    const doPull = async (tokenOverride = "") =>
-        apiClient.post("/api/resources/pull", {
-            source_override: {
-                id: origin.source_id || "override",
-                ...origin,
-            },
-            token_override: tokenOverride || undefined,
-            course_id: origin.course_id || resource.id || "",
-            course_url: origin.course_url || "",
-            package_url: origin.package_url || "",
-            resolve_latest: resolveLatest,
-            target_path: resource.local_path,
-            replace_existing: true,
-            backup_before_replace: true,
-        });
-
-    let response = null;
-    try {
-        response = await doPull("");
-        if (!response?.success) {
-            throw new Error(response?.message || "拉取失败");
-        }
-    } catch (error) {
-        const message = extractApiErrorMessage(error, "拉取失败");
-        if (message.includes("认证失败") || message.includes("Token")) {
-            const token = await resolvePublishRetryToken();
-            if (!token) {
-                alert("该仓库需要访问令牌。请在“设置 → 资源库”填写访问令牌后重试。");
-                return;
-            }
-            try {
-                response = await doPull(token.trim());
-                if (!response?.success) {
-                    alert(`拉取失败：${response?.message || "未知错误"}`);
-                    return;
-                }
-            } catch (retryError) {
-                const retryMessage = extractApiErrorMessage(retryError, "拉取失败");
-                alert(`拉取失败：${retryMessage}`);
-                return;
-            }
-        } else {
-            alert(`拉取失败：${message}`);
-            return;
-        }
-    }
-
-    const updatedCourse = {
-        ...(resource || {}),
-        ...(response.course || {}),
-        source: "local",
-        local_path: response.local_path || resource.local_path,
-        origin: normalizeOrigin(response.origin || origin) || origin,
-        sync: {
-            ...(resource.sync || {}),
-            last_pull_at: new Date().toISOString(),
-            last_backup_path: response?.summary?.backup_path || (resource.sync || {}).last_backup_path || "",
-        },
-    };
-    const syncedCourse = withCourseSyncFingerprint(updatedCourse);
-    await persistCourseToDisk(syncedCourse);
-    upsertLocalCourseRecord(syncedCourse, { showDetail: true });
-
-    alert("课程已更新到本地。");
-    await loadResourcesIndex();
-    showDetailView(syncedCourse);
+    return pullLatestForLocalCourseFlow(resource, {
+        apiClient,
+        getCourseOrigin,
+        getLocalCourseChangeState,
+        openResourcesConfirm,
+        extractApiErrorMessage,
+        resolvePublishRetryToken,
+        normalizeOrigin,
+        withCourseSyncFingerprint,
+        persistCourseToDisk,
+        upsertLocalCourseRecord: (course, options = {}) =>
+            upsertLocalCourseRecord(course, { ...options, addCourse, showDetailView }),
+        loadResourcesIndex,
+        showDetailView,
+    });
 }
 
 async function importRemoteCourse(resource, options = {}) {
-    if (!resource) return;
-    const courseUrl = resource.course_url || "";
-    const packageUrl = resource.package_url || "";
-    const isClassroomResource = resource.source === "classroom";
-    const defaultTarget = "";
-    let targetPath = defaultTarget;
-    if (window.electronAPI && typeof window.electronAPI.invoke === "function") {
-        try {
-            const base = await window.electronAPI.invoke("select-folder");
-            if (base) {
-                const cleanBase = base.replace(/[\\/]+$/, "");
-                targetPath = `${cleanBase}/${resource.id || "course"}`;
-            }
-        } catch (error) {
-            console.warn("选择导入目录失败:", error);
-        }
-    }
-    try {
-        const endpoint = isClassroomResource ? "/api/classroom/pull" : "/api/resources/pull";
-        const payload = {
-            course_url: courseUrl,
-            package_url: packageUrl,
-            target_path: targetPath,
-            replace_existing: true,
-            source_id: resource._source_id || "",
-            course_id: resource.id || "",
-        };
-        const sourceOverride = buildSourceOverrideFromCourseMeta(resource);
-        if (sourceOverride) {
-            payload.source_override = {
-                id: sourceOverride.source_id || "override",
-                ...sourceOverride,
-            };
-            if (sourceOverride.source_id === "override" && cloudTempToken) {
-                payload.token_override = cloudTempToken;
-            }
-        }
-        const response = await apiClient.post(endpoint, payload);
-        if (!response.success) {
-            throw new Error(response.message || "导入失败");
-        }
-        const localCourse = {
-            ...response.course,
-            local_path: response.local_path,
-            source: "local",
-            origin: normalizeOrigin(response.origin || buildSourceOverrideFromCourseMeta(resource)),
-            updated_at: new Date().toISOString().slice(0, 10),
-            sync: {
-                last_pull_at: new Date().toISOString(),
-            },
-        };
-        const syncedCourse = withCourseSyncFingerprint(localCourse);
-        const updated = addCourse(syncedCourse, { silent: true });
-        if (!options.silent) {
-            alert(updated ? "课程已更新到本地。" : "课程已导入到本地。");
-        }
-        return syncedCourse;
-    } catch (error) {
-        if (!options.silent) {
-            alert(extractApiErrorMessage(error, "导入失败"));
-        } else {
-            throw error;
-        }
-        return null;
-    }
+    return importRemoteCourseFlow(resource, options, {
+        apiClient,
+        buildSourceOverrideFromCourseMeta,
+        normalizeOrigin,
+        withCourseSyncFingerprint,
+        addCourse,
+        extractApiErrorMessage,
+        cloudTempToken,
+        electronAPI: window.electronAPI,
+    });
 }
 
 async function loadResourcesIndex() {
-    const loading = document.getElementById("resources-loading");
-    if (loading) loading.style.display = "flex";
-
-    localCourses = loadLocalCourses();
-    localCourses = await clearDemoCourseBindingIfNeeded(localCourses);
-    scheduleClassroomSync();
-
-    try {
-        if (classroomState.source && classroomState.connected) {
-            const baseUrl = classroomState.source.base_url || buildClassroomBaseUrl(classroomState.source);
-            const response = await apiClient.post("/api/classroom/fetch-index", {
-                base_url: baseUrl,
-            });
-            if (response?.success) {
-                applyResourcesIndex(response.index || {}, {
-                    submitUrl: "",
-                    repoUrl: response.repo_url || baseUrl,
-                    rawBaseUrl: response.raw_base_url || baseUrl,
-                    branch: response.branch || "classroom",
-                    sources: [],
-                    isMock: false,
-                    remoteSource: "classroom"
-                });
-                updateClassroomBanner();
-                return;
-            } else {
-                classroomState.connected = false;
-                classroomState.source = null;
-            }
-        }
-
-        const response = await apiClient.get("/api/resources/index");
-        if (response.success) {
-            applyResourcesIndex(response.index || {}, {
-                submitUrl: response.submit_url || "",
-                repoUrl: response.repo_url || "",
-                rawBaseUrl: response.raw_base_url || "",
-                branch: response.branch || "main",
-                sources: Array.isArray(response.sources) ? response.sources : [],
-                isMock: false,
-                remoteSource: "remote"
-            });
-        } else {
-            applyResourcesIndex(mockResourcesIndex, { isMock: true, remoteSource: "remote", sources: [] });
-        }
-    } catch (error) {
-        console.error("加载资源索引失败:", error);
-        let message = "资源库加载失败";
-        if (error?.details) {
-            try {
-                const parsed = JSON.parse(error.details);
-                if (parsed && parsed.message) {
-                    message = parsed.message;
-                }
-            } catch (parseError) {
-                message = `资源库加载失败: ${error.details}`;
-            }
-        } else if (error?.message) {
-            message = `资源库加载失败: ${error.message}`;
-        }
-        applyResourcesIndex(mockResourcesIndex, { isMock: true, remoteSource: "remote", sources: [] });
-    } finally {
-        if (loading) loading.style.display = "none";
-        updateClassroomBanner();
-    }
+    return loadResourcesIndexFlow({
+        documentRef: document,
+        setLocalCourses: (value) => { localCourses = value; },
+        localCourses: () => localCourses,
+        loadLocalCourses,
+        clearDemoCourseBindingIfNeeded,
+        scheduleClassroomSync,
+        classroomState,
+        buildClassroomBaseUrl,
+        apiClient,
+        applyResourcesIndex,
+        mockResourcesIndex,
+        updateClassroomBanner,
+    });
 }
 
 function handleSearchInput(event) {
@@ -7143,534 +5928,83 @@ function bindCreateEntryMenu() {
 }
 
 function bindEvents() {
-    const searchInput = document.getElementById("resources-search-input");
-    const searchToggleBtn = document.getElementById("resources-search-toggle-btn");
-    const gradeSelect = document.getElementById("resources-filter-grade");
-    const subjectSelect = document.getElementById("resources-filter-subject");
-    const tagSelect = document.getElementById("resources-filter-tag");
-    const refreshBtn = document.getElementById("resources-refresh-btn");
-    const submitBtn = document.getElementById("resources-submit-btn");
-    const createSubmitBtn = document.getElementById("resources-create-submit-btn");
-    const repoBtn = document.getElementById("resources-repo-btn");
-    const prevBtn = document.getElementById("resources-prev-btn");
-    const nextBtn = document.getElementById("resources-next-btn");
-    const teacherModeButtons = Array.from(document.querySelectorAll('[data-role="teacher-mode-toggle"]'));
-    const list = document.getElementById("resources-list");
-    const backBtn = document.getElementById("resources-back-btn");
-    const detailDownloadBtn = document.getElementById("resources-detail-download");
-    const detailEditBtn = document.getElementById("resources-detail-edit");
-    const detailDeleteBtn = document.getElementById("resources-detail-delete");
-    const detailRepoBtn = document.getElementById("resources-detail-repo");
-    const detailUploadBtn = document.getElementById("resources-detail-upload");
-    const detailOpenBtn = document.getElementById("resources-detail-open");
-    const classroomRefreshBtn = document.getElementById("resources-classroom-refresh");
-    const detailClassroomStartBtn = document.getElementById("resources-detail-classroom-start");
-    const detailClassroomStopBtn = document.getElementById("resources-detail-classroom-stop");
-    const detailMoreBtn = document.getElementById("resources-detail-more-btn");
-    const detailMoreMenu = document.getElementById("resources-detail-more-menu");
-    const addBtn = document.getElementById("resources-add-btn");
-    const addNewBtn = document.getElementById("resources-add-new-btn");
-    const addLocalBtn = document.getElementById("resources-add-local-btn");
-    const addCloudBtn = document.getElementById("resources-add-cloud-btn");
-    const createBackBtn = document.getElementById("resources-create-back-btn");
-    const quickCloudBtn = document.getElementById("resources-quick-cloud-btn");
-    const advancedToggleBtn = document.getElementById("resources-advanced-toggle");
-    const createGenerateBtn = document.getElementById("resources-create-generate-btn");
-    const createCopyBtn = document.getElementById("resources-create-copy-btn");
-    const createSaveBtn = document.getElementById("resources-create-save-btn");
-    const sourceLocalBtn = document.getElementById("resources-source-local");
-    const sourceCloudBtn = document.getElementById("resources-source-cloud");
-    const pickLocalBtn = document.getElementById("resources-pick-local-btn");
-    const cloudRefreshBtn = document.getElementById("resources-cloud-refresh-btn");
-    const cloudImportBtn = document.getElementById("resources-cloud-import-btn");
-    const cloudDetailImportBtn = document.getElementById("resources-cloud-detail-import-btn");
-    const cloudCourseSelect = document.getElementById("resources-cloud-course-select");
-    const cloudTempLoadBtn = document.getElementById("resources-cloud-temp-load-btn");
-    const cloudTempClearBtn = document.getElementById("resources-cloud-temp-clear-btn");
-    const addSourceBtn = document.getElementById("resources-add-source-btn");
-    const saveSourcesBtn = document.getElementById("resources-save-sources-btn");
-    const sectionCountInput = document.getElementById("resources-section-count");
-    const generateSectionsBtn = document.getElementById("resources-generate-sections");
-    const addSectionBtn = document.getElementById("resources-add-section");
-    const structureSaveBtn = document.getElementById("resources-structure-save-btn");
-    const createTitleInput = document.getElementById("resources-create-title");
-    const createDescInput = document.getElementById("resources-create-desc");
-    const createGradeInput = document.getElementById("resources-create-grade");
-    const createSubjectInput = document.getElementById("resources-create-subject");
-    const createCoverInput = document.getElementById("resources-create-cover");
-    const createLocalPathInput = document.getElementById("resources-create-local-path");
-    const createAuthorInput = document.getElementById("resources-create-author");
-    const createVersionInput = document.getElementById("resources-create-version");
-    const createIdInput = document.getElementById("resources-create-id");
-    const createQuickFormEnabledInput = document.getElementById("resources-create-quickform-enabled");
-    const createQuickFormHtmlPathInput = document.getElementById("resources-create-quickform-html-path");
-    const coverFileInput = document.getElementById("resources-cover-file");
-    const coverDrop = document.getElementById("resources-cover-drop");
-    const coverPreview = document.getElementById("resources-cover-preview");
-    const coverPreviewImg = document.getElementById("resources-cover-preview-img");
-    const coverClearBtn = document.getElementById("resources-cover-clear");
-    const stepPrevBtn = document.getElementById("resources-step-prev");
-    const stepNextBtn = document.getElementById("resources-step-next");
-    const scanBtn = document.getElementById("resources-scan-btn");
-    const rescanBtn = document.getElementById("resources-rescan-btn");
-    const publishBtn = document.getElementById("resources-publish-btn");
-    const pullBtn = document.getElementById("resources-detail-pull");
-
-    if (searchInput) {
-        searchInput.addEventListener("input", handleSearchInput);
-        searchInput.addEventListener("keydown", (event) => {
-            if (event.key === "Escape" && !hasActiveResourceFilters()) {
-                resourcesSearchExpanded = false;
-                updateResourcesSearchUI();
-            }
-        });
-    }
-
-    if (searchToggleBtn) {
-        searchToggleBtn.addEventListener("click", () => {
-            resourcesSearchExpanded = !resourcesSearchExpanded;
-            updateResourcesSearchUI({ focus: resourcesSearchExpanded });
-        });
-    }
-
-    if (gradeSelect) {
-        gradeSelect.addEventListener("change", (event) => {
-            filterState.grade = event.target.value;
-            applyFilters();
-        });
-    }
-
-    if (subjectSelect) {
-        subjectSelect.addEventListener("change", (event) => {
-            filterState.subject = event.target.value;
-            applyFilters();
-        });
-    }
-
-    if (tagSelect) {
-        tagSelect.addEventListener("change", (event) => {
-            filterState.tag = event.target.value;
-            applyFilters();
-        });
-    }
-
-    if (refreshBtn) {
-        refreshBtn.addEventListener("click", loadResourcesIndex);
-    }
-
-    if (teacherModeButtons.length) {
-        teacherModeButtons.forEach((teacherModeBtn) => {
-            if (teacherModeBtn.id === "topbar-teacher-mode-btn") return;
-            teacherModeBtn.addEventListener("click", async () => {
-                await handleTeacherModeToggle();
-            });
-        });
-    }
-
-    if (classroomRefreshBtn) {
-        classroomRefreshBtn.addEventListener("click", async () => {
-            await discoverClassrooms();
-            await loadResourcesIndex();
-        });
-    }
-
-    if (submitBtn) {
-        submitBtn.addEventListener("click", () => openExternal(submitUrl));
-    }
-
-    if (createSubmitBtn) {
-        createSubmitBtn.addEventListener("click", () => openExternal(submitUrl));
-    }
-
-    if (repoBtn) {
-        repoBtn.addEventListener("click", () => openExternal(repoUrl));
-    }
-
-    if (prevBtn) {
-        prevBtn.addEventListener("click", () => {
-            if (pageState.current > 1) {
-                pageState.current -= 1;
-                renderResources(filteredResources);
-            }
-        });
-    }
-
-    if (nextBtn) {
-        nextBtn.addEventListener("click", () => {
-            const totalPages = Math.max(1, Math.ceil(filteredResources.length / pageState.size));
-            if (pageState.current < totalPages) {
-                pageState.current += 1;
-                renderResources(filteredResources);
-            }
-        });
-    }
-
-    if (list) {
-        list.addEventListener("click", handleListClick);
-    }
-
-    if (backBtn) {
-        backBtn.addEventListener("click", showListView);
-    }
-
-    if (detailDownloadBtn) {
-        detailDownloadBtn.addEventListener("click", (event) => {
-            const targetUrl = event.currentTarget.dataset.url;
-            if (targetUrl) {
-                openExternal(targetUrl);
-            }
-        });
-    }
-
-    if (detailEditBtn) {
-        detailEditBtn.addEventListener("click", async () => {
-            if (currentResource) {
-                const ok = await ensureTeacherModeForEdit("编辑课程");
-                if (!ok) return;
-                openCreateView(currentResource);
-            }
-        });
-    }
-
-    if (detailDeleteBtn) {
-        detailDeleteBtn.addEventListener("click", async () => {
-            if (currentResource) {
-                const ok = await ensureTeacherModeForEdit("删除课程");
-                if (!ok) return;
-                await deleteCourse(currentResource);
-            }
-        });
-    }
-
-    if (detailRepoBtn) {
-        detailRepoBtn.addEventListener("click", (event) => {
-            const targetUrl = event.currentTarget.dataset.url;
-            if (targetUrl) {
-                openExternal(targetUrl);
-            }
-        });
-    }
-
-    if (detailOpenBtn) {
-        detailOpenBtn.addEventListener("click", async (event) => {
-            const path = event.currentTarget.dataset.path;
-            if (path) {
-                if (window.app?.workspace?.openJupyterWorkspace) {
-                    await window.app.workspace.openJupyterWorkspace({
-                        projectDir: path,
-                        sourceLabel: `${currentResource?.title || "课程"} / 课程目录`,
-                        sourcePage: teacherMode.unlocked ? "resources" : "main",
-                    });
-                }
-                if (window.app?.jupyter?.startJupyter) {
-                    await window.app.jupyter.startJupyter();
-                }
-            }
-        });
-    }
-
-    if (detailMoreBtn && detailMoreMenu) {
-        detailMoreBtn.addEventListener("click", (event) => {
-            event.stopPropagation();
-            toggleDetailMoreMenu();
-        });
-        detailMoreMenu.addEventListener("click", () => {
-            detailMoreMenu.classList.remove("is-open");
-        });
-        bindDetailMoreMenu();
-    }
-
-    if (detailClassroomStartBtn) {
-        detailClassroomStartBtn.addEventListener("click", async () => {
-            if (currentResource) {
-                await startClassroomForResource(currentResource);
-            }
-        });
-    }
-
-    if (detailClassroomStopBtn) {
-        detailClassroomStopBtn.addEventListener("click", async () => {
-            await stopClassroomWithPrompt();
-        });
-    }
-
-    if (detailUploadBtn) {
-        detailUploadBtn.addEventListener("click", async () => {
-            if (!currentResource) return;
-            const ok = await ensureTeacherModeForEdit("上传课程");
-            if (!ok) return;
-            await publishCourseFromDetail(currentResource);
-        });
-    }
-
-    if (addBtn) {
-        addBtn.addEventListener("click", (event) => {
-            event.stopPropagation();
-            toggleCreateEntryMenu();
-        });
-        bindCreateEntryMenu();
-    }
-
-    if (addNewBtn) {
-        addNewBtn.addEventListener("click", () => {
-            closeCreateEntryMenu();
-            openCreateView();
-            chooseCreateEntryMode("new");
-        });
-    }
-
-    if (addLocalBtn) {
-        addLocalBtn.addEventListener("click", () => {
-            closeCreateEntryMenu();
-            openCreateView();
-            chooseCreateEntryMode("local-import");
-        });
-    }
-
-    if (addCloudBtn) {
-        addCloudBtn.addEventListener("click", () => {
-            closeCreateEntryMenu();
-            openCreateView();
-            chooseCreateEntryMode("cloud-import");
-        });
-    }
-
-    if (createBackBtn) {
-        createBackBtn.addEventListener("click", closeCreateView);
-    }
-
-    if (quickCloudBtn) {
-        quickCloudBtn.addEventListener("click", quickAddCloudCourse);
-    }
-
-    if (advancedToggleBtn) {
-        advancedToggleBtn.addEventListener("click", toggleAdvancedPanel);
-    }
-
-    [createTitleInput, createDescInput, createGradeInput, createSubjectInput, createCoverInput, createAuthorInput, createVersionInput, createQuickFormHtmlPathInput].forEach((input) => {
-        if (input) {
-            input.addEventListener("input", updateCreateFormState);
-        }
+    return bindResourcesUI({
+        documentRef: document,
+        navigatorRef: navigator,
+        state: {
+            filterState,
+            pageState,
+            submitUrl: () => submitUrl,
+            repoUrl: () => repoUrl,
+        },
+        handleSearchInput,
+        hasActiveResourceFilters,
+        updateResourcesSearchUI,
+        applyFilters,
+        loadResourcesIndex,
+        handleTeacherModeToggle,
+        discoverClassrooms,
+        openExternal,
+        renderResources,
+        filteredResources: () => filteredResources,
+        showListView,
+        ensureTeacherModeForEdit,
+        openCreateView,
+        deleteCourse,
+        currentResource: () => currentResource,
+        toggleDetailMoreMenu,
+        bindDetailMoreMenu,
+        startClassroomForResource,
+        stopClassroomWithPrompt,
+        publishCourseFromDetail,
+        toggleCreateEntryMenu,
+        bindCreateEntryMenu,
+        closeCreateEntryMenu,
+        chooseCreateEntryMode,
+        closeCreateView,
+        quickAddCloudCourse,
+        toggleAdvancedPanel,
+        updateCreateFormState,
+        renderLocalPathSummary,
+        renderPackagePathSummary,
+        renderCloudCoursePreview,
+        createSource: () => createSource,
+        draftSections: () => draftSections,
+        setDraftSections: (value) => { draftSections = value; },
+        buildDefaultSections,
+        renderSectionEditor,
+        renderMaterialList,
+        saveCourseStructure,
+        applyCoverFile,
+        updateCreateCoverPreview,
+        buildDefaultTemplate,
+        saveLocalCourse,
+        scanCourse,
+        publishCourse,
+        setCreateStep,
+        createStep: () => createStep,
+        importRemoteCourse,
+        setCreateSource,
+        pickLocalPackage,
+        useDefaultSampleCourse,
+        importLocalPackageToPath,
+        pickLocalCourse,
+        loadCloudCourseOptions,
+        importCloudCourseAndSave,
+        loadCloudCoursesFromTempSource,
+        clearCloudTempSourceAndReload,
+        updateCloudSourceActionUI,
+        addResourceSourceRow,
+        saveResourceSourcesConfig,
+        teacherUnlocked: () => teacherMode.unlocked,
+        openJupyterWorkspace: window.app?.workspace?.openJupyterWorkspace,
+        startJupyter: window.app?.jupyter?.startJupyter,
+        resourcesSearchExpandedRef: {
+            get: () => resourcesSearchExpanded,
+            set: (value) => { resourcesSearchExpanded = value; },
+        },
+        handleListClick,
     });
-
-    if (createQuickFormEnabledInput) {
-        createQuickFormEnabledInput.addEventListener("change", updateCreateFormState);
-    }
-
-    if (createLocalPathInput) {
-        createLocalPathInput.addEventListener("input", () => {
-            renderLocalPathSummary();
-            updateCreateFormState();
-        });
-    }
-    if (cloudCourseSelect) {
-        cloudCourseSelect.addEventListener("change", () => {
-            renderCloudCoursePreview();
-            updateCreateFormState();
-        });
-    }
-
-    if (sectionCountInput) {
-        sectionCountInput.addEventListener("input", updateCreateFormState);
-    }
-
-    if (generateSectionsBtn) {
-        generateSectionsBtn.addEventListener("click", () => {
-            if (createSource !== "local") return;
-            const count = Number(sectionCountInput?.value || 1) || 1;
-            draftSections = buildDefaultSections(count, 2);
-            renderSectionEditor();
-            renderMaterialList();
-            updateCreateFormState();
-        });
-    }
-
-    if (addSectionBtn) {
-        addSectionBtn.addEventListener("click", () => {
-            if (createSource !== "local") return;
-            const nextIndex = draftSections.length + 1;
-            draftSections.push({
-                title: `第 ${nextIndex} 节`,
-                description: "",
-                experiments: [
-                    {
-                        title: "实验一",
-                        description: "",
-                        files: []
-                    }
-                ]
-            });
-            renderSectionEditor();
-            renderMaterialList();
-            updateCreateFormState();
-        });
-    }
-
-    if (structureSaveBtn) {
-        structureSaveBtn.addEventListener("click", saveCourseStructure);
-    }
-
-    if (coverFileInput) {
-        coverFileInput.addEventListener("change", async (event) => {
-            const file = event.target.files?.[0];
-            await applyCoverFile(file);
-        });
-    }
-
-    if (coverDrop) {
-        ["dragenter", "dragover"].forEach((evt) => {
-            coverDrop.addEventListener(evt, (event) => {
-                event.preventDefault();
-                coverDrop.classList.add("dragover");
-            });
-        });
-        ["dragleave", "dragend"].forEach((evt) => {
-            coverDrop.addEventListener(evt, () => {
-                coverDrop.classList.remove("dragover");
-            });
-        });
-        coverDrop.addEventListener("drop", async (event) => {
-            event.preventDefault();
-            coverDrop.classList.remove("dragover");
-            const file = event.dataTransfer?.files?.[0];
-            await applyCoverFile(file);
-        });
-    }
-
-    if (coverClearBtn) {
-        coverClearBtn.addEventListener("click", () => {
-            if (coverFileInput) {
-                coverFileInput.value = "";
-            }
-            if (createCoverInput) {
-                createCoverInput.value = "";
-            }
-            updateCreateCoverPreview();
-            updateCreateFormState();
-        });
-    }
-
-    if (createGenerateBtn) {
-        createGenerateBtn.addEventListener("click", () => {
-            const title = document.getElementById("resources-create-title")?.value.trim() || "课程名称";
-            const templateEl = document.getElementById("resources-create-template");
-            if (templateEl) {
-                templateEl.value = JSON.stringify(buildDefaultTemplate(title), null, 2);
-            }
-        });
-    }
-
-    if (createCopyBtn) {
-        createCopyBtn.addEventListener("click", async () => {
-            const templateEl = document.getElementById("resources-create-template");
-            if (!templateEl) return;
-            try {
-                await navigator.clipboard.writeText(templateEl.value);
-            } catch (error) {
-                console.warn("复制模板失败:", error);
-            }
-        });
-    }
-
-    if (createSaveBtn) {
-        createSaveBtn.addEventListener("click", saveLocalCourse);
-    }
-
-    if (scanBtn) {
-        scanBtn.addEventListener("click", scanCourse);
-    }
-
-    if (rescanBtn) {
-        rescanBtn.addEventListener("click", scanCourse);
-    }
-
-    if (publishBtn) {
-        publishBtn.addEventListener("click", publishCourse);
-    }
-
-    if (stepPrevBtn) {
-        stepPrevBtn.addEventListener("click", () => {
-            if (createSource === "cloud") {
-                closeCreateView();
-                return;
-            }
-            setCreateStep(createStep - 1);
-        });
-    }
-
-    if (stepNextBtn) {
-        stepNextBtn.addEventListener("click", () => {
-            if (createStep < 3) {
-                setCreateStep(createStep + 1);
-            } else {
-                showListView();
-            }
-        });
-    }
-
-    if (pullBtn) {
-        pullBtn.addEventListener("click", async () => {
-            if (!currentResource) return;
-            if (currentResource.source === "local") {
-                const ok = await ensureTeacherModeForEdit("拉取课程更新");
-                if (!ok) return;
-                await pullLatestForLocalCourse(currentResource);
-                return;
-            }
-            await importRemoteCourse(currentResource);
-        });
-    }
-
-    if (sourceLocalBtn) {
-        sourceLocalBtn.addEventListener("click", () => setCreateSource("local"));
-    }
-
-    if (sourceCloudBtn) {
-        sourceCloudBtn.addEventListener("click", () => setCreateSource("cloud"));
-    }
-
-    if (pickLocalBtn) {
-        pickLocalBtn.addEventListener("click", pickLocalCourse);
-    }
-
-    if (cloudRefreshBtn) {
-        cloudRefreshBtn.addEventListener("click", loadCloudCourseOptions);
-    }
-
-    if (cloudImportBtn) {
-        cloudImportBtn.addEventListener("click", importCloudCourseAndSave);
-    }
-
-    if (cloudDetailImportBtn) {
-        cloudDetailImportBtn.addEventListener("click", importCloudCourseAndSave);
-    }
-
-    if (cloudTempLoadBtn) {
-        cloudTempLoadBtn.addEventListener("click", loadCloudCoursesFromTempSource);
-    }
-
-    if (cloudTempClearBtn) {
-        cloudTempClearBtn.addEventListener("click", clearCloudTempSourceAndReload);
-    }
-
-    const cloudRepoAddressInput = document.getElementById("resources-cloud-repo-address");
-    const cloudRepoTokenInput = document.getElementById("resources-cloud-temp-token");
-    if (cloudRepoAddressInput) {
-        cloudRepoAddressInput.addEventListener("input", updateCloudSourceActionUI);
-    }
-    if (cloudRepoTokenInput) {
-        cloudRepoTokenInput.addEventListener("input", updateCloudSourceActionUI);
-    }
-
-    if (addSourceBtn) {
-        addSourceBtn.addEventListener("click", addResourceSourceRow);
-    }
-
-    if (saveSourcesBtn) {
-        saveSourcesBtn.addEventListener("click", saveResourceSourcesConfig);
-    }
-
-    updateCloudSourceActionUI();
 }
 
 export async function initResourcesPage() {
@@ -7708,241 +6042,41 @@ export async function toggleTeacherMode() {
     await handleTeacherModeToggle();
 }
 
-function extractResourcesFromClassroomIndex(fetchResp) {
-    const indexData = fetchResp?.index;
-    if (Array.isArray(indexData)) return indexData;
-    if (Array.isArray(indexData?.resources)) return indexData.resources;
-    if (Array.isArray(indexData?.items)) return indexData.items;
-    return [];
-}
-
-function pickClassroomLaunchResource(fetchResp) {
-    const list = extractResourcesFromClassroomIndex(fetchResp);
-    if (!list.length) return null;
-    const activeId = (fetchResp?.index?.classroom?.active_course_id || "").trim();
-    const activeOriginId = (fetchResp?.index?.classroom?.active_course_origin_id || "").trim();
-    if (activeId) {
-        const matched = list.find((item) => (item?.id || "").trim() === activeId);
-        if (matched) return matched;
-    }
-    if (activeOriginId) {
-        const matched = list.find((item) => (item?.origin_id || "").trim() === activeOriginId);
-        if (matched) return matched;
-    }
-    return list[0];
-}
-
-function sanitizePathSegment(value, fallback = "classroom-course") {
-    const text = (value || "").toString().trim();
-    const normalized = text
-        .replace(/[<>:"|?*]/g, "-")
-        .replace(/[\\/]+/g, "-")
-        .replace(/\s+/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-+|-+$/g, "");
-    return normalized || fallback;
-}
-
-function resolveClassroomPullTargetPath(resource) {
-    const projectInput = document.getElementById("project-path");
-    const projectDir = (projectInput?.value || "").trim();
-    let fallbackProjectDir = "";
-    try {
-        fallbackProjectDir = (localStorage.getItem("xedu-last-project-dir") || "").trim();
-    } catch (_) {
-        fallbackProjectDir = "";
-    }
-    const baseDir = (projectDir || fallbackProjectDir || "").replace(/[\\/]+$/, "");
-    if (!baseDir) return "";
-    const courseSegment = sanitizePathSegment(resource?.id || resource?.title || "classroom-course");
-    return `${baseDir}/${courseSegment}`;
-}
-
-function findFirstNotebookPathInSection(section) {
-    const experiments = Array.isArray(section?.experiments) ? section.experiments : [];
-    for (const exp of experiments) {
-        const overview = getExperimentFileOverview(exp);
-        const notebook = (overview?.notebookFiles || []).find((file) => {
-            const filePath = (file?.path || "").trim();
-            return filePath && !isRemotePath(filePath);
-        });
-        if (notebook?.path) {
-            return notebook.path;
-        }
-    }
-    return "";
-}
-
-function findFirstNotebookPathInCourse(course, preferredSectionIndex = null) {
-    const sections = normalizeSections(course || {});
-    if (!sections.length) return "";
-
-    if (preferredSectionIndex !== null && preferredSectionIndex !== undefined) {
-        const sectionIndex = Number(preferredSectionIndex);
-        if (Number.isFinite(sectionIndex) && sectionIndex >= 0 && sectionIndex < sections.length) {
-            const preferredPath = findFirstNotebookPathInSection(sections[sectionIndex]);
-            if (preferredPath) {
-                return preferredPath;
-            }
-        }
-    }
-
-    for (const section of sections) {
-        const notebookPath = findFirstNotebookPathInSection(section);
-        if (notebookPath) {
-            return notebookPath;
-        }
-    }
-    return "";
-}
-
 async function prepareStudentClassroomLaunch(resource, options = {}) {
-    if (!resource?.package_url) {
-        return null;
-    }
-    const targetPath = resolveClassroomPullTargetPath(resource);
-    const response = await apiClient.post("/api/classroom/pull", {
-        package_url: resource.package_url,
-        target_path: targetPath,
-        replace_existing: true,
+    return prepareStudentClassroomLaunchFlow(resource, options, {
+        getStoredProjectDirFallback: () => getStoredProjectDirFallback(document),
+        resolveClassroomPullTargetPath,
+        apiClient,
+        addCourse,
+        findFirstNotebookPathInCourse,
+        normalizeSections,
+        getExperimentFileOverview,
+        isRemotePath,
     });
-    if (!response?.success) {
-        throw new Error(response?.message || "导入课堂课程失败");
-    }
-    const pulledCourse = response.course || {};
-    const localPath = response.local_path || targetPath || "";
-    const localCourse = {
-        ...pulledCourse,
-        id: pulledCourse.id || resource.id || `classroom-${Date.now()}`,
-        source: "local",
-        local_path: localPath,
-        updated_at: new Date().toISOString().slice(0, 10),
-    };
-    addCourse(localCourse, { silent: true });
-    const preferredSectionIndex =
-        options?.sectionIndex !== undefined && options?.sectionIndex !== null
-            ? Number(options.sectionIndex)
-            : null;
-    return {
-        project_path: localPath,
-        notebook_path: findFirstNotebookPathInCourse(pulledCourse, preferredSectionIndex),
-        course_title: pulledCourse.title || resource.title || "",
-        section_index: preferredSectionIndex,
-        course: localCourse,
-    };
 }
 
 export async function connectStudentClassroomByCode(code, options = {}) {
-    const showResourcesView = options?.showResourcesView !== false;
-    const prepareConsoleLaunch = options?.prepareConsoleLaunch === true;
-    const preferredSource = options?.source || null;
-    if (!initialized) {
-        bindEvents();
-        initialized = true;
-    }
-    localCourses = loadLocalCourses();
-    await loadClassroomConfig();
-    await ensureTeacherModeReady();
-
-    const fetchIndexBySource = async (source) => {
-        if (!source?.base_url) {
-            return null;
-        }
-        const response = await apiClient.post("/api/classroom/fetch-index", {
-            base_url: source.base_url,
-        });
-        return response;
-    };
-
-    try {
-        if (preferredSource?.base_url) {
-            classroomState.source = {
-                ...preferredSource,
-                base_url: buildClassroomBaseUrl(preferredSource),
-            };
-            classroomState.connected = true;
-        } else if (!classroomState.source?.base_url) {
-            const discoverResp = await apiClient.get("/api/classroom/discover?timeout=1.5");
-            const list = Array.isArray(discoverResp?.classrooms) ? discoverResp.classrooms : [];
-            if (!list.length) {
-                return { success: false, message: "未发现课堂，请确认教师已开启课堂" };
-            }
-            const selected = list[0];
-            classroomState.source = {
-                ...selected,
-                base_url: buildClassroomBaseUrl(selected),
-            };
-            classroomState.connected = true;
-        }
-
-        let fetchResp = await fetchIndexBySource(classroomState.source);
-        if (!fetchResp?.success) {
-            if (preferredSource?.base_url) {
-                return { success: false, message: fetchResp?.message || "课堂不可用" };
-            }
-            const discoverResp = await apiClient.get("/api/classroom/discover?timeout=1.5");
-            const list = Array.isArray(discoverResp?.classrooms) ? discoverResp.classrooms : [];
-            if (!list.length) {
-                return { success: false, message: fetchResp?.message || "课堂不可用" };
-            }
-            const selected = list[0];
-            classroomState.source = {
-                ...selected,
-                base_url: buildClassroomBaseUrl(selected),
-            };
-            classroomState.connected = true;
-            fetchResp = await fetchIndexBySource(classroomState.source);
-            if (!fetchResp?.success) {
-                return { success: false, message: fetchResp?.message || "课堂不可用" };
-            }
-        }
-
-        applyResourcesIndex(fetchResp.index || {}, {
-            submitUrl: "",
-            repoUrl: fetchResp.repo_url || classroomState.source.base_url,
-            rawBaseUrl: fetchResp.raw_base_url || classroomState.source.base_url,
-            branch: fetchResp.branch || "classroom",
-            sources: [],
-            isMock: false,
-            remoteSource: "classroom"
-        });
-        let launch = null;
-        let warning = "";
-        if (prepareConsoleLaunch) {
-            const launchResource = pickClassroomLaunchResource(fetchResp);
-            const launchSectionIndex =
-                fetchResp?.index?.classroom?.active_section_index !== undefined &&
-                fetchResp?.index?.classroom?.active_section_index !== null
-                    ? Number(fetchResp.index.classroom.active_section_index)
-                    : null;
-            if (launchResource) {
-                try {
-                    launch = await prepareStudentClassroomLaunch(launchResource, {
-                        sectionIndex: Number.isFinite(launchSectionIndex) ? launchSectionIndex : null,
-                    });
-                } catch (error) {
-                    warning = extractApiErrorMessage(error, "已连接课堂，但导入本地课程失败");
-                }
-            } else {
-                warning = "课堂已连接，但当前没有可进入的课程";
-            }
-        }
-        updateClassroomBanner();
-        if (!showResourcesView && launch?.course) {
-            showDetailView(launch.course);
-        } else if (showResourcesView) {
-            showListView();
-        }
-        return {
-            success: true,
-            message: "已连接课堂",
-            count: resourcesCache.length,
-            launch,
-            warning,
-        };
-    } catch (error) {
-        return { success: false, message: extractApiErrorMessage(error, "连接课堂失败") };
-    }
+    return connectStudentClassroomByCodeFlow(code, options, {
+        initialized: () => initialized,
+        setInitialized: (value) => { initialized = value; },
+        bindEvents,
+        setLocalCourses: (value) => { localCourses = value; },
+        localCourses: () => localCourses,
+        loadLocalCourses,
+        loadClassroomConfig,
+        ensureTeacherModeReady,
+        classroomState,
+        buildClassroomBaseUrl,
+        apiClient,
+        applyResourcesIndex,
+        pickClassroomLaunchResource,
+        prepareStudentClassroomLaunch,
+        extractApiErrorMessage,
+        updateClassroomBanner,
+        showDetailView,
+        showListView,
+        resourcesCache: () => resourcesCache,
+    });
 }
 
 export function getChatContext() {

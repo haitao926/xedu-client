@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import re
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -43,6 +44,14 @@ TARGETS = {
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REQ_FULL = PROJECT_ROOT / "backend" / "requirements_full.txt"
 REQ_MINIMAL = PROJECT_ROOT / "backend" / "requirements.txt"
+WINDOWS_SOURCE_WHEEL_FALLBACKS = {"pinpong"}
+NO_DEPS_REQUIREMENTS = {"xedu-python"}
+XEDU_PYTHON_VERSION = "2.0.0"
+XEDU_PYTHON_SPEC = f"xedu-python=={XEDU_PYTHON_VERSION}"
+# Keep xedu-python out of normal requirements resolution. The runtime must use
+# the exact XEduHub package, but its dependency metadata is too broad for the
+# portable Python 3.12 stack, so dependencies are supplied explicitly above.
+NO_DEPS_REQUIREMENT_SPECS = (XEDU_PYTHON_SPEC,)
 
 
 def detect_default_target() -> str:
@@ -67,6 +76,43 @@ def pick_requirements(kind: str) -> Path:
 def run(cmd, **kwargs):
     print("+", " ".join(str(part) for part in cmd))
     subprocess.run(cmd, check=True, **kwargs)
+
+
+def requirement_name(requirement: str) -> str:
+    marker_split = str(requirement or "").split(";", 1)[0].strip()
+    match = re.match(r"([A-Za-z0-9_.-]+)", marker_split)
+    return match.group(1).lower() if match else ""
+
+
+def split_windows_requirements(requirements_file: Path):
+    primary_specs = []
+    fallback_specs = []
+    no_deps_specs = []
+    for raw_line in requirements_file.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.split("#", 1)[0].strip()
+        if not stripped:
+            continue
+        name = requirement_name(stripped)
+        if name in NO_DEPS_REQUIREMENTS:
+            no_deps_specs.append(stripped)
+            continue
+        if name in WINDOWS_SOURCE_WHEEL_FALLBACKS:
+            fallback_specs.append(stripped)
+        else:
+            primary_specs.append(stripped)
+    for spec in NO_DEPS_REQUIREMENT_SPECS:
+        if spec not in no_deps_specs:
+            no_deps_specs.append(spec)
+    return primary_specs, fallback_specs, no_deps_specs
+
+
+def install_native_packages(python_exe: Path, specs, *, no_deps: bool = False):
+    for spec in specs:
+        cmd = [str(python_exe), "-m", "pip", "install"]
+        if no_deps:
+            cmd.append("--no-deps")
+        cmd.append(spec)
+        run(cmd)
 
 
 def download_with_curl(url: str, dest: Path):
@@ -138,7 +184,17 @@ def install_native_requirements(env_dir: Path, target: str, requirements_file: P
         print(f"Skip requirements install: {requirements_file} not found")
         return
     python_exe = resolve_python_executable(env_dir, target)
-    run([str(python_exe), "-m", "pip", "install", "-r", str(requirements_file)])
+    primary_specs, fallback_specs, no_deps_specs = split_windows_requirements(requirements_file)
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as handle:
+        if primary_specs or fallback_specs:
+            handle.write("\n".join(primary_specs + fallback_specs) + "\n")
+        temp_requirements = Path(handle.name)
+    try:
+        if primary_specs or fallback_specs:
+            run([str(python_exe), "-m", "pip", "install", "-r", str(temp_requirements)])
+        install_native_packages(python_exe, no_deps_specs, no_deps=True)
+    finally:
+        temp_requirements.unlink(missing_ok=True)
 
 
 def patch_windows_pth(env_dir: Path):
@@ -156,31 +212,66 @@ def patch_windows_pth(env_dir: Path):
 
 
 def download_windows_wheels(requirements_file: Path, wheelhouse: Path):
+    if wheelhouse.exists():
+        shutil.rmtree(wheelhouse)
     wheelhouse.mkdir(parents=True, exist_ok=True)
-    if any(wheelhouse.glob("*.whl")):
-        print(f"Reusing existing wheelhouse: {wheelhouse}")
-        return
     target_cfg = TARGETS["windows-x64"]["pip_download"]
-    cmd = [
-        sys.executable,
-        "-m",
-        "pip",
-        "download",
-        "--only-binary=:all:",
-        "--platform",
-        target_cfg["platform"],
-        "--python-version",
-        target_cfg["python_version"],
-        "--implementation",
-        target_cfg["implementation"],
-        "--abi",
-        target_cfg["abi"],
-        "-r",
-        str(requirements_file),
-        "-d",
-        str(wheelhouse),
-    ]
-    run(cmd)
+    primary_specs, fallback_specs, no_deps_specs = split_windows_requirements(requirements_file)
+
+    if primary_specs:
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as handle:
+            handle.write("\n".join(primary_specs) + "\n")
+            temp_requirements = Path(handle.name)
+        try:
+            cmd = [
+                sys.executable,
+                "-m",
+                "pip",
+                "download",
+                "--only-binary=:all:",
+                "--platform",
+                target_cfg["platform"],
+                "--python-version",
+                target_cfg["python_version"],
+                "--implementation",
+                target_cfg["implementation"],
+                "--abi",
+                target_cfg["abi"],
+                "-r",
+                str(temp_requirements),
+                "-d",
+                str(wheelhouse),
+            ]
+            run(cmd)
+        finally:
+            temp_requirements.unlink(missing_ok=True)
+
+    for spec in fallback_specs:
+        print(f"Building universal wheel fallback for {spec}")
+        cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            spec,
+            "-w",
+            str(wheelhouse),
+        ]
+        run(cmd)
+
+    for spec in no_deps_specs:
+        print(f"Downloading no-deps wheel for {spec}")
+        cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "download",
+            "--no-deps",
+            spec,
+            "-d",
+            str(wheelhouse),
+        ]
+        run(cmd)
 
 
 def extract_wheel_to_windows_env(wheel_path: Path, env_dir: Path):
@@ -230,6 +321,37 @@ def install_windows_requirements_offline(env_dir: Path, requirements_file: Path,
         print(f"Extracting {wheel.name}")
         extract_wheel_to_windows_env(wheel, env_dir)
     patch_windows_pth(env_dir)
+    validate_windows_xedu_runtime(env_dir)
+
+
+def validate_windows_xedu_runtime(env_dir: Path, expected_version: str = XEDU_PYTHON_VERSION):
+    site_packages = env_dir / "Lib" / "site-packages"
+    version_file = site_packages / "XEdu" / "version.py"
+    if not version_file.exists():
+        raise RuntimeError("Windows runtime missing XEdu/version.py")
+
+    version_text = version_file.read_text(encoding="utf-8", errors="replace")
+    quoted_versions = {
+        f"__version__='{expected_version}'",
+        f'__version__="{expected_version}"',
+    }
+    if not any(marker in version_text for marker in quoted_versions):
+        raise RuntimeError(
+            f"Windows runtime must install xedu-python=={expected_version}; "
+            f"found {version_file} without expected __version__"
+        )
+
+    metadata_files = sorted(site_packages.glob("*.dist-info/METADATA"))
+    xedu_metadata = []
+    for metadata in metadata_files:
+        text = metadata.read_text(encoding="utf-8", errors="replace")
+        lowered = text.lower()
+        if "name: xedu-python" in lowered or "name: xedu_python" in lowered:
+            xedu_metadata.append(text)
+    if not xedu_metadata:
+        raise RuntimeError("Windows runtime missing xedu-python package metadata")
+    if not any(f"version: {expected_version}" in text.lower() for text in xedu_metadata):
+        raise RuntimeError(f"Windows runtime must install xedu-python=={expected_version}")
 
 
 def create_marker(env_dir: Path):

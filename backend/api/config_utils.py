@@ -49,7 +49,7 @@ def merge_jupyter_payload(
 
         if key == "port" and isinstance(value, (int, str)):
             jupyter_dict[key] = int(value)
-        elif key in ["use_notebook", "auto_start", "auto_restart", "debug"]:
+        elif key in ["use_notebook", "auto_start", "auto_restart", "debug", "allow_remote_access"]:
             jupyter_dict[key] = parse_bool(value)
         elif key in ["check_interval", "max_restarts", "timeout"] and isinstance(value, (int, str)):
             jupyter_dict[key] = int(value)

@@ -1,0 +1,15 @@
+Use case: scientific-and-educational
+Asset type: classroom process illustration
+Primary request: Generate a wide teaching-process illustration for a middle-school AI course showing how one lesson flows through an integrated classroom tool.
+Scene/background: light classroom-tech background, mostly white, subtle soft blue gradients, spacious.
+Subject: one four-step classroom flow with teacher preparation and student learning progression.
+Composition/framing: landscape 16:9, left-to-right or slightly curved process path, each step visually distinct but coherent.
+Style/medium: polished modern educational illustration, clear icons, soft isometric depth, presentation-ready.
+Step design:
+- Step 1: teacher prepares course resources and lesson materials.
+- Step 2: students open a Blockly-style workspace and understand the task workflow.
+- Step 3: students switch into a Jupyter-style notebook to read and run code.
+- Step 4: students review output, discuss results, and reflect.
+Text (verbatim): no text, no letters, no numbers.
+Constraints: no real faces, no logos, no watermark, no messy classroom crowd, no fake UI text, high clarity on projector.
+Avoid: photoreal classroom, comic exaggeration, cluttered scenes, dark palettes.

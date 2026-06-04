@@ -1,0 +1,20 @@
+Use case: infographic-diagram
+Asset type: case-application PPT supporting illustration
+Primary request: Generate a wide educational infographic for a middle-school AI classroom presentation that clearly explains the problem before and after using one integrated learning platform.
+Scene/background: clean white to very light blue background, presentation-friendly, high contrast, lots of clean margins.
+Subject: split comparison layout with a clear center divider.
+Composition/framing: landscape 16:9, left half is "before", right half is "after", strong visual hierarchy, easy to understand at a glance.
+Style/medium: polished modern educational infographic, flat plus light isometric depth, crisp shapes, formal presentation quality.
+Text (verbatim): only these short Chinese labels may appear if possible: “讲解”, “Blockly”, “Jupyter”, “课程资源”, “统一平台”. If text quality is unreliable, use large numbered badges and empty label bars instead. Do not generate any other words.
+Left side details:
+- fragmented lesson page, separate Blockly area, separate Jupyter/code screen, disconnected arrows
+- visual feeling of switching tools and interrupted task flow
+- use badge numbers 1, 2, 3 near separate tools
+Right side details:
+- one unified platform dashboard at the center
+- resources, Blockly, and Jupyter connected in one continuous workflow
+- smooth arrows and one stable task flow
+- use badge numbers 1, 2, 3 within one connected path
+Color palette: white, light blue, teal, soft green, small orange accents.
+Constraints: clear diagram-like communication, no people, no logos, no watermark, no clutter, no dark background, no fake long text, no extra UI gibberish.
+Avoid: abstract art, poster style, photoreal scenes, dense decoration, unreadable text.

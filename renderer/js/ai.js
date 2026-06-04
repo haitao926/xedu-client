@@ -1,57 +1,99 @@
 // AI 助手逻辑
 import apiClient from './api.js';
+import { getExperienceConfig, getExperienceMode } from './experience-config.js';
 
 let conversationHistory = [];
 let aiUiInitialized = false;
+let agentStatusResetTimer = null;
 
 function isTeacherModeUnlocked() {
     const ctx = buildAgentContext();
     return Boolean(ctx?.teacher_mode?.unlocked) && !document.body.classList.contains('student-mode');
 }
 
-function buildEmptyStateHtml() {
-    const teacherMode = isTeacherModeUnlocked();
-    if (teacherMode) {
+function getAssistantConfig() {
+    return getExperienceConfig(isTeacherModeUnlocked()).ai;
+}
+
+function getAssistantSurfaceMode() {
+    return isTeacherModeUnlocked() ? 'teacher' : 'student';
+}
+
+function syncAssistantSurfaceMode() {
+    const page = document.getElementById('ai-assistant');
+    if (!page) return;
+    page.dataset.aiMode = getAssistantSurfaceMode();
+}
+
+function buildSuggestionChips(suggestions = [], modifier = '') {
+    return suggestions.map((item) => {
+        const submitOnClick = item?.submitOnClick ? 'true' : 'false';
+        const modifierClass = modifier ? ` ${modifier}` : '';
         return `
-            <div class="chat-empty-state">
-                <div class="empty-orb">
-                    <div class="empty-orb-ring"></div>
-                    <div class="empty-icon">✦</div>
-                </div>
-                <div class="empty-text">把它当成你的课程助教工作台</div>
-                <div class="empty-desc">可以先讨论方案，再在确认后执行 QuickForm 接入或 \`xedu-pack\` 打包。</div>
-                <div class="chat-empty-suggestions">
-                    <button class="chat-suggestion-chip" data-ai-suggestion="帮我给第 2 课第 1 个实验接入 QuickForm">接入 QuickForm</button>
-                    <button class="chat-suggestion-chip" data-ai-suggestion="帮我把这门课按 xedu-pack 打包">打包课程</button>
-                    <button class="chat-suggestion-chip" data-ai-suggestion="帮我生成一个 XEduHub Blockly 积木实验草稿">构建 Blockly 实验</button>
-                    <button class="chat-suggestion-chip" data-ai-suggestion="先帮我看看当前课程适合怎么整理实验结构">整理课程结构</button>
-                </div>
-                <div class="chat-empty-notes">
-                    <span>多轮澄清</span>
-                    <span>执行前确认</span>
-                    <span>仅教师可写入</span>
-                </div>
+        <button class="chat-suggestion-chip${modifierClass}" data-ai-suggestion="${escapeHtml(item.prompt)}" data-ai-submit="${submitOnClick}">${escapeHtml(item.label)}</button>
+    `;
+    }).join('');
+}
+
+function buildEmptyStatePrimary(primarySuggestion) {
+    if (!primarySuggestion?.label || !primarySuggestion?.prompt) return '';
+    return `
+        <div class="chat-empty-primary">
+            ${buildSuggestionChips([primarySuggestion], 'chat-suggestion-chip-primary')}
+        </div>
+    `;
+}
+
+function buildEmptyStateEyebrow(text = '') {
+    if (!text) return '';
+    return `<div class="empty-eyebrow">${escapeHtml(text)}</div>`;
+}
+
+function buildOptionalTextBlock(text = '', className = '') {
+    if (!text) return '';
+    return `<div class="${className}">${escapeHtml(text)}</div>`;
+}
+
+function buildEmptyStateSuggestions(suggestions = [], label = '') {
+    if (!suggestions.length) return '';
+    const labelHtml = label ? `<div class="chat-empty-secondary-label">${escapeHtml(label)}</div>` : '';
+    return `
+        <div class="chat-empty-secondary">
+            ${labelHtml}
+            <div class="chat-empty-suggestions">
+                ${buildSuggestionChips(suggestions)}
             </div>
-        `;
-    }
+        </div>
+    `;
+}
+
+function buildNotePills(notes = []) {
+    return notes.map((item) => `<span>${escapeHtml(item)}</span>`).join('');
+}
+
+function buildEmptyStateNotes(notes = []) {
+    if (!notes.length) return '';
+    return `
+        <div class="chat-empty-notes">
+            ${buildNotePills(notes)}
+        </div>
+    `;
+}
+
+function buildEmptyStateHtml() {
+    const aiConfig = getAssistantConfig();
     return `
         <div class="chat-empty-state">
             <div class="empty-orb">
                 <div class="empty-orb-ring"></div>
                 <div class="empty-icon">✦</div>
             </div>
-            <div class="empty-text">把它当成你的学习助手</div>
-            <div class="empty-desc">可以提问课程内容、理解实验要求，或让它帮你梳理当前要做什么。</div>
-            <div class="chat-empty-suggestions">
-                <button class="chat-suggestion-chip" data-ai-suggestion="帮我概括一下这门课当前实验要做什么">理解实验任务</button>
-                <button class="chat-suggestion-chip" data-ai-suggestion="帮我解释一下这个实验应该怎么开始">开始做实验</button>
-                <button class="chat-suggestion-chip" data-ai-suggestion="帮我整理一下当前实验的学习步骤">整理学习步骤</button>
-            </div>
-            <div class="chat-empty-notes">
-                <span>多轮提问</span>
-                <span>学习辅助</span>
-                <span>教师功能已收起</span>
-            </div>
+            ${buildEmptyStateEyebrow(aiConfig.emptyState.eyebrow)}
+            ${buildOptionalTextBlock(aiConfig.emptyState.text, 'empty-text')}
+            ${buildOptionalTextBlock(aiConfig.emptyState.desc, 'empty-desc')}
+            ${buildEmptyStatePrimary(aiConfig.emptyState.primarySuggestion)}
+            ${buildEmptyStateSuggestions(aiConfig.emptyState.suggestions, aiConfig.emptyState.secondaryLabel)}
+            ${buildEmptyStateNotes(aiConfig.emptyState.notes)}
         </div>
     `;
 }
@@ -60,17 +102,29 @@ function updateAgentStatus(state = 'idle', text = '') {
     const host = document.getElementById('ai-agent-status');
     const label = document.getElementById('ai-agent-status-text');
     if (!host || !label) return;
+    if (agentStatusResetTimer) {
+        clearTimeout(agentStatusResetTimer);
+        agentStatusResetTimer = null;
+    }
     host.classList.remove('is-working', 'is-needs-action', 'is-success');
     if (state === 'working') host.classList.add('is-working');
     if (state === 'needs-action') host.classList.add('is-needs-action');
     if (state === 'success') host.classList.add('is-success');
-    const defaults = {
-        idle: '待命中',
+    const aiConfig = getAssistantConfig();
+    const defaults = aiConfig.status || {
+        idle: '等待提问',
         working: '处理中',
         'needs-action': '等待确认',
         success: '已完成'
     };
     label.textContent = text || defaults[state] || defaults.idle;
+}
+
+function scheduleAgentStatusReset(delay = 2200) {
+    agentStatusResetTimer = window.setTimeout(() => {
+        agentStatusResetTimer = null;
+        updateAgentStatus('idle');
+    }, delay);
 }
 
 function syncChatContextPill() {
@@ -81,15 +135,14 @@ function syncChatContextPill() {
     if (title) {
         pill.textContent = title;
         pill.title = `当前课程：${title}`;
+        pill.style.display = '';
         return;
     }
-    if (isTeacherModeUnlocked()) {
-        pill.textContent = '教师工作台';
-        pill.title = '当前为教师模式，可执行课程助教相关操作';
-        return;
-    }
-    pill.textContent = '学习模式';
-    pill.title = '当前为学生/学习模式';
+    const aiConfig = getAssistantConfig();
+    const fallback = aiConfig.contextFallback || '';
+    pill.textContent = fallback;
+    pill.title = aiConfig.contextTitle || '';
+    pill.style.display = fallback ? '' : 'none';
 }
 
 function createAvatar(sender) {
@@ -229,6 +282,7 @@ function buildAgentContext() {
         console.warn('读取聊天课程上下文失败:', error);
     }
     return {
+        experience_mode: getExperienceMode(isTeacherModeUnlocked()),
         teacher_mode: {
             unlocked: sessionStorage.getItem('xedu_teacher_mode') === 'true',
             code: sessionStorage.getItem('xedu_teacher_mode_code') || ''
@@ -317,6 +371,7 @@ export async function askAI() {
                 updateAgentStatus('needs-action', response.agent_status === 'needs_confirmation' ? '等待确认' : '等待补充');
             } else {
                 updateAgentStatus('success');
+                scheduleAgentStatusReset();
             }
             
             // 记录 AI 历史
@@ -394,33 +449,40 @@ export function clearCurrentChat() {
 }
 
 export function syncAssistantModeUI() {
+    const aiConfig = getAssistantConfig();
+    syncAssistantSurfaceMode();
+    const title = document.querySelector('.chat-header-title');
     const subtitle = document.querySelector('.chat-header-subtitle');
+    const sidebarTitle = document.getElementById('chat-sidebar-title');
+    const sessionTitle = document.querySelector('.chat-session-item .session-title');
+    const sessionDesc = document.querySelector('.chat-session-item .session-desc');
     const label = document.querySelector('.ai-composer-label');
     const caption = document.querySelector('.ai-composer-caption');
     const guard = document.getElementById('ai-write-guard');
     const textarea = document.getElementById('ai-question');
-    const teacherMode = isTeacherModeUnlocked();
-    if (subtitle) {
-        subtitle.textContent = teacherMode
-            ? '教师侧课程助教工作台：支持 QuickForm、xedu-pack 与 Blockly 实验构建'
-            : '学习辅助对话：帮助理解课程、实验与当前学习任务';
+    const setOptionalText = (element, text) => {
+        if (!element) return;
+        element.textContent = text || '';
+        element.style.display = text ? '' : 'none';
+    };
+    if (title) {
+        title.textContent = aiConfig.headerTitle || 'AI 助手';
     }
-    if (label) {
-        label.textContent = teacherMode ? '教师助教模式' : '学习辅助模式';
+    setOptionalText(subtitle, aiConfig.subtitle);
+    if (sidebarTitle) {
+        sidebarTitle.textContent = aiConfig.sidebarTitle;
     }
-    if (caption) {
-        caption.textContent = teacherMode
-            ? '会先澄清目标，再在确认后执行教师侧写入动作'
-            : '会先帮你理解任务、梳理步骤，再继续提问或讨论';
+    if (sessionTitle) {
+        sessionTitle.textContent = aiConfig.sessionTitle;
     }
-    if (guard) {
-        guard.textContent = teacherMode ? '涉及课程写入时会先请求确认' : '教师侧写入功能仅在教师模式下开放';
-    }
+    setOptionalText(sessionDesc, aiConfig.sessionDesc);
+    setOptionalText(label, aiConfig.composerLabel);
+    setOptionalText(caption, aiConfig.composerCaption);
+    setOptionalText(guard, aiConfig.guard);
     if (textarea) {
-        textarea.placeholder = teacherMode
-            ? '输入教师侧任务：QuickForm、xedu-pack、Blockly 积木实验构建等（Enter 发送）'
-            : '输入你的学习问题：实验要求、课程内容、下一步怎么做（Enter 发送）';
+        textarea.placeholder = aiConfig.placeholder;
     }
+    syncModelBadge();
     if (document.getElementById('chat-history')?.querySelector('.chat-empty-state')) {
         clearCurrentChat();
     }
@@ -654,7 +716,13 @@ export function syncModelBadge() {
     const badge = document.getElementById('ai-model-badge');
     if (!badge) return;
     const model = document.getElementById('ai-model-input')?.value.trim();
-    badge.textContent = model || '未设置模型';
+    const aiConfig = getAssistantConfig();
+    const showModelIdentifier = aiConfig.showModelIdentifier !== false;
+    badge.textContent = showModelIdentifier
+        ? (model || aiConfig.modelBadgeEmpty || '未设置模型')
+        : (aiConfig.modelBadgeReady || aiConfig.modelBadgeEmpty || '学习模型');
+    badge.title = model || aiConfig.modelBadgeEmpty || '';
+    badge.classList.toggle('is-generic', !showModelIdentifier);
 }
 
 function buildAiOverrideConfig() {
@@ -797,6 +865,9 @@ function initAIUI() {
                 questionInput.value = target.getAttribute('data-ai-suggestion') || '';
                 questionInput.focus();
                 questionInput.dispatchEvent(new Event('input'));
+                if (target.getAttribute('data-ai-submit') === 'true') {
+                    askAI();
+                }
                 return;
             }
             const actionEl = event.target.closest('[data-ai-action]');

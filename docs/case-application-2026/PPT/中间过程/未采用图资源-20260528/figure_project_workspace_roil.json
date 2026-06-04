@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "为 XEdu Client 人工智能课堂平台绘制一张学术报告风格机制图。画面强调真实项目链路：HTML 讲解体验、Blockly 可视化流程、Jupyter Notebook 代码实践、Python/XEduHub 本地服务、课程资源包、检测分类输出结果。白底，蓝绿科研配色，线条清晰，少量中文标签，像论文插图，不要宣传海报，不要卡通人物，不要照搬任何已有图。",
+  "original_prompt": "为 XEdu Client 人工智能课堂平台绘制一张学术报告风格机制图。画面强调真实项目链路：HTML 讲解体验、Blockly 可视化流程、Jupyter Notebook 代码实践、Python/XEduHub 本地服务、课程资源包、检测分类输出结果。白底，蓝绿科研配色，线条清晰，少量中文标签，像论文插图，不要宣传海报，不要卡通人物，不要照搬任何已有图。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/为_XEdu_Client_人工智能课堂平台绘制一张学术报告风格机制图。画面强调真实项目链路：HTM_3e4d837e0da7.png",
+  "image_urls": [
+    "/static/generated/为_XEdu_Client_人工智能课堂平台绘制一张学术报告风格机制图。画面强调真实项目链路：HTM_3e4d837e0da7.png"
+  ],
+  "output_path": "docs/case-application-2026/PPT/图资源/figure_project_workspace_roil.png",
+  "output_paths": [
+    "docs/case-application-2026/PPT/图资源/figure_project_workspace_roil.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

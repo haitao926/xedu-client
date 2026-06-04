@@ -1,0 +1,16 @@
+Use case: research-figures
+Asset type: PPT structure diagram
+Primary request: Generate a clean structured educational workflow diagram for a middle-school AI classroom, making the learning loop extremely easy to read.
+Scene/background: minimal white background with subtle pale blue depth, strong whitespace.
+Subject: four large modules arranged horizontally from left to right with arrows.
+Composition/framing: landscape 16:9, centered, evenly spaced, each module in its own card or panel, large badge numbers 1 to 4.
+Style/medium: modern academic-meets-educational infographic, vector-like clarity, projector-friendly, crisp layout.
+Text (verbatim): only these short Chinese labels may appear if possible: “课程资源”, “Blockly”, “Jupyter”, “结果复盘”. If text rendering is unreliable, show numbered cards with empty title bars only. Do not generate extra text.
+Module 1: organized course resources with folder, lesson card, image asset.
+Module 2: Blockly-style colorful puzzle blocks, visual AI workflow understanding.
+Module 3: Jupyter-style notebook with code cells and a small result preview.
+Module 4: result review, reflection, chart, magnifier, check mark.
+Connect all modules with clear arrows from 1 to 4 and an optional subtle loop-back arrow.
+Color palette: white, light blue, teal, soft green, warm accent orange.
+Constraints: diagram clarity first, no people, no clutter, no watermark, no logos, no fake UI paragraphs, no extra words.
+Avoid: complicated dashboards, heavy 3D, abstract shapes without meaning, dark neon, unreadable text.

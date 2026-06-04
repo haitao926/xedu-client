@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张严格论文风格的中文结构图，主题为“问题—解决路径映射”。\n\n用途：用于论文/申报报告的“问题分析”部分，说明 XEdu Client 面向初中人工智能课堂解决的四类问题及对应平台能力。\n\n图形结构：横向 16:9，白色背景。左侧为“课堂问题”四个矩形模块，右侧为“平台能力”四个矩形模块，中间用四条水平箭头一一对应。不要插画，不要人物，不要水彩，不要手绘质感。使用矢量线条、统一圆角矩形、细箭头、少量蓝绿强调色。\n\n图内文字必须且只包含：\n标题：问题—解决路径映射\n左栏标题：课堂问题\n右栏标题：平台能力\n左侧四项：实验环境复杂、学习路径断裂、AI能力分散、课程更新困难\n右侧四项：环境统一承载、HTML—Blockly—Jupyter、XEduHub工具箱、课程分享与更新\n\n排版要求：文字清晰、端正，适合论文半页宽度阅读。模块之间间距均匀，箭头对齐。",
+  "original_prompt": "生成一张严格论文风格的中文结构图，主题为“问题—解决路径映射”。\n\n用途：用于论文/申报报告的“问题分析”部分，说明 XEdu Client 面向初中人工智能课堂解决的四类问题及对应平台能力。\n\n图形结构：横向 16:9，白色背景。左侧为“课堂问题”四个矩形模块，右侧为“平台能力”四个矩形模块，中间用四条水平箭头一一对应。不要插画，不要人物，不要水彩，不要手绘质感。使用矢量线条、统一圆角矩形、细箭头、少量蓝绿强调色。\n\n图内文字必须且只包含：\n标题：问题—解决路径映射\n左栏标题：课堂问题\n右栏标题：平台能力\n左侧四项：实验环境复杂、学习路径断裂、AI能力分散、课程更新困难\n右侧四项：环境统一承载、HTML—Blockly—Jupyter、XEduHub工具箱、课程分享与更新\n\n排版要求：文字清晰、端正，适合论文半页宽度阅读。模块之间间距均匀，箭头对齐。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/0ea049ff-ab17-4934-98a3-8a9fc7a83ec7.png",
+  "output_path": "docs/case-application-2026/assets/figures/paper-roil/figure_1_problem_solution.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [
+    "gpt-image-2-all: Image download raised exception: HTTPSConnectionPool(host='oss.filenest.top', port=443): Max retries exceeded with url: /uploads/61fbacdc-6e3a-4300-8be7-195d3f06f919.png (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)')))"
+  ],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

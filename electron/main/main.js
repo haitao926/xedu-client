@@ -2,6 +2,7 @@
 const { session } = require('electron');
 const path = require('path');
 const http = require('http');
+const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 
 // 确保 Windows 任务栏/快捷方式使用自定义图标，而不是 Electron 默认图标
@@ -10,20 +11,34 @@ if (process.platform === 'win32') {
     app.setAppUserModelId(APP_ID);
 }
 
-const BACKEND_HOST = process.env.XEDU_BACKEND_HOST || '127.0.0.1';
+const BACKEND_HOST_ENV = process.env.XEDU_BACKEND_HOST || process.env.XEDU_API_HOST || '';
+const BACKEND_HOST = BACKEND_HOST_ENV || '127.0.0.1';
 const BACKEND_PORT = parseInt(
     process.env.XEDU_BACKEND_PORT || process.env.XEDU_API_PORT || '5123',
     10
 ) || 5123;
 const BACKEND_READY_PATH = process.env.XEDU_BACKEND_READY_PATH || '/api/health';
-const BACKEND_TIMEOUT_MS = 30000;
+const BACKEND_TIMEOUT_MS = (() => {
+    const override = parseInt(process.env.XEDU_BACKEND_TIMEOUT_MS || '', 10);
+    if (Number.isFinite(override) && override > 0) {
+        return override;
+    }
+    if (process.platform === 'win32') {
+        return app.isPackaged ? 120000 : 45000;
+    }
+    return 30000;
+})();
 const BACKEND_RETRY_INTERVAL_MS = 1000;
 const XEDU_PROTOCOL = 'xedu';
+const RENDERER_PORT = parseInt(process.env.XEDU_RENDERER_PORT || '3002', 10) || 3002;
 
 let mainWindow;
 let backendProcess;
 let cleanupBackend;
 let backendReadyPromise;
+let backendLogFile = null;
+let backendRecentOutput = [];
+let backendLastExit = null;
 let quitting = false;
 let pendingPracticeDeepLink = null;
 const gotTheLock = app.requestSingleInstanceLock();
@@ -31,12 +46,8 @@ let jupyterManagedPid = null;
 
 const DEV_RENDERER_CANDIDATES = [
     process.env.ELECTRON_RENDERER_URL,
-    'http://127.0.0.1:3000',
-    'http://localhost:3000',
-    'http://127.0.0.1:3001',
-    'http://localhost:3001',
-    'http://127.0.0.1:5173',
-    'http://localhost:5173'
+    `http://127.0.0.1:${RENDERER_PORT}`,
+    `http://localhost:${RENDERER_PORT}`,
 ].filter(Boolean);
 
 // 规范化 Jupyter URL，修正偶发的 "/lablocale=en"（缺少 '?') 等问题
@@ -182,11 +193,17 @@ function probeRendererUrl(targetUrl, timeoutMs = 1200) {
 }
 
 async function resolveRendererUrl() {
-    for (const url of DEV_RENDERER_CANDIDATES) {
-        if (await probeRendererUrl(url)) {
-            return url;
+    const deadline = Date.now() + 10000;
+
+    while (Date.now() < deadline) {
+        for (const url of DEV_RENDERER_CANDIDATES) {
+            if (await probeRendererUrl(url)) {
+                return url;
+            }
         }
+        await new Promise((resolve) => setTimeout(resolve, 250));
     }
+
     return null;
 }
 
@@ -217,6 +234,8 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        show: false,
+        center: true,
         icon: iconPath,
         webPreferences: {
             nodeIntegration: false,
@@ -226,6 +245,20 @@ function createWindow() {
             preload: path.join(__dirname, '../preload/index.js')
         },
         title: 'XEdu Client'
+    });
+
+    mainWindow.once('ready-to-show', () => {
+        try {
+            if (!mainWindow) return;
+            mainWindow.center();
+            mainWindow.show();
+            mainWindow.focus();
+            if (mainWindow.isMinimized()) {
+                mainWindow.restore();
+            }
+        } catch (error) {
+            console.warn('窗口显示失败:', error?.message || error);
+        }
     });
 
     const loadBundledApp = () => {
@@ -355,6 +388,45 @@ ipcMain.handle('select-folder', async () => {
     return null;
 });
 
+ipcMain.handle('select-course-package', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile', 'openDirectory'],
+        filters: [
+            { name: '课程包', extensions: ['zip'] },
+            { name: '所有文件', extensions: ['*'] },
+        ],
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+    }
+    return null;
+});
+
+ipcMain.handle('path-is-directory', async (event, targetPath) => {
+    if (!targetPath || typeof targetPath !== 'string') {
+        return false;
+    }
+    try {
+        return fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
+    } catch (_) {
+        return false;
+    }
+});
+
+ipcMain.handle('select-image-file', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [
+            { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'webp', 'gif'] },
+            { name: '所有文件', extensions: ['*'] },
+        ],
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+    }
+    return null;
+});
+
 ipcMain.handle('open-external', async (event, url) => {
     await shell.openExternal(url);
 });
@@ -437,6 +509,30 @@ function waitForBackendReady(timeoutMs = BACKEND_TIMEOUT_MS) {
 
         tryConnect();
     });
+}
+
+function rememberBackendOutput(output) {
+    const text = String(output || '').trim();
+    if (!text) return;
+    backendRecentOutput.push(text);
+    if (backendRecentOutput.length > 30) {
+        backendRecentOutput = backendRecentOutput.slice(-30);
+    }
+}
+
+function buildBackendFailureMessage(message) {
+    const recent = backendRecentOutput.slice(-8).join('\n');
+    const parts = [message || '后端服务在预期时间内未准备好'];
+    if (backendLastExit) {
+        parts.push(`后端退出: code=${backendLastExit.code}, signal=${backendLastExit.signal}`);
+    }
+    if (backendLogFile) {
+        parts.push(`后端日志: ${backendLogFile}`);
+    }
+    if (recent) {
+        parts.push(`最近输出:\n${recent}`);
+    }
+    return parts.join('\n');
 }
 
 function stopJupyterGracefully(timeoutMs = 3000) {
@@ -614,6 +710,17 @@ function startBackendServer() {
         } catch (e) {
             console.warn('创建日志目录失败，可忽略:', e);
         }
+        backendRecentOutput = [];
+        backendLastExit = null;
+        backendLogFile = path.join(logDir, 'backend-process.log');
+        const appendBackendLog = (text) => {
+            try {
+                fs.appendFileSync(backendLogFile, text, 'utf8');
+            } catch (_) {
+                // ignore logging failures
+            }
+        };
+        appendBackendLog(`\n\n[${new Date().toISOString()}] launch backend\n`);
 
         // 计算文档目录
         let docsDir;
@@ -624,18 +731,40 @@ function startBackendServer() {
         }
         console.log(`文档目录: ${docsDir}`);
 
+        const checkpointDirs = app.isPackaged
+            ? [
+                path.join(process.resourcesPath, 'checkpoint'),
+                path.join(process.resourcesPath, 'backend', 'checkpoint'),
+            ]
+            : [
+                path.resolve(__dirname, '../../checkpoint'),
+                path.resolve(__dirname, '../../backend/checkpoint'),
+            ];
+
         const env = {
             ...process.env,
             PYTHONIOENCODING: 'utf-8',
             PYTHONUTF8: '1',
             XEDU_LOG_DIR: logDir,
             XEDU_DATA_DIR: userDataDir,
+            XEDU_CONFIG_DIR: userDataDir,
             XEDU_DOCS_DIR: docsDir,
             XEDU_API_PORT: String(BACKEND_PORT),
             XEDU_BACKEND_PORT: String(BACKEND_PORT),
-            XEDU_BACKEND_HOST: BACKEND_HOST
+            XEDU_BACKEND_HOST: BACKEND_HOST,
+            XEDU_API_HOST: BACKEND_HOST,
+            XEDU_CHECKPOINT_DIRS: checkpointDirs.join(path.delimiter),
+            PYTHONPATH: path.dirname(serverScript),
+            PYTHONHOME: '',
         };
-
+        const pythonEnvDir = path.dirname(pythonCmd);
+        if (process.platform === 'win32') {
+            env.PATH = [
+                pythonEnvDir,
+                path.join(pythonEnvDir, 'Scripts'),
+                env.PATH || ''
+            ].filter(Boolean).join(path.delimiter);
+        }
         backendProcess = spawn(pythonCmd, args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: path.dirname(serverScript),
@@ -661,6 +790,8 @@ function startBackendServer() {
 
         backendProcess.stdout.on('data', (data) => {
             const output = data.toString();
+            rememberBackendOutput(output);
+            appendBackendLog(output);
             const type = classifyOutput(output, false);
             if (type) {
                 safeSendLog({ type, message: output.trim() });
@@ -669,6 +800,8 @@ function startBackendServer() {
 
         backendProcess.stderr.on('data', (data) => {
             const output = data.toString();
+            rememberBackendOutput(output);
+            appendBackendLog(output);
             const type = classifyOutput(output, true);
             if (type) {
                 safeSendLog({ type, message: output.trim() });
@@ -677,6 +810,13 @@ function startBackendServer() {
 
         backendProcess.on('close', (code, signal) => {
             console.log(`后端服务器退出，代码: ${code}, 信号: ${signal}`);
+            backendLastExit = { code, signal };
+            const exitMessage = `后端服务器退出，代码: ${code}, 信号: ${signal}`;
+            appendBackendLog(`\n[${new Date().toISOString()}] ${exitMessage}\n`);
+            safeSendLog({
+                type: code === 0 || code === null ? 'warning' : 'error',
+                message: buildBackendFailureMessage(exitMessage)
+            });
             backendReadyPromise = null;
             jupyterManagedPid = null;
             if (code !== 0 && code !== null) {
@@ -700,6 +840,9 @@ function startBackendServer() {
             backendReadyPromise = null;
             jupyterManagedPid = null;
             console.error('启动后端服务器失败', err);
+            rememberBackendOutput(err?.stack || err?.message || String(err));
+            appendBackendLog(`\n[${new Date().toISOString()}] spawn error\n${err?.stack || err}\n`);
+            safeSendLog({ type: 'error', message: buildBackendFailureMessage(err.message || '启动后端服务器失败') });
             if (err.code === 'ENOENT') {
                 console.error('Python解释器未找到，请检查Python安装');
             } else if (err.code === 'EACCES') {
@@ -729,15 +872,28 @@ function startBackendServer() {
                 return backendReadyPromise;
             }
             launchBackend();
-            return waitForBackendReady(BACKEND_TIMEOUT_MS);
+            return Promise.race([
+                waitForBackendReady(BACKEND_TIMEOUT_MS),
+                new Promise((_, reject) => {
+                    const checkExit = () => {
+                        if (backendLastExit) {
+                            reject(new Error(buildBackendFailureMessage('后端进程已退出，未能启动服务')));
+                            return;
+                        }
+                        setTimeout(checkExit, 500);
+                    };
+                    checkExit();
+                })
+            ]);
         })
         .then(() => {
             console.log('后端服务器已准备好');
             return true;
         })
         .catch((err) => {
-            mainWindow?.webContents.send('log-update', { type: 'error', message: err.message });
-            throw err;
+            const message = buildBackendFailureMessage(err.message);
+            mainWindow?.webContents.send('log-update', { type: 'error', message });
+            throw new Error(message);
         });
 
     backendReadyPromise = readyPromise;
@@ -748,6 +904,7 @@ function startBackendServer() {
 
 // --- Jupyter BrowserView Management ---
 let jupyterView = null;
+let isJupyterViewVisible = false;
 const { BrowserView } = require('electron');
 
 function setupJupyterView() {
@@ -757,6 +914,7 @@ function setupJupyterView() {
     const ensureValidViewRef = () => {
         if (!hasValidView()) {
             jupyterView = null;
+            isJupyterViewVisible = false;
             return false;
         }
         return true;
@@ -777,6 +935,7 @@ function setupJupyterView() {
         view.webContents.once('destroyed', () => {
             if (jupyterView === view) {
                 jupyterView = null;
+                isJupyterViewVisible = false;
             }
         });
 
@@ -784,6 +943,7 @@ function setupJupyterView() {
             mainWindow.setBrowserView(null);
         }
         mainWindow.setBrowserView(view);
+        isJupyterViewVisible = true;
         if (bounds) {
             view.setBounds(bounds);
         }
@@ -812,6 +972,7 @@ function setupJupyterView() {
                 if (mainWindow.getBrowserView() !== jupyterView) {
                     mainWindow.setBrowserView(jupyterView);
                 }
+                isJupyterViewVisible = true;
 
                 // 更新位置
                 if (bounds) {
@@ -850,8 +1011,9 @@ function setupJupyterView() {
         if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
 
         try {
-            // 确保视图已附加
-            if (mainWindow.getBrowserView() !== jupyterView) {
+            // 只有当前应显示 Jupyter 时才重新附加 BrowserView。
+            // 隐藏状态下只缓存 bounds，避免窗口 resize/布局同步把它重新盖到 Blockly 上。
+            if (isJupyterViewVisible && mainWindow.getBrowserView() !== jupyterView) {
                 mainWindow.setBrowserView(jupyterView);
             }
             jupyterView.setBounds(bounds);
@@ -863,29 +1025,40 @@ function setupJupyterView() {
 
     ipcMain.handle('jupyter:set-visibility', (event, visible) => {
         if (!hasValidWindow() || !ensureValidViewRef()) return;
-        
+
         if (visible) {
             // 显示视图
+            isJupyterViewVisible = true;
             if (mainWindow.getBrowserView() !== jupyterView) {
                 mainWindow.setBrowserView(jupyterView);
             }
         } else {
-            // 隐藏视图
-            mainWindow.setBrowserView(null);
+            // 隐藏视图时真正移除 BrowserView，避免残留覆盖在 Blockly 上方
+            isJupyterViewVisible = false;
+            try {
+                mainWindow.removeBrowserView(jupyterView);
+            } catch (e) {
+                console.warn('隐藏 Jupyter 视图失败:', e?.message || e);
+                if (mainWindow.getBrowserView() === jupyterView) {
+                    mainWindow.setBrowserView(null);
+                }
+            }
         }
     });
 
     ipcMain.handle('jupyter:destroy-view', () => {
         if (!ensureValidViewRef()) return { success: true };
         console.log('销毁 Jupyter 视图');
+        isJupyterViewVisible = false;
         try {
-            if (hasValidWindow() && mainWindow.getBrowserView() === jupyterView) {
+            if (hasValidWindow()) {
                 mainWindow.removeBrowserView(jupyterView);
-            } else if (hasValidWindow()) {
-                mainWindow.setBrowserView(null);
             }
         } catch (e) {
             console.warn('移除 Jupyter 视图失败:', e?.message || e);
+            if (hasValidWindow() && mainWindow.getBrowserView() === jupyterView) {
+                mainWindow.setBrowserView(null);
+            }
         }
         jupyterView = null;
         return { success: true };
@@ -983,13 +1156,17 @@ if (!gotTheLock) {
         setupJupyterCspBypass();
         setupMenu();
         setupJupyterView(); // 初始化 Jupyter 视图管理器
-        try {
-            await startBackendServer();
-        } catch (error) {
-            console.error('后端服务器未能正常启动', error);
-            dialog.showErrorBox('后端启动失败', error.message || '请查看日志了解详情');
-        }
         createWindow();
+        startBackendServer().catch((error) => {
+            console.error('后端服务器未能正常启动', error);
+            const message = error.message || '请查看日志了解详情';
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.once('did-finish-load', () => {
+                    mainWindow.webContents.send('log-update', { type: 'error', message });
+                });
+            }
+            dialog.showErrorBox('后端启动失败', message);
+        });
     });
 
     app.on('open-url', (event, url) => {

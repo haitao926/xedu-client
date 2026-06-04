@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "model": "gpt-image-2-all",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "生成一张高级手绘信息图底图，横向16:9，用于正式申报报告。主题是 XEdu Client 的课堂问题与平台回应。画面中心是轻等距视角的桌面端人工智能课堂实验平台，三块屏幕分别象征网页体验、积木流程、代码实践；下方抽屉象征工具箱；左侧四个空白问题卡片，右侧四个空白回应卡片，底部一个课程更新环形箭头。高级教育科技白皮书风格，精致墨线，轻水彩质感，浅暖白纸张背景，蓝绿主色，少量橙色强调，留白充足，层次清楚。不要生成任何文字、字母、数字、logo、乱码、水印、二维码、网址、人物照片。所有标签位置必须为空白，方便后期叠加清晰中文。",
+  "original_prompt": "生成一张高级手绘信息图底图，横向16:9，用于正式申报报告。主题是 XEdu Client 的课堂问题与平台回应。画面中心是轻等距视角的桌面端人工智能课堂实验平台，三块屏幕分别象征网页体验、积木流程、代码实践；下方抽屉象征工具箱；左侧四个空白问题卡片，右侧四个空白回应卡片，底部一个课程更新环形箭头。高级教育科技白皮书风格，精致墨线，轻水彩质感，浅暖白纸张背景，蓝绿主色，少量橙色强调，留白充足，层次清楚。不要生成任何文字、字母、数字、logo、乱码、水印、二维码、网址、人物照片。所有标签位置必须为空白，方便后期叠加清晰中文。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "https://oss.filenest.top/uploads/11a091e2-014a-46cc-8559-51b6f43a6aab.png",
+  "output_path": "docs/case-application-2026/assets/figures/gpt-image-2-redraw/figure_1_base_gpt_image_2_all.png",
+  "attempted_models": [
+    "gpt-image-2-all"
+  ],
+  "attempt_errors": [],
+  "fallback_used": false,
+  "local_fallback": false,
+  "via": "direct",
+  "direct_reason": "env_force_direct",
+  "direct_warning": "NBS_FORCE_DIRECT is enabled; running in direct mode."
+}

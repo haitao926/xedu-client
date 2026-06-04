@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图像处理实验室 | Image Processing Lab</title>
+    <style>
+        :root {
+            --primary: #3b82f6; /* Blue 500 */
+            --primary-hover: #2563eb;
+            --bg-page: #f8fafc;
+            --bg-card: #ffffff;
+            --text-main: #1e293b;
+            --text-sub: #64748b;
+            --border: #e2e8f0;
+            --info-bg: #eff6ff;
+            --info-text: #1e40af;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        header {
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.4rem;
+            color: var(--text-main);
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .brand-icon {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: var(--text-sub);
+            font-weight: 400;
+        }
+
+        /* Layout & Spacing */
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            flex: 1;
+            min-height: 0; /* Important for nested flex scrolling */
+        }
+
+        .top-section {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 16px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* Panels */
+        .panel {
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .panel-full-height { height: 100%; }
+
+        /* Code Panel - Fill Remaining Height */
+        .panel-code {
+            flex: 1;
+            min-height: 200px; /* Ensure minimum usable space */
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            background: #fff;
+            color: var(--text-main);
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .panel-content {
+            padding: 16px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* Controls */
+        .control-group { margin-bottom: 20px; }
+        .label-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.85rem; font-weight: 600; }
+        
+        select, input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            background: #fff;
+        }
+
+        /* Modern Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e2e8f0;
+            border-radius: 2px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 10px;
+            border-radius: 6px;
+            border: none;
+            background: var(--primary);
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: var(--primary-hover); }
+
+        /* Knowledge Card */
+        .knowledge-card {
+            background: var(--info-bg);
+            border: 1px solid #dbeafe;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+        }
+        .k-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--info-text);
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .k-body {
+            font-size: 0.8rem;
+            color: #334155;
+            line-height: 1.5;
+        }
+
+        /* Preview Area Polish */
+        .preview-container {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-evenly;
+            align-items: center;
+            gap: 20px;
+            height: 100%;
+            padding: 20px;
+            background: #f8fafc;
+        }
+
+        .preview-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            flex: 1;
+            max-width: 45%;
+            aspect-ratio: 1; /* Keep square-ish */
+            position: relative;
+        }
+
+        .preview-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-sub);
+            margin-bottom: 12px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #f1f5f9;
+            padding-bottom: 8px;
+        }
+
+        /* Canvas with Checkerboard Background */
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 4px;
+            background-color: #eee;
+            background-image: 
+                linear-gradient(45deg, #e5e7eb 25%, transparent 25%), 
+                linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #e5e7eb 75%), 
+                linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            border: 1px solid #cbd5e1;
+        }
+
+        /* Code Block Polish */
+        .code-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 16px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            white-space: pre;
+            overflow: auto;
+            height: 100%;
+            border-top: 1px solid #334155;
+            box-sizing: border-box;
+        }
+        .kw { color: #569cd6; } 
+        .fn { color: #dcdcaa; } 
+        .num { color: #b5cea8; } 
+        .str { color: #ce9178; } 
+        .cmt { color: #6a9955; }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>
+                <span class="brand-icon">CV</span>
+                图像处理实验室 <span style="font-weight:300; font-size:1.2rem; margin-left:5px;">Image Processing Lab</span>
+            </h1>
+        </div>
+        <div class="subtitle">通用计算机视觉算法互动体验台</div>
+    </header>
+
+    <div class="main-container">
+        
+        <!-- Top Section: Controls + Preview -->
+        <div class="top-section">
+            <!-- Left Controls -->
+            <aside class="panel panel-full-height">
+                <div class="panel-header">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    控制台 (Console)
+                </div>
+                <div class="panel-content">
+                    
+                    <div class="control-group">
+                        <label class="btn">
+                            📁 上传图片 / Upload Image
+                            <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                        </label>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="label-row">选择算法 (Algorithm)</div>
+                        <select id="algoSelect">
+                            <option value="binary">二值化 (Thresholding)</option>
+                            <option value="brightness">亮度调整 (Brightness)</option>
+                            <option value="contrast">对比度增强 (Contrast)</option>
+                            <option value="sobel">边缘检测 (Edge Detection)</option>
+                            <option value="blur">高斯模糊 (Gaussian Blur)</option>
+                            <option value="sharpen">锐化 (Sharpening)</option>
+                            <option value="emboss">浮雕效果 (Emboss)</option>
+                        </select>
+                    </div>
+
+                    <!-- 动态原理介绍 (Knowledge Card) -->
+                    <div id="knowledgeCard" class="knowledge-card">
+                        <div class="k-title">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                            算法原理
+                        </div>
+                        <div class="k-body" id="algoDesc">
+                            将图像转换为仅有黑白两种颜色。像素值大于阈值设为白色，否则为黑色。常用于图像分割、文字识别预处理。
+                        </div>
+                    </div>
+
+                    <!-- 动态参数 -->
+                    <div id="paramArea">
+                        <div class="control-group">
+                            <div class="label-row">
+                                <span>阈值 (Threshold)</span>
+                                <span id="paramVal">127</span>
+                            </div>
+                            <input type="range" id="paramSlider" min="0" max="255" value="127">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label style="display:flex; align-items:center; gap:8px; font-size:0.9rem; cursor:pointer;">
+                            <input type="checkbox" id="invertCheck"> 反转颜色 (Invert)
+                        </label>
+                    </div>
+
+                </div>
+            </aside>
+
+            <!-- Right Preview -->
+            <main class="panel panel-full-height">
+                <div class="panel-header">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    实时效果对比 (Preview)
+                </div>
+                <div class="panel-content" style="padding:0;">
+                    
+                    <div class="preview-container">
+                        <!-- 1. 原图视图 (Before) -->
+                        <div class="preview-card">
+                            <div class="preview-title">
+                                <span>原始输入 (Original)</span>
+                                <span id="origResText" style="font-weight:400; font-size:0.75rem; color:#94a3b8;">Original Size</span>
+                            </div>
+                            <canvas id="origDisplayCanvas"></canvas>
+                        </div>
+
+                        <!-- 2. 处理后视图 (After) -->
+                        <div class="preview-card">
+                            <div class="preview-title">
+                                <span>算法处理后 (Processed)</span>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span style="font-size:0.7rem; color:var(--text-sub);" title="模拟AI模型的低分辨率输入">AI View:</span>
+                                    <canvas id="aiCanvas" width="28" height="28" style="width:28px; height:28px; border:1px solid #cbd5e1; image-rendering:pixelated; cursor:help;" title="这是机器视觉通常看到的低像素图像"></canvas>
+                                </div>
+                            </div>
+                            <canvas id="displayCanvas"></canvas>
+                        </div>
+                    </div>
+
+                </div>
+            </main>
+        </div>
+
+        <!-- Bottom: Code Panel -->
+        <aside class="panel panel-code">
+            <div class="panel-header" style="justify-content:space-between;">
+                <span>🐍 Python 代码生成</span>
+                <button class="btn" style="width:auto; padding:4px 8px; font-size:0.75rem; margin:0;" onclick="copyCode(this)">📋 复制</button>
+            </div>
+            <div class="panel-content" style="padding:0; flex:1; overflow:hidden;">
+                <div class="code-block" id="codeBlock" style="border:none; border-radius:0; height:100%;">
+<span class="cmt"># 等待操作...</span>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <!-- Hidden image loader -->
+    <img id="sourceImg" style="display:none;">
+
+    <script>
+        // DOM Elements
+        const fileInput = document.getElementById('fileInput');
+        const sourceImg = document.getElementById('sourceImg');
+        const displayCanvas = document.getElementById('displayCanvas');
+        const displayCtx = displayCanvas.getContext('2d');
+        const origDisplayCanvas = document.getElementById('origDisplayCanvas');
+        const origDisplayCtx = origDisplayCanvas.getContext('2d');
+        const aiCanvas = document.getElementById('aiCanvas');
+        const aiCtx = aiCanvas.getContext('2d');
+        
+        const algoSelect = document.getElementById('algoSelect');
+        const paramSlider = document.getElementById('paramSlider');
+        const paramVal = document.getElementById('paramVal');
+        const invertCheck = document.getElementById('invertCheck');
+        const paramArea = document.getElementById('paramArea');
+        const algoDesc = document.getElementById('algoDesc');
+
+        // State
+        let currentMode = 'binary';
+
+        // Algorithm Descriptions (知识库)
+        const ALGO_INFO = {
+            'binary': '<b>二值化 (Thresholding)</b><br>原理：设定一个亮度阈值。像素亮度高于该值设为白，低于设为黑。<br>应用：文字扫描、车牌识别、背景分离。',
+            'brightness': '<b>亮度调整 (Brightness)</b><br>原理：给每个像素的RGB值加上一个固定常数。<br>应用：校正光线不足或过曝的照片。',
+            'contrast': '<b>对比度增强 (Contrast)</b><br>原理：拉伸像素值的分布范围，使亮的更亮，暗的更暗。<br>应用：增强图像细节，提升视觉清晰度。',
+            'sobel': '<b>边缘检测 (Edge Detection)</b><br>原理：计算像素亮度变化的“梯度”。变化剧烈的地方（边缘）梯度大。<br>应用：物体轮廓提取，人脸检测特征点。',
+            'blur': '<b>高斯模糊 (Gaussian Blur)</b><br>原理：每个像素的值取周围像素的加权平均值。<br>应用：去除噪点（降噪），美颜磨皮，背景虚化。',
+            'sharpen': '<b>锐化 (Sharpening)</b><br>原理：增强像素与周围像素的差异，使边缘更陡峭。<br>应用：图像增强，使模糊照片变清晰。',
+            'emboss': '<b>浮雕效果 (Emboss)</b><br>原理：模拟光照效果，保留边缘并根据方向产生阴影和高光。<br>应用：艺术滤镜，纹理分析。'
+        };
+
+        // File Upload
+        fileInput.addEventListener('change', (e) => {
+            const f = e.target.files[0];
+            if(f) {
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    sourceImg.src = evt.target.result;
+                    // Reset defaults
+                    currentMode = 'binary';
+                    algoSelect.value = 'binary';
+                    updateUI();
+                };
+                reader.readAsDataURL(f);
+            }
+        });
+
+        sourceImg.onload = function() {
+            process();
+        };
+
+        // Controls Interactions
+        algoSelect.addEventListener('change', (e) => {
+            currentMode = e.target.value;
+            updateUI();
+            process();
+        });
+
+        paramSlider.addEventListener('input', (e) => {
+            paramVal.innerText = e.target.value;
+            process();
+        });
+
+        invertCheck.addEventListener('change', process);
+
+        // Update UI based on Algorithm
+        function updateUI() {
+            // 1. Update Description
+            algoDesc.innerHTML = ALGO_INFO[currentMode] || "选择一个算法开始实验。" ;
+
+            // 2. Update Sliders
+            let label = "参数";
+            let min=0, max=255, val=127;
+            let showSlider = true;
+
+            if(currentMode === 'binary') {
+                label = "阈值 (Threshold)";
+                val = 127;
+            } else if(currentMode === 'brightness') {
+                label = "亮度 (Bias)";
+                min = -100; max = 100; val = 0;
+            } else if(currentMode === 'contrast') {
+                label = "对比度 (Contrast %)";
+                min = 0; max = 300; val = 100; // 100% = normal
+            } else {
+                showSlider = false; // Convolution based algos usually use fixed kernels for basic demos
+            }
+
+            if(showSlider) {
+                paramArea.innerHTML = `
+                    <div class="control-group">
+                        <div class="label-row"><span>${label}</span><span id="paramVal">${val}</span></div>
+                        <input type="range" id="paramSlider" min="${min}" max="${max}" value="${val}" oninput="document.getElementById('paramVal').innerText=this.value; process()">
+                    </div>`;
+            } else {
+                paramArea.innerHTML = `<div style="color:var(--text-sub); font-size:0.8rem; margin-bottom:20px; font-style:italic; background:#f1f5f9; padding:8px; border-radius:4px;">* 此算法使用固定卷积核运算，无动态参数。</div>`;
+            }
+        }
+
+        // ================= CORE PROCESSING ENGINE =================
+
+        function process() {
+            if(!sourceImg.src) return;
+
+            // 1. Setup Canvas Dimensions (High Res)
+            // Limit width for display to avoid huge canvases
+            const maxWidth = 300;
+            const scale = Math.min(1, maxWidth / sourceImg.naturalWidth);
+            const w = Math.floor(sourceImg.naturalWidth * scale);
+            const h = Math.floor(sourceImg.naturalHeight * scale);
+            
+            // Set dimensions for BOTH canvases
+            displayCanvas.width = w;
+            displayCanvas.height = h;
+            origDisplayCanvas.width = w;
+            origDisplayCanvas.height = h;
+            
+            // Draw Original
+            origDisplayCtx.drawImage(sourceImg, 0, 0, w, h);
+            document.getElementById('origResText').innerText = `${w} x ${h} px`;
+            
+            // Draw Base for Processing
+            displayCtx.drawImage(sourceImg, 0, 0, w, h);
+            
+            // 2. Get Data & Grayscale
+            const frame = displayCtx.getImageData(0, 0, w, h);
+            const data = frame.data; // RGBA
+            const grayData = new Float32Array(w * h);
+
+            for(let i=0; i<data.length; i+=4) {
+                // Luminance: 0.299R + 0.587G + 0.114B
+                const g = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
+                grayData[i/4] = g;
+            }
+
+            // 3. Apply Algorithm
+            const outputData = new Float32Array(w * h);
+            let codeHtml = "";
+            const param = parseInt(document.getElementById('paramSlider')?.value || 0);
+
+            // --- Point Operations ---
+            if(currentMode === 'binary') {
+                for(let i=0; i<grayData.length; i++) outputData[i] = grayData[i] > param ? 255 : 0;
+                codeHtml = generateCode('binary', param);
+
+            } else if(currentMode === 'brightness') {
+                for(let i=0; i<grayData.length; i++) outputData[i] = grayData[i] + param;
+                codeHtml = generateCode('brightness', param);
+
+            } else if(currentMode === 'contrast') {
+                const factor = param / 100; 
+                for(let i=0; i<grayData.length; i++) outputData[i] = (grayData[i] - 128) * factor + 128;
+                codeHtml = generateCode('contrast', factor);
+
+            // --- Convolution Operations ---
+            } else if(currentMode === 'sobel') {
+                const kx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
+                const ky = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
+                applyConvolution(grayData, outputData, w, h, kx, ky);
+                codeHtml = generateCode('sobel');
+
+            } else if(currentMode === 'blur') {
+                // Approx Gaussian 3x3
+                const kernel = [[1, 2, 1], [2, 4, 2], [1, 2, 1]]; 
+                applySingleKernel(grayData, outputData, w, h, kernel, 16);
+                codeHtml = generateCode('blur');
+
+            } else if(currentMode === 'sharpen') {
+                const kernel = [[0, -1, 0], [-1, 5, -1], [0, -1, 0]];
+                applySingleKernel(grayData, outputData, w, h, kernel, 1);
+                codeHtml = generateCode('sharpen');
+
+            } else if(currentMode === 'emboss') {
+                const kernel = [[-2, -1, 0], [-1, 1, 1], [0, 1, 2]];
+                applySingleKernel(grayData, outputData, w, h, kernel, 1);
+                codeHtml = generateCode('emboss');
+            }
+
+            // 4. Render to Canvas
+            const isInv = invertCheck.checked;
+            for(let i=0; i<outputData.length; i++) {
+                let val = outputData[i];
+                if(isInv) val = 255 - val;
+                val = Math.max(0, Math.min(255, val)); // Clamp 0-255
+
+                // Write back as Grayscale (R=G=B)
+                data[i*4] = val;
+                data[i*4+1] = val;
+                data[i*4+2] = val;
+                // Alpha (i*4+3) remains unchanged (usually 255)
+            }
+            displayCtx.putImageData(frame, 0, 0);
+            
+            // 5. Update AI View (28x28 Thumbnail)
+            // Use drawImage to scale down cleanly
+            aiCtx.clearRect(0, 0, 28, 28);
+            aiCtx.drawImage(displayCanvas, 0, 0, 28, 28);
+
+            document.getElementById('codeBlock').innerHTML = codeHtml;
+            document.getElementById('resText').innerText = `${w} x ${h} px`;
+        }
+
+        // --- Math Helpers ---
+        
+        function applyConvolution(input, output, w, h, kx, ky) {
+            for(let y=1; y<h-1; y++) {
+                for(let x=1; x<w-1; x++) {
+                    let gx = 0, gy = 0;
+                    for(let ky_i=-1; ky_i<=1; ky_i++) {
+                        for(let kx_i=-1; kx_i<=1; kx_i++) {
+                            const val = input[(y+ky_i)*w + (x+kx_i)];
+                            gx += val * kx[ky_i+1][kx_i+1];
+                            gy += val * ky[ky_i+1][kx_i+1];
+                        }
+                    }
+                    output[y*w + x] = Math.sqrt(gx*gx + gy*gy);
+                }
+            }
+        }
+
+        function applySingleKernel(input, output, w, h, k, div=1) {
+            for(let y=1; y<h-1; y++) {
+                for(let x=1; x<w-1; x++) {
+                    let sum = 0;
+                    for(let ky_i=-1; ky_i<=1; ky_i++) {
+                        for(let kx_i=-1; kx_i<=1; kx_i++) {
+                            sum += input[(y+ky_i)*w + (x+kx_i)] * k[ky_i+1][kx_i+1];
+                        }
+                    }
+                    output[y*w + x] = sum / div;
+                }
+            }
+        }
+
+        // --- Python Code Generation ---
+        function generateCode(mode, val=0) {
+            let code = `<span class="cmt"># 完整 Python 代码示例 (需安装 opencv-python)</span>\n`;
+            code += `<span class="kw">import</span> cv2\n`;
+            code += `<span class="kw">import</span> numpy <span class="kw">as</span> np\n\n`;
+            
+            code += `<span class="cmt"># 1. 读取图片</span>\n`;
+            code += `img = cv2.imread(<span class="str">'input.jpg'</span>)\n`;
+            code += `<span class="kw">if</span> img <span class="kw">is</span> <span class="kw">None</span>:\n    <span class="fn">print</span>(<span class="str">"错误：找不到图片"</span>)\n    <span class="fn">exit</span>()\n\n`;
+
+            code += `<span class="cmt"># 2. 预处理：缩放与灰度化</span>\n`;
+            code += `<span class="cmt"># 统一缩放到 28x28 (为了匹配 AI 模型输入)</span>\n`;
+            code += `img_resized = cv2.resize(img, (<span class="num">28</span>, <span class="num">28</span>))\n`;
+            code += `gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)\n\n`;
+            
+            code += `<span class="cmt"># 3. 应用算法: ${getAlgoName(mode)}</span>\n`;
+            
+            if(mode === 'binary') {
+                code += `threshold = <span class="num">${val}</span>\n`;
+                code += `_, result = cv2.threshold(gray, threshold, <span class="num">255</span>, cv2.THRESH_BINARY)\n`;
+            } else if(mode === 'brightness') {
+                code += `bias = <span class="num">${val}</span>\n`;
+                code += `result = cv2.add(gray, bias)\n`;
+            } else if(mode === 'contrast') {
+                code += `alpha = <span class="num">${val}</span>  <span class="cmt"># 对比度系数 (1.0-3.0)</span>\n`;
+                code += `beta = <span class="num">0</span>    <span class="cmt"># 亮度偏移</span>\n`;
+                code += `result = cv2.convertScaleAbs(gray, alpha=alpha, beta=beta)\n`;
+            } else if(mode === 'sobel') {
+                code += `<span class="cmt"># 计算 X 和 Y 方向的梯度</span>\n`;
+                code += `gx = cv2.Sobel(gray, cv2.CV_64F, <span class="num">1</span>, <span class="num">0</span>, ksize=<span class="num">3</span>)\n`;
+                code += `gy = cv2.Sobel(gray, cv2.CV_64F, <span class="num">0</span>, <span class="num">1</span>, ksize=<span class="num">3</span>)\n`;
+                code += `<span class="cmt"># 合并梯度 (计算边缘强度)</span>\n`;
+                code += `result = cv2.magnitude(gx, gy)\n`;
+                code += `<span class="cmt"># 转换回 8位 图像以便显示</span>\n`;
+                code += `result = cv2.convertScaleAbs(result)\n`;
+            } else if(mode === 'blur') {
+                code += `<span class="cmt"># 高斯模糊 (核大小 3x3)</span>\n`;
+                code += `result = cv2.GaussianBlur(gray, (<span class="num">3</span>, <span class="num">3</span>), <span class="num">0</span>)\n`;
+            } else if(mode === 'sharpen') {
+                code += `<span class="cmt"># 自定义锐化卷积核</span>\n`;
+                code += `kernel = np.array([[<span class="num">0</span>, -<span class="num">1</span>, <span class="num">0</span>], \n                   [-<span class="num">1</span>,  <span class="num">5</span>, -<span class="num">1</span>], \n                   [<span class="num">0</span>, -<span class="num">1</span>, <span class="num">0</span>]])\n`;
+                code += `result = cv2.filter2D(gray, -<span class="num">1</span>, kernel)\n`;
+            } else if(mode === 'emboss') {
+                code += `<span class="cmt"># 浮雕效果卷积核</span>\n`;
+                code += `kernel = np.array([[<span class="num">-2</span>, <span class="num">-1</span>, <span class="num">0</span>], \n                   [-<span class="num">-1</span>,  <span class="num">1</span>,  <span class="num">1</span>], \n                   [<span class="num">0</span>,  <span class="num">1</span>,  <span class="num">2</span>]])\n`;
+                code += `result = cv2.filter2D(gray, -<span class="num">1</span>, kernel)\n`;
+            }
+
+            code += `\n<span class="cmt"># 4. 显示结果</span>\n`;
+            code += `cv2.imshow(<span class="str">'Original (Gray)'</span>, gray)\n`;
+            code += `cv2.imshow(<span class="str">'Processed Result'</span>, result)\n`;
+            code += `cv2.waitKey(<span class="num">0</span>)\n`;
+            code += `cv2.destroyAllWindows()\n`;
+
+            return code;
+        }
+
+        function getAlgoName(mode) {
+            if(mode==='binary') return "二值化 (Binarization)";
+            if(mode==='brightness') return "亮度调整 (Brightness)";
+            if(mode==='contrast') return "对比度增强 (Contrast)";
+            if(mode==='sobel') return "边缘检测 (Edge Detection)";
+            if(mode==='blur') return "高斯模糊 (Blur)";
+            if(mode==='sharpen') return "锐化 (Sharpen)";
+            if(mode==='emboss') return "浮雕效果 (Emboss)";
+            return "Unknown";
+        }
+
+        function copyCode(btn) {
+            const codeText = document.getElementById('codeBlock').innerText;
+            navigator.clipboard.writeText(codeText).then(() => {
+                const originalText = btn.innerText;
+                btn.innerText = "✅ 已复制";
+                setTimeout(() => btn.innerText = originalText, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "画面目标：生成一张正式申报报告可用的中文样例任务链条图，说明目标检测与细粒度分类实验从输入到结果的完整过程。主体与场景：五步横向流程，从图片输入到检测、裁剪、分类、结果复盘。构图与镜头：横向16:9，白底，五个模块从左到右依次为“输入图片”“目标检测”“裁剪区域”“细粒度分类”“结果复盘”；模块之间用箭头连接；每个模块内放简洁图标：图片、检测框、裁剪框、分类标签、结果卡片。底部短语“同一任务上下文贯穿 Blockly 与 Jupyter”。风格与材质：教育技术论文流程图，白底，深蓝线条，浅蓝模块，少量绿色强调，正式清楚。文字与标签：只出现上述中文和必要英文技术名，不要新增文字、乱码、水印。限制条件：不要真实人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "original_prompt": "画面目标：生成一张正式申报报告可用的中文样例任务链条图，说明目标检测与细粒度分类实验从输入到结果的完整过程。主体与场景：五步横向流程，从图片输入到检测、裁剪、分类、结果复盘。构图与镜头：横向16:9，白底，五个模块从左到右依次为“输入图片”“目标检测”“裁剪区域”“细粒度分类”“结果复盘”；模块之间用箭头连接；每个模块内放简洁图标：图片、检测框、裁剪框、分类标签、结果卡片。底部短语“同一任务上下文贯穿 Blockly 与 Jupyter”。风格与材质：教育技术论文流程图，白底，深蓝线条，浅蓝模块，少量绿色强调，正式清楚。文字与标签：只出现上述中文和必要英文技术名，不要新增文字、乱码、水印。限制条件：不要真实人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/画面目标：生成一张正式申报报告可用的中文样例任务链条图，说明目标检测与细粒度分类实验从输入到结果的完_94fe13094cf8.png",
+  "image_urls": [
+    "/static/generated/画面目标：生成一张正式申报报告可用的中文样例任务链条图，说明目标检测与细粒度分类实验从输入到结果的完_94fe13094cf8.png"
+  ],
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_6_sample_task_chain.png",
+  "output_paths": [
+    "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_6_sample_task_chain.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}

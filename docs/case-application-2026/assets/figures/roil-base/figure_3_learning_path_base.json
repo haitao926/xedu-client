@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "model": "doubao-seedream-5-0-260128",
+  "requested_model": "doubao-seedream-5-0-260128",
+  "prompt": "生成一张论文级中文流程图底图，主题是“HTML—Blockly—Jupyter学习主线图”。横向 16:9，白底，三阶段从左到右递进。三个大模块依次是：HTML体验、Blockly实践、Jupyter应用创新。每个模块下面有短标签：任务感知、流程理解、代码扩展。模块之间用粗箭头连接，底部有一条连续学习主线。整体强调不是并列入口，而是体验到实践再到创新的递进路径。风格为正式教育技术论文图，清晰、克制、中文可读，不要手绘，不要海报风，不要人物，不要水印，不要额外乱码。",
+  "original_prompt": "生成一张论文级中文流程图底图，主题是“HTML—Blockly—Jupyter学习主线图”。横向 16:9，白底，三阶段从左到右递进。三个大模块依次是：HTML体验、Blockly实践、Jupyter应用创新。每个模块下面有短标签：任务感知、流程理解、代码扩展。模块之间用粗箭头连接，底部有一条连续学习主线。整体强调不是并列入口，而是体验到实践再到创新的递进路径。风格为正式教育技术论文图，清晰、克制、中文可读，不要手绘，不要海报风，不要人物，不要水印，不要额外乱码。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/生成一张论文级中文流程图底图，主题是“HTML—Blockly—Jupyter学习主线图”。横向_1_da1cc25aa174.png",
+  "image_urls": [
+    "/static/generated/生成一张论文级中文流程图底图，主题是“HTML—Blockly—Jupyter学习主线图”。横向_1_da1cc25aa174.png"
+  ],
+  "output_path": "docs/case-application-2026/assets/figures/roil-base/figure_3_learning_path_base.png",
+  "output_paths": [
+    "docs/case-application-2026/assets/figures/roil-base/figure_3_learning_path_base.png"
+  ],
+  "attempted_models": [
+    "doubao-seedream-5-0-260128"
+  ],
+  "fallback_used": false,
+  "via": "backend"
+}

@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "model": "gemini-3.1-flash-image-preview",
+  "requested_model": "gpt-image-2-all",
+  "prompt": "画面目标：生成一张正式申报报告可用的中文课堂应用流程图，说明教师和学生如何在 XEdu Client 中完成课前、课中、课后闭环。主体与场景：双泳道流程图，上方是教师侧，下方是学生侧。构图与镜头：横向16:9，白底，左到右三段：课前、课中、课后；教师侧节点依次为“准备课程资源”“发布课堂入口”“修订课程包”；学生侧节点依次为“进入任务情境”“Blockly 理解流程”“Jupyter 代码实践”“查看结果复盘”；中间以“XEdu Client”平台节点连接两条泳道。风格与材质：教育技术论文流程图，白底，深蓝线条，浅蓝模块底色，少量绿色箭头，正式清晰。文字与标签：只出现上述中文和 XEdu Client，不要新增文字、乱码、水印。限制条件：不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "original_prompt": "画面目标：生成一张正式申报报告可用的中文课堂应用流程图，说明教师和学生如何在 XEdu Client 中完成课前、课中、课后闭环。主体与场景：双泳道流程图，上方是教师侧，下方是学生侧。构图与镜头：横向16:9，白底，左到右三段：课前、课中、课后；教师侧节点依次为“准备课程资源”“发布课堂入口”“修订课程包”；学生侧节点依次为“进入任务情境”“Blockly 理解流程”“Jupyter 代码实践”“查看结果复盘”；中间以“XEdu Client”平台节点连接两条泳道。风格与材质：教育技术论文流程图，白底，深蓝线条，浅蓝模块底色，少量绿色箭头，正式清晰。文字与标签：只出现上述中文和 XEdu Client，不要新增文字、乱码、水印。限制条件：不要人物、不要复杂背景、不要二维码、不要logo，文字必须清晰可读。",
+  "optimized_prompt": null,
+  "optimize_error": null,
+  "image_url": "/static/generated/画面目标：生成一张正式申报报告可用的中文课堂应用流程图，说明教师和学生如何在_XEdu_Client_be736c843792.png",
+  "image_urls": [
+    "/static/generated/画面目标：生成一张正式申报报告可用的中文课堂应用流程图，说明教师和学生如何在_XEdu_Client_be736c843792.png"
+  ],
+  "output_path": "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_5_classroom_flow.png",
+  "output_paths": [
+    "/Users/apple/Documents/GitHub/xedu-client/docs/case-application-2026/PPT/图资源/figure_5_classroom_flow.png"
+  ],
+  "attempted_models": [
+    "gpt-image-2-all",
+    "gemini-3.1-flash-image-preview"
+  ],
+  "fallback_used": true,
+  "via": "backend"
+}
