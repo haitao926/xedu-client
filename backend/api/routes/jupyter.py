@@ -4,6 +4,7 @@ Jupyter 管理路由模块
 """
 
 from flask import jsonify, request
+from api.security import require_capability
 
 
 def register_jupyter_routes(app, services: dict):
@@ -15,10 +16,12 @@ def register_jupyter_routes(app, services: dict):
     logger = services["logger"]
 
     @app.route("/api/status")
+    @require_capability("process:control")
     def get_status():
         return jsonify(serialize_status())
 
     @app.route("/api/start", methods=["POST"])
+    @require_capability("process:control")
     def start_jupyter():
         payload = request.get_json(silent=True) or {}
         merged_config = merge_jupyter_payload(payload)
@@ -29,12 +32,14 @@ def register_jupyter_routes(app, services: dict):
         return jsonify(result), (200 if result.get("success") else 500)
 
     @app.route("/api/stop", methods=["POST"])
+    @require_capability("process:control")
     def stop_jupyter():
         logger.info("停止 Jupyter")
         result = jupyter_manager.stop()
         return jsonify(result), (200 if result.get("success") else 500)
 
     @app.route("/api/restart", methods=["POST"])
+    @require_capability("process:control")
     def restart_jupyter():
         payload = request.get_json(silent=True) or {}
         merged_config = merge_jupyter_payload(payload)

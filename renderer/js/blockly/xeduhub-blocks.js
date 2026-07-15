@@ -1364,8 +1364,8 @@ function makeIconField(Blockly, iconKey) {
 }
 
 async function requestImageFilePath() {
-  if (globalThis.window?.electronAPI && typeof globalThis.window.electronAPI.invoke === 'function') {
-    return await globalThis.window.electronAPI.invoke('select-image-file');
+  if (globalThis.window?.electronAPI && typeof globalThis.window.electronAPI.selectImageFile === 'function') {
+    return await globalThis.window.electronAPI.selectImageFile();
   }
   if (globalThis.window?.parent && globalThis.window.parent !== globalThis.window) {
     try {

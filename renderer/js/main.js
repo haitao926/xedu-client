@@ -359,13 +359,13 @@ function registerBlocklyImagePickerBridge() {
             return;
         }
 
-        if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') {
+        if (!window.electronAPI || typeof window.electronAPI.selectImageFile !== 'function') {
             respond({ error: 'electron-api-unavailable' });
             return;
         }
 
         try {
-            const selectedPath = await window.electronAPI.invoke('select-image-file');
+            const selectedPath = await window.electronAPI.selectImageFile();
             respond({ path: selectedPath || null });
         } catch (error) {
             respond({ error: error?.message || 'select-image-file-failed' });

@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from flask import Response, jsonify, request, stream_with_context
+from api.security import require_capability
 from services.blockly_xeduhub_support import SMOKE_CHECKPOINT_MAP
 from runtime.sample_assets import resolve_checkpoint_file
 
@@ -124,6 +125,7 @@ def register_python_routes(app, services: dict):
         return summary
 
     @app.route("/api/python/run", methods=["POST"])
+    @require_capability("python:run")
     def run_python_code():
         payload = request.get_json(silent=True) or {}
         code = _inject_smoke_checkpoints(str(payload.get("code") or ""))

@@ -2035,7 +2035,7 @@ function renderMaterialList() {
             pickBtn.disabled = readOnly;
             if (!readOnly) {
                 pickBtn.addEventListener("click", async () => {
-                    if (!window.electronAPI || typeof window.electronAPI.invoke !== "function") {
+                    if (!window.electronAPI || typeof window.electronAPI.selectFolder !== "function") {
                         alert("请在桌面应用中使用本地上传功能");
                         return;
                     }
@@ -2044,7 +2044,7 @@ function renderMaterialList() {
                         alert("请先选择课程目录");
                         return;
                     }
-                    const folderPath = await window.electronAPI.invoke("select-folder");
+                    const folderPath = await window.electronAPI.selectFolder();
                     if (!folderPath) return;
                     try {
                         const response = await apiClient.post("/api/resources/scan-folder", {

@@ -12,7 +12,6 @@ import os
 from typing import Any, Dict
 
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 from models.config import AppConfig
@@ -39,6 +38,8 @@ from .app_support import (
     build_route_services,
     register_app_routes,
 )
+from .security import configure_security
+from .resource_runtime import ResourceHandleRegistry
 
 logger = get_logger(__name__)
 
@@ -59,7 +60,8 @@ def create_app(config_dir=None) -> Flask:
     classroom_service = ClassroomService()
 
     app = Flask(__name__)
-    CORS(app)
+    configure_security(app)
+    app.extensions["xedu_resource_handles"] = ResourceHandleRegistry()
 
     def _persist_config(target_config: AppConfig | None = None) -> bool:
         config_to_save = target_config or app_config

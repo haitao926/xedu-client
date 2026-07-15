@@ -1,5 +1,6 @@
 // 文档管理功能
 import apiClient from './api.js';
+import { sanitizeHtml } from './html-sanitizer.js';
 
 // 全局变量
 let currentDocument = null;
@@ -248,7 +249,7 @@ function displayRenderedDocument(htmlContent, docId) {
     const content = document.getElementById('docs-content');
 
     // 直接使用后端渲染的HTML内容
-    content.innerHTML = `<div class="docs-article">${htmlContent}</div>`;
+    content.innerHTML = `<div class="docs-article">${sanitizeHtml(htmlContent)}</div>`;
 
     // 增强功能：添加代码复制按钮
     const codeBlocks = content.querySelectorAll('.codehilite, .highlight, pre');

@@ -4,6 +4,7 @@
 """
 
 from flask import jsonify, request
+from api.security import require_capability
 
 
 def register_config_routes(app, services: dict):
@@ -17,11 +18,15 @@ def register_config_routes(app, services: dict):
     normalize_config_payload = services["normalize_config_payload"]
 
     @app.route("/api/save_config", methods=["POST"])
+    @require_capability("config:write")
     def save_config():
         payload = request.get_json(silent=True) or {}
         logger.info(f"保存配置: {payload.keys()}")
 
-        app_config = normalize_config_payload(payload)
+        try:
+            app_config = normalize_config_payload(payload)
+        except ValueError as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
         is_valid, errors = app_config.validate()
         if not is_valid:
             return (
@@ -44,19 +49,20 @@ def register_config_routes(app, services: dict):
                 {
                     "success": True,
                     "message": "配置保存成功",
-                    "config": app_config.to_dict(),
+                    "config": app_config.to_public_dict(),
                 }
             )
 
         return jsonify({"success": False, "message": "保存配置失败"}), 500
 
     @app.route("/api/load_config")
+    @require_capability("config:read")
     def load_config():
         app_config = get_app_config()
         return jsonify(
             {
                 "success": True,
                 "message": "配置加载成功",
-                "config": app_config.to_dict(),
+                "config": app_config.to_public_dict(),
             }
         )

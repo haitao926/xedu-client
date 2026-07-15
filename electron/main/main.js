@@ -3,6 +3,7 @@ const { session } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 
 // 确保 Windows 任务栏/快捷方式使用自定义图标，而不是 Electron 默认图标
@@ -43,12 +44,48 @@ let quitting = false;
 let pendingPracticeDeepLink = null;
 const gotTheLock = app.requestSingleInstanceLock();
 let jupyterManagedPid = null;
+const backendCapability = process.env.XEDU_CLIENT_CAPABILITY || crypto.randomBytes(32).toString('base64url');
+const approvedLocalRoots = new Set();
 
 const DEV_RENDERER_CANDIDATES = [
     process.env.ELECTRON_RENDERER_URL,
     `http://127.0.0.1:${RENDERER_PORT}`,
     `http://localhost:${RENDERER_PORT}`,
 ].filter(Boolean);
+
+function isTrustedRenderer(event) {
+    return Boolean(mainWindow && event?.sender === mainWindow.webContents);
+}
+
+function isSafeExternalUrl(value) {
+    try {
+        return new URL(String(value)).protocol === 'https:';
+    } catch (_) {
+        return false;
+    }
+}
+
+function isAllowedJupyterUrl(value) {
+    try {
+        const parsed = new URL(String(value));
+        return parsed.protocol === 'http:' && ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname);
+    } catch (_) {
+        return false;
+    }
+}
+
+function rememberApprovedPath(targetPath) {
+    if (targetPath) approvedLocalRoots.add(path.resolve(targetPath));
+}
+
+function isApprovedLocalPath(targetPath) {
+    try {
+        const resolved = path.resolve(String(targetPath));
+        return [...approvedLocalRoots].some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`));
+    } catch (_) {
+        return false;
+    }
+}
 
 // 规范化 Jupyter URL，修正偶发的 "/lablocale=en"（缺少 '?') 等问题
 function normalizeJupyterUrl(url) {
@@ -86,6 +123,7 @@ async function stopJupyterGracefully(timeoutMs = 3000) {
                                     },
                                     () => resolve()
                                 );
+                                stopReq.setHeader('X-XEdu-Client-Token', backendCapability);
                                 stopReq.on('error', () => resolve());
                                 stopReq.on('timeout', () => {
                                     stopReq.destroy();
@@ -286,7 +324,9 @@ function createWindow() {
     }
 
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-        shell.openExternal(url);
+        if (isSafeExternalUrl(url)) {
+            shell.openExternal(url);
+        }
         return { action: 'deny' };
     });
 
@@ -380,15 +420,18 @@ function setupJupyterCspBypass() {
     }, { urls: ['*://*/*'] });
 }
 
-ipcMain.handle('select-folder', async () => {
+ipcMain.handle('select-folder', async (event) => {
+    if (!isTrustedRenderer(event)) return null;
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
     if (!result.canceled && result.filePaths.length > 0) {
+        rememberApprovedPath(result.filePaths[0]);
         return result.filePaths[0];
     }
     return null;
 });
 
-ipcMain.handle('select-course-package', async () => {
+ipcMain.handle('select-course-package', async (event) => {
+    if (!isTrustedRenderer(event)) return null;
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile', 'openDirectory'],
         filters: [
@@ -397,13 +440,14 @@ ipcMain.handle('select-course-package', async () => {
         ],
     });
     if (!result.canceled && result.filePaths.length > 0) {
+        rememberApprovedPath(result.filePaths[0]);
         return result.filePaths[0];
     }
     return null;
 });
 
 ipcMain.handle('path-is-directory', async (event, targetPath) => {
-    if (!targetPath || typeof targetPath !== 'string') {
+    if (!isTrustedRenderer(event) || !targetPath || typeof targetPath !== 'string' || !isApprovedLocalPath(targetPath)) {
         return false;
     }
     try {
@@ -413,7 +457,8 @@ ipcMain.handle('path-is-directory', async (event, targetPath) => {
     }
 });
 
-ipcMain.handle('select-image-file', async () => {
+ipcMain.handle('select-image-file', async (event) => {
+    if (!isTrustedRenderer(event)) return null;
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
         filters: [
@@ -422,17 +467,22 @@ ipcMain.handle('select-image-file', async () => {
         ],
     });
     if (!result.canceled && result.filePaths.length > 0) {
+        rememberApprovedPath(result.filePaths[0]);
         return result.filePaths[0];
     }
     return null;
 });
 
 ipcMain.handle('open-external', async (event, url) => {
+    if (!isTrustedRenderer(event) || !isSafeExternalUrl(url)) {
+        return { success: false, error: 'invalid-url' };
+    }
     await shell.openExternal(url);
+    return { success: true };
 });
 
 ipcMain.handle('open-path', async (event, targetPath) => {
-    if (!targetPath) {
+    if (!isTrustedRenderer(event) || !targetPath || !isApprovedLocalPath(targetPath)) {
         return { success: false, error: 'empty-path' };
     }
     const result = await shell.openPath(targetPath);
@@ -449,6 +499,56 @@ ipcMain.handle('get-system-info', () => {
         arch: process.arch,
         version: app.getVersion()
     };
+});
+
+ipcMain.handle('api:request', async (event, request) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents) {
+        return { status: 403, headers: {}, body: JSON.stringify({ success: false, message: 'forbidden' }) };
+    }
+    if (!request || typeof request !== 'object') {
+        return { status: 400, headers: {}, body: JSON.stringify({ success: false, message: 'invalid request' }) };
+    }
+
+    const method = String(request.method || 'GET').toUpperCase();
+    const relativePath = String(request.path || '');
+    const allowedMethods = new Set(['GET', 'POST']);
+    if (!allowedMethods.has(method) || !relativePath.startsWith('/api/') || relativePath.includes('://')) {
+        return { status: 400, headers: {}, body: JSON.stringify({ success: false, message: 'invalid request' }) };
+    }
+    const body = request.body == null ? '' : String(request.body);
+    if (Buffer.byteLength(body, 'utf8') > 1024 * 1024) {
+        return { status: 413, headers: {}, body: JSON.stringify({ success: false, message: 'request too large' }) };
+    }
+
+    return new Promise((resolve) => {
+        const proxyRequest = http.request({
+            host: BACKEND_HOST,
+            port: BACKEND_PORT,
+            path: relativePath,
+            method,
+            timeout: 30000,
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body, 'utf8'),
+                'X-XEdu-Client-Token': backendCapability,
+            },
+        }, (response) => {
+            let responseBody = '';
+            response.setEncoding('utf8');
+            response.on('data', (chunk) => { responseBody += chunk; });
+            response.on('end', () => resolve({
+                status: response.statusCode || 502,
+                headers: { 'content-type': String(response.headers['content-type'] || 'application/json') },
+                body: responseBody,
+            }));
+        });
+        proxyRequest.on('error', () => resolve({ status: 502, headers: {}, body: JSON.stringify({ success: false, message: 'backend unavailable' }) }));
+        proxyRequest.on('timeout', () => {
+            proxyRequest.destroy();
+            resolve({ status: 504, headers: {}, body: JSON.stringify({ success: false, message: 'request timeout' }) });
+        });
+        proxyRequest.end(body);
+    });
 });
 
 function waitForBackendReady(timeoutMs = BACKEND_TIMEOUT_MS) {
@@ -753,6 +853,7 @@ function startBackendServer() {
             XEDU_BACKEND_PORT: String(BACKEND_PORT),
             XEDU_BACKEND_HOST: BACKEND_HOST,
             XEDU_API_HOST: BACKEND_HOST,
+            XEDU_CLIENT_CAPABILITY: backendCapability,
             XEDU_CHECKPOINT_DIRS: checkpointDirs.join(path.delimiter),
             PYTHONPATH: path.dirname(serverScript),
             PYTHONHOME: '',
@@ -957,7 +1058,7 @@ function setupJupyterView() {
     };
 
     ipcMain.handle('jupyter:create-view', async (event, url, bounds) => {
-        if (!hasValidWindow()) {
+        if (!hasValidWindow() || !isTrustedRenderer(event) || !isAllowedJupyterUrl(url)) {
             return { success: false, error: 'main-window-unavailable' };
         }
 
@@ -1006,7 +1107,7 @@ function setupJupyterView() {
     });
 
     ipcMain.handle('jupyter:update-bounds', (event, bounds) => {
-        if (!hasValidWindow() || !ensureValidViewRef()) return;
+        if (!hasValidWindow() || !isTrustedRenderer(event) || !ensureValidViewRef()) return;
         // 简单校验 bounds
         if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
 
@@ -1024,7 +1125,7 @@ function setupJupyterView() {
     });
 
     ipcMain.handle('jupyter:set-visibility', (event, visible) => {
-        if (!hasValidWindow() || !ensureValidViewRef()) return;
+        if (!hasValidWindow() || !isTrustedRenderer(event) || !ensureValidViewRef()) return;
 
         if (visible) {
             // 显示视图
@@ -1046,7 +1147,8 @@ function setupJupyterView() {
         }
     });
 
-    ipcMain.handle('jupyter:destroy-view', () => {
+    ipcMain.handle('jupyter:destroy-view', (event) => {
+        if (!isTrustedRenderer(event)) return { success: false, error: 'forbidden' };
         if (!ensureValidViewRef()) return { success: true };
         console.log('销毁 Jupyter 视图');
         isJupyterViewVisible = false;
@@ -1064,20 +1166,24 @@ function setupJupyterView() {
         return { success: true };
     });
 
-    ipcMain.handle('jupyter:reload', () => {
-        if (ensureValidViewRef()) {
+    ipcMain.handle('jupyter:reload', (event) => {
+        if (isTrustedRenderer(event) && ensureValidViewRef()) {
             jupyterView.webContents.reload();
         }
     });
     
-    ipcMain.handle('jupyter:go-back', () => {
-        if (ensureValidViewRef() && jupyterView.webContents.canGoBack()) {
+    ipcMain.handle('jupyter:go-back', (event) => {
+        if (isTrustedRenderer(event) && ensureValidViewRef() && jupyterView.webContents.canGoBack()) {
             jupyterView.webContents.goBack();
         }
     });
 
     ipcMain.handle('jupyter:open-external', async (event, url) => {
+        if (!isTrustedRenderer(event) || !isSafeExternalUrl(url)) {
+            return { success: false, error: 'invalid-url' };
+        }
         await shell.openExternal(url);
+        return { success: true };
     });
 
     // 主窗口关闭时在 createWindow 中统一清理引用

@@ -10,6 +10,7 @@ from datetime import datetime
 from flask import jsonify, request
 
 from models.config import AIConfig
+from api.security import require_capability
 
 
 def register_ai_routes(app, services: dict):
@@ -134,6 +135,7 @@ def register_ai_routes(app, services: dict):
         return jsonify(response), status_code
 
     @app.route("/api/ai/test_config", methods=["POST"])
+    @require_capability("config:write")
     def ai_test_config():
         payload = request.get_json() or {}
         overrides = payload.get("config", {})
@@ -143,6 +145,7 @@ def register_ai_routes(app, services: dict):
         return jsonify(result), status_code
 
     @app.route("/api/ai/save_config", methods=["POST"])
+    @require_capability("config:write")
     def ai_save_config():
         app_config = get_app_config()
         payload = request.get_json() or {}
@@ -166,7 +169,7 @@ def register_ai_routes(app, services: dict):
             return jsonify({
                 "success": True,
                 "message": "AI配置保存成功",
-                "config": new_ai_config.to_dict(),
+                "config": app_config.to_public_dict()["ai"],
             })
 
         return jsonify({"success": False, "message": "保存AI配置失败"}), 500

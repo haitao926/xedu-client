@@ -257,6 +257,27 @@ class AppConfig:
             'ai': self.ai.to_dict()
         }
 
+    def to_public_dict(self) -> Dict[str, Any]:
+        """Return only configuration values that a Renderer may receive."""
+
+        data = self.to_dict()
+        data["ai"].pop("api_key", None)
+        data["ui"].pop("resources_publish_token", None)
+        data["ui"].pop("classroom_teacher_code", None)
+        data["ui"]["quickform"].pop("password", None)
+        data["secret_status"] = self.to_secret_refs()
+        return data
+
+    def to_secret_refs(self) -> Dict[str, bool]:
+        """Expose secret presence without exposing any secret material."""
+
+        return {
+            "ai_configured": bool(self.ai.api_key),
+            "resources_publish_configured": bool(self.ui.resources_publish_token),
+            "classroom_teacher_configured": bool(self.ui.classroom_teacher_code),
+            "quickform_password_configured": bool(self.ui.quickform.password),
+        }
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AppConfig':
         """从字典创建实例"""
@@ -279,6 +300,72 @@ class AppConfig:
         """从 JSON 字符串创建实例"""
         data = json.loads(json_str)
         return cls.from_dict(data)
+
+
+_SECRET_CONFIG_FIELDS = {
+    ("ai", "api_key"),
+    ("ui", "resources_publish_token"),
+    ("ui", "classroom_teacher_code"),
+    ("ui.quickform", "password"),
+}
+
+
+def merge_config_update(
+    current: AppConfig,
+    payload: Dict[str, Any],
+    *,
+    allow_secret_write: bool,
+) -> AppConfig:
+    """Merge a whitelisted update without silently accepting unknown settings."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("配置必须是对象")
+
+    data = current.to_dict()
+    sections = ("jupyter", "ui", "ai")
+    updates = payload if any(section in payload for section in sections) else {"jupyter": payload}
+    unexpected_sections = set(updates) - set(sections)
+    if unexpected_sections:
+        raise ValueError(f"未知配置分区: {', '.join(sorted(unexpected_sections))}")
+
+    for section, values in updates.items():
+        if not isinstance(values, dict):
+            raise ValueError(f"{section} 配置必须是对象")
+        if section == "ui" and "quickform" in values:
+            quickform_values = values["quickform"]
+            if not isinstance(quickform_values, dict):
+                raise ValueError("quickform 配置必须是对象")
+            unknown = set(quickform_values) - set(data["ui"]["quickform"])
+            if unknown:
+                raise ValueError(f"未知 QuickForm 配置: {', '.join(sorted(unknown))}")
+            if ("ui.quickform", "password") in _SECRET_CONFIG_FIELDS and "password" in quickform_values and not allow_secret_write:
+                raise ValueError("不允许写入 QuickForm 密码")
+            data["ui"]["quickform"].update(quickform_values)
+
+        for key, value in values.items():
+            if section == "ui" and key == "quickform":
+                continue
+            if key not in data[section]:
+                raise ValueError(f"未知 {section} 配置: {key}")
+            if (section, key) in _SECRET_CONFIG_FIELDS and not allow_secret_write:
+                raise ValueError(f"不允许写入秘密配置: {key}")
+            data[section][key] = value
+
+    return AppConfig.from_dict(data)
+
+
+def redact_secrets(value: Any) -> Any:
+    """Redact known credential fields before they reach logs or error responses."""
+
+    sensitive_names = ("api_key", "token", "password", "teacher_code", "authorization")
+    if isinstance(value, dict):
+        return {
+            key: "***" if any(name in str(key).lower() for name in sensitive_names) else redact_secrets(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_secrets(item) for item in value]
+    return value
 
 
 @dataclass

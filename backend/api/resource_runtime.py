@@ -5,13 +5,17 @@ Resource / preview / Blockly runtime helpers.
 
 from __future__ import annotations
 
-import base64
 import json
 import os
+import secrets
+import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
+
+from flask import current_app
 
 from services.gitea_service import build_single_course_entry, load_course_data_from_repo
 from services.blockly_xeduhub_support import (
@@ -21,13 +25,130 @@ from services.blockly_xeduhub_support import (
 )
 
 
-def decode_local_preview_token(token: str) -> Path:
-    clean = (token or "").strip()
-    if not clean:
-        raise ValueError("缺少预览令牌")
-    padding = "=" * (-len(clean) % 4)
-    decoded = base64.urlsafe_b64decode((clean + padding).encode("utf-8")).decode("utf-8")
-    return Path(decoded).expanduser().resolve()
+class ResourceHandleExpired(ValueError):
+    pass
+
+
+class InvalidResourceHandle(ValueError):
+    pass
+
+
+_READABLE_SUFFIXES = frozenset(
+    {
+        ".blockly.json",
+        ".blockly.xml",
+        ".css",
+        ".html",
+        ".ipynb",
+        ".jpeg",
+        ".jpg",
+        ".js",
+        ".json",
+        ".md",
+        ".mp3",
+        ".mp4",
+        ".png",
+        ".py",
+        ".sb3",
+        ".svg",
+        ".toolbox.json",
+        ".txt",
+        ".webm",
+        ".webp",
+        ".xml",
+    }
+)
+_WRITABLE_SUFFIXES = frozenset({".blockly.json", ".blockly.xml", ".sb3", ".toolbox.json"})
+
+
+@dataclass(frozen=True)
+class _RegisteredRoot:
+    path: Path
+    kind: str
+    owner: str
+    expires_at: float
+
+
+@dataclass(frozen=True)
+class _ResourceHandle:
+    root_id: str
+    relative_path: str
+    operation: str
+    expires_at: float
+
+
+class ResourceHandleRegistry:
+    """Owns resource roots and opaque handles for one backend process."""
+
+    def __init__(self):
+        self._roots: dict[str, _RegisteredRoot] = {}
+        self._handles: dict[str, _ResourceHandle] = {}
+
+    def register_root(self, root_path: Path, kind: str, owner: str, ttl_seconds: int = 3600) -> str:
+        root = Path(root_path).expanduser().resolve()
+        if not root.is_dir():
+            raise InvalidResourceHandle("课程资源根目录不存在")
+        root_id = secrets.token_urlsafe(24)
+        self._roots[root_id] = _RegisteredRoot(root, str(kind), str(owner), time.monotonic() + ttl_seconds)
+        return root_id
+
+    def issue_handle(self, root_id: str, relative_path: str, operation: str, ttl_seconds: int = 300) -> str:
+        root = self._get_root(root_id)
+        relative = "" if not str(relative_path or "").strip() else self._validate_relative_path(root.path, relative_path, operation)
+        handle = secrets.token_urlsafe(32)
+        self._handles[handle] = _ResourceHandle(root_id, relative, operation, time.monotonic() + ttl_seconds)
+        return handle
+
+    def resolve(self, handle: str, operation: str, relative_path: str | None = None) -> Path:
+        token = self._handles.get(str(handle or ""))
+        if token is None or token.expires_at <= time.monotonic():
+            self._handles.pop(str(handle or ""), None)
+            raise ResourceHandleExpired("资源句柄已过期")
+        if token.operation != operation:
+            raise InvalidResourceHandle("资源句柄无此操作权限")
+        root = self._get_root(token.root_id)
+        requested = token.relative_path if relative_path is None else relative_path
+        normalized = self._validate_relative_path(root.path, requested, operation)
+        if token.relative_path and normalized != token.relative_path:
+            raise InvalidResourceHandle("资源句柄不允许访问此文件")
+        return root.path / normalized
+
+    def _get_root(self, root_id: str) -> _RegisteredRoot:
+        root = self._roots.get(root_id)
+        if root is None or root.expires_at <= time.monotonic():
+            self._roots.pop(root_id, None)
+            raise ResourceHandleExpired("资源句柄已过期")
+        return root
+
+    @staticmethod
+    def _validate_relative_path(root: Path, value: str, operation: str) -> str:
+        relative = Path(str(value or "").strip())
+        if relative.is_absolute() or not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+            raise InvalidResourceHandle("非法资源路径")
+        target = (root / relative).resolve()
+        if root != target and root not in target.parents:
+            raise InvalidResourceHandle("非法资源路径")
+        suffixes = "".join(target.suffixes[-2:]) if target.suffix == ".json" and len(target.suffixes) >= 2 else target.suffix.lower()
+        allowed = _WRITABLE_SUFFIXES if operation == "write" else _READABLE_SUFFIXES
+        if suffixes.lower() not in allowed:
+            raise InvalidResourceHandle("不允许的资源类型")
+        return relative.as_posix()
+
+
+def _registry() -> ResourceHandleRegistry:
+    return current_app.extensions["xedu_resource_handles"]
+
+
+def register_resource_root(root_path: Path, kind: str, owner: str) -> str:
+    return _registry().register_root(root_path, kind, owner)
+
+
+def issue_resource_handle(root_id: str, relative_path: str, operation: str, ttl_seconds: int = 300) -> str:
+    return _registry().issue_handle(root_id, relative_path, operation, ttl_seconds)
+
+
+def resolve_resource_handle(handle: str, operation: str, relative_path: str | None = None) -> Path:
+    return _registry().resolve(handle, operation, relative_path)
 
 
 def resolve_local_course_file(base_path: str | Path, relpath: str) -> Path:

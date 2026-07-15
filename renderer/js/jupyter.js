@@ -175,7 +175,7 @@ function startViewSync() {
                     return;
                 }
 
-                window.electronAPI.invoke('jupyter:update-bounds', bounds);
+                window.electronAPI.jupyterUpdateBounds(bounds);
             }
         }
     });
@@ -224,7 +224,7 @@ async function attachJupyterView(url, options = {}) {
 
         if (bounds) {
             log('正在挂载 Jupyter 视图...', 'info');
-            const result = await window.electronAPI.invoke('jupyter:create-view', normalizedUrl, bounds);
+            const result = await window.electronAPI.jupyterCreateView(normalizedUrl, bounds);
             if (result && result.success === false) {
                 throw new Error(result.error || 'jupyter-create-view-failed');
             }
@@ -256,7 +256,7 @@ async function detachJupyterView() {
     isViewAttached = false;
     isViewVisible = false;
     stopViewSync();
-    await window.electronAPI.invoke('jupyter:destroy-view');
+    await window.electronAPI.jupyterDestroyView();
     
     // Show placeholder content
     const placeholderContent = document.querySelector('.jupyter-placeholder');
@@ -276,13 +276,13 @@ export async function setVisibility(visible) {
     // 只有当视图确实已经“挂载”（即Jupyter已启动且未停止）时，才进行显隐切换
     if (isViewAttached) {
         // 通知主进程添加或移除 BrowserView
-        await window.electronAPI.invoke('jupyter:set-visibility', isViewVisible);
+        await window.electronAPI.jupyterSetVisibility(isViewVisible);
         
         // 如果是显示，可能需要重新同步一下位置（防止切换期间窗口大小变了）
         if (isViewVisible) {
             const bounds = getPlaceholderBounds();
             if (bounds) {
-                window.electronAPI.invoke('jupyter:update-bounds', bounds);
+                window.electronAPI.jupyterUpdateBounds(bounds);
             }
         }
     }
@@ -292,7 +292,7 @@ export async function setVisibility(visible) {
 
 export function refreshView() {
     if (isViewAttached) {
-        window.electronAPI.invoke('jupyter:reload');
+        window.electronAPI.jupyterReload();
         log('刷新视图', 'info');
     }
 }
@@ -300,7 +300,7 @@ export function refreshView() {
 export async function openExternal(url) {
     const target = url || currentJupyterUrl;
     if (target) {
-        await window.electronAPI.invoke('jupyter:open-external', target);
+        await window.electronAPI.jupyterOpenExternal(target);
     } else {
         log('Jupyter 尚未启动', 'warning');
     }
@@ -332,7 +332,7 @@ export function toggleFullscreen() {
     setTimeout(() => {
         if (isViewAttached && isViewVisible) {
             const bounds = getPlaceholderBounds();
-            window.electronAPI.invoke('jupyter:update-bounds', bounds);
+            window.electronAPI.jupyterUpdateBounds(bounds);
         }
     }, 300);
 }
@@ -706,7 +706,7 @@ export async function browseFolder() {
         return;
     }
     try {
-        const path = await window.electronAPI.invoke('select-folder');
+        const path = await window.electronAPI.selectFolder();
         if (path) {
             document.getElementById('project-path').value = path;
             rememberProjectDir(path);
@@ -723,8 +723,8 @@ export async function confirmProjectPath() {
         return;
     }
 
-    if (window.electronAPI?.invoke) {
-        const exists = await window.electronAPI.invoke('path-is-directory', path);
+    if (window.electronAPI?.isDirectory) {
+        const exists = await window.electronAPI.isDirectory(path);
         if (!exists) {
             alert('项目目录不存在，请选择本地项目目录');
             return;

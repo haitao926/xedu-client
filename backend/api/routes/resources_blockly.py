@@ -11,6 +11,8 @@ from pathlib import Path
 
 from flask import Response, jsonify, request
 
+from api.resource_runtime import InvalidResourceHandle, ResourceHandleExpired
+from api.security import require_capability
 from services.blockly_xeduhub_support import validate_toolbox_schema
 
 
@@ -18,8 +20,7 @@ def register_resource_blockly_routes(app, services: dict):
     """注册 Blockly 相关资源路由"""
 
     logger = services["logger"]
-    decode_local_preview_token = services["decode_local_preview_token"]
-    resolve_local_course_file = services["resolve_local_course_file"]
+    resolve_resource_handle = services["resolve_resource_handle"]
     guess_blockly_toolbox_path = services["guess_blockly_toolbox_path"]
     guess_blockly_python_path = services["guess_blockly_python_path"]
     guess_blockly_notebook_path = services["guess_blockly_notebook_path"]
@@ -29,6 +30,7 @@ def register_resource_blockly_routes(app, services: dict):
     get_nonblocking_supported_tasks_snapshot = services["get_nonblocking_supported_tasks_snapshot"]
 
     @app.route("/api/resources/blockly-playground/<root_token>")
+    @require_capability("resource:read")
     def resources_blockly_playground(root_token):
         role = str(request.args.get("role") or "").strip().lower()
         toolbox_import_enabled = role != "student"
@@ -37,18 +39,17 @@ def register_resource_blockly_routes(app, services: dict):
         python_rel = str(request.args.get("python") or "").strip().lstrip("/")
         practice_rel = str(request.args.get("practice") or "").strip().lstrip("/")
         try:
-            base = decode_local_preview_token(root_token)
             if not workspace_rel:
                 return jsonify({"success": False, "message": "缺少 workspace 参数"}), 400
 
-            workspace_file = resolve_local_course_file(base, workspace_rel)
+            workspace_file = resolve_resource_handle(root_token, "read", workspace_rel)
             if not workspace_file.exists() or not workspace_file.is_file():
                 return jsonify({"success": False, "message": "Blockly 工作区文件不存在"}), 404
 
             if not toolbox_rel:
                 guessed_toolbox = guess_blockly_toolbox_path(workspace_rel)
                 if guessed_toolbox:
-                    toolbox_file = resolve_local_course_file(base, guessed_toolbox)
+                    toolbox_file = resolve_resource_handle(root_token, "read", guessed_toolbox)
                     if toolbox_file.exists() and toolbox_file.is_file():
                         toolbox_rel = guessed_toolbox
 
@@ -61,12 +62,12 @@ def register_resource_blockly_routes(app, services: dict):
             if not practice_rel:
                 guessed_notebook = guess_blockly_notebook_path(workspace_rel)
                 if guessed_notebook:
-                    notebook_file = resolve_local_course_file(base, guessed_notebook)
+                    notebook_file = resolve_resource_handle(root_token, "read", guessed_notebook)
                     if notebook_file.exists() and notebook_file.is_file():
                         practice_rel = guessed_notebook
                         practice_kind = "notebook"
                 if not practice_rel and python_rel:
-                    python_file = resolve_local_course_file(base, python_rel)
+                    python_file = resolve_resource_handle(root_token, "read", python_rel)
                     if python_file.exists() and python_file.is_file():
                         practice_rel = python_rel
                         practice_kind = "python"
@@ -83,7 +84,6 @@ def register_resource_blockly_routes(app, services: dict):
             practice_launch_url = ""
             if practice_rel:
                 practice_launch_query = urllib.parse.urlencode({
-                    "project": str(base),
                     "file": practice_rel,
                     "kind": practice_kind,
                 })
@@ -98,7 +98,7 @@ def register_resource_blockly_routes(app, services: dict):
                 root_token=root_token,
                 workspace_rel=workspace_rel,
                 toolbox_rel=toolbox_rel,
-                project_root=str(base),
+                project_root="",
                 practice_label=Path(practice_rel).name if practice_rel else "",
                 practice_kind=practice_kind,
                 practice_url=practice_url,
@@ -106,7 +106,9 @@ def register_resource_blockly_routes(app, services: dict):
                 toolbox_switch_enabled=toolbox_import_enabled,
             )
             return Response(html, mimetype="text/html")
-        except ValueError as exc:
+        except ResourceHandleExpired as exc:
+            return jsonify({"success": False, "message": str(exc)}), 410
+        except (InvalidResourceHandle, ValueError) as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:
             logger.error(f"打开 Blockly playground 失败: {exc}")
@@ -138,6 +140,7 @@ def register_resource_blockly_routes(app, services: dict):
             return jsonify({"success": False, "message": "打开空白 Blockly playground 失败"}), 500
 
     @app.route("/api/resources/blockly/xeduhub/execute", methods=["POST"])
+    @require_capability("python:run")
     def resources_blockly_xeduhub_execute():
         try:
             payload = request.get_json(silent=True) or {}
@@ -170,6 +173,7 @@ def register_resource_blockly_routes(app, services: dict):
             }), 500
 
     @app.route("/api/resources/blockly/toolbox/save", methods=["POST"])
+    @require_capability("resource:write")
     def resources_blockly_toolbox_save():
         try:
             payload = request.get_json(silent=True) or {}
@@ -202,8 +206,7 @@ def register_resource_blockly_routes(app, services: dict):
                     "errors": validation.get("errors") or ["未知错误"],
                 }), 400
 
-            base = decode_local_preview_token(root_token)
-            target_file = resolve_local_course_file(base, toolbox_rel)
+            target_file = resolve_resource_handle(root_token, "write", toolbox_rel)
             target_file.parent.mkdir(parents=True, exist_ok=True)
             safe_toolbox = validation.get("normalized") or toolbox
             target_file.write_text(f"{json.dumps(safe_toolbox, ensure_ascii=False, indent=2)}\n", encoding="utf-8")
@@ -212,7 +215,9 @@ def register_resource_blockly_routes(app, services: dict):
                 "message": "课程积木已保存",
                 "toolbox_path": toolbox_rel,
             }), 200
-        except ValueError as exc:
+        except ResourceHandleExpired as exc:
+            return jsonify({"success": False, "message": str(exc)}), 410
+        except (InvalidResourceHandle, ValueError) as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except OSError as exc:
             logger.error(f"保存 Blockly toolbox 失败: {exc}")

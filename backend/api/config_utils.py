@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict
 
-from models.config import AppConfig, JupyterConfig, AIConfig
+from models.config import AppConfig, JupyterConfig, AIConfig, merge_config_update
 from services.ai_service import AIService
 from utils.logger import get_logger
 
@@ -68,14 +68,7 @@ def merge_jupyter_payload(
 
 
 def normalize_config_payload(app_config: AppConfig, payload: Dict[str, Any]) -> AppConfig:
-    base = app_config.to_dict()
-    if any(section in payload for section in ("jupyter", "ui", "ai")):
-        for section in ("jupyter", "ui", "ai"):
-            if isinstance(payload.get(section), dict):
-                base[section].update(payload[section])
-    else:
-        base["jupyter"].update(payload)
-    return AppConfig.from_dict(base)
+    return merge_config_update(app_config, payload, allow_secret_write=True)
 
 
 def build_ai_service(app_config: AppConfig, overrides: Dict[str, Any]) -> AIService:

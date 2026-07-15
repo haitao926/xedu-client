@@ -1,6 +1,7 @@
 // AI 助手逻辑
 import apiClient from './api.js';
 import { getExperienceConfig, getExperienceMode } from './experience-config.js';
+import { sanitizeHtml } from './html-sanitizer.js';
 
 let conversationHistory = [];
 let aiUiInitialized = false;
@@ -262,11 +263,11 @@ function applyAssistantMessageContent(messageDiv, content, options = {}) {
     if (status === 'needs_input') messageDiv.classList.add('message-input');
 
     if (options.renderAgentCard) {
-        messageDiv.innerHTML = renderAgentCard(options.response || {}, content);
+        messageDiv.innerHTML = sanitizeHtml(renderAgentCard(options.response || {}, content));
         return;
     }
     if (options.renderMarkdown) {
-        messageDiv.innerHTML = `<div class="markdown-body chat-markdown">${renderMarkdown(content)}</div>`;
+        messageDiv.innerHTML = `<div class="markdown-body chat-markdown">${sanitizeHtml(renderMarkdown(content))}</div>`;
         return;
     }
     messageDiv.textContent = content;

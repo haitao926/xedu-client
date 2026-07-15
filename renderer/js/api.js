@@ -33,8 +33,18 @@ const normalizeApiUrl = (url, base = DEFAULT_BASE_URL) => {
     return url;
 };
 
-const fetchWithBase = (url, options = {}, base = DEFAULT_BASE_URL) => {
+const fetchWithBase = async (url, options = {}, base = DEFAULT_BASE_URL) => {
     const normalizedUrl = normalizeApiUrl(url, base);
+    const electronRequest = typeof window !== 'undefined' && window.electronAPI?.apiRequest;
+    if (electronRequest && normalizedUrl.startsWith(trimTrailingSlash(DEFAULT_BASE_URL) + '/api/')) {
+        const parsed = new URL(normalizedUrl);
+        const result = await electronRequest({
+            method: options.method || 'GET',
+            path: `${parsed.pathname}${parsed.search}`,
+            body: options.body || '',
+        });
+        return new Response(result.body, { status: result.status, headers: result.headers });
+    }
     return rawFetch(normalizedUrl, options);
 };
 
@@ -82,14 +92,20 @@ class APIClient {
 
         const config = {
             headers: { 'Content-Type': 'application/json' },
-            timeout: this.timeout,
             ...options
         };
 
         console.debug(`[API] Request: ${options.method || 'GET'} ${url}`, config);
 
         try {
-            const response = await fetch(url, config);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+            let response;
+            try {
+                response = await fetch(url, { ...config, signal: controller.signal });
+            } finally {
+                clearTimeout(timeoutId);
+            }
 
             if (!response.ok) {
                 const errorText = await response.text();

@@ -127,7 +127,7 @@ export class ProjectWizard {
             return;
         }
         try {
-            const path = await window.electronAPI.invoke('select-folder');
+            const path = await window.electronAPI.selectFolder();
             if (path) {
                 document.getElementById('wizard-project-path').value = path;
             }

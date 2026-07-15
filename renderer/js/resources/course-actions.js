@@ -57,9 +57,8 @@ export function resolveLocalPathFlow(basePath, targetPath) {
 export async function openLocalPathFlow(targetPath, electronAPI = window.electronAPI) {
   if (!targetPath) return;
   try {
-    if (electronAPI && typeof electronAPI.invoke === 'function') {
-      await electronAPI.invoke('open-path', targetPath);
-      return;
+    if (electronAPI && typeof electronAPI.openPath === 'function') {
+      await electronAPI.openPath(targetPath);
     }
   } catch (error) {
     console.error('打开本地路径失败:', error);
@@ -147,10 +146,6 @@ export async function openExternalFlow(url, electronAPI = window.electronAPI) {
   try {
     if (electronAPI && typeof electronAPI.openExternal === 'function') {
       await electronAPI.openExternal(url);
-      return;
-    }
-    if (electronAPI && typeof electronAPI.invoke === 'function') {
-      await electronAPI.invoke('open-external', url);
       return;
     }
   } catch (error) {

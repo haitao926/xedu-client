@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import jsonify, request, send_file
+from api.resource_runtime import InvalidResourceHandle, ResourceHandleExpired
+from api.security import require_capability
 
 from services.gitea_service import (
     GiteaClient,
@@ -41,7 +43,9 @@ def register_resource_routes(app, services: dict):
     resolve_resource_source_for_request = services["resolve_resource_source_for_request"]
     build_single_course_source_entry = services["build_single_course_source_entry"]
     derive_course_id_from_path = services["derive_course_id_from_path"]
-    decode_local_preview_token = services["decode_local_preview_token"]
+    resolve_resource_handle = services["resolve_resource_handle"]
+    register_resource_root = services["register_resource_root"]
+    issue_resource_handle = services["issue_resource_handle"]
     resolve_local_course_file = services["resolve_local_course_file"]
     normalize_quickform_public_config = services["normalize_quickform_public_config"]
     inject_quickform_file = services["inject_quickform_file"]
@@ -62,6 +66,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "读取前端资源失败"}), 500
 
     @app.route("/api/resources/default-sample", methods=["GET"])
+    @require_capability("resource:read")
     def get_default_sample_course():
         try:
             backend_root = Path(__file__).resolve().parents[2]
@@ -70,11 +75,13 @@ def register_resource_routes(app, services: dict):
             if not course_file.exists():
                 return jsonify({"success": False, "message": "默认测试样例不存在"}), 404
             result = scan_course(str(sample_dir), init_if_missing=False, init_meta=None, auto_build=False)
+            root_id = register_resource_root(sample_dir, "course", "default-sample")
+            resource_handle = issue_resource_handle(root_id, "", "read")
             return jsonify({
                 "success": True,
                 "sample": {
                     "label": "默认测试样例",
-                    "path": str(sample_dir),
+                    "resource_handle": resource_handle,
                     "course": result.course,
                     "summary": result.summary,
                 },
@@ -86,20 +93,23 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "读取默认测试样例失败"}), 500
 
     @app.route("/api/resources/local-file/<root_token>/<path:relpath>")
+    @require_capability("resource:read")
     def resources_local_file(root_token, relpath):
         try:
-            base = decode_local_preview_token(root_token)
-            file_path = resolve_local_course_file(base, relpath)
+            file_path = resolve_resource_handle(root_token, "read", relpath)
             if not file_path.exists() or not file_path.is_file():
                 return jsonify({"success": False, "message": "文件不存在"}), 404
             return send_file(file_path)
-        except ValueError as exc:
+        except ResourceHandleExpired as exc:
+            return jsonify({"success": False, "message": str(exc)}), 410
+        except (InvalidResourceHandle, ValueError) as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:
             logger.error(f"读取本地预览文件失败: {exc}")
             return jsonify({"success": False, "message": "读取本地预览文件失败"}), 500
 
     @app.route("/api/resources/index", methods=["GET", "POST"])
+    @require_capability("resource:read")
     def get_resources_index():
         payload = request.get_json(silent=True) or {}
         ui_config = get_app_config().ui
@@ -256,6 +266,7 @@ def register_resource_routes(app, services: dict):
         })
 
     @app.route("/api/resources/scan", methods=["POST"])
+    @require_capability("resource:read")
     def scan_resource_course():
         payload = request.get_json(silent=True) or {}
         try:
@@ -273,6 +284,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "扫描课程失败"}), 500
 
     @app.route("/api/resources/inspect-course", methods=["POST"])
+    @require_capability("resource:read")
     def inspect_resource_course():
         payload = request.get_json(silent=True) or {}
         try:
@@ -367,6 +379,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "巡检课程失败"}), 500
 
     @app.route("/api/resources/publish", methods=["POST"])
+    @require_capability("resource:write")
     def publish_resource_course():
         payload = request.get_json(silent=True) or {}
         ui_config = get_app_config().ui
@@ -435,6 +448,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "发布课程失败"}), 500
 
     @app.route("/api/resources/pull", methods=["POST"])
+    @require_capability("resource:write")
     def pull_resource_course():
         payload = request.get_json(silent=True) or {}
         ui_config = get_app_config().ui
@@ -522,6 +536,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "导入课程失败"}), 500
 
     @app.route("/api/resources/ensure-repo", methods=["POST"])
+    @require_capability("resource:write")
     def ensure_resource_repo():
         payload = request.get_json(silent=True) or {}
         ui_config = get_app_config().ui
@@ -558,6 +573,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "检查课程仓库失败"}), 500
 
     @app.route("/api/resources/save-course", methods=["POST"])
+    @require_capability("resource:write")
     def save_resource_course():
         payload = request.get_json(silent=True) or {}
         try:
@@ -570,6 +586,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "保存课程结构失败"}), 500
 
     @app.route("/api/resources/import-package-local", methods=["POST"])
+    @require_capability("resource:write")
     def import_local_resource_package():
         payload = request.get_json(silent=True) or {}
         package_path = str(payload.get("package_path") or "").strip()
@@ -595,6 +612,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "导入本地课程包失败"}), 500
 
     @app.route("/api/resources/quickform/inject", methods=["POST"])
+    @require_capability("resource:write")
     def inject_quickform_script():
         payload = request.get_json(silent=True) or {}
         local_path = str(payload.get("local_path") or "").strip()
@@ -623,6 +641,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "注入 QuickForm 失败"}), 500
 
     @app.route("/api/resources/scan-folder", methods=["POST"])
+    @require_capability("resource:read")
     def scan_resource_folder():
         payload = request.get_json(silent=True) or {}
         try:
