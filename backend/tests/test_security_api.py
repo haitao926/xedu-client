@@ -44,6 +44,18 @@ class SecurityApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
 
+    def test_package_management_requires_a_process_capability(self):
+        response = self.client.post("/api/python/pip", json={"action": "list"})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
+
+    def test_classroom_management_requires_a_process_capability(self):
+        response = self.client.post("/api/classroom/stop")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
+
     def test_untrusted_origin_does_not_receive_cors_access(self):
         response = self.client.open(
             "/api/python/run",

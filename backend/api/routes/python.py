@@ -226,6 +226,7 @@ def register_python_routes(app, services: dict):
             return jsonify({"success": False, "message": str(exc)}), 500
 
     @app.route("/api/python/pip", methods=["POST"])
+    @require_capability("python:run")
     def manage_python_package():
         payload = request.get_json(silent=True) or {}
         action = (payload.get("action") or "").lower()
