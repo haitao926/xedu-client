@@ -1,0 +1,28 @@
+<xml xmlns="https://developers.google.com/blockly/xml">
+  <block type="xeduhub_set_input_resource" id="zj_l1_input" x="28" y="28">
+    <field name="INPUT">assets/xedu-test-scene-1.png</field>
+    <next>
+      <block type="xeduhub_run_cls_imagenet" id="zj_l1_classify">
+        <value name="INPUT_DATA">
+          <block type="text" id="zj_l1_image_path">
+            <field name="TEXT">assets/xedu-test-scene-1.png</field>
+          </block>
+        </value>
+        <next>
+          <block type="xeduhub_show_result_card" id="zj_l1_show_card">
+            <field name="TITLE">第1课图像分类积木测试</field>
+            <next>
+              <block type="xeduhub_run_and_record" id="zj_l1_record">
+                <value name="NOTE">
+                  <block type="text" id="zj_l1_note">
+                    <field name="TEXT">先用积木读取测试图片，再观察模型给出的分类结果。</field>
+                  </block>
+                </value>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </next>
+  </block>
+</xml>

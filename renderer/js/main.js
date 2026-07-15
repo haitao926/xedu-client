@@ -7,7 +7,7 @@ import { ProjectWizard } from './project-wizard.js';
 import { createWorkspaceController } from './main/workspace-context.js';
 import { createDashboardController } from './main/dashboard.js';
 import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, ensureTeacherCodeInitialized } from './main/system-config.js';
-import { getExperienceConfig, getExperienceMode, getPageCopy, getTeacherToggleLabel } from './experience-config.js';
+import { getExperienceMode, getPageCopy } from './experience-config.js';
 import apiClient from './api.js';
 
 let resourcesModule = null;
@@ -38,9 +38,9 @@ async function refreshResources(...args) {
     return mod.refreshResources(...args);
 }
 
-async function openSubmitPage(...args) {
+async function openResourcesLibrary(...args) {
     const mod = await loadResourcesModule();
-    return mod.openSubmitPage(...args);
+    return mod.openResourcesLibrary(...args);
 }
 
 async function syncTeacherModeUI(...args) {
@@ -56,6 +56,11 @@ async function toggleTeacherMode(...args) {
 async function connectStudentClassroomByCode(...args) {
     const mod = await loadResourcesModule();
     return mod.connectStudentClassroomByCode(...args);
+}
+
+async function openStudentLessonTab(...args) {
+    const mod = await loadResourcesModule();
+    return mod.openStudentLessonTab(...args);
 }
 
 function getChatContext() {
@@ -74,21 +79,6 @@ function getChatContext() {
     };
 }
 
-function applyAgentCourseUpdate(course) {
-    if (resourcesModule?.applyAgentCourseUpdate) {
-        const changed = resourcesModule.applyAgentCourseUpdate(course);
-        window.dispatchEvent(new CustomEvent('xedu:course-context-updated'));
-        return changed;
-    }
-    loadResourcesModule()
-        .then((mod) => {
-            mod.applyAgentCourseUpdate?.(course);
-            window.dispatchEvent(new CustomEvent('xedu:course-context-updated'));
-        })
-        .catch((error) => console.warn('懒加载 resources 模块失败:', error));
-    return false;
-}
-
 // Initialize the Project Wizard globally
 new ProjectWizard(apiClient);
 const workspaceController = createWorkspaceController({ showTab, openNotebookFile });
@@ -97,6 +87,7 @@ const {
     openResourcesOrClassroomSource,
     openJupyterWorkspace,
     openBlocklyWorkspace,
+    openScratchWorkspace,
     renderWorkspacePages,
     getLastOpenedJupyterWorkspace,
     isTeacherModeActive,
@@ -265,6 +256,34 @@ function setDashboardInputMode(mode, { restoreValue = true } = {}) {
 function syncActivePageTitle() {
     const activeSection = document.querySelector('.page-section.active');
     const tabId = activeSection?.id || 'main';
+    const activeStudentNav = document.querySelector('.student-nav-item.active');
+    if (tabId === 'scratch-workspace') {
+        const titleEl = document.getElementById('page-title');
+        const subtitleEl = document.getElementById('page-subtitle');
+        const isStudentVisual = activeStudentNav?.id === 'nav-student-visual-item';
+        if (titleEl) titleEl.textContent = isStudentVisual ? '图形编程' : 'Scratch 编程';
+        if (subtitleEl && !subtitleEl.textContent) {
+            subtitleEl.textContent = isStudentVisual ? 'Scratch 图形编程' : 'XEdu Client 内置官方 Scratch 编辑器与 XEdu AI 扩展';
+        }
+        return;
+    }
+    if (document.body.classList.contains('student-mode') && activeStudentNav) {
+        const studentTitleMap = {
+            'nav-student-lesson-item': '课程任务中心',
+            'nav-student-experience-item': '互动体验',
+            'nav-student-visual-item': tabId === 'blockly-workspace' ? '图形编程' : '图形编程',
+            'nav-student-python-item': 'Python实验',
+        };
+        const titleEl = document.getElementById('page-title');
+        const subtitleEl = document.getElementById('page-subtitle');
+        const title = studentTitleMap[activeStudentNav.id];
+        if (titleEl && title) titleEl.textContent = title;
+        if (subtitleEl && tabId === 'main') {
+            const lastOpened = getLastOpenedJupyterWorkspace();
+            subtitleEl.textContent = lastOpened?.sourceLabel || 'Jupyter Lab 编程环境';
+        }
+        return;
+    }
     const titleConfig = getPageCopy(tabId);
     const titleEl = document.getElementById('page-title');
     const subtitleEl = document.getElementById('page-subtitle');
@@ -273,22 +292,6 @@ function syncActivePageTitle() {
 }
 
 function applyExperienceCopy(isTeacher) {
-    const config = getExperienceConfig(isTeacher);
-    const textMap = {
-    };
-
-    Object.entries(textMap).forEach(([id, value]) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = value;
-    });
-
-    const topbarTeacherBtn = document.getElementById('topbar-teacher-mode-btn');
-    const topbarTeacherLabel = topbarTeacherBtn?.querySelector('[data-role="teacher-mode-label"]');
-    topbarTeacherBtn?.classList.toggle('is-active', Boolean(isTeacher));
-    if (topbarTeacherLabel) {
-        topbarTeacherLabel.textContent = getTeacherToggleLabel(isTeacher);
-    }
-
     setDashboardInputMode(isTeacher ? 'project' : 'classroom');
     syncActivePageTitle();
     renderDashboardSupportState(isTeacher);
@@ -405,18 +408,19 @@ registerNamespace('ai', {
 registerNamespace('resources', {
     initResourcesPage,
     refreshResources,
-    openSubmitPage,
+    openResourcesLibrary,
     syncTeacherModeUI,
     toggleTeacherMode,
     connectStudentClassroomByCode,
-    getChatContext,
-    applyAgentCourseUpdate
+    openStudentLessonTab,
+    getChatContext
 });
 
 registerNamespace('workspace', {
     ensureBlocklyWorkspaceMounted,
     openJupyterWorkspace,
     openBlocklyWorkspace,
+    openScratchWorkspace,
 });
 
 registerNamespace('system', {
@@ -459,23 +463,12 @@ registerBlocklyImagePickerBridge();
         try {
             const configResponse = await apiClient.loadConfig();
             applySystemConfigToInputs(configResponse);
-            const updated = await ensureTeacherCodeInitialized();
+            const updated = await ensureTeacherCodeInitialized({ prompt: false });
             if (updated?.success) {
                 applySystemConfigToInputs(updated);
             }
         } catch (error) {
             console.warn('加载系统配置失败:', error);
-        }
-
-        const topbarTeacherBtn = document.getElementById('topbar-teacher-mode-btn');
-        if (topbarTeacherBtn) {
-            topbarTeacherBtn.addEventListener('click', async () => {
-                try {
-                    await toggleTeacherMode();
-                } catch (error) {
-                    console.warn('切换教师模式失败:', error);
-                }
-            });
         }
 
         const dashboardInputConfirmBtn = document.getElementById('dashboard-input-confirm-btn');
@@ -627,7 +620,7 @@ registerBlocklyImagePickerBridge();
         }
         if (dashboardLaunchBlocklyBtn) {
             dashboardLaunchBlocklyBtn.addEventListener('click', () => {
-                openBlocklyWorkspace({});
+                openScratchWorkspace({});
             });
         }
         if (dashboardOpenSourceBtn) {
@@ -662,15 +655,14 @@ registerBlocklyImagePickerBridge();
         window.addEventListener('xedu:tab-changed', (event) => {
             if (event?.detail?.tabId === 'blockly-workspace') {
                 ensureBlocklyWorkspaceMounted();
+                syncActivePageTitle();
+                return;
             }
             renderWorkspacePages();
             syncActivePageTitle();
         });
         window.addEventListener('xedu:teacher-mode-changed', (event) => {
             applyExperienceCopy(Boolean(event?.detail?.isTeacher));
-        });
-        window.addEventListener('xedu:course-context-updated', () => {
-            renderDashboardSupportState(isTeacherModeActive());
         });
         renderWorkspacePages();
         applyExperienceCopy(teacherUnlocked);

@@ -18,18 +18,23 @@ class _FakeAIService:
         self.config = SimpleNamespace(api_key="test-key")
 
     def ask_question(self, question, image_data, history, request_context=None):
-        return {"success": True, "route": "default", "question": question}
+        return {
+            "success": True,
+            "route": "default",
+            "question": question,
+            "request_context": request_context or {},
+        }
 
     def test_connection(self):
         return {"success": True}
 
 
-class _FakeAgentService:
+class _FailingAgentService:
     def __init__(self, route_name: str):
         self.route_name = route_name
 
     def chat(self, **kwargs):
-        return {"success": True, "route": self.route_name}
+        raise AssertionError(f"{self.route_name} agent should not be called from student chat")
 
 
 class AIRoutingAPITestCase(unittest.TestCase):
@@ -40,9 +45,9 @@ class AIRoutingAPITestCase(unittest.TestCase):
         def _build_services(looks_quickform, looks_blockly):
             return {
                 "build_ai_service": lambda overrides=None: _FakeAIService(),
-                "build_quickform_agent_service": lambda overrides=None: _FakeAgentService("quickform"),
-                "build_xedu_pack_agent_service": lambda overrides=None: _FakeAgentService("xedu-pack"),
-                "build_blockly_builder_agent_service": lambda overrides=None: _FakeAgentService("blockly"),
+                "build_quickform_agent_service": lambda overrides=None: _FailingAgentService("quickform"),
+                "build_xedu_pack_agent_service": lambda overrides=None: _FailingAgentService("xedu-pack"),
+                "build_blockly_builder_agent_service": lambda overrides=None: _FailingAgentService("blockly"),
                 "looks_like_confirmation": lambda text: False,
                 "looks_like_quickform_request": looks_quickform,
                 "looks_like_xedu_pack_request": lambda text, history=None: False,
@@ -60,7 +65,7 @@ class AIRoutingAPITestCase(unittest.TestCase):
         register_ai_routes(app, self._build_services(looks_quickform, looks_blockly))
         return app.test_client()
 
-    def test_quickform_has_priority_when_multiple_match(self):
+    def test_quickform_phrase_returns_student_boundary_without_agent_route(self):
         client = self._build_client(
             looks_quickform=lambda text, history=None: True,
             looks_blockly=lambda text, history=None: True,
@@ -69,9 +74,9 @@ class AIRoutingAPITestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertNotIn("route", data)
-        self.assertIn("说明和导航", data["answer"])
+        self.assertIn("学生实验答疑", data["answer"])
 
-    def test_teacher_skill_like_request_returns_navigation_guidance(self):
+    def test_blockly_builder_phrase_returns_student_boundary_without_agent_route(self):
         client = self._build_client(
             looks_quickform=lambda text, history=None: False,
             looks_blockly=lambda text, history=None: True,
@@ -80,9 +85,9 @@ class AIRoutingAPITestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertNotIn("route", data)
-        self.assertIn("不会直接生成 Blockly 草稿", data["answer"])
+        self.assertIn("学生实验答疑", data["answer"])
 
-    def test_fallback_to_default_ai_when_no_agent_route_matches(self):
+    def test_fallback_to_default_ai_for_learning_question(self):
         client = self._build_client(
             looks_quickform=lambda text, history=None: False,
             looks_blockly=lambda text, history=None: False,
@@ -92,22 +97,28 @@ class AIRoutingAPITestCase(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["route"], "default")
 
-    def test_student_mode_blocks_teacher_agent_routes(self):
+    def test_experiment_context_is_passed_to_default_ai_service(self):
         client = self._build_client(
-            looks_quickform=lambda text, history=None: True,
+            looks_quickform=lambda text, history=None: False,
             looks_blockly=lambda text, history=None: False,
         )
-        response = client.post("/api/ai/ask", json={
-            "question": "帮我接入 quickform",
-            "context": {
-                "experience_mode": "student",
-                "teacher_mode": {"unlocked": False},
+        context = {
+            "experience_mode": "student",
+            "course": {"id": "demo", "title": "图像识别"},
+            "experiment_context": {
+                "experiment": {"title": "像素魔术师"},
+                "entries": {"notebook": {"path": "lesson1/main.ipynb"}},
             },
+        }
+        response = client.post("/api/ai/ask", json={
+            "question": "这个实验要做什么",
+            "context": context,
         })
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertNotIn("route", data)
-        self.assertIn("学习模式", data["answer"])
+        self.assertEqual(data["route"], "default")
+        self.assertEqual(data["request_context"]["context"]["course"]["title"], "图像识别")
+        self.assertEqual(data["request_context"]["context"]["experiment_context"]["experiment"]["title"], "像素魔术师")
 
 
 if __name__ == "__main__":

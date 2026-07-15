@@ -27,6 +27,7 @@ import {
 } from './toolbox-utils.js';
 import {
   buildSideNavModel,
+  renderCustomSideNav,
 } from './runtime-toolbox-ui.js';
 import {
   updateTaskContext,
@@ -121,6 +122,12 @@ class _DummyPin:
   D4 = 'D4'
   def __init__(self, *args, **kwargs):
     self.value = args[0] if args else None
+  def write_digital(self, value):
+    self.value = value
+  def write_analog(self, value, freq=1000):
+    self.value = value
+  def write(self, value):
+    self.value = value
 
 class _DummyServo:
   def __init__(self, *args, **kwargs):
@@ -169,6 +176,11 @@ pinpong_board.Servo = _DummyServo
 pinpong.board = pinpong_board
 sys.modules['pinpong'] = pinpong
 sys.modules['pinpong.board'] = pinpong_board
+
+unihiker_k10 = types.ModuleType('unihiker_k10')
+unihiker_k10.pin = lambda name: _DummyPin(name)
+unihiker_k10.servo = lambda name=None: _DummyServo()
+sys.modules['unihiker_k10'] = unihiker_k10
 
 runtime = types.ModuleType('runtime')
 blockly_runtime = types.ModuleType('runtime.blockly_runtime')
@@ -1040,7 +1052,7 @@ test('blockly runtime uses the shared low-saturation color contract', () => {
   assert.equal(BLOCKLY_COLOR_CONTRACT.basicBlockStyles.logic_blocks.colourTertiary, '#6974bb');
   assert.equal(BLOCKLY_COLOR_CONTRACT.componentStyles.cursorColour, '#5f6792');
   assert.doesNotMatch(runtimeSource, /#6366f1|#8b5cf6|#3b82f6|#f59e0b|#ec4899|#14b8a6|#0ea5e9|#10b981/);
-  assert.match(cssSource, /--brand:\s*#6b70e8/);
+  assert.match(cssSource, /--brand:\s*#4f6fd6/);
   assert.match(cssSource, /--success:\s*#33af97/);
   assert.match(cssSource, /\.btn-primary\s*\{[\s\S]*linear-gradient\(135deg, var\(--brand\) 0%, var\(--brand-deep\) 100%\)/);
 });
@@ -1493,6 +1505,9 @@ test('representative helper blocks inject the imports their generated Python nee
     ['xeduhub_cv_cvt_color', /import cv2/],
     ['xeduhub_http_get', /import requests/],
     ['xeduhub_servo_setup', /from pinpong\.board import Board, Pin, Servo/],
+    ['xeduhub_k10_gpio_write', /from unihiker_k10 import pin/],
+    ['xeduhub_k10_pwm_write', /from unihiker_k10 import pin/],
+    ['xeduhub_k10_uart_send', /from unihiker_k10 import pin/],
     ['xeduhub_polyfit_quadratic', /import numpy as np/],
     ['xeduhub_quadratic_fit', /import numpy as np/],
   ]);
@@ -1633,6 +1648,44 @@ test('side nav model keeps nested source categories even when live toolbox only 
   assert.equal(sections.length, 1);
   assert.equal(sections[0].name, 'XEdu');
   assert.deepEqual(sections[0].children.map((child) => child.name), ['初始化任务', '模型推理', '结果显示']);
+});
+
+test('side nav renders classroom tray states for current and task categories', () => {
+  const { window } = new JSDOM('<div id="blocklySideNavBody"></div>');
+  const state = { sideNavCollapsed: {} };
+  const selectedItem = { name: '图像分类' };
+  const sectionModel = [{
+    name: 'XEdu',
+    colour: '#6b70e8',
+    children: [
+      { name: '图像分类', colour: '#4f7ca8', item: selectedItem },
+      { name: '结果处理', colour: '#2e8f7c', item: { name: '结果处理' } },
+    ],
+  }];
+
+  renderCustomSideNav(state, {
+    documentRef: window.document,
+    buildSideNavModel: () => sectionModel,
+    getSelectedMeta: () => ({ name: '图像分类' }),
+    getTaskRegistry: () => ({
+      tasks: [{
+        family_label: '图像分类',
+        description: '识别图像类别并返回预测结果',
+        available: true,
+      }],
+    }),
+    getCategoryIconSvg: () => '',
+    selectToolboxItem: () => {},
+  });
+
+  const section = window.document.querySelector('.blockly-side-section');
+  const activeLeaf = window.document.querySelector('.blockly-side-leaf.is-active');
+  const taskLeaf = window.document.querySelector('.blockly-side-leaf.is-task-family');
+
+  assert.ok(section.classList.contains('has-active-child'));
+  assert.equal(window.document.querySelector('.blockly-side-section-count')?.textContent.trim(), '2');
+  assert.equal(activeLeaf?.querySelector('.blockly-side-leaf-label')?.textContent.trim(), '图像分类');
+  assert.equal(taskLeaf?.querySelector('.blockly-side-leaf-desc')?.textContent.trim(), '识别图像类别并返回预测结果');
 });
 
 test('all XEduHub blocks execute from workspace-level scenarios', () => {

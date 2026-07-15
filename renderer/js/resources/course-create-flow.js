@@ -113,9 +113,9 @@ export async function pickLocalCourseFlow(deps = {}) {
     updateCreateFormState,
     alertUser = alert,
   } = deps;
-  if (electronAPI && typeof electronAPI.selectFolder === 'function') {
+  if (electronAPI && typeof electronAPI.invoke === 'function') {
     try {
-      const path = await electronAPI.selectFolder();
+      const path = await electronAPI.invoke('select-folder');
       if (path) {
         const input = documentRef.getElementById('resources-create-local-path');
         if (input) input.value = path;
@@ -233,10 +233,12 @@ export async function pickLocalPackageFlow(deps = {}) {
     updateCreateFormState,
     alertUser = alert,
   } = deps;
-  if (electronAPI && typeof electronAPI.selectCoursePackage === 'function') {
+  if (electronAPI && typeof electronAPI.invoke === 'function') {
     try {
       const path =
-        await electronAPI.selectCoursePackage();
+        (typeof electronAPI.selectCoursePackage === 'function'
+          ? await electronAPI.selectCoursePackage()
+          : await electronAPI.invoke('select-course-package'));
       if (path) {
         const input = documentRef.getElementById('resources-create-package-path');
         if (input) input.value = path;
@@ -396,9 +398,9 @@ export async function quickAddLocalCourseFlow(deps = {}) {
     buildQuickCourse,
     alertUser = alert,
   } = deps;
-  if (electronAPI && typeof electronAPI.selectFolder === 'function') {
+  if (electronAPI && typeof electronAPI.invoke === 'function') {
     try {
-      const path = await electronAPI.selectFolder();
+      const path = await electronAPI.invoke('select-folder');
       if (!path) return null;
       const title = deriveTitleFromPath(path);
       try {

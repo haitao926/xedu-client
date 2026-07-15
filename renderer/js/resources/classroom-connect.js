@@ -198,7 +198,6 @@ export async function connectStudentClassroomByCodeFlow(code, options = {}, deps
     }
 
     deps.applyResourcesIndex(fetchResp.index || {}, {
-      submitUrl: '',
       repoUrl: fetchResp.repo_url || deps.classroomState.source.base_url,
       rawBaseUrl: fetchResp.raw_base_url || deps.classroomState.source.base_url,
       branch: fetchResp.branch || 'classroom',

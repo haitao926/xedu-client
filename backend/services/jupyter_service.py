@@ -40,6 +40,7 @@ class JupyterManager:
         self.restart_count = 0
         self.protection_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self._lock = threading.RLock()  # 序列化 start/stop/restart，避免 threaded=True 后的并发状态破坏
         self._manually_stopped = False  # 标记是否手动停止
 
         # 全局Jupyter进程跟踪
@@ -110,9 +111,13 @@ class JupyterManager:
             return None
 
     def start(self, **kwargs) -> Dict[str, Any]:
-        """启动 Jupyter Notebook/Lab"""
+        """启动 Jupyter Notebook/Lab（线程安全，串行化并发请求）"""
+        with self._lock:
+            return self._start_impl(**kwargs)
+
+    def _start_impl(self, **kwargs) -> Dict[str, Any]:
         logger.info("Starting Jupyter...")
-        
+
         # 强制检测并使用打包环境
         bundled_python = self._resolve_bundled_python()
         if bundled_python:
@@ -146,7 +151,7 @@ class JupyterManager:
                 try:
                     if Path(current_dir).resolve() != Path(target_dir).resolve():
                         logger.info("Project directory changed, restarting Jupyter with new directory")
-                        self.stop()
+                        self._stop_impl()
                     else:
                         return {
                             "success": True,
@@ -159,7 +164,7 @@ class JupyterManager:
                         }
                 except Exception:
                     # 如果路径解析异常，回退到重启
-                    self.stop()
+                    self._stop_impl()
             else:
                 return {
                     "success": True,
@@ -229,7 +234,11 @@ class JupyterManager:
             }
 
     def stop(self) -> Dict[str, Any]:
-        """停止 Jupyter"""
+        """停止 Jupyter（线程安全，串行化并发请求）"""
+        with self._lock:
+            return self._stop_impl()
+
+    def _stop_impl(self) -> Dict[str, Any]:
         logger.info("Stopping Jupyter...")
 
         try:
@@ -310,19 +319,20 @@ class JupyterManager:
             }
 
     def restart(self, **kwargs) -> Dict[str, Any]:
-        """重启 Jupyter"""
-        logger.info("Restarting Jupyter...")
+        """重启 Jupyter（线程安全，串行化并发请求）"""
+        with self._lock:
+            logger.info("Restarting Jupyter...")
 
-        # 先停止
-        stop_result = self.stop()
-        if not stop_result["success"]:
-            logger.warning("Failed to stop before restart, continuing anyway...")
+            # 先停止
+            stop_result = self._stop_impl()
+            if not stop_result["success"]:
+                logger.warning("Failed to stop before restart, continuing anyway...")
 
-        # 等待一段时间
-        time.sleep(2)
+            # 等待一段时间
+            time.sleep(2)
 
-        # 重新启动
-        return self.start(**kwargs)
+            # 重新启动
+            return self._start_impl(**kwargs)
 
     def get_status(self) -> JupyterStatus:
         """获取运行状态"""

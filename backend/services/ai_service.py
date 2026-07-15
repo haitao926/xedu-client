@@ -15,8 +15,6 @@ from PIL import Image
 import re
 
 from models.config import AIConfig
-from services.document_service import get_document_service
-from services.markdown_document_service import get_markdown_document_service
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -107,8 +105,12 @@ class AIService:
             "你是 XEdu 教师助教，专门帮助教师完成课程整理、课堂准备、实验设计和教学支持。"
             "回答要优先围绕课程结构、实验组织、教学步骤、课堂执行和 AI 工具使用。"
         ) if is_teacher else (
-            "你是 XEdu 学习助手，专门帮助学生理解课程内容、实验要求、报错原因和下一步学习步骤。"
-            "回答要面向学生，语言清晰、鼓励式、避免教师管理和写入型操作建议。"
+            "你是 XEdu 学习助手，专门帮助学生理解当前课程、实验任务、Blockly 步骤、Python 代码和报错原因。"
+            "回答必须面向学生，语言清晰、具体、鼓励式。"
+            "优先结合当前学习上下文解释学生正在做什么，再给下一步。"
+            "遇到报错时，先判断是否有足够的错误信息；缺少信息时请学生补充完整报错、代码或截图。"
+            "不要执行教师管理、QuickForm 接入、课程打包、发布或 Blockly 草稿生成等操作。"
+            "不要声称你已经修改、运行或发布了任何资源。"
         )
 
         # 添加系统提示
@@ -117,17 +119,14 @@ class AIService:
             "content": system_prompt
         })
 
-        # 添加相关文档内容
-        try:
-            doc_service = get_markdown_document_service()
-            relevant_docs = doc_service.get_document_content_for_ai(question)
-            if relevant_docs:
-                messages.append({
-                    "role": "system",
-                    "content": relevant_docs
-                })
-        except Exception as e:
-            logger.warning(f"获取文档内容失败: {e}")
+        student_context_prompt = ""
+        if not is_teacher:
+            student_context_prompt = self._build_student_context_prompt(request_context)
+        if student_context_prompt:
+            messages.append({
+                "role": "system",
+                "content": student_context_prompt,
+            })
 
         # 处理历史消息
         # 前端发送的 history 包含当前问题作为最后一条。
@@ -173,6 +172,55 @@ class AIService:
             })
 
         return messages
+
+    def _build_student_context_prompt(self, request_context: Dict[str, Any]) -> str:
+        context = request_context.get("context") if isinstance(request_context.get("context"), dict) else {}
+        course = context.get("course") if isinstance(context.get("course"), dict) else {}
+        experiment_context = (
+            context.get("experiment_context")
+            if isinstance(context.get("experiment_context"), dict)
+            else {}
+        )
+        section = (
+            experiment_context.get("section")
+            if isinstance(experiment_context.get("section"), dict)
+            else {}
+        )
+        experiment = (
+            experiment_context.get("experiment")
+            if isinstance(experiment_context.get("experiment"), dict)
+            else {}
+        )
+        entries = (
+            experiment_context.get("entries")
+            if isinstance(experiment_context.get("entries"), dict)
+            else {}
+        )
+
+        lines = []
+        if course.get("title"):
+            lines.append(f"当前课程：{course.get('title')}")
+        if section.get("title"):
+            lines.append(f"当前课节：{section.get('title')}")
+        if experiment.get("title"):
+            lines.append(f"当前实验：{experiment.get('title')}")
+        if experiment.get("description"):
+            lines.append(f"实验说明：{experiment.get('description')}")
+
+        entry_labels = {
+            "html": "HTML 体验页",
+            "blockly": "Blockly 资源",
+            "notebook": "Notebook 资源",
+            "python": "Python 资源",
+        }
+        for key, label in entry_labels.items():
+            entry = entries.get(key)
+            if isinstance(entry, dict) and entry.get("path"):
+                lines.append(f"{label}：{entry.get('path')}")
+
+        if not lines:
+            return ""
+        return "当前学习上下文：\n" + "\n".join(f"- {line}" for line in lines)
 
     def _process_image(self, image_data: str) -> Optional[str]:
         """处理图片数据"""

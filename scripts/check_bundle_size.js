@@ -5,6 +5,7 @@ const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const buildAssetsDir = path.join(repoRoot, 'build', 'assets');
+const scratchEditorBuildDir = path.join(repoRoot, 'scratch-editor', 'build');
 
 const limits = {
   'main.js': 120 * 1024,
@@ -12,6 +13,8 @@ const limits = {
   'blockly-workspace.js': 16 * 1024,
   'blockly-workspace.runtime.js': 1024 * 1024,
 };
+
+const scratchEditorLimit = 180 * 1024 * 1024;
 
 function statSize(filePath) {
   const stat = fs.statSync(filePath);
@@ -44,9 +47,31 @@ function main() {
     if (!ok) failed = true;
   }
 
+  if (fs.existsSync(scratchEditorBuildDir)) {
+    const scratchSize = directorySize(scratchEditorBuildDir);
+    console.log(`[bundle-size] scratch-editor/build: ${formatKB(scratchSize)} (limit ${formatKB(scratchEditorLimit)})`);
+    if (scratchSize > scratchEditorLimit) {
+      console.error(`[bundle-size] scratch-editor/build exceeds limit.`);
+      failed = true;
+    }
+  }
+
   if (failed) {
     process.exit(1);
   }
+}
+
+function directorySize(dirPath) {
+  let total = 0;
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    const entryPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      total += directorySize(entryPath);
+    } else if (entry.isFile()) {
+      total += statSize(entryPath);
+    }
+  }
+  return total;
 }
 
 main();

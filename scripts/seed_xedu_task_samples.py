@@ -15,8 +15,8 @@ GENERATOR = REPO_ROOT / "scripts" / "generate_blockly_python.mjs"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from services.blockly_xeduhub_support import TASK_REGISTRY  # noqa: E402
-from services.blockly_xeduhub_support import _get_runtime_supported_tasks, _resolve_runtime_task_id  # noqa: E402
+from services.blockly_xeduhub_support import FALLBACK_SUPPORTED_TASK_IDS, TASK_REGISTRY  # noqa: E402
+from services.blockly_xeduhub_support import get_nonblocking_supported_tasks_snapshot, _resolve_runtime_task_id  # noqa: E402
 
 VISUAL_FAMILIES = {"classification", "detection", "ocr", "pose", "generation", "segmentation", "depth", "panoptic", "multimodal"}
 VIDEO_FAMILY_DEFAULTS = {
@@ -70,13 +70,24 @@ def _input_block_xml(task_id: str, task: dict, *, media_kind: str = "image") -> 
             </block>"""
 
 
-def write_workspace(task_id: str, label: str, *, variant: str = "image") -> Path:
+def get_stable_smoke_supported_tasks() -> set[str]:
+    # Smoke samples are committed fixtures; they must not change when the local
+    # XEdu runtime probe temporarily returns no supported tasks.
+    supported = set(FALLBACK_SUPPORTED_TASK_IDS)
+    supported.update(get_nonblocking_supported_tasks_snapshot())
+    return {
+        runtime_task_id
+        for runtime_task_id in (_resolve_runtime_task_id(task_id) for task_id in supported)
+        if runtime_task_id
+    }
+
+
+def write_workspace(task_id: str, label: str, *, variant: str = "image", supported_runtime_tasks: set[str]) -> Path:
     suffix = f"_{variant}" if variant != "image" else ""
     slug = f"xeduhub_task_{task_id}{suffix}"
     workspace_path = SMOKE_DIR / f"{slug}.blockly.xml"
     task = TASK_REGISTRY[task_id]
     input_block = _input_block_xml(task_id, task, media_kind=variant).format(slug=slug)
-    supported_runtime_tasks = set(_get_runtime_supported_tasks())
     runtime_supported = _resolve_runtime_task_id(task_id) in supported_runtime_tasks
     run_block_type = f"xeduhub_run_{task_id}"
     title = f"{label}{' 视频' if variant == 'video' else ''}"
@@ -133,7 +144,7 @@ def write_python_snapshot(workspace_path: Path) -> None:
 
 def main() -> int:
     SMOKE_DIR.mkdir(parents=True, exist_ok=True)
-    supported_runtime_tasks = set(_get_runtime_supported_tasks())
+    supported_runtime_tasks = get_stable_smoke_supported_tasks()
     all_task_ids = sorted(TASK_REGISTRY)
 
     for stale in sorted(SMOKE_DIR.glob("xeduhub_task_*.blockly.xml")):
@@ -143,11 +154,21 @@ def main() -> int:
     written = 0
     for task_id in all_task_ids:
         task = TASK_REGISTRY[task_id]
-        workspace_path = write_workspace(task_id, task["label"], variant="image")
+        workspace_path = write_workspace(
+            task_id,
+            task["label"],
+            variant="image",
+            supported_runtime_tasks=supported_runtime_tasks,
+        )
         write_python_snapshot(workspace_path)
         written += 1
         if task["family"] in VISUAL_FAMILIES:
-            video_workspace = write_workspace(task_id, f"{task['label']} 视频", variant="video")
+            video_workspace = write_workspace(
+                task_id,
+                f"{task['label']} 视频",
+                variant="video",
+                supported_runtime_tasks=supported_runtime_tasks,
+            )
             write_python_snapshot(video_workspace)
             written += 1
     supported_task_ids = [

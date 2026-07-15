@@ -5,27 +5,23 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import urllib.error
 from datetime import datetime
 from pathlib import Path
 
-from flask import jsonify, request, send_file
+from flask import Response, jsonify, request, send_file
 from api.resource_runtime import InvalidResourceHandle, ResourceHandleExpired
 from api.security import require_capability
 
 from services.gitea_service import (
-    GiteaClient,
     GiteaServiceError,
     find_course_entry_from_index,
-    import_local_course_package,
     inspect_course,
     load_course_data_from_repo,
     load_index_data,
     load_repo_tree_data,
-    publish_course,
-    pull_course,
-    resolve_local_course_package_target_path,
-    save_course_json,
     scan_course,
     scan_folder,
 )
@@ -46,10 +42,22 @@ def register_resource_routes(app, services: dict):
     resolve_resource_handle = services["resolve_resource_handle"]
     register_resource_root = services["register_resource_root"]
     issue_resource_handle = services["issue_resource_handle"]
-    resolve_local_course_file = services["resolve_local_course_file"]
-    normalize_quickform_public_config = services["normalize_quickform_public_config"]
-    inject_quickform_file = services["inject_quickform_file"]
     get_frontend_build_dir = services["get_frontend_build_dir"]
+
+    def _get_scratch_editor_build_dir() -> Path:
+        configured = services.get("get_scratch_editor_build_dir")
+        if callable(configured):
+            return configured()
+        return Path(__file__).resolve().parents[3] / "scratch-editor" / "build"
+
+    def _send_scratch_editor_asset(asset_path: str):
+        build_dir = _get_scratch_editor_build_dir().resolve()
+        target = (build_dir / asset_path).resolve()
+        if build_dir != target and build_dir not in target.parents:
+            return jsonify({"success": False, "message": "非法 Scratch 资源路径"}), 400
+        if not target.exists() or not target.is_file():
+            return jsonify({"success": False, "message": "Scratch 编辑器资源不存在"}), 404
+        return send_file(target)
 
     @app.route("/api/resources/frontend-assets/<path:asset_path>")
     def resources_frontend_assets(asset_path):
@@ -64,6 +72,54 @@ def register_resource_routes(app, services: dict):
         except Exception as exc:
             logger.error(f"读取前端资源失败: {exc}")
             return jsonify({"success": False, "message": "读取前端资源失败"}), 500
+
+    @app.route("/api/scratch-editor/")
+    @app.route("/api/scratch-editor/index.html")
+    def resources_scratch_editor_index():
+        try:
+            build_dir = _get_scratch_editor_build_dir()
+            index_file = build_dir / "index.html"
+            if index_file.exists() and index_file.is_file():
+                return send_file(index_file)
+            return Response(
+                """<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XEdu Scratch</title>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f7fb; color: #1f2937; }
+    main { height: 100%; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+    section { max-width: 680px; padding: 28px; border: 1px solid #d9e2ef; border-radius: 12px; background: white; box-shadow: 0 12px 36px rgba(15, 23, 42, .08); }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    p { margin: 8px 0; line-height: 1.65; }
+    code { padding: 2px 6px; border-radius: 6px; background: #eef3fb; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>XEdu Scratch 编辑器尚未构建</h1>
+      <p>请先在项目根目录运行 <code>npm run build:scratch</code> 生成本地 Scratch 编辑器产物。</p>
+      <p>第一版会在这里加载内置 Scratch，并提供 XEdu AI 扩展积木。</p>
+    </section>
+  </main>
+</body>
+</html>""",
+                mimetype="text/html",
+            )
+        except Exception as exc:
+            logger.error(f"读取 Scratch 编辑器首页失败: {exc}")
+            return jsonify({"success": False, "message": "读取 Scratch 编辑器首页失败"}), 500
+
+    @app.route("/api/scratch-editor/<path:asset_path>")
+    def resources_scratch_editor_asset(asset_path):
+        try:
+            return _send_scratch_editor_asset(asset_path)
+        except Exception as exc:
+            logger.error(f"读取 Scratch 编辑器资源失败: {exc}")
+            return jsonify({"success": False, "message": "读取 Scratch 编辑器资源失败"}), 500
 
     @app.route("/api/resources/default-sample", methods=["GET"])
     @require_capability("resource:read")
@@ -107,6 +163,74 @@ def register_resource_routes(app, services: dict):
         except Exception as exc:
             logger.error(f"读取本地预览文件失败: {exc}")
             return jsonify({"success": False, "message": "读取本地预览文件失败"}), 500
+
+    @app.route("/api/resources/scratch-project/<root_token>/<path:relpath>", methods=["GET"])
+    def resources_scratch_project_file(root_token, relpath):
+        try:
+            clean_relpath = str(relpath or "").strip().lstrip("/")
+            if not clean_relpath.lower().endswith(".sb3"):
+                return jsonify({"success": False, "message": "仅支持 Scratch .sb3 项目文件"}), 400
+            file_path = resolve_resource_handle(root_token, "read", clean_relpath)
+            if not file_path.exists() or not file_path.is_file():
+                return jsonify({"success": False, "message": "Scratch 项目文件不存在"}), 404
+            return send_file(file_path, mimetype="application/x.scratch.sb3", as_attachment=False)
+        except ResourceHandleExpired as exc:
+            return jsonify({"success": False, "message": str(exc)}), 410
+        except (InvalidResourceHandle, ValueError) as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except Exception as exc:
+            logger.error(f"读取 Scratch 项目文件失败: {exc}")
+            return jsonify({"success": False, "message": "读取 Scratch 项目文件失败"}), 500
+
+    @app.route("/api/resources/scratch-project/<root_token>/<path:relpath>", methods=["PUT", "POST"])
+    def resources_scratch_project_save(root_token, relpath):
+        try:
+            clean_relpath = str(relpath or "").strip().lstrip("/")
+            if not clean_relpath.lower().endswith(".sb3"):
+                return jsonify({"success": False, "message": "仅支持保存 Scratch .sb3 项目文件"}), 400
+            file_path = resolve_resource_handle(root_token, "write", clean_relpath)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            data = request.get_data(cache=False)
+            if not data:
+                return jsonify({"success": False, "message": "Scratch 项目内容为空"}), 400
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=file_path.parent, prefix=f".{file_path.name}.", delete=False
+            ) as temp_file:
+                temp_file.write(data)
+                temp_path = Path(temp_file.name)
+            os.replace(temp_path, file_path)
+            return jsonify({
+                "success": True,
+                "message": "Scratch 项目已保存",
+                "path": clean_relpath,
+                "size": len(data),
+                "updated_at": datetime.now().isoformat(timespec="seconds"),
+            })
+        except ResourceHandleExpired as exc:
+            return jsonify({"success": False, "message": str(exc)}), 410
+        except (InvalidResourceHandle, ValueError) as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except Exception as exc:
+            logger.error(f"保存 Scratch 项目文件失败: {exc}")
+            return jsonify({"success": False, "message": "保存 Scratch 项目文件失败"}), 500
+
+    @app.route("/api/resources/scratch-workspace", methods=["POST"])
+    @require_capability("resource:write")
+    def create_scratch_workspace_handle():
+        """Issue an opaque, single-project handle for a local Scratch work copy."""
+        payload = request.get_json(silent=True) or {}
+        local_path = Path(str(payload.get("local_path") or "").strip()).expanduser()
+        project_path = str(payload.get("project_path") or "").strip().lstrip("/")
+        if not project_path.lower().endswith(".sb3"):
+            return jsonify({"success": False, "message": "Scratch 项目路径必须是 .sb3 文件"}), 400
+        if not local_path.is_dir():
+            return jsonify({"success": False, "message": "Scratch 项目目录不存在"}), 400
+        try:
+            root_id = register_resource_root(local_path, "scratch-workspace", "electron-client")
+            project_handle = issue_resource_handle(root_id, project_path, "write")
+            return jsonify({"success": True, "project_handle": project_handle})
+        except (InvalidResourceHandle, ValueError) as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
 
     @app.route("/api/resources/index", methods=["GET", "POST"])
     @require_capability("resource:read")
@@ -268,13 +392,16 @@ def register_resource_routes(app, services: dict):
     @app.route("/api/resources/scan", methods=["POST"])
     @require_capability("resource:read")
     def scan_resource_course():
+        # 仅保留只读扫描：解析已存在的 course.json，不创建/不自动构建结构。
+        # 课程创建与自动构建结构已迁移到 Claude skills（xedu-pack / xedu-course-builder），
+        # 它们直接以库的方式调用 services.gitea_service.scan_course。
         payload = request.get_json(silent=True) or {}
         try:
             result = scan_course(
                 payload.get("local_path", ""),
-                init_if_missing=bool(payload.get("init_if_missing")),
-                init_meta=payload.get("meta") or {},
-                auto_build=bool(payload.get("auto_build")),
+                init_if_missing=False,
+                init_meta=None,
+                auto_build=False,
             )
             return jsonify({"success": True, "course": result.course, "summary": result.summary})
         except GiteaServiceError as exc:

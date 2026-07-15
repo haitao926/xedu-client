@@ -59,7 +59,6 @@ export const API_ENDPOINTS = Object.freeze({
     QUICKFORM_TEST: '/api/quickform/test',
     QUICKFORM_TASKS: '/api/quickform/tasks',
     QUICKFORM_CREATE_TASK: '/api/quickform/tasks/create',
-    QUICKFORM_INJECT: '/api/resources/quickform/inject',
     PYTHON_DETECT: '/api/detect_python',
     AI_ASK: '/api/ai/ask',
     AI_TEST_CONFIG: '/api/ai/test_config',
@@ -225,10 +224,6 @@ class JupyterAPI extends APIClient {
 
     async createQuickFormTask(payload = {}) {
         return this.post(API_ENDPOINTS.QUICKFORM_CREATE_TASK, payload);
-    }
-
-    async injectQuickForm(payload = {}) {
-        return this.post(API_ENDPOINTS.QUICKFORM_INJECT, payload);
     }
 
     // 环境检测

@@ -8,6 +8,8 @@
     "dev:renderer": "npx vite",
     "build": "npx vite build",
     "quality-gate": "python3 scripts/run_quality_gate.py",
+    "install:scratch": "npm install --prefix scratch-editor",
+    "build:scratch": "npm run build --prefix scratch-editor",
     "check:python-syntax": "python3 -m py_compile backend/backend_main.py backend/api/*.py backend/api/routes/*.py backend/services/*.py backend/runtime/*.py backend/models/*.py backend/utils/*.py",
     "check:renderer-syntax": "node --check electron/main/main.js",
     "check:bundle": "node scripts/check_bundle_size.js",
@@ -21,11 +23,11 @@
     "full-build": "npm run clean && build.bat",
     "start-api": "python3 backend/backend_main.py || python backend/backend_main.py",
     "test-api": "curl http://127.0.0.1:5123/api/health",
-    "test:resources-inspection": "node --test renderer/js/resources/course-inspection-utils.test.js renderer/js/resources/course-create-utils.test.js",
+    "test:resources-inspection": "node --test renderer/js/resources/student-workspace-utils.test.js",
     "electron": "electron .",
     "electron:dev": "concurrently -k -n renderer,electron -c green,magenta \"npm run dev:renderer\" \"electron .\"",
-    "electron:build": "npm run build && electron-builder",
-    "electron:pack": "npm run build && electron-builder --dir"
+    "electron:build": "npm run build:scratch && npm run build && electron-builder",
+    "electron:pack": "npm run build:scratch && npm run build && electron-builder --dir"
   },
   "dependencies": {
     "blockly": "^12.5.1",
@@ -58,6 +60,13 @@
       {
         "from": "build",
         "to": "build"
+      },
+      {
+        "from": "scratch-editor/build",
+        "to": "scratch-editor/build",
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "backend",

@@ -8,6 +8,7 @@ let isViewVisible = false;
 let isAttaching = false;
 let allowAutoAttach = false;
 let resizeObserver = null;
+let suppressVisibleUntil = 0;
 const LAST_PROJECT_KEY = 'xedu-last-project-dir';
 let lastProjectDir = loadLastProjectDir();
 let lastStatusErrorKey = '';
@@ -65,6 +66,10 @@ let statusFailureCount = 0; // 新增：状态检查失败计数器
 function shouldDisplayEmbeddedJupyter() {
     const workspaceActive = Boolean(document.getElementById('main')?.classList.contains('active'));
     const hasVisibleModal = Boolean(document.querySelector('.modal-overlay.show'));
+    if (Date.now() < suppressVisibleUntil) return false;
+    if (document.body.classList.contains('student-mode')) {
+        return workspaceActive && document.body.classList.contains('student-page-python') && !hasVisibleModal;
+    }
     return workspaceActive && !hasVisibleModal;
 }
 
@@ -273,6 +278,11 @@ async function detachJupyterView() {
 
 export async function setVisibility(visible) {
     isViewVisible = Boolean(visible);
+    if (!isViewVisible) {
+        suppressVisibleUntil = Date.now() + 1200;
+    } else {
+        suppressVisibleUntil = 0;
+    }
     // 只有当视图确实已经“挂载”（即Jupyter已启动且未停止）时，才进行显隐切换
     if (isViewAttached) {
         // 通知主进程添加或移除 BrowserView

@@ -573,9 +573,12 @@ export function renderCustomSideNav(state, deps = {}) {
 
   sections.forEach((section) => {
     const collapsed = Boolean(state.sideNavCollapsed[section.name]);
+    const childCount = section.children.length;
+    const sectionHasActiveChild = section.children.some((child) => child.name === selectedName);
     const sectionEl = deps.documentRef.createElement('section');
     sectionEl.className = 'blockly-side-section';
     sectionEl.classList.toggle('is-collapsed', collapsed);
+    sectionEl.classList.toggle('has-active-child', sectionHasActiveChild);
     sectionEl.style.setProperty('--xedu-section-color', section.colour);
 
     const heading = deps.documentRef.createElement('button');
@@ -585,6 +588,7 @@ export function renderCustomSideNav(state, deps = {}) {
     heading.innerHTML = `
       <span class="blockly-side-section-icon">${deps.getCategoryIconSvg(section.name)}</span>
       <span class="blockly-side-section-title">${section.name}</span>
+      <span class="blockly-side-section-count" aria-label="${childCount} 个分类">${childCount}</span>
       <span class="blockly-side-section-chevron" aria-hidden="true">
         <svg viewBox="0 0 16 16" fill="none">
           <path d="m5.2 6.4 2.8 2.8 2.8-2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -605,8 +609,12 @@ export function renderCustomSideNav(state, deps = {}) {
       button.className = 'blockly-side-leaf';
       const task = tasksByFamilyLabel.get(child.name);
       const unavailable = Boolean(task && task.available === false);
+      const taskDescription = String(task?.description || '').trim();
       if (child.name === selectedName) {
         button.classList.add('is-active');
+      }
+      if (task) {
+        button.classList.add('is-task-family');
       }
       if (unavailable) {
         button.classList.add('is-unavailable');
@@ -615,7 +623,10 @@ export function renderCustomSideNav(state, deps = {}) {
       button.style.setProperty('--xedu-leaf-color', child.colour);
       button.innerHTML = `
         <span class="blockly-side-leaf-icon">${deps.getCategoryIconSvg(child.name)}</span>
-        <span class="blockly-side-leaf-label">${child.name}</span>
+        <span class="blockly-side-leaf-copy">
+          <span class="blockly-side-leaf-label">${child.name}</span>
+          ${taskDescription ? `<span class="blockly-side-leaf-desc">${taskDescription}</span>` : ''}
+        </span>
       `;
       button.addEventListener('click', () => {
         if (unavailable) {

@@ -1,23 +1,18 @@
 // AI 助手逻辑
 import apiClient from './api.js';
-import { getExperienceConfig, getExperienceMode } from './experience-config.js';
+import { EXPERIENCE_MODES, getExperienceConfig, getExperienceMode } from './experience-config.js';
 import { sanitizeHtml } from './html-sanitizer.js';
 
 let conversationHistory = [];
 let aiUiInitialized = false;
-let agentStatusResetTimer = null;
-
-function isTeacherModeUnlocked() {
-    const ctx = buildAgentContext();
-    return Boolean(ctx?.teacher_mode?.unlocked) && !document.body.classList.contains('student-mode');
-}
+let chatStatusResetTimer = null;
 
 function getAssistantConfig() {
-    return getExperienceConfig(isTeacherModeUnlocked()).ai;
+    return getExperienceConfig(EXPERIENCE_MODES.STUDENT).ai;
 }
 
 function getAssistantSurfaceMode() {
-    return isTeacherModeUnlocked() ? 'teacher' : 'student';
+    return EXPERIENCE_MODES.STUDENT;
 }
 
 function syncAssistantSurfaceMode() {
@@ -99,32 +94,32 @@ function buildEmptyStateHtml() {
     `;
 }
 
-function updateAgentStatus(state = 'idle', text = '') {
-    const host = document.getElementById('ai-agent-status');
-    const label = document.getElementById('ai-agent-status-text');
+function updateChatStatus(state = 'idle', text = '') {
+    const host = document.getElementById('ai-chat-status');
+    const label = document.getElementById('ai-chat-status-text');
     if (!host || !label) return;
-    if (agentStatusResetTimer) {
-        clearTimeout(agentStatusResetTimer);
-        agentStatusResetTimer = null;
+    if (chatStatusResetTimer) {
+        clearTimeout(chatStatusResetTimer);
+        chatStatusResetTimer = null;
     }
-    host.classList.remove('is-working', 'is-needs-action', 'is-success');
-    if (state === 'working') host.classList.add('is-working');
-    if (state === 'needs-action') host.classList.add('is-needs-action');
+    host.classList.remove('is-loading', 'is-error', 'is-success');
+    if (state === 'loading') host.classList.add('is-loading');
+    if (state === 'error') host.classList.add('is-error');
     if (state === 'success') host.classList.add('is-success');
     const aiConfig = getAssistantConfig();
     const defaults = aiConfig.status || {
         idle: '等待提问',
-        working: '处理中',
-        'needs-action': '等待确认',
+        loading: '处理中',
+        error: '请求失败',
         success: '已完成'
     };
     label.textContent = text || defaults[state] || defaults.idle;
 }
 
-function scheduleAgentStatusReset(delay = 2200) {
-    agentStatusResetTimer = window.setTimeout(() => {
-        agentStatusResetTimer = null;
-        updateAgentStatus('idle');
+function scheduleChatStatusReset(delay = 2200) {
+    chatStatusResetTimer = window.setTimeout(() => {
+        chatStatusResetTimer = null;
+        updateChatStatus('idle');
     }, delay);
 }
 
@@ -153,114 +148,10 @@ function createAvatar(sender) {
     return avatar;
 }
 
-function sendSuggestedMessage(text = '') {
-    const questionInput = document.getElementById('ai-question');
-    if (!questionInput || !text) return;
-    questionInput.value = text;
-    questionInput.focus();
-    questionInput.dispatchEvent(new Event('input'));
-    askAI();
-}
-
-function formatLabel(label = '') {
-    return escapeHtml(String(label || '').trim());
-}
-
-function formatValue(value = '') {
-    const text = String(value || '').trim();
-    if (!text) return '';
-    if (/^https?:\/\//i.test(text)) {
-        const safe = escapeHtml(text);
-        return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${safe}</a>`;
-    }
-    return escapeHtml(text);
-}
-
-function buildAgentFactRows(response = {}) {
-    const result = response?.agent_result || {};
-    const experiment = result?.experiment || {};
-    const rows = [];
-    if (experiment?.experiment_title) rows.push({ label: '实验', value: experiment.experiment_title });
-    if (result?.apiid) rows.push({ label: 'API ID', value: result.apiid });
-    if (result?.submit_url) rows.push({ label: '提交地址', value: result.submit_url });
-    if (result?.query_url) rows.push({ label: '查询地址', value: result.query_url });
-    if (result?.html_path) rows.push({ label: 'HTML', value: result.html_path });
-    if (result?.output_dir) rows.push({ label: '输出目录', value: result.output_dir });
-    if (result?.draft_name) rows.push({ label: '草稿名', value: result.draft_name });
-    if (result?.pedagogy_profile?.level_default) rows.push({ label: '默认层级', value: result.pedagogy_profile.level_default });
-    if (result?.pedagogy_profile?.result_mode) rows.push({ label: '结果模式', value: result.pedagogy_profile.result_mode });
-    if (result?.zip_path) rows.push({ label: '压缩包', value: result.zip_path });
-    if (result?.pr_url) rows.push({ label: 'PR', value: result.pr_url });
-    if (Array.isArray(result?.generated_files) && result.generated_files.length) {
-        rows.push({ label: '生成文件', value: `${result.generated_files.length} 个` });
-    }
-    if (Array.isArray(result?.default_blocks) && result.default_blocks.length) {
-        rows.push({ label: '默认积木', value: `${result.default_blocks.length} 个` });
-    }
-    return rows;
-}
-
-function renderAgentCard(response = {}, answer = '') {
-    const status = response?.agent_status || 'completed';
-    const toneMap = {
-        needs_confirmation: { badge: '待确认', title: '执行前确认', cls: 'is-confirmation' },
-        needs_input: { badge: '需补充', title: '还差一点信息', cls: 'is-input' },
-        completed: { badge: '已完成', title: '执行结果', cls: 'is-success' },
-        error: { badge: '失败', title: '处理失败', cls: 'is-error' }
-    };
-    const tone = toneMap[status] || toneMap.completed;
-    const factRows = buildAgentFactRows(response);
-    const detailHtml = answer
-        ? `<div class="markdown-body chat-markdown">${renderMarkdown(answer)}</div>`
-        : '';
-    const factsHtml = factRows.length
-        ? `<div class="agent-card-facts">${factRows.map((item) => `
-            <div class="agent-card-fact">
-                <span class="agent-card-fact-label">${formatLabel(item.label)}</span>
-                <span class="agent-card-fact-value">${formatValue(item.value)}</span>
-            </div>
-        `).join('')}</div>`
-        : '';
-    let actionsHtml = '';
-    if (status === 'needs_confirmation') {
-        actionsHtml = `
-            <div class="agent-card-actions">
-                <button class="agent-card-btn agent-card-btn-primary" data-ai-action="confirm">确认并执行</button>
-                <button class="agent-card-btn" data-ai-action="revise">再补充一下</button>
-            </div>
-        `;
-    } else if (status === 'needs_input') {
-        actionsHtml = `
-            <div class="agent-card-actions">
-                <button class="agent-card-btn agent-card-btn-primary" data-ai-action="focus">继续补充</button>
-            </div>
-        `;
-    }
-    return `
-        <div class="agent-card ${tone.cls}">
-            <div class="agent-card-head">
-                <span class="agent-card-badge">${tone.badge}</span>
-                <span class="agent-card-title">${tone.title}</span>
-            </div>
-            ${detailHtml}
-            ${factsHtml}
-            ${actionsHtml}
-        </div>
-    `.trim();
-}
-
 function applyAssistantMessageContent(messageDiv, content, options = {}) {
-    const status = options.agentStatus || '';
-    messageDiv.classList.remove(
-        'message-confirmation',
-        'message-success',
-        'message-error',
-        'message-input'
-    );
-    if (status === 'needs_confirmation') messageDiv.classList.add('message-confirmation');
-    if (status === 'completed') messageDiv.classList.add('message-success');
-    if (status === 'error') messageDiv.classList.add('message-error');
-    if (status === 'needs_input') messageDiv.classList.add('message-input');
+    const isError = options.messageStatus === 'error';
+    messageDiv.classList.remove('message-success', 'message-error');
+    messageDiv.classList.add(isError ? 'message-error' : 'message-success');
 
     if (options.renderAgentCard) {
         messageDiv.innerHTML = sanitizeHtml(renderAgentCard(options.response || {}, content));
@@ -277,18 +168,27 @@ function buildAgentContext() {
     try {
         const ctx = window.app?.resources?.getChatContext?.();
         if (ctx && typeof ctx === 'object') {
-            return ctx;
+            return {
+                ...ctx,
+                experience_mode: EXPERIENCE_MODES.STUDENT,
+                teacher_mode: {
+                    ...(ctx.teacher_mode || {}),
+                    unlocked: false,
+                    code: ''
+                }
+            };
         }
     } catch (error) {
         console.warn('读取聊天课程上下文失败:', error);
     }
     return {
-        experience_mode: getExperienceMode(isTeacherModeUnlocked()),
+        experience_mode: EXPERIENCE_MODES.STUDENT,
         teacher_mode: {
-            unlocked: sessionStorage.getItem('xedu_teacher_mode') === 'true',
-            code: sessionStorage.getItem('xedu_teacher_mode_code') || ''
+            unlocked: false,
+            code: ''
         },
-        course: null
+        course: null,
+        experiment_context: null
     };
 }
 
@@ -354,7 +254,7 @@ export async function askAI() {
 
     // 先放置一个“思考中”占位气泡，避免 UI 没反馈
     const loadingBubble = addMessageToChat('AI 正在思考...', 'ai', { isLoading: true });
-    updateAgentStatus('working');
+    updateChatStatus('loading');
 
     try {
         const overrides = buildAiOverrideConfig();
@@ -364,84 +264,50 @@ export async function askAI() {
 
         if (response.success) {
             const answer = response.answer || 'AI回复为空';
-            if (response.course && window.app?.resources?.applyAgentCourseUpdate) {
-                window.app.resources.applyAgentCourseUpdate(response.course);
-                syncChatContextPill();
-            }
-            if (response?.agent_status === 'needs_confirmation' || response?.agent_status === 'needs_input') {
-                updateAgentStatus('needs-action', response.agent_status === 'needs_confirmation' ? '等待确认' : '等待补充');
-            } else {
-                updateAgentStatus('success');
-                scheduleAgentStatusReset();
-            }
-            
+            updateChatStatus('success');
+            scheduleChatStatusReset();
+
             // 记录 AI 历史
             conversationHistory.push({ role: 'assistant', content: answer });
 
             if (loadingBubble) {
-                applyAssistantMessageContent(loadingBubble, answer, {
-                    renderMarkdown: !(response?.agent_status),
-                    renderAgentCard: Boolean(response?.agent_status),
-                    agentStatus: response?.agent_status,
-                    response
-                });
+                applyAssistantMessageContent(loadingBubble, answer, { renderMarkdown: true });
                 loadingBubble.classList.remove('message-loading');
             } else {
-                addMessageToChat(answer, 'ai', {
-                    renderMarkdown: !(response?.agent_status),
-                    renderAgentCard: Boolean(response?.agent_status),
-                    agentStatus: response?.agent_status,
-                    response
-                });
+                addMessageToChat(answer, 'ai', { renderMarkdown: true });
             }
         } else {
             const errorText = `错误: ${response.error || '未知错误'}`;
             // 移除刚才添加的错误历史，以免污染上下文
             conversationHistory.pop();
-            updateAgentStatus('needs-action', '处理失败');
-            
+            updateChatStatus('error', '处理失败');
+
             if (loadingBubble) {
-                applyAssistantMessageContent(loadingBubble, errorText, {
-                    renderAgentCard: true,
-                    agentStatus: 'error',
-                    response: { ...response, agent_status: 'error' }
-                });
+                applyAssistantMessageContent(loadingBubble, errorText, { messageStatus: 'error' });
                 loadingBubble.classList.remove('message-loading');
             } else {
-                addMessageToChat(errorText, 'ai', {
-                    renderAgentCard: true,
-                    agentStatus: 'error',
-                    response: { ...response, agent_status: 'error' }
-                });
+                addMessageToChat(errorText, 'ai', { messageStatus: 'error' });
             }
         }
     } catch (error) {
         console.error('AI请求失败:', error);
         // 移除错误历史
         conversationHistory.pop();
-        updateAgentStatus('needs-action', '网络异常');
-        
+        updateChatStatus('error', '网络异常');
+
         const errorText = `网络错误: ${error.message}`;
         if (loadingBubble) {
-            applyAssistantMessageContent(loadingBubble, errorText, {
-                renderAgentCard: true,
-                agentStatus: 'error',
-                response: { agent_status: 'error' }
-            });
+            applyAssistantMessageContent(loadingBubble, errorText, { messageStatus: 'error' });
             loadingBubble.classList.remove('message-loading');
         } else {
-            addMessageToChat(errorText, 'ai', {
-                renderAgentCard: true,
-                agentStatus: 'error',
-                response: { agent_status: 'error' }
-            });
+            addMessageToChat(errorText, 'ai', { messageStatus: 'error' });
         }
     }
 }
 
 export function clearCurrentChat() {
     conversationHistory = []; // 清空历史
-    updateAgentStatus('idle');
+    updateChatStatus('idle');
     const chatHistory = document.getElementById('chat-history');
     if (chatHistory) {
         chatHistory.innerHTML = buildEmptyStateHtml();
@@ -862,30 +728,12 @@ function initAIUI() {
     if (chatHistory) {
         chatHistory.addEventListener('click', (event) => {
             const target = event.target.closest('[data-ai-suggestion]');
-            if (target && questionInput) {
-                questionInput.value = target.getAttribute('data-ai-suggestion') || '';
-                questionInput.focus();
-                questionInput.dispatchEvent(new Event('input'));
-                if (target.getAttribute('data-ai-submit') === 'true') {
-                    askAI();
-                }
-                return;
-            }
-            const actionEl = event.target.closest('[data-ai-action]');
-            if (!actionEl || !questionInput) return;
-            const action = actionEl.getAttribute('data-ai-action');
-            if (action === 'confirm') {
-                sendSuggestedMessage('确认');
-                return;
-            }
-            if (action === 'revise') {
-                questionInput.focus();
-                questionInput.dispatchEvent(new Event('input'));
-                return;
-            }
-            if (action === 'focus') {
-                questionInput.focus();
-                return;
+            if (!target || !questionInput) return;
+            questionInput.value = target.getAttribute('data-ai-suggestion') || '';
+            questionInput.focus();
+            questionInput.dispatchEvent(new Event('input'));
+            if (target.getAttribute('data-ai-submit') === 'true') {
+                askAI();
             }
         });
     }
@@ -900,7 +748,7 @@ function initAIUI() {
     syncModelBadge();
     syncChatContextPill();
     syncAssistantModeUI();
-    updateAgentStatus('idle');
+    updateChatStatus('idle');
     toggleAttachmentHint(true);
 }
 

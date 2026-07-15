@@ -509,7 +509,7 @@ const state = {
 };
 
 const BASIC_PROGRAM_CATEGORY_NAMES = new Set(['逻辑', '循环', '数学', '文本', '列表', '变量', '函数']);
-const ADVANCED_CATEGORY_NAMES = new Set(['图像与视频', '图像视频', '通信控制', '进阶调试', '底层与调试', '扩展包']);
+const ADVANCED_CATEGORY_NAMES = new Set(['图像与视频', '图像视频', '通信控制', '行空板K10', 'K10', '进阶调试', '底层与调试', '扩展包']);
 
 function ensureRuntimeStyles() {
   if (document.getElementById('xedu-blockly-runtime-style')) {
@@ -904,6 +904,7 @@ function buildTaskFirstToolbox(rawToolbox) {
   const xeduCategory = categoryMap.get('XEdu') || categoryMap.get('XEduHub');
   const mediaCategory = categoryMap.get('媒体与设备');
   const debugCategory = categoryMap.get('调试与扩展');
+  const k10Category = categoryMap.get('行空板K10') || categoryMap.get('K10');
   const showDebugToolbox = Boolean(getConfigValue('showDebugToolbox', false));
 
   if (xeduCategory && mediaCategory) {
@@ -911,6 +912,7 @@ function buildTaskFirstToolbox(rawToolbox) {
       clone(categoryMap.get('基础编程')),
       clone(xeduCategory),
       clone(mediaCategory),
+      ...(k10Category ? [clone(k10Category)] : []),
     ];
     if (showDebugToolbox && debugCategory) {
       topLevelContents.push(clone(debugCategory));
@@ -1023,6 +1025,9 @@ function buildTaskFirstToolbox(rawToolbox) {
       }
       return cloned;
     });
+  if (k10Category) {
+    contents.push(clone(k10Category));
+  }
   const imageVideoCategory = mediaContents.find((item) => item?.kind === 'category' && (item?.name === '图像与视频' || item?.name === '图像视频'));
   if (imageVideoCategory && Array.isArray(imageVideoCategory.contents)) {
     const studentCuratedImageVideo = [
@@ -1057,6 +1062,10 @@ function buildTaskFirstToolbox(rawToolbox) {
       expanded: true,
       contents: mediaContents,
     });
+  }
+
+  if (k10Category) {
+    contents.push(clone(k10Category));
   }
 
   const debugContents = dedupeToolboxContents([

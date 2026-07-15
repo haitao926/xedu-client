@@ -104,7 +104,10 @@ class ResourceHandleRegistry:
         if token is None or token.expires_at <= time.monotonic():
             self._handles.pop(str(handle or ""), None)
             raise ResourceHandleExpired("资源句柄已过期")
-        if token.operation != operation:
+        # A project opened for editing also needs to be read by the Scratch VM.
+        # The handle remains scoped to one registered root and, when provided,
+        # one exact relative project path.
+        if token.operation != operation and not (token.operation == "write" and operation == "read"):
             raise InvalidResourceHandle("资源句柄无此操作权限")
         root = self._get_root(token.root_id)
         requested = token.relative_path if relative_path is None else relative_path
@@ -339,6 +342,12 @@ def resolve_blockly_runtime_asset_urls() -> Dict[str, str]:
 
 def get_frontend_build_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "build"
+
+
+def get_scratch_editor_build_dir() -> Path:
+    """Return the bundled Scratch editor without exposing its filesystem path."""
+
+    return Path(__file__).resolve().parents[2] / "scratch-editor" / "build"
 
 
 def build_blockly_playground_html(

@@ -18,14 +18,10 @@ from models.config import AppConfig
 from services.config_service import ConfigService
 from services.ai_service import AIService
 from services.project_service import ProjectService
-from services.quickform_agent_service import (
+from services.teacher_intent_detection import (
     looks_like_confirmation,
     looks_like_quickform_request,
-)
-from services.xedu_pack_agent_service import (
     looks_like_xedu_pack_request,
-)
-from services.blockly_builder_agent_service import (
     looks_like_blockly_builder_request,
 )
 from services.classroom_service import (

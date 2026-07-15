@@ -1,0 +1,18 @@
+{
+  "name": "xedu-scratch-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "XEdu Client embedded Scratch editor with XEdu AI extension.",
+  "scripts": {
+    "test": "node --test test/xedu-extension.test.js",
+    "postinstall": "node scripts/patch-scratch.js",
+    "prepare:upstream": "npm install --prefix node_modules/@scratch/scratch-gui --include=dev --ignore-scripts --cache .npm-cache && node scripts/prepare-upstream.js",
+    "build": "npm run prepare:upstream && node scripts/patch-scratch.js && npm run build:dist-standalone --prefix node_modules/@scratch/scratch-gui && node scripts/copy-build.js",
+    "build:upstream": "npm run prepare:upstream && npm run build:dist-standalone --prefix node_modules/@scratch/scratch-gui"
+  },
+  "dependencies": {
+    "@scratch/scratch-gui": "14.2.0-2026-07-02.1",
+    "@scratch/scratch-vm": "14.2.0-2026-07-02.1"
+  },
+  "devDependencies": {}
+}

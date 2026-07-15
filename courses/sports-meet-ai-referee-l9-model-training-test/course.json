@@ -1,0 +1,83 @@
+{
+  "id": "sports-meet-ai-referee-l9-model-training",
+  "title": "运动会上的AI裁判：L9 模型训练",
+  "description": "七年级人工智能课程《运动会上的AI裁判》中的第9课，围绕训练集与测试集划分、MLP 结构设计、Loss 下降与模型训练展开。",
+  "grade": "七年级",
+  "subject": "人工智能",
+  "author": "王海涛",
+  "version": "1.0",
+  "tags": [
+    "运动会上的AI裁判",
+    "模型训练",
+    "机器学习",
+    "神经网络"
+  ],
+  "sections": [
+    {
+      "title": "第9课：模型训练",
+      "description": "理解机器如何从数据中学习，完成数据划分、网络搭建和模型训练。",
+      "experiments": [
+        {
+          "title": "实验1：训练一个AI裁判模型",
+          "description": "在 Notebook 中完成数据读取、训练集测试集划分、模型训练与结果观察。",
+          "files": [
+            {
+              "path": "课程代码/L9_Part1.ipynb",
+              "type": "ipynb"
+            },
+            {
+              "path": "课程代码/training_data.csv",
+              "type": "file"
+            },
+            {
+              "path": "课程代码/utils.py",
+              "type": "file"
+            },
+            {
+              "path": "课程代码/start_jupyter.bat",
+              "type": "file"
+            }
+          ]
+        },
+        {
+          "title": "实验2：构建神经网络结构",
+          "description": "使用可视化 HTML 工具体验神经网络层数与神经元数量的变化，并将参数迁移到代码环境。",
+          "files": [
+            {
+              "path": "课程代码/构建神经网络.html",
+              "type": "html"
+            },
+            {
+              "path": "课件.html",
+              "type": "html"
+            },
+            {
+              "path": "教案.md",
+              "type": "file"
+            },
+            {
+              "path": "学生导学案.md",
+              "type": "file"
+            },
+            {
+              "path": "运动会上的AI裁判员---.pptx",
+              "type": "file"
+            },
+            {
+              "path": "模型训练-教案.pdf",
+              "type": "file"
+            },
+            {
+              "path": "第9课：模型训练 (第一性原理版).pdf",
+              "type": "file"
+            },
+            {
+              "path": "AI_Training_First_Principles.pdf",
+              "type": "file"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

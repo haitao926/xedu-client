@@ -13,27 +13,21 @@ from flask import request
 
 from models.config import AppConfig, SystemInfo
 from services.ai_service import AIService
-from services.blockly_builder_agent_service import (
-    BlocklyBuilderAgentService,
-    BlocklyBuilderToolAdapter,
-)
 from services.config_service import ConfigService
-from services.gitea_service import GiteaClient, GiteaServiceError, publish_course, save_course_json
-from services.quickform_agent_service import QuickFormAgentService, QuickFormAgentToolAdapter
 from services.quickform_service import QuickFormService, QuickFormServiceError
-from services.xedu_pack_agent_service import XEduPackAgentService, XEduPackToolAdapter
 from .config_utils import build_ai_service, merge_jupyter_payload, normalize_config_payload
-from .quickform_runtime import inject_quickform_file, merge_quickform_config, normalize_quickform_public_config
+from .quickform_runtime import merge_quickform_config
 from .resource_runtime import (
     build_blockly_playground_html,
     build_single_course_source_entry,
     collect_resource_sources,
+    derive_course_id_from_path,
     issue_resource_handle,
     register_resource_root,
     resolve_resource_handle,
-    derive_course_id_from_path,
     execute_xeduhub_runtime,
     get_frontend_build_dir,
+    get_scratch_editor_build_dir,
     guess_blockly_notebook_path,
     guess_blockly_python_path,
     guess_blockly_toolbox_path,
@@ -200,17 +194,6 @@ def resolve_api_port_from_request() -> int:
     return int(os.environ.get("XEDU_API_PORT") or os.environ.get("XEDU_BACKEND_PORT") or "5123")
 
 
-def save_local_course(local_path: str, course: Dict[str, Any]) -> Dict[str, Any]:
-    result = save_course_json(local_path, course)
-    normalized_course = dict(result.course or {})
-    normalized_course["local_path"] = local_path
-    normalized_course["source"] = "local"
-    return {
-        "course": normalized_course,
-        "summary": result.summary,
-    }
-
-
 def build_quickform_service(app_config: AppConfig, overrides: Dict[str, Any] | None = None) -> QuickFormService:
     cfg = merge_quickform_config(app_config.ui, parse_bool, overrides)
     if not cfg.get("enabled"):
@@ -222,187 +205,22 @@ def build_quickform_service(app_config: AppConfig, overrides: Dict[str, Any] | N
     )
 
 
-def build_quickform_tool_adapter(
-    *,
-    app_config: AppConfig,
-    validate_teacher_code_fn,
-    overrides: Dict[str, Any] | None = None,
-) -> QuickFormAgentToolAdapter:
-    def mutation_guard(request_context: Dict[str, Any]) -> tuple[bool, str]:
-        if not validate_teacher_code_fn(request, app_config):
-            return False, "教师权限校验失败"
-        if not request_context.get("confirmed"):
-            return False, "请先让教师明确确认后再执行写入"
-        return True, ""
-
-    return QuickFormAgentToolAdapter(
-        quickform_factory=lambda: build_quickform_service(app_config, overrides),
-        mutation_guard=mutation_guard,
-        html_injector=lambda local_path, html_path, quickform, create_backup=True: inject_quickform_file(
-            local_path,
-            html_path,
-            quickform,
-            create_backup,
-            parse_bool,
-            resolve_local_course_file,
-        ),
-        course_saver=save_local_course,
-    )
-
-
-def build_quickform_agent_service(
-    *,
-    app,
-    app_config: AppConfig,
-    overrides: Dict[str, Any] | None = None,
-    validate_teacher_code_fn=validate_teacher_code,
-) -> QuickFormAgentService:
-    runner_factory = app.config.get("KIMI_AGENT_RUNNER_FACTORY")
-    runner = runner_factory() if callable(runner_factory) else None
-    return QuickFormAgentService(
-        ai_config=build_ai_service(app_config, overrides).config,
-        tool_adapter=build_quickform_tool_adapter(
-            app_config=app_config,
-            validate_teacher_code_fn=validate_teacher_code_fn,
-            overrides=overrides,
-        ),
-        fallback_ai_service=build_ai_service(app_config, overrides),
-        runner=runner,
-    )
-
-
-def publish_xedu_pack_output(app_config: AppConfig, local_path: str, options: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    payload = options or {}
-    course_meta = payload.get("course") if isinstance(payload.get("course"), dict) else {}
-    source_override = (course_meta.get("origin") if isinstance(course_meta.get("origin"), dict) else {}) or {}
-    source_id = str(payload.get("source_id") or source_override.get("source_id") or "").strip()
-    version = str(payload.get("version") or course_meta.get("version") or "").strip()
-
-    selected_source = resolve_resource_source_for_request(
-        app_config.ui,
-        parse_bool,
-        source_id=source_id,
-        source_override=source_override,
-    )
-    if not selected_source:
-        raise GiteaServiceError("未配置可用的课程发布源")
-
-    base_url = (selected_source.get("base_url") or "").rstrip("/")
-    repo = (selected_source.get("repo") or "").strip("/")
-    branch = (selected_source.get("branch") or "main").strip() or "main"
-    publish_path = (selected_source.get("publish_path") or "courses").strip("/") or "courses"
-    token = resolve_resources_token(app_config.ui, "")
-    single_course_repo = parse_bool(selected_source.get("single_course_repo"), True)
-
-    if not token:
-        raise GiteaServiceError("写操作需要 Token（请在设置中填写或由服务端配置 XEDU_GITEA_TOKEN）")
-
-    client = GiteaClient(base_url, repo, branch, token)
-    repo_status = client.ensure_repo(create_if_missing=True, private=False, description="")
-    result = publish_course(
-        local_path=local_path,
-        client=client,
-        publish_path=publish_path,
-        course_id=str(course_meta.get("id") or "").strip(),
-        version=version,
-        meta_override={
-            "title": course_meta.get("title") or "",
-            "description": course_meta.get("description") or "",
-            "grade": course_meta.get("grade") or "",
-            "subject": course_meta.get("subject") or "",
-            "author": course_meta.get("author") or "",
-            "tags": course_meta.get("tags") or [],
-            "version": version,
-        },
-        publish_branch="",
-        create_pr=True,
-        pr_base_branch=branch,
-        single_course_repo=single_course_repo,
-    )
-    return {
-        "result": result,
-        "pr_url": ((result.get("pull_request") or {}).get("url") or ""),
-        "repo_created": bool(repo_status.get("created")),
-        "origin": {
-            "source_id": selected_source.get("id", ""),
-            "base_url": base_url,
-            "repo": repo,
-            "branch": branch,
-            "publish_path": "" if single_course_repo else publish_path,
-            "single_course_repo": single_course_repo,
-        },
-    }
-
-
-def build_xedu_pack_tool_adapter(app_config: AppConfig, validate_teacher_code_fn=validate_teacher_code) -> XEduPackToolAdapter:
-    def mutation_guard(request_context: Dict[str, Any]) -> tuple[bool, str]:
-        if not validate_teacher_code_fn(request, app_config):
-            return False, "教师权限校验失败"
-        if not request_context.get("confirmed"):
-            return False, "请先让教师明确确认后再执行写入"
-        return True, ""
-
-    return XEduPackToolAdapter(
-        mutation_guard=mutation_guard,
-        publisher=lambda local_path, options=None: publish_xedu_pack_output(app_config, local_path, options),
-    )
-
-
-def build_xedu_pack_agent_service(*, app, app_config: AppConfig, overrides: Dict[str, Any] | None = None) -> XEduPackAgentService:
-    runner_factory = app.config.get("KIMI_AGENT_RUNNER_FACTORY")
-    runner = runner_factory() if callable(runner_factory) else None
-    return XEduPackAgentService(
-        ai_config=build_ai_service(app_config, overrides).config,
-        tool_adapter=build_xedu_pack_tool_adapter(app_config),
-        fallback_ai_service=build_ai_service(app_config, overrides),
-        runner=runner,
-    )
-
-
-def build_blockly_builder_tool_adapter(
-    *,
-    app_config: AppConfig,
-    config_service: ConfigService,
-    validate_teacher_code_fn=validate_teacher_code,
-) -> BlocklyBuilderToolAdapter:
-    def mutation_guard(request_context: Dict[str, Any]) -> tuple[bool, str]:
-        if not validate_teacher_code_fn(request, app_config):
-            return False, "教师权限校验失败"
-        if not request_context.get("confirmed"):
-            return False, "请先让教师明确确认后再执行写入"
-        return True, ""
-
-    return BlocklyBuilderToolAdapter(
-        mutation_guard=mutation_guard,
-        draft_root=config_service.config_dir / "blockly_drafts",
-    )
-
-
-def build_blockly_builder_agent_service(
-    *,
-    app,
-    app_config: AppConfig,
-    config_service: ConfigService,
-    overrides: Dict[str, Any] | None = None,
-) -> BlocklyBuilderAgentService:
-    runner_factory = app.config.get("KIMI_AGENT_RUNNER_FACTORY")
-    runner = runner_factory() if callable(runner_factory) else None
-    return BlocklyBuilderAgentService(
-        ai_config=build_ai_service(app_config, overrides).config,
-        tool_adapter=build_blockly_builder_tool_adapter(
-            app_config=app_config,
-            config_service=config_service,
-        ),
-        fallback_ai_service=build_ai_service(app_config, overrides),
-        runner=runner,
-    )
-
-
 def register_app_routes(app, services: dict, app_config: AppConfig) -> None:
     from .routes import register_all_routes
 
     register_all_routes(app, services)
     app.config["ALLOW_NETWORK_ACCESS"] = bool(getattr(app_config.ui, "allow_network_access", False))
+
+
+def get_scratch_editor_build_dir() -> Path:
+    resources_root = Path(__file__).resolve().parents[2]
+    build_dir = resources_root / "scratch-editor" / "build"
+    if build_dir.exists():
+        return build_dir
+    legacy_packaged_dir = resources_root / "scratch-editor"
+    if (legacy_packaged_dir / "index.html").exists():
+        return legacy_packaged_dir
+    return build_dir
 
 
 def build_route_services(
@@ -456,22 +274,6 @@ def build_route_services(
         "build_quickform_service": lambda overrides=None: build_quickform_service(get_app_config(), overrides),
         "merge_quickform_config": lambda overrides=None: merge_quickform_config(get_app_config().ui, parse_bool, overrides),
         "build_ai_service": _build_ai_service,
-        "build_quickform_agent_service": lambda overrides=None: build_quickform_agent_service(
-            app=app,
-            app_config=get_app_config(),
-            overrides=overrides,
-        ),
-        "build_xedu_pack_agent_service": lambda overrides=None: build_xedu_pack_agent_service(
-            app=app,
-            app_config=get_app_config(),
-            overrides=overrides,
-        ),
-        "build_blockly_builder_agent_service": lambda overrides=None: build_blockly_builder_agent_service(
-            app=app,
-            app_config=get_app_config(),
-            config_service=config_service,
-            overrides=overrides,
-        ),
         "looks_like_confirmation": looks_like_confirmation,
         "looks_like_quickform_request": looks_like_quickform_request,
         "looks_like_xedu_pack_request": looks_like_xedu_pack_request,
@@ -490,20 +292,11 @@ def build_route_services(
         "issue_resource_handle": issue_resource_handle,
         "register_resource_root": register_resource_root,
         "resolve_resource_handle": resolve_resource_handle,
-        "resolve_local_course_file": resolve_local_course_file,
-        "normalize_quickform_public_config": lambda raw: normalize_quickform_public_config(raw, parse_bool),
-        "inject_quickform_file": lambda local_path, html_path, quickform, create_backup=True: inject_quickform_file(
-            local_path,
-            html_path,
-            quickform,
-            create_backup,
-            parse_bool,
-            resolve_local_course_file,
-        ),
         "guess_blockly_toolbox_path": guess_blockly_toolbox_path,
         "guess_blockly_python_path": guess_blockly_python_path,
         "guess_blockly_notebook_path": guess_blockly_notebook_path,
         "get_frontend_build_dir": get_frontend_build_dir,
+        "get_scratch_editor_build_dir": get_scratch_editor_build_dir,
         "build_blockly_playground_html": build_blockly_playground_html,
         "execute_xeduhub_runtime": execute_xeduhub_runtime,
         "get_nonblocking_supported_tasks_snapshot": get_nonblocking_supported_tasks_snapshot,

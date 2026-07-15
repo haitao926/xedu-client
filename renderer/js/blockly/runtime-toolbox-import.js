@@ -1,5 +1,5 @@
 export async function persistCourseToolbox(toolbox, deps = {}) {
-  const endpoint = String(deps.getConfigValue('toolboxSaveUrl', '/api/resources/blockly/toolbox/save'));
+  const endpoint = String(deps.getConfigValue('toolboxSaveUrl', ''));
   const rootToken = String(deps.getConfigValue('rootToken', ''));
   if (!endpoint || !rootToken) {
     return { success: false, message: '当前页面未绑定课程目录，已保留本次导入结果' };

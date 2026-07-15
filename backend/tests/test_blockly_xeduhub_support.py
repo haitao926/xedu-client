@@ -231,14 +231,22 @@ class BlocklyXEduHubSupportTestCase(unittest.TestCase):
         for category_name in ("基础编程", "XEdu", "媒体与设备", "调试与扩展"):
             self.assertEqual(top_level[category_name]["colour"], contract["taskFirstCategories"][category_name]["colour"])
 
+        self.assertIn("行空板K10", top_level)
+
     def test_toolbox_exposes_platform_sections(self):
         toolbox = build_xeduhub_toolbox_definition("detection")
         names = [item.get("name") for item in toolbox["contents"] if item.get("kind") == "category"]
-        self.assertEqual(names, ["基础编程", "XEdu", "媒体与设备", "调试与扩展"])
+        self.assertEqual(names, ["基础编程", "XEdu", "媒体与设备", "行空板K10", "调试与扩展"])
 
         media = _find_category(toolbox["contents"], "媒体与设备")
         media_names = [item.get("name") for item in media.get("contents", []) if item.get("kind") == "category"]
         self.assertEqual(media_names, ["图像与视频", "通信控制"])
+
+        k10 = _find_category(toolbox["contents"], "行空板K10")
+        k10_types = _block_types(k10.get("contents", []))
+        self.assertIn("xeduhub_k10_gpio_write", k10_types)
+        self.assertIn("xeduhub_k10_pwm_write", k10_types)
+        self.assertIn("xeduhub_k10_uart_send", k10_types)
 
         image_video = _find_category(media.get("contents", []), "图像与视频")
         image_video_types = _block_types(image_video.get("contents", []))

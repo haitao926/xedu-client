@@ -5,7 +5,6 @@ Blockly 相关资源路由模块。
 
 from __future__ import annotations
 
-import json
 import urllib.parse
 from pathlib import Path
 
@@ -139,22 +138,30 @@ def register_resource_blockly_routes(app, services: dict):
             logger.error(f"打开空白 Blockly playground 失败: {exc}")
             return jsonify({"success": False, "message": "打开空白 Blockly playground 失败"}), 500
 
-    @app.route("/api/resources/blockly/xeduhub/execute", methods=["POST"])
-    @require_capability("python:run")
-    def resources_blockly_xeduhub_execute():
+    def _execute_xeduhub_payload(route_label: str):
         try:
             payload = request.get_json(silent=True) or {}
             result = execute_xeduhub_runtime(payload)
             return jsonify(result), 200 if result.get("success") else 400
         except Exception as exc:
-            logger.error(f"执行 Blockly XEduHub runtime 失败: {exc}")
+            logger.error(f"执行 {route_label} XEduHub runtime 失败: {exc}")
             return jsonify({
                 "success": False,
                 "result_type": "error",
-                "message": "执行 Blockly XEduHub runtime 失败",
+                "message": f"执行 {route_label} XEduHub runtime 失败",
                 "result": {"error": str(exc)},
                 "artifacts": {},
             }), 500
+
+    @app.route("/api/resources/xeduhub/execute", methods=["POST"])
+    @require_capability("python:run")
+    def resources_xeduhub_execute():
+        return _execute_xeduhub_payload("XEdu")
+
+    @app.route("/api/resources/blockly/xeduhub/execute", methods=["POST"])
+    @require_capability("python:run")
+    def resources_blockly_xeduhub_execute():
+        return _execute_xeduhub_payload("Blockly")
 
     @app.route("/api/resources/blockly/validate-toolbox", methods=["POST"])
     def resources_blockly_validate_toolbox():
@@ -171,57 +178,3 @@ def register_resource_blockly_routes(app, services: dict):
                 "errors": ["校验 Blockly toolbox 失败"],
                 "normalized": None,
             }), 500
-
-    @app.route("/api/resources/blockly/toolbox/save", methods=["POST"])
-    @require_capability("resource:write")
-    def resources_blockly_toolbox_save():
-        try:
-            payload = request.get_json(silent=True) or {}
-            if not isinstance(payload, dict):
-                return jsonify({"success": False, "message": "请求参数无效"}), 400
-
-            role = str(payload.get("role") or "").strip().lower()
-            if role == "student":
-                return jsonify({"success": False, "message": "学生模式不允许保存课程积木"}), 403
-
-            root_token = str(payload.get("root_token") or "").strip()
-            workspace_rel = str(payload.get("workspace_rel") or "").strip().lstrip("/")
-            toolbox_rel = str(payload.get("toolbox_rel") or "").strip().lstrip("/")
-            toolbox = payload.get("toolbox")
-
-            if not root_token:
-                return jsonify({"success": False, "message": "缺少课程标识"}), 400
-            if not toolbox_rel:
-                if not workspace_rel:
-                    return jsonify({"success": False, "message": "缺少工作区路径，无法推导 toolbox 保存路径"}), 400
-                toolbox_rel = guess_blockly_toolbox_path(workspace_rel)
-            if not toolbox_rel:
-                return jsonify({"success": False, "message": "无法推导 toolbox 保存路径"}), 400
-
-            validation = validate_toolbox_schema(toolbox)
-            if not validation.get("valid"):
-                return jsonify({
-                    "success": False,
-                    "message": "积木包格式不正确",
-                    "errors": validation.get("errors") or ["未知错误"],
-                }), 400
-
-            target_file = resolve_resource_handle(root_token, "write", toolbox_rel)
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            safe_toolbox = validation.get("normalized") or toolbox
-            target_file.write_text(f"{json.dumps(safe_toolbox, ensure_ascii=False, indent=2)}\n", encoding="utf-8")
-            return jsonify({
-                "success": True,
-                "message": "课程积木已保存",
-                "toolbox_path": toolbox_rel,
-            }), 200
-        except ResourceHandleExpired as exc:
-            return jsonify({"success": False, "message": str(exc)}), 410
-        except (InvalidResourceHandle, ValueError) as exc:
-            return jsonify({"success": False, "message": str(exc)}), 400
-        except OSError as exc:
-            logger.error(f"保存 Blockly toolbox 失败: {exc}")
-            return jsonify({"success": False, "message": "保存失败，请检查课程目录写权限"}), 500
-        except Exception as exc:
-            logger.error(f"保存 Blockly toolbox 失败: {exc}")
-            return jsonify({"success": False, "message": "保存 Blockly toolbox 失败"}), 500

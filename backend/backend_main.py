@@ -111,7 +111,7 @@ def main() -> None:
 
     try:
         startup_marker(f"flask-run-start host={host} port={port}")
-        app.run(host=host, port=port, debug=False)
+        app.run(host=host, port=port, debug=False, threaded=True)
         startup_marker("flask-run-returned")
     finally:
         startup_marker("finally-cleanup")

@@ -10,11 +10,29 @@ function shouldShowJupyterView() {
     return consoleActive && !hasVisibleModal();
 }
 
-function syncJupyterVisibilityForModalState() {
+function exitJupyterFullscreen() {
+    const card = document.getElementById('jupyter-card');
+    if (card && card.classList.contains('fullscreen')) {
+        card.classList.remove('fullscreen');
+        document.body.classList.remove('focus-mode');
+    }
+}
+
+function setJupyterVisibilitySafely(visible) {
     if (!(window.app && window.app.jupyter && window.app.jupyter.setVisibility)) {
         return;
     }
-    window.app.jupyter.setVisibility(shouldShowJupyterView());
+    const nextVisible = Boolean(visible);
+    if (!nextVisible) {
+        exitJupyterFullscreen();
+    }
+    Promise.resolve(window.app.jupyter.setVisibility(nextVisible)).catch((error) => {
+        console.warn('切换 Jupyter 视图显示状态失败:', error);
+    });
+}
+
+function syncJupyterVisibilityForModalState() {
+    setJupyterVisibilitySafely(shouldShowJupyterView());
 }
 
 // 日志函数
@@ -42,14 +60,35 @@ export function log(message, type = 'info') {
 }
 
 // 切换页面 Tab
-export function showTab(tabId, navItem) {
+export function showTab(tabId, navItem, options = {}) {
+    if (document.body.classList.contains('student-mode') && tabId === 'main' && !options.allowStudentMain) {
+        const studentEntry = document.getElementById('nav-student-lesson-item');
+        if (window.app?.resources?.openStudentLessonTab) {
+            Promise.resolve(window.app.resources.openStudentLessonTab('route', studentEntry)).catch((error) => {
+                console.warn('打开课程任务中心失败:', error);
+            });
+            return;
+        }
+        tabId = 'resources';
+        navItem = studentEntry || navItem;
+    }
+
     if (tabId === 'settings') {
         const settingsNav = document.getElementById('nav-settings-item');
         const hiddenForStudent = settingsNav && settingsNav.style.display === 'none';
         if (hiddenForStudent) {
-            tabId = 'main';
-            navItem = document.getElementById('nav-main-item') || navItem;
+            tabId = 'resources';
+            navItem = document.getElementById('nav-student-lesson-item') || navItem;
         }
+    }
+
+    if (!navItem?.classList?.contains('student-nav-item')) {
+        document.body.classList.remove(
+            'student-page-route',
+            'student-page-experience',
+            'student-page-visual',
+            'student-page-python'
+        );
     }
 
     // 1. 处理导航菜单高亮
@@ -71,37 +110,37 @@ export function showTab(tabId, navItem) {
     if (targetSection) {
         targetSection.classList.add('active');
     }
-    if (tabId === 'blockly-workspace' && window.app?.workspace?.ensureBlocklyWorkspaceMounted) {
-        try {
-            window.app.workspace.ensureBlocklyWorkspaceMounted();
-        } catch (error) {
-            console.warn('挂载 Blockly 工作台失败:', error);
-        }
-    }
     document.body.classList.toggle('blockly-toolbar-top', tabId === 'blockly-workspace');
     document.body.classList.toggle('ai-toolbar-compact', tabId === 'ai-assistant');
 
     const titleConfig = getPageCopy(tabId);
     const titleEl = document.getElementById('page-title');
     const subtitleEl = document.getElementById('page-subtitle');
-    if (titleEl && titleConfig?.title) titleEl.textContent = titleConfig.title;
-    if (subtitleEl && titleConfig?.subtitle) subtitleEl.textContent = titleConfig.subtitle;
-
-    // 3. 特殊处理：Jupyter 视图的显隐
-    // BrowserView 是悬浮在最上层的，离开总控制台时必须隐藏它
-    if (window.app && window.app.jupyter && window.app.jupyter.setVisibility) {
-        window.app.jupyter.setVisibility(shouldShowJupyterView());
-        if (tabId !== 'main') {
-            const card = document.getElementById('jupyter-card');
-            if (card && card.classList.contains('fullscreen')) {
-                card.classList.remove('fullscreen');
-                document.body.classList.remove('focus-mode');
-            }
+    if (titleEl) {
+        if (options.pageTitle) {
+            titleEl.textContent = options.pageTitle;
+        } else if (titleConfig?.title) {
+            titleEl.textContent = titleConfig.title;
+        }
+    }
+    if (subtitleEl) {
+        if (Object.prototype.hasOwnProperty.call(options, 'pageSubtitle')) {
+            subtitleEl.textContent = options.pageSubtitle || '';
+        } else if (titleConfig?.subtitle) {
+            subtitleEl.textContent = titleConfig.subtitle;
         }
     }
 
+    // 3. 特殊处理：Jupyter 视图的显隐
+    // BrowserView 是悬浮在最上层的，离开总控制台时必须隐藏它
+    setJupyterVisibilitySafely(shouldShowJupyterView());
+
     if (tabId === 'resources') {
-        if (window.app && window.app.resources && window.app.resources.initResourcesPage) {
+        if (navItem?.id === 'nav-resources-item' && window.app?.resources?.openResourcesLibrary) {
+            Promise.resolve(window.app.resources.openResourcesLibrary()).catch((err) => {
+                console.error('打开课程资源模块失败:', err);
+            });
+        } else if (window.app && window.app.resources && window.app.resources.initResourcesPage) {
             Promise.resolve(window.app.resources.initResourcesPage()).catch((err) => {
                 console.error('加载课程资源模块失败:', err);
             });

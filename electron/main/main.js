@@ -6,6 +6,47 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 
+function isBrokenPipeError(error) {
+    return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
+}
+
+function installSafeConsole() {
+    ['stdout', 'stderr'].forEach((streamName) => {
+        const stream = process[streamName];
+        if (!stream || typeof stream.on !== 'function') return;
+        stream.on('error', (error) => {
+            if (isBrokenPipeError(error)) {
+                return;
+            }
+            throw error;
+        });
+    });
+
+    ['log', 'info', 'warn', 'error'].forEach((method) => {
+        const original = console[method];
+        if (typeof original !== 'function') return;
+        console[method] = (...args) => {
+            try {
+                original.apply(console, args);
+            } catch (error) {
+                if (isBrokenPipeError(error)) {
+                    return;
+                }
+                throw error;
+            }
+        };
+    });
+}
+
+installSafeConsole();
+
+process.on('uncaughtException', (error) => {
+    if (isBrokenPipeError(error)) {
+        return;
+    }
+    console.error('Uncaught Exception:', error);
+});
+
 // 确保 Windows 任务栏/快捷方式使用自定义图标，而不是 Electron 默认图标
 const APP_ID = 'com.xeduclient';
 if (process.platform === 'win32') {
@@ -285,19 +326,32 @@ function createWindow() {
         title: 'XEdu Client'
     });
 
-    mainWindow.once('ready-to-show', () => {
+    const showMainWindow = (reason = 'ready') => {
         try {
-            if (!mainWindow) return;
-            mainWindow.center();
-            mainWindow.show();
-            mainWindow.focus();
+            if (!mainWindow || mainWindow.isDestroyed()) return;
             if (mainWindow.isMinimized()) {
                 mainWindow.restore();
+            }
+            if (!mainWindow.isVisible()) {
+                mainWindow.center();
+                mainWindow.show();
+            }
+            mainWindow.focus();
+            if (isDev) {
+                console.log(`主窗口已显示: ${reason}`);
             }
         } catch (error) {
             console.warn('窗口显示失败:', error?.message || error);
         }
+    };
+
+    mainWindow.once('ready-to-show', () => {
+        showMainWindow('ready-to-show');
     });
+
+    const fallbackShowTimer = setTimeout(() => {
+        showMainWindow('fallback-timeout');
+    }, 3000);
 
     const loadBundledApp = () => {
         const distPath = path.join(__dirname, '../../build/index.html');
@@ -312,7 +366,9 @@ function createWindow() {
                     console.log(`开发服务器加载失败，回退到本地构建页面: ${err.message}`);
                     loadBundledApp();
                 });
-                mainWindow.webContents.openDevTools();
+                if (process.env.XEDU_OPEN_DEVTOOLS === '1') {
+                    mainWindow.webContents.openDevTools();
+                }
                 return;
             }
 
@@ -331,16 +387,39 @@ function createWindow() {
     });
 
     mainWindow.webContents.on('did-finish-load', () => {
+        clearTimeout(fallbackShowTimer);
+        showMainWindow('did-finish-load');
         if (pendingPracticeDeepLink) {
             mainWindow.webContents.send('deep-link-open-practice', pendingPracticeDeepLink);
             pendingPracticeDeepLink = null;
         }
     });
 
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+        clearTimeout(fallbackShowTimer);
+        console.warn('页面加载失败:', errorCode, errorDescription, validatedURL);
+        showMainWindow('did-fail-load');
+    });
+
     mainWindow.on('closed', () => {
         mainWindow = null;
         jupyterView = null;
     });
+}
+
+function bringMainWindowToFront() {
+    try {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMinimized()) {
+            mainWindow.restore();
+        }
+        if (!mainWindow.isVisible()) {
+            mainWindow.show();
+        }
+        mainWindow.focus();
+    } catch (error) {
+        console.warn('窗口置前失败:', error?.message || error);
+    }
 }
 
 function registerXeduProtocol() {
@@ -1028,8 +1107,7 @@ function setupJupyterView() {
                 nodeIntegration: false,
                 contextIsolation: true,
                 session: mainWindow.webContents.session,
-                webSecurity: false,
-                allowRunningInsecureContent: true
+                webSecurity: false
             }
         });
 
@@ -1040,11 +1118,6 @@ function setupJupyterView() {
             }
         });
 
-        if (mainWindow.getBrowserView() && mainWindow.getBrowserView() !== view) {
-            mainWindow.setBrowserView(null);
-        }
-        mainWindow.setBrowserView(view);
-        isJupyterViewVisible = true;
         if (bounds) {
             view.setBounds(bounds);
         }
@@ -1055,6 +1128,12 @@ function setupJupyterView() {
             console.error('Failed to load Jupyter URL:', e);
         }
         jupyterView = view;
+        if (isJupyterViewVisible) {
+            if (mainWindow.getBrowserView() && mainWindow.getBrowserView() !== view) {
+                mainWindow.setBrowserView(null);
+            }
+            mainWindow.setBrowserView(view);
+        }
     };
 
     ipcMain.handle('jupyter:create-view', async (event, url, bounds) => {
@@ -1069,11 +1148,10 @@ function setupJupyterView() {
         // 如果已存在，仅更新 URL (如果不同)
         if (ensureValidViewRef()) {
             try {
-                // 确保它在最上层
-                if (mainWindow.getBrowserView() !== jupyterView) {
+                // 仅在当前页面授权显示 Jupyter 时才附加 BrowserView。
+                if (isJupyterViewVisible && mainWindow.getBrowserView() !== jupyterView) {
                     mainWindow.setBrowserView(jupyterView);
                 }
-                isJupyterViewVisible = true;
 
                 // 更新位置
                 if (bounds) {
@@ -1125,7 +1203,13 @@ function setupJupyterView() {
     });
 
     ipcMain.handle('jupyter:set-visibility', (event, visible) => {
-        if (!hasValidWindow() || !isTrustedRenderer(event) || !ensureValidViewRef()) return;
+        if (!hasValidWindow() || !isTrustedRenderer(event)) return;
+        if (!ensureValidViewRef()) {
+            if (!visible && mainWindow.getBrowserView()) {
+                mainWindow.setBrowserView(null);
+            }
+            return;
+        }
 
         if (visible) {
             // 显示视图
@@ -1140,6 +1224,7 @@ function setupJupyterView() {
                 mainWindow.removeBrowserView(jupyterView);
             } catch (e) {
                 console.warn('隐藏 Jupyter 视图失败:', e?.message || e);
+            } finally {
                 if (mainWindow.getBrowserView() === jupyterView) {
                     mainWindow.setBrowserView(null);
                 }
@@ -1252,8 +1337,7 @@ if (!gotTheLock) {
             dispatchPracticeDeepLink(parsePracticeDeepLink(deepLinkArg));
         }
         if (mainWindow) {
-            if (mainWindow.isMinimized()) mainWindow.restore();
-            mainWindow.focus();
+            bringMainWindowToFront();
         }
     });
 
@@ -1304,6 +1388,8 @@ if (!gotTheLock) {
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();
+        } else {
+            bringMainWindowToFront();
         }
     });
 }

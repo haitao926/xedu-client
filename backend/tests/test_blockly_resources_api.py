@@ -1,10 +1,9 @@
 import base64
-import io
 import json
 import os
+import sys
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,6 +21,7 @@ from api.resource_runtime import (  # noqa: E402
     guess_blockly_toolbox_path,
 )
 from services.gitea_service import _guess_file_type  # noqa: E402
+from services.blockly_xeduhub_support import _materialize_image_data_url  # noqa: E402
 
 
 class BlocklyResourcesApiTestCase(unittest.TestCase):
@@ -43,6 +43,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
     def test_guess_file_type_marks_blockly(self):
         self.assertEqual(_guess_file_type("lesson1/demo.blockly.xml"), "blockly")
         self.assertEqual(_guess_file_type("lesson1/demo.blockly.json"), "blockly")
+        self.assertEqual(_guess_file_type("lesson1/demo.sb3"), "scratch")
         self.assertEqual(_guess_file_type("lesson1/demo.ipynb"), "ipynb")
         self.assertEqual(guess_blockly_python_path("lesson1/workspace_json_roundtrip.blockly.json"), "lesson1/workspace_json_roundtrip.py")
         self.assertEqual(guess_blockly_toolbox_path("lesson1/custom_toolbox.blockly.xml"), "lesson1/custom_toolbox.toolbox.json")
@@ -239,120 +240,89 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
                 response.close()
             asset_file.unlink(missing_ok=True)
 
-    def test_import_local_course_package_route_imports_zip_bundle(self):
-        package_root = Path(self.temp_dir.name) / "package-root"
-        package_root.mkdir(parents=True, exist_ok=True)
-        (package_root / "course.json").write_text(
-            json.dumps(
-                {
-                    "id": "skill-pack-demo",
-                    "title": "Skill 打包课程",
-                    "sections": [
-                        {
-                            "title": "第 1 课",
-                            "experiments": [
-                                {
-                                    "title": "实验 1",
-                                    "files": [{"path": "lesson1/exp1/main.ipynb", "type": "ipynb"}],
-                                }
-                            ],
-                        }
-                    ],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        lesson_dir = package_root / "lesson1" / "exp1"
-        lesson_dir.mkdir(parents=True, exist_ok=True)
-        (lesson_dir / "main.ipynb").write_text(
-            json.dumps({"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}),
-            encoding="utf-8",
-        )
-
-        zip_path = Path(self.temp_dir.name) / "skill-pack-demo.zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for file_path in package_root.rglob("*"):
-                if file_path.is_file():
-                    zipf.write(file_path, file_path.relative_to(package_root).as_posix())
-
-        target_dir = Path(self.temp_dir.name) / "imported-course"
-        response = self.client.post(
-            "/api/resources/import-package-local",
-            json={"package_path": str(zip_path), "target_path": str(target_dir)},
-        )
+    def test_scratch_editor_route_has_fallback_when_build_missing(self):
+        response = self.client.get("/api/scratch-editor/index.html")
         self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertTrue(payload["success"])
-        self.assertEqual(payload["course"]["id"], "skill-pack-demo")
-        self.assertEqual(payload["course"]["title"], "Skill 打包课程")
-        self.assertTrue((target_dir / "course.json").exists())
-        self.assertTrue((target_dir / "lesson1" / "exp1" / "main.ipynb").exists())
+        text = response.get_data(as_text=True)
+        self.assertIn("XEdu Scratch", text)
+        if "scratch-gui-standalone.js" in text:
+            self.assertIn("api/resources/scratch-project", text)
+        else:
+            self.assertIn("npm run build:scratch", text)
 
-    def test_import_local_course_package_route_uses_default_target_path(self):
-        package_root = Path(self.temp_dir.name) / "skill-pack-demo"
-        package_root.mkdir(parents=True, exist_ok=True)
-        (package_root / "course.json").write_text(
-            json.dumps(
-                {
-                    "id": "skill-pack-demo",
-                    "title": "Skill 打包课程",
-                    "sections": [
-                        {
-                            "title": "第 1 课",
-                            "experiments": [
-                                {
-                                    "title": "实验 1",
-                                    "files": [{"path": "lesson1/exp1/main.ipynb", "type": "ipynb"}],
-                                }
-                            ],
-                        }
-                    ],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+    def test_scratch_project_route_reads_and_saves_sb3(self):
+        course_dir = Path(self.temp_dir.name) / "course-scratch"
+        course_dir.mkdir(parents=True, exist_ok=True)
+        project_rel = "lesson1/demo.sb3"
+        project_file = course_dir / project_rel
+        project_file.parent.mkdir(parents=True, exist_ok=True)
+        project_file.write_bytes(b"initial-sb3")
+        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+
+        read_response = self.client.get(f"/api/resources/scratch-project/{token}/{project_rel}")
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.get_data(), b"initial-sb3")
+        self.assertEqual(read_response.mimetype, "application/x.scratch.sb3")
+
+        save_response = self.client.put(
+            f"/api/resources/scratch-project/{token}/{project_rel}",
+            data=b"updated-sb3",
+            content_type="application/x.scratch.sb3",
         )
-        lesson_dir = package_root / "lesson1" / "exp1"
-        lesson_dir.mkdir(parents=True, exist_ok=True)
-        (lesson_dir / "main.ipynb").write_text(
-            json.dumps({"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}),
-            encoding="utf-8",
-        )
-
-        zip_path = Path(self.temp_dir.name) / "skill-pack-demo.zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for file_path in package_root.rglob("*"):
-                if file_path.is_file():
-                    zipf.write(file_path, file_path.relative_to(package_root).as_posix())
-
-        expected_target_dir = Path(self.temp_dir.name) / "Documents" / "XeduCourses" / "skill-pack-demo"
-        with patch("pathlib.Path.home", return_value=Path(self.temp_dir.name)):
-            response = self.client.post(
-                "/api/resources/import-package-local",
-                json={"package_path": str(zip_path)},
-            )
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
+        self.assertEqual(save_response.status_code, 200)
+        payload = save_response.get_json()
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["local_path"], str(expected_target_dir))
-        self.assertTrue((expected_target_dir / "course.json").exists())
-        self.assertTrue((expected_target_dir / "lesson1" / "exp1" / "main.ipynb").exists())
+        self.assertEqual(payload["path"], project_rel)
+        self.assertEqual(project_file.read_bytes(), b"updated-sb3")
 
-    def test_import_local_course_package_route_rejects_missing_course_json(self):
-        package_dir = Path(self.temp_dir.name) / "bad-package"
-        package_dir.mkdir(parents=True, exist_ok=True)
-        (package_dir / "README.md").write_text("missing course json", encoding="utf-8")
+    def test_scratch_project_route_rejects_non_sb3(self):
+        course_dir = Path(self.temp_dir.name) / "course-scratch-invalid"
+        course_dir.mkdir(parents=True, exist_ok=True)
+        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
 
-        target_dir = Path(self.temp_dir.name) / "bad-imported-course"
-        response = self.client.post(
-            "/api/resources/import-package-local",
-            json={"package_path": str(package_dir), "target_path": str(target_dir)},
+        response = self.client.put(
+            f"/api/resources/scratch-project/{token}/lesson1/not-scratch.txt",
+            data=b"not scratch",
+            content_type="text/plain",
         )
         self.assertEqual(response.status_code, 400)
-        payload = response.get_json()
-        self.assertFalse(payload["success"])
-        self.assertIn("course.json", payload["message"])
+        self.assertFalse(response.get_json()["success"])
+
+    def test_xeduhub_neutral_execute_route_matches_blockly_route(self):
+        image_path = Path(self.temp_dir.name) / "demo-neutral.jpg"
+        self._write_test_image(image_path)
+        payload = {
+            "code": "print('demo')",
+            "spec": {
+                "task_id": "det_body",
+                "input": str(image_path),
+                "params": {"thr": 0.4, "img_type": "pil"},
+                "mode": "preset",
+            },
+        }
+        neutral_response = self.client.post("/api/resources/xeduhub/execute", json=payload)
+        blockly_response = self.client.post("/api/resources/blockly/xeduhub/execute", json=payload)
+        self.assertEqual(neutral_response.status_code, 200)
+        self.assertEqual(blockly_response.status_code, 200)
+        neutral = neutral_response.get_json()
+        blockly = blockly_response.get_json()
+        self.assertTrue(neutral["success"])
+        self.assertEqual(neutral["result"]["task_id"], blockly["result"]["task_id"])
+        self.assertEqual(neutral["result_summary"]["headline"], blockly["result_summary"]["headline"])
+
+    def test_xeduhub_neutral_execute_route_materializes_camera_frame_temporarily(self):
+        temporary_paths = []
+        try:
+            path = Path(_materialize_image_data_url(
+                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL0XQAAAABJRU5ErkJggg==",
+                temporary_paths,
+            ))
+            self.assertTrue(path.is_file())
+            self.assertEqual(path.suffix, ".png")
+        finally:
+            for temporary_path in temporary_paths:
+                temporary_path.unlink(missing_ok=True)
+        self.assertFalse(path.exists())
 
     def test_default_sample_course_route_returns_sample(self):
         response = self.client.get("/api/resources/default-sample")
@@ -876,83 +846,6 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertFalse(data["valid"])
         self.assertTrue(any("text_changeCase" in item for item in data["errors"]))
-
-    def test_blockly_toolbox_save_route_persists_for_teacher(self):
-        course_dir = Path(self.temp_dir.name) / "course"
-        course_dir.mkdir(parents=True, exist_ok=True)
-        (course_dir / "demo.blockly.xml").write_text("<xml></xml>", encoding="utf-8")
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
-        payload = {
-            "role": "teacher",
-            "root_token": token,
-            "workspace_rel": "demo.blockly.xml",
-            "toolbox_rel": "",
-            "toolbox": {
-                "kind": "categoryToolbox",
-                "contents": [
-                    {
-                        "kind": "category",
-                        "name": "逻辑",
-                        "contents": [{"kind": "block", "type": "controls_if"}],
-                    }
-                ],
-            },
-        }
-        response = self.client.post("/api/resources/blockly/toolbox/save", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.get_json()
-        self.assertTrue(data["success"])
-        self.assertEqual(data["toolbox_path"], "demo.toolbox.json")
-        saved_file = course_dir / "demo.toolbox.json"
-        self.assertTrue(saved_file.exists())
-        saved = saved_file.read_text(encoding="utf-8")
-        self.assertIn('"kind": "categoryToolbox"', saved)
-
-    def test_blockly_toolbox_save_route_rejects_student(self):
-        course_dir = Path(self.temp_dir.name) / "course"
-        course_dir.mkdir(parents=True, exist_ok=True)
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
-        payload = {
-            "role": "student",
-            "root_token": token,
-            "workspace_rel": "demo.blockly.xml",
-            "toolbox": {"kind": "categoryToolbox", "contents": []},
-        }
-        response = self.client.post("/api/resources/blockly/toolbox/save", json=payload)
-        self.assertEqual(response.status_code, 403)
-        data = response.get_json()
-        self.assertFalse(data["success"])
-
-    def test_blockly_toolbox_save_route_rejects_illegal_path(self):
-        course_dir = Path(self.temp_dir.name) / "course"
-        course_dir.mkdir(parents=True, exist_ok=True)
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
-        payload = {
-            "role": "teacher",
-            "root_token": token,
-            "workspace_rel": "demo.blockly.json",
-            "toolbox_rel": "../../outside.toolbox.json",
-            "toolbox": {"kind": "categoryToolbox", "contents": []},
-        }
-        response = self.client.post("/api/resources/blockly/toolbox/save", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.get_json()
-        self.assertFalse(data["success"])
-
-    def test_blockly_toolbox_save_route_derives_json_workspace_path(self):
-        course_dir = Path(self.temp_dir.name) / "course"
-        course_dir.mkdir(parents=True, exist_ok=True)
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
-        payload = {
-            "role": "teacher",
-            "root_token": token,
-            "workspace_rel": "demo.blockly.json",
-            "toolbox": {"kind": "categoryToolbox", "contents": []},
-        }
-        response = self.client.post("/api/resources/blockly/toolbox/save", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.get_json()
-        self.assertEqual(data["toolbox_path"], "demo.toolbox.json")
 
     def test_inspect_course_reports_ready_for_complete_local_experiment(self):
         course_dir = Path(self.temp_dir.name) / "ready-course"

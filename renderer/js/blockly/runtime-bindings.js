@@ -76,6 +76,11 @@ export function bindUIRuntime(deps = {}) {
     }
   });
   window.addEventListener('resize', () => queueBlocklyResize());
+  window.addEventListener('message', (event) => {
+    if (event?.data?.type === 'xedu:blockly-resize') {
+      queueBlocklyResize();
+    }
+  });
   documentRef.getElementById('toolbarMoreMenu')?.addEventListener('click', (event) => event.stopPropagation());
   documentRef.getElementById('blocklyExtendFab')?.addEventListener('click', () => {
     if (!canImportToolboxPacks()) {

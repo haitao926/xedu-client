@@ -63,8 +63,18 @@ if errorlevel 1 (
 echo [OK] Node.js found.
 echo.
 
-REM --- Stage 4: Frontend Build ---
-echo [4/6] Building Frontend (Vite)...
+REM --- Stage 4: Scratch Editor Build ---
+echo [4/7] Building Scratch Editor...
+call npm run build:scratch
+if errorlevel 1 (
+    echo [ERROR] Scratch editor build failed.
+    exit /b 1
+)
+echo [SUCCESS] Scratch editor build complete.
+echo.
+
+REM --- Stage 5: Frontend Build ---
+echo [5/7] Building Frontend (Vite)...
 call npm run build
 if errorlevel 1 (
     echo [ERROR] Frontend build failed.
@@ -73,8 +83,8 @@ if errorlevel 1 (
 echo [SUCCESS] Frontend build complete.
 echo.
 
-REM --- Stage 5: Electron Build ---
-echo [5/6] Building Electron App...
+REM --- Stage 6: Electron Build ---
+echo [6/7] Building Electron App...
 call npx electron-builder
 if errorlevel 1 (
     echo [ERROR] Electron build failed.
@@ -83,7 +93,7 @@ if errorlevel 1 (
 echo [SUCCESS] Build complete.
 echo.
 
-REM --- Stage 6: Finish ---
+REM --- Stage 7: Finish ---
 echo ========================================================
 echo                    BUILD SUCCESSFUL
 echo ========================================================

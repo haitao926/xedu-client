@@ -12,9 +12,6 @@ export function applySystemConfigToInputs(response) {
     const resourcesRepo = document.getElementById('resources-repo');
     const resourcesBranch = document.getElementById('resources-branch');
     const resourcesIndexPath = document.getElementById('resources-index-path');
-    const resourcesSubmitUrl = document.getElementById('resources-submit-url');
-    const resourcesPublishPath = document.getElementById('resources-publish-path');
-    const resourcesPublishToken = document.getElementById('resources-publish-token');
     const classroomName = document.getElementById('classroom-name');
     const classroomTeacherCode = document.getElementById('classroom-teacher-code');
     const classroomAutoDiscover = document.getElementById('classroom-auto-discover');
@@ -29,9 +26,6 @@ export function applySystemConfigToInputs(response) {
     if (resourcesRepo) resourcesRepo.value = uiConfig.resources_repo || '';
     if (resourcesBranch) resourcesBranch.value = uiConfig.resources_branch || 'main';
     if (resourcesIndexPath) resourcesIndexPath.value = uiConfig.resources_index_path || 'index.json';
-    if (resourcesSubmitUrl) resourcesSubmitUrl.value = uiConfig.resources_submit_url || '';
-    if (resourcesPublishPath) resourcesPublishPath.value = uiConfig.resources_publish_path || 'courses';
-    if (resourcesPublishToken) resourcesPublishToken.value = uiConfig.resources_publish_token || '';
 
     if (classroomName) classroomName.value = uiConfig.classroom_name || '';
     if (classroomTeacherCode) classroomTeacherCode.value = uiConfig.classroom_teacher_code || '';
@@ -67,9 +61,6 @@ export async function saveSystemConfig() {
     const resourcesRepoInput = document.getElementById('resources-repo')?.value.trim() || '';
     const resourcesBranchInput = document.getElementById('resources-branch')?.value.trim() || '';
     const resourcesIndexPathInput = document.getElementById('resources-index-path')?.value.trim() || '';
-    const resourcesSubmitUrlInput = document.getElementById('resources-submit-url')?.value.trim() || '';
-    const resourcesPublishPathInput = document.getElementById('resources-publish-path')?.value.trim() || '';
-    const resourcesPublishTokenInput = document.getElementById('resources-publish-token')?.value.trim() || '';
     const classroomNameInput = document.getElementById('classroom-name')?.value.trim() || '';
     const classroomTeacherCodeInput = document.getElementById('classroom-teacher-code')?.value.trim() || '';
     const classroomAutoDiscoverInput = document.getElementById('classroom-auto-discover')?.value || 'true';
@@ -77,7 +68,7 @@ export async function saveSystemConfig() {
     const allowNetworkAccessInput = document.getElementById('allow-network-access')?.checked ?? false;
     const allowJupyterRemoteAccessInput = document.getElementById('allow-jupyter-remote-access')?.checked ?? false;
 
-    const hasResourcesInput = !!(resourcesBaseUrlInput || resourcesRepoInput || resourcesBranchInput || resourcesIndexPathInput || resourcesSubmitUrlInput || resourcesPublishPathInput || resourcesPublishTokenInput);
+    const hasResourcesInput = !!(resourcesBaseUrlInput || resourcesRepoInput || resourcesBranchInput || resourcesIndexPathInput);
     const hasClassroomInput = !!(classroomNameInput || classroomTeacherCodeInput || classroomAutoDiscoverInput);
     const hasAiInput = !!(apiKey || aiBaseUrlInput || aiModelInput);
     const hasPackageSettingsInput = true;
@@ -101,18 +92,12 @@ export async function saveSystemConfig() {
         const resourcesRepo = resourcesRepoInput;
         const resourcesBranch = resourcesBranchInput || 'main';
         const resourcesIndexPath = resourcesIndexPathInput || 'index.json';
-        const resourcesSubmitUrl = resourcesSubmitUrlInput;
-        const resourcesPublishPath = resourcesPublishPathInput || 'courses';
-        const resourcesPublishToken = resourcesPublishTokenInput;
 
         const uiPayload = {
             resources_base_url: resourcesBaseUrl,
             resources_repo: resourcesRepo,
             resources_branch: resourcesBranch,
             resources_index_path: resourcesIndexPath,
-            resources_submit_url: resourcesSubmitUrl,
-            resources_publish_path: resourcesPublishPath,
-            resources_publish_token: resourcesPublishToken,
             classroom_name: classroomNameInput,
             classroom_teacher_code: classroomTeacherCodeInput,
             classroom_auto_discover: classroomAutoDiscoverInput !== 'false',
@@ -153,7 +138,8 @@ export async function resetSystemConfig() {
     }
 }
 
-export async function ensureTeacherCodeInitialized() {
+export async function ensureTeacherCodeInitialized(options = {}) {
+    const { prompt = true } = options;
     let initialConfig = null;
     try {
         initialConfig = await apiClient.loadConfig();
@@ -165,6 +151,10 @@ export async function ensureTeacherCodeInitialized() {
         }
     } catch (error) {
         console.warn('读取教师口令配置失败，跳过初始化向导:', error);
+        return initialConfig;
+    }
+
+    if (!prompt) {
         return initialConfig;
     }
 

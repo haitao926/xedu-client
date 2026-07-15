@@ -1,14 +1,14 @@
 # XEduHub Blockly 积木审计结果
 
 - 来源文件：`renderer/js/blockly/xeduhub-blocks.js`
-- 自定义积木总数：`90`
-- 可运行积木数：`69`
+- 自定义积木总数：`93`
+- 可运行积木数：`72`
 - 兼容旧块数：`15`
 - 机器可读明细：`docs/overview/xeduhub-block-audit.json`
 
 ## 结论摘要
 
-- 一致：34
+- 一致：37
 - 弱一致：41
 - 不一致：0
 - 废弃兼容：15
@@ -42,6 +42,9 @@
 - `xeduhub_http_loop_stream_frames`：模拟依赖测试 + 本地 Python 执行测试
 - `xeduhub_http_open_stream`：模拟依赖测试 + 本地 Python 执行测试
 - `xeduhub_http_send_command`：模拟依赖测试 + 本地 Python 执行测试
+- `xeduhub_k10_gpio_write`：本地 Python 执行测试
+- `xeduhub_k10_pwm_write`：本地 Python 执行测试
+- `xeduhub_k10_uart_send`：本地 Python 执行测试
 - `xeduhub_load_image_to_var`：浏览器/页面行为测试 + 本地 Python 执行测试
 - `xeduhub_media_frames_to_video`：模拟依赖测试 + 本地 Python 执行测试
 - `xeduhub_ocr_run`：迁移验证 + 代码生成快照
@@ -97,6 +100,9 @@
 | `xeduhub_bbox_center_x` | 框中心 X ? | `__result = xrt.xedu_bbox_center_x(None)` | 无 | 依附父块 | 代码生成快照 + stubbed Python 执行 | 一致 / P3 |
 | `xeduhub_catch_error` | ERROR_VAR=lab_error | `try: pass except Exception as e: lab_error = str(e) print('运行失败:', lab_error)` | lab_error | /api/python/run | 本地 Python 执行测试 | 一致 / P3 |
 | `xeduhub_get_result_field` | FIELD=result_summary | `__result = (lab_result.get("result_summary", '') if isinstance(lab_result, dict) else '')` | lab_result | 依附父块 | 代码生成快照 + stubbed Python 执行 | 弱一致 / P2 |
+| `xeduhub_k10_gpio_write` | PIN=D4 | `k10_pin = pin("D4") k10_pin.write_digital(0)` | 无 | /api/python/run | 本地 Python 执行测试 | 一致 / P3 |
+| `xeduhub_k10_pwm_write` | PIN=D4、FREQ=1000 | `k10_pin = pin("D4") k10_pin.write_analog(0.5, freq=1000)` | 无 | /api/python/run | 本地 Python 执行测试 | 一致 / P3 |
+| `xeduhub_k10_uart_send` | PORT=uart1 | `uart1 = pin("uart1") uart1.write("hello")` | 无 | /api/python/run | 本地 Python 执行测试 | 一致 / P3 |
 | `xeduhub_keypoint_axis` | AXIS=X | `__result = xrt.xedu_keypoint_axis([], 0, "x")` | 无 | 依附父块 | 代码生成快照 + stubbed Python 执行 | 一致 / P3 |
 | `xeduhub_math_distance` | 两点距离 x1 ? y1 ? x2 ? y2 ? | `__result = xrt.xedu_distance(0, 0, 0, 0)` | 无 | 依附父块 | 代码生成快照 + stubbed Python 执行 | 一致 / P3 |
 | `xeduhub_ocr_first_text` | 第一段文字 ? | `__result = xrt.xedu_first_text(lab_result)` | lab_result | 依附父块 | 代码生成快照 + stubbed Python 执行 | 弱一致 / P2 |

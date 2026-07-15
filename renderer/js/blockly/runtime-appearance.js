@@ -25,25 +25,6 @@ function makeCategoryIconSvg(innerMarkup, { strokeWidth = 1.8, scale = 1.14 } = 
   const offset = ((18 - (18 * scale)) / 2).toFixed(2);
   return `
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="xeduIconSurface" x1="3" y1="2" x2="15" y2="16" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#ffffff" stop-opacity=".98"/>
-          <stop offset=".52" stop-color="#f4f8fd" stop-opacity=".96"/>
-          <stop offset="1" stop-color="#dce8f8" stop-opacity=".98"/>
-        </linearGradient>
-        <linearGradient id="xeduIconRim" x1="2.8" y1="2" x2="14.7" y2="16" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="rgba(255,255,255,0.95)"/>
-          <stop offset="1" stop-color="rgba(148, 163, 184, 0.5)"/>
-        </linearGradient>
-        <filter id="xeduIconShadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
-          <feDropShadow dx="0" dy="1.1" stdDeviation="1.1" flood-color="#1e293b" flood-opacity=".16"/>
-        </filter>
-      </defs>
-      <g filter="url(#xeduIconShadow)">
-        <rect x="1.8" y="1.8" width="14.4" height="14.4" rx="4.6" fill="url(#xeduIconSurface)"/>
-        <rect x="1.8" y="1.8" width="14.4" height="14.4" rx="4.6" stroke="url(#xeduIconRim)" stroke-width=".72"/>
-        <path d="M4.2 4.4h5.4" stroke="#ffffff" stroke-opacity=".82" stroke-width=".8" stroke-linecap="round"/>
-      </g>
       <g transform="translate(${offset} ${offset}) scale(${scale})" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
         ${inner}
       </g>
@@ -60,21 +41,21 @@ function makeCategoryImageIcon(imagePath) {
 }
 
 const ICON_CLUSTER = Object.freeze({
-  blocks: makeCategoryImageIcon(THREE_D_ICON_ASSETS.blocks),
+  blocks: makeCategoryIconSvg('<path d="M5.1 5.1h3.2v3.2H5.1zM9.7 5.1h3.2v3.2H9.7zM5.1 9.7h3.2v3.2H5.1zM9.7 9.7h3.2v3.2H9.7z"/>', { strokeWidth: 1.55, scale: 1.05 }),
   spark: makeCategoryImageIcon(THREE_D_ICON_ASSETS.spark),
   layers: makeCategoryImageIcon(THREE_D_ICON_ASSETS.layers),
   media: makeCategoryImageIcon(THREE_D_ICON_ASSETS.media),
   detect: makeCategoryImageIcon(THREE_D_ICON_ASSETS.detect),
   nodes: makeCategoryImageIcon(THREE_D_ICON_ASSETS.nodes),
   text: makeCategoryImageIcon(THREE_D_ICON_ASSETS.text),
-  list: makeCategoryImageIcon(THREE_D_ICON_ASSETS.blocks),
-  variable: makeCategoryImageIcon(THREE_D_ICON_ASSETS.blocks),
-  function: makeCategoryImageIcon(THREE_D_ICON_ASSETS.blocks),
-  math: makeCategoryImageIcon(THREE_D_ICON_ASSETS.blocks),
-  flow: makeCategoryImageIcon(THREE_D_ICON_ASSETS.blocks),
+  list: makeCategoryIconSvg('<path d="M5.2 5.2h.1M7.7 5.2h5.1M5.2 9h.1M7.7 9h5.1M5.2 12.8h.1M7.7 12.8h5.1"/>', { strokeWidth: 1.8, scale: 1.05 }),
+  variable: makeCategoryIconSvg('<path d="M4.9 12.9 8 5.1h2l3.1 7.8M6.2 10h5.6"/>', { strokeWidth: 1.65, scale: 1.04 }),
+  function: makeCategoryIconSvg('<path d="M11.8 5.1c-2.4 0-3.6 1.4-3.6 3.9v3.9M5.6 8.3h5.4M11.7 8.3h1.1"/>', { strokeWidth: 1.6, scale: 1.04 }),
+  math: makeCategoryIconSvg('<path d="M5.1 6.4h7.8M5.1 11.6h7.8M9 4.8v3.2M9 10v3.2"/>', { strokeWidth: 1.75, scale: 1.05 }),
+  flow: makeCategoryIconSvg('<path d="M6 4.8h6v3.1H6zM6 10.1h6v3.1H6zM9 7.9v2.2"/>', { strokeWidth: 1.6, scale: 1.05 }),
   result: makeCategoryImageIcon(THREE_D_ICON_ASSETS.result),
-  debug: makeCategoryImageIcon(THREE_D_ICON_ASSETS.blocks),
-  comms: makeCategoryImageIcon(THREE_D_ICON_ASSETS.blocks),
+  debug: makeCategoryIconSvg('<path d="M6.2 6.3h5.6M6.2 9h5.6M7.4 11.8h3.2M5.1 4.9h7.8v8.2H5.1z"/>', { strokeWidth: 1.55, scale: 1.05 }),
+  comms: makeCategoryIconSvg('<path d="M4.7 6.4c2.7-2.1 5.9-2.1 8.6 0M6.6 8.9c1.6-1.2 3.2-1.2 4.8 0M8.5 11.2h1"/>', { strokeWidth: 1.65, scale: 1.05 }),
   depth: makeCategoryImageIcon(THREE_D_ICON_ASSETS.depth),
 });
 
@@ -95,6 +76,8 @@ export const CATEGORY_ICON_SVGS = Object.freeze({
   '媒体与设备': ICON_CLUSTER.media,
   图像视频: ICON_CLUSTER.media,
   图像与视频: ICON_CLUSTER.media,
+  行空板K10: ICON_CLUSTER.media,
+  K10: ICON_CLUSTER.media,
   图像分类: ICON_CLUSTER.result,
   目标检测: ICON_CLUSTER.detect,
   关键点识别: ICON_CLUSTER.nodes,
@@ -103,6 +86,8 @@ export const CATEGORY_ICON_SVGS = Object.freeze({
   图像分割: ICON_CLUSTER.layers,
   深度估计: ICON_CLUSTER.depth,
   通信控制: ICON_CLUSTER.comms,
+  行空板K10: ICON_CLUSTER.media,
+  K10: ICON_CLUSTER.media,
   '调试与扩展': ICON_CLUSTER.debug,
   调试扩展: ICON_CLUSTER.debug,
   进阶调试: ICON_CLUSTER.debug,

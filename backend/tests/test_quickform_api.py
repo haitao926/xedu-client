@@ -98,33 +98,6 @@ class QuickFormApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Hello", response.data)
 
-    def test_quickform_inject_route_updates_html(self):
-        course_dir = Path(self.temp_dir.name) / "course"
-        course_dir.mkdir(parents=True, exist_ok=True)
-        html_file = course_dir / "index.html"
-        html_file.write_text("<html><body><form data-xedu-quickform-submit></form></body></html>", encoding="utf-8")
-
-        response = self.client.post(
-            "/api/resources/quickform/inject",
-            json={
-                "local_path": str(course_dir),
-                "html_path": "index.html",
-                "quickform": {
-                    "enabled": True,
-                    "apiid": "abc123",
-                    "submit_url": "https://quickform.cn/api/abc123",
-                    "query_url": "https://quickform.cn/api/abc123/all",
-                    "summary_url": "https://quickform.cn/api/abc123",
-                    "html_path": "index.html",
-                },
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        updated = html_file.read_text(encoding="utf-8")
-        self.assertIn("XEDU_QUICKFORM_START", updated)
-        self.assertIn("https://quickform.cn/api/abc123", updated)
-        self.assertTrue((course_dir / "index.html.xedu.bak").exists())
-
 
 if __name__ == "__main__":
     unittest.main()

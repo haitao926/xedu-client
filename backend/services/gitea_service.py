@@ -39,6 +39,7 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 TESTABLE_FILE_EXTENSIONS = (
     ".html",
     ".htm",
+    ".sb3",
     ".blockly.xml",
     ".blockly.json",
     ".ipynb",
@@ -207,6 +208,28 @@ class GiteaClient:
                         payload=payload,
                     )
             raise GiteaServiceError(f"写入文件失败: {path} ({text})") from exc
+
+    def delete_file(self, path: str, message: str) -> Dict[str, Any]:
+        clean_path = (path or "").strip("/")
+        if not clean_path:
+            raise GiteaServiceError("删除文件路径不能为空")
+        existing = self.get_content(clean_path)
+        if not existing or not existing.get("sha"):
+            return {"skipped": True, "path": clean_path}
+        encoded_path = parse.quote(clean_path, safe="/")
+        payload: Dict[str, Any] = {
+            "sha": existing["sha"],
+            "message": message,
+            "branch": self.branch,
+        }
+        try:
+            return self._request(
+                "DELETE",
+                f"/repos/{self.owner}/{self.repo_name}/contents/{encoded_path}",
+                payload=payload,
+            )
+        except GiteaServiceError as exc:
+            raise GiteaServiceError(f"删除文件失败: {clean_path} ({exc})") from exc
 
     def with_branch(self, branch: str) -> "GiteaClient":
         return GiteaClient(self.base_url, self.repo, branch or self.branch, self.token)
@@ -778,6 +801,8 @@ def _entry_kind_for_course_file(path: str, file_entry: Dict[str, Any]) -> str:
         return "html"
     if raw_type == "blockly" or lower.endswith((".blockly.xml", ".blockly.json")):
         return "blockly"
+    if raw_type == "scratch" or lower.endswith(".sb3"):
+        return "scratch"
     if raw_type in {"ipynb", "notebook"} or lower.endswith(".ipynb"):
         return "notebook"
     if raw_type in {"py", "python"} or lower.endswith(".py"):
@@ -993,6 +1018,8 @@ def _guess_file_type(path: str) -> str:
         return "ipynb"
     if lower.endswith(".blockly.xml") or lower.endswith(".blockly.json"):
         return "blockly"
+    if lower.endswith(".sb3"):
+        return "scratch"
     if lower.endswith(".html"):
         return "html"
     return "file"
@@ -1261,6 +1288,16 @@ def _iter_course_files(base: Path) -> Iterable[Tuple[Path, str]]:
             yield file_path, rel
 
 
+def _collect_local_course_file_set(base: Path, *, cover_name: str = "") -> set[str]:
+    files: set[str] = {"course.json"}
+    clean_cover = str(cover_name or "").strip().strip("/")
+    if clean_cover:
+        files.add(clean_cover)
+    for _, rel in _iter_course_files(base):
+        files.add(rel)
+    return files
+
+
 def _decode_data_url(data_url: str) -> Tuple[bytes, str]:
     if not data_url.startswith("data:"):
         raise GiteaServiceError("封面数据格式错误")
@@ -1469,6 +1506,27 @@ def publish_course(
     base = Path(local_path)
     publish_root = "" if single_course_repo else f"{publish_path.rstrip('/')}/{course_id}"
     package_dir = "" if single_course_repo else f"{publish_root}/package"
+
+    if single_course_repo:
+        desired_files = _collect_local_course_file_set(base, cover_name=cover_name)
+        tree = publish_client._request(
+            "GET",
+            f"/repos/{publish_client.owner}/{publish_client.repo_name}/git/trees/{parse.quote((publish_client.branch or 'main').strip(), safe='')}",
+            params={"recursive": "1"},
+        )
+        tree_items = tree.get("tree") if isinstance(tree, dict) else []
+        stale_paths = sorted(
+            {
+                str(item.get("path") or "").strip().strip("/")
+                for item in tree_items
+                if isinstance(item, dict)
+                and str(item.get("type") or "").lower() == "blob"
+                and _is_syncable_repo_path(str(item.get("path") or ""))
+                and str(item.get("path") or "").strip().strip("/") not in desired_files
+            }
+        )
+        for stale_path in stale_paths:
+            publish_client.delete_file(stale_path, f"清理旧课程文件 {stale_path}")
 
     # Upload course.json (overridden)
     course_json_bytes = json.dumps(course, ensure_ascii=False, indent=2).encode("utf-8")

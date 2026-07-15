@@ -304,9 +304,9 @@ export async function importRemoteCourseFlow(resource, options = {}, deps) {
   const isClassroomResource = resource.source === 'classroom';
   let targetPath = '';
 
-  if (electronAPI && typeof electronAPI.selectFolder === 'function') {
+  if (electronAPI && typeof electronAPI.invoke === 'function') {
     try {
-      const base = await electronAPI.selectFolder();
+      const base = await electronAPI.invoke('select-folder');
       if (base) {
         const cleanBase = base.replace(/[\\/]+$/, '');
         targetPath = `${cleanBase}/${resource.id || 'course'}`;

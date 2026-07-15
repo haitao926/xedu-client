@@ -63,6 +63,7 @@ const XEDU_SEMANTIC_COLOURS = Object.freeze({
   result: blocklyColorContract.categoryPalette?.['结果处理'] || '#33af97',
   video: blocklyColorContract.categoryPalette?.['媒体与设备'] || '#6faadb',
   communication: blocklyColorContract.categoryPalette?.['通信控制'] || '#51ac98',
+  hardware: blocklyColorContract.categoryPalette?.['媒体与设备'] || '#6faadb',
   math: blocklyColorContract.categoryPalette?.['数学'] || '#6da4d9',
   debug: blocklyColorContract.categoryPalette?.['调试与扩展'] || '#d29a57',
 });
@@ -1715,6 +1716,11 @@ function ensureServoSupport(pythonGenerator) {
   definePythonSnippet(pythonGenerator, 'import_pinpong', 'from pinpong.board import Board, Pin, Servo');
 }
 
+function ensureK10Support(pythonGenerator) {
+  definePythonSnippet(pythonGenerator, 'import_unihiker_k10_pin', 'from unihiker_k10 import pin');
+  definePythonSnippet(pythonGenerator, 'import_unihiker_k10_servo', 'from unihiker_k10 import servo');
+}
+
 function ensureResultHelpers(pythonGenerator) {
   definePythonSnippet(
     pythonGenerator,
@@ -2707,6 +2713,51 @@ function defineAdvancedBlocks(Blockly) {
       colour: '#E38B54',
     },
     {
+      type: 'xeduhub_k10_gpio_write',
+      message0: '%1 行空板 K10 设置引脚 %2',
+      args0: [
+        buildIconField('device'),
+        { type: 'field_input', name: 'PIN', text: 'D0' },
+      ],
+      message1: '值 %1',
+      args1: [{ type: 'input_value', name: 'VALUE' }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#6FAADB',
+      tooltip: '控制行空板 K10 的数字引脚输出。',
+    },
+    {
+      type: 'xeduhub_k10_pwm_write',
+      message0: '%1 行空板 K10 PWM 引脚 %2',
+      args0: [
+        buildIconField('device'),
+        { type: 'field_input', name: 'PIN', text: 'D1' },
+      ],
+      message1: '占空比 %1 频率 %2',
+      args1: [
+        { type: 'input_value', name: 'DUTY' },
+        { type: 'field_number', name: 'FREQ', value: 1000, min: 1, precision: 1 },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#6FAADB',
+      tooltip: '控制行空板 K10 的 PWM 输出。',
+    },
+    {
+      type: 'xeduhub_k10_uart_send',
+      message0: '%1 行空板 K10 串口发送 %2',
+      args0: [
+        buildIconField('device'),
+        { type: 'field_input', name: 'PORT', text: 'uart1' },
+      ],
+      message1: '内容 %1',
+      args1: [{ type: 'input_value', name: 'TEXT' }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4A8B79',
+      tooltip: '通过行空板 K10 串口发送文本指令。',
+    },
+    {
       type: 'xeduhub_polyfit_quadratic',
       message0: '%1 拟合二次曲线',
       args0: [
@@ -3385,6 +3436,37 @@ function defineAdvancedGenerators(pythonGenerator) {
     const servoVar = getVariableName(block, 'SERVO_VAR', 'servo');
     const angleCode = getValueCode(block, 'ANGLE', pythonGenerator, '90', pythonGenerator.ORDER_NONE);
     return `${servoVar}.write_angle(${angleCode})\n`;
+  };
+
+  pythonGenerator.forBlock.xeduhub_k10_gpio_write = (block) => {
+    ensureK10Support(pythonGenerator);
+    const pin = getFieldText(block, 'PIN', 'D0');
+    const valueCode = getValueCode(block, 'VALUE', pythonGenerator, '0', pythonGenerator.ORDER_NONE);
+    return [
+      `k10_pin = pin(${quotePythonString(pin)})`,
+      `k10_pin.write_digital(${valueCode})`,
+    ].join('\n') + '\n';
+  };
+
+  pythonGenerator.forBlock.xeduhub_k10_pwm_write = (block) => {
+    ensureK10Support(pythonGenerator);
+    const pin = getFieldText(block, 'PIN', 'D1');
+    const dutyCode = getValueCode(block, 'DUTY', pythonGenerator, '0.5', pythonGenerator.ORDER_NONE);
+    const freqCode = getNumberField(block, 'FREQ', '1000');
+    return [
+      `k10_pin = pin(${quotePythonString(pin)})`,
+      `k10_pin.write_analog(${dutyCode}, freq=${freqCode})`,
+    ].join('\n') + '\n';
+  };
+
+  pythonGenerator.forBlock.xeduhub_k10_uart_send = (block) => {
+    ensureK10Support(pythonGenerator);
+    const port = getFieldText(block, 'PORT', 'uart1');
+    const textCode = getValueCode(block, 'TEXT', pythonGenerator, quotePythonString('hello'), pythonGenerator.ORDER_NONE);
+    return [
+      `${port} = pin(${quotePythonString(port)})`,
+      `${port}.write(${textCode})`,
+    ].join('\n') + '\n';
   };
 
   pythonGenerator.forBlock.xeduhub_polyfit_quadratic = (block) => {

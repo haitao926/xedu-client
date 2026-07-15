@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import base64
 import copy
 import io
@@ -14,6 +15,7 @@ import queue
 import re
 import threading
 import time
+import tempfile
 import traceback
 from html import escape
 from pathlib import Path
@@ -672,6 +674,8 @@ def _get_runtime_supported_tasks() -> List[str]:
         resolved = result_queue.get(timeout=timeout)
     except queue.Empty:
         resolved = list(cached or [])
+    if not resolved and "XEDU_RUNTIME_SUPPORT_TIMEOUT" not in os.environ:
+        resolved = _get_current_process_supported_tasks(max(timeout, 3.0))
 
     _RUNTIME_SUPPORTED_TASKS_CACHE["value"] = _normalize_supported_runtime_tasks(list(resolved))
     _RUNTIME_SUPPORTED_TASKS_CACHE["expires_at"] = time.monotonic() + ttl
@@ -727,6 +731,41 @@ def _is_runtime_task_available(task_id: str, supported_tasks: List[str] | None =
         return False
     supported = _normalize_supported_runtime_tasks(supported_tasks if supported_tasks is not None else _get_runtime_supported_tasks())
     return runtime_task_id in supported
+
+
+def _get_current_process_supported_tasks(timeout: float) -> List[str]:
+    result_queue: "queue.Queue[List[str]]" = queue.Queue(maxsize=1)
+
+    def probe() -> None:
+        try:
+            from XEdu.hub import Workflow as wf  # type: ignore
+
+            supported = wf.support_task()
+            if isinstance(supported, (list, tuple)):
+                result_queue.put(_normalize_supported_runtime_tasks([str(item) for item in supported]))
+            else:
+                result_queue.put([])
+        except Exception:
+            result_queue.put([])
+
+    thread = threading.Thread(target=probe, name="xeduhub-current-process-support-probe", daemon=True)
+    thread.start()
+    try:
+        return _normalize_supported_runtime_tasks(result_queue.get(timeout=timeout))
+    except queue.Empty:
+        return []
+
+
+def _is_runtime_task_available_in_current_process(task_id: str) -> bool:
+    runtime_task_id = _resolve_runtime_task_id(task_id)
+    if not runtime_task_id:
+        return False
+    try:
+        default_timeout = "1.5" if "XEDU_RUNTIME_SUPPORT_TIMEOUT" in os.environ else "3.0"
+        timeout = max(0.05, float(os.environ.get("XEDU_RUNTIME_SUPPORT_TIMEOUT", default_timeout) or default_timeout))
+    except ValueError:
+        timeout = 3.0
+    return runtime_task_id in _get_current_process_supported_tasks(timeout)
 
 
 def _is_fallback_task_available(task_id: str) -> bool:
@@ -1125,6 +1164,30 @@ def build_xeduhub_toolbox_definition(
                     "visible_by_default": True,
                     "description": "网络视频流、设备动作与控制指令",
                     "contents": communication_contents,
+                },
+            ],
+        },
+        {
+            "kind": "category",
+            "name": "行空板K10",
+            "colour": _category_colour("行空板K10"),
+            "visible_by_default": True,
+            "description": "面向行空板 K10 的引脚输出、PWM 和串口控制积木",
+            "contents": [
+                {
+                    "kind": "block",
+                    "type": "xeduhub_k10_gpio_write",
+                    "fields": {"PIN": "D0"},
+                },
+                {
+                    "kind": "block",
+                    "type": "xeduhub_k10_pwm_write",
+                    "fields": {"PIN": "D1"},
+                },
+                {
+                    "kind": "block",
+                    "type": "xeduhub_k10_uart_send",
+                    "fields": {"PORT": "uart1"},
                 },
             ],
         },
@@ -1561,6 +1624,32 @@ def _normalize_input_for_task(task_id: str, input_value: Any, project_root: str 
     return resolve_input_path(str(input_value or ""), project_root)
 
 
+_IMAGE_DATA_URL_PATTERN = re.compile(
+    r"^data:image/(?P<format>png|jpe?g|webp|gif);base64,(?P<data>[A-Za-z0-9+/=\s]+)$",
+    re.IGNORECASE,
+)
+_IMAGE_DATA_URL_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _materialize_image_data_url(input_value: Any, temporary_paths: List[Path]) -> str:
+    """Store one browser camera frame long enough for the synchronous runtime call."""
+    match = _IMAGE_DATA_URL_PATTERN.fullmatch(str(input_value or "").strip())
+    if not match:
+        raise ValueError("摄像头画面格式无效")
+    try:
+        image_bytes = base64.b64decode(match.group("data"), validate=True)
+    except ValueError as exc:
+        raise ValueError("摄像头画面无法解码") from exc
+    if not image_bytes or len(image_bytes) > _IMAGE_DATA_URL_MAX_BYTES:
+        raise ValueError("摄像头画面大小无效")
+    suffix = ".jpg" if match.group("format").lower() in {"jpg", "jpeg"} else f".{match.group('format').lower()}"
+    with tempfile.NamedTemporaryFile(prefix="xedu-camera-", suffix=suffix, delete=False) as image_file:
+        image_file.write(image_bytes)
+        temporary_path = Path(image_file.name)
+    temporary_paths.append(temporary_path)
+    return str(temporary_path)
+
+
 def _input_exists(task_id: str, prepared_input: Any) -> bool:
     input_mode = TASK_REGISTRY[task_id].get("input_mode") or "single_path"
     if input_mode == "text_or_list":
@@ -1889,6 +1978,15 @@ def _build_runtime_error(
 
 
 def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
+    temporary_paths: List[Path] = []
+    try:
+        return _execute_xeduhub_runtime(payload, temporary_paths)
+    finally:
+        for path in temporary_paths:
+            path.unlink(missing_ok=True)
+
+
+def _execute_xeduhub_runtime(payload: Dict[str, Any], temporary_paths: List[Path]) -> Dict[str, Any]:
     _force_noninteractive_matplotlib_backend()
     _patch_rapidocr_visres_compat()
     code = str(payload.get("code") or "").strip()
@@ -1925,7 +2023,23 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
         str(spec.get("mode") or "").strip() == "workflow"
         or compat_input == "__runtime_bound__"
     )
-    prepared_input = compat_input if compat_input == "__runtime_bound__" else _normalize_input_for_task(task_id, compat_input, project_root)
+    try:
+        prepared_input = (
+            compat_input
+            if compat_input == "__runtime_bound__"
+            else _materialize_image_data_url(compat_input, temporary_paths)
+            if str(compat_input or "").strip().lower().startswith("data:image/")
+            else _normalize_input_for_task(task_id, compat_input, project_root)
+        )
+    except ValueError as exc:
+        return _build_runtime_error(
+            code="invalid_image_data",
+            message=str(exc),
+            headline="摄像头画面无效",
+            task_id=task_id,
+            hints=["请重新开启摄像头后再试。"],
+            artifacts={"generated_python": code},
+        )
     params = _normalize_params(task_id, raw_params)
     runtime_params = _build_xeduhub_runtime_params(task_id, params)
 
@@ -1946,6 +2060,18 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
             artifacts={"generated_python": code},
         )
     runtime_available = _is_runtime_task_available(task_id, supported_runtime_tasks)
+    cached_supported_tasks = _normalize_supported_runtime_tasks(
+        list(_RUNTIME_SUPPORTED_TASKS_CACHE.get("value") or [])
+    )
+    support_list_came_from_cache = bool(supported_runtime_tasks) and cached_supported_tasks == supported_runtime_tasks
+    if not runtime_available and (not supported_runtime_tasks or support_list_came_from_cache):
+        missing_det_body_checkpoint_with_fallback = (
+            task_id == "det_body"
+            and _bodydetect_fallback_enabled()
+            and not _resolve_smoke_checkpoint(runtime_task_id)
+        )
+        if not missing_det_body_checkpoint_with_fallback:
+            runtime_available = _is_runtime_task_available_in_current_process(task_id)
     fallback_available = _is_fallback_task_available(task_id)
     if not runtime_available and not fallback_available:
         support_meta = _task_support_metadata(task_id, supported_runtime_tasks)
@@ -2120,3 +2246,231 @@ def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
             result={"task_id": task_id, "traceback": traceback.format_exc(limit=4)},
             artifacts={"generated_python": code},
         )
+
+
+# ---------------------------------------------------------------------------
+# Python -> Blockly workspace XML conversion (moved from the now-removed
+# blockly_builder_agent_service.py teacher-agent layer; kept here as a plain
+# utility so the xedu-course-builder skill can call it directly).
+# ---------------------------------------------------------------------------
+
+
+def _blockly_xml_escape(value: Any) -> str:
+    return escape(str(value or ""), quote=True)
+
+
+def _python_expr_to_blockly_xml(expr: "ast.AST", unsupported: List[str]) -> str:
+    if isinstance(expr, ast.Constant):
+        value = expr.value
+        if isinstance(value, bool):
+            bool_value = "TRUE" if value else "FALSE"
+            return (
+                '<block type="logic_boolean">'
+                f'<field name="BOOL">{bool_value}</field>'
+                '</block>'
+            )
+        if isinstance(value, (int, float)):
+            return (
+                '<block type="math_number">'
+                f'<field name="NUM">{_blockly_xml_escape(value)}</field>'
+                '</block>'
+            )
+        return (
+            '<block type="text">'
+            f'<field name="TEXT">{_blockly_xml_escape(value)}</field>'
+            '</block>'
+        )
+    if isinstance(expr, ast.Name):
+        return (
+            '<block type="variables_get">'
+            f'<field name="VAR">{_blockly_xml_escape(expr.id)}</field>'
+            '</block>'
+        )
+    if isinstance(expr, ast.BinOp) and isinstance(expr.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod)):
+        op_map = {
+            ast.Add: "ADD",
+            ast.Sub: "MINUS",
+            ast.Mult: "MULTIPLY",
+            ast.Div: "DIVIDE",
+            ast.Mod: "MODULO",
+        }
+        operator = op_map.get(type(expr.op), "ADD")
+        left_xml = _python_expr_to_blockly_xml(expr.left, unsupported)
+        right_xml = _python_expr_to_blockly_xml(expr.right, unsupported)
+        return (
+            '<block type="math_arithmetic">'
+            f'<field name="OP">{operator}</field>'
+            f'<value name="A">{left_xml}</value>'
+            f'<value name="B">{right_xml}</value>'
+            '</block>'
+        )
+    if isinstance(expr, ast.Compare) and len(expr.ops) == 1 and len(expr.comparators) == 1:
+        op_map = {
+            ast.Eq: "EQ",
+            ast.NotEq: "NEQ",
+            ast.Lt: "LT",
+            ast.LtE: "LTE",
+            ast.Gt: "GT",
+            ast.GtE: "GTE",
+        }
+        operator = op_map.get(type(expr.ops[0]), "EQ")
+        left_xml = _python_expr_to_blockly_xml(expr.left, unsupported)
+        right_xml = _python_expr_to_blockly_xml(expr.comparators[0], unsupported)
+        return (
+            '<block type="logic_compare">'
+            f'<field name="OP">{operator}</field>'
+            f'<value name="A">{left_xml}</value>'
+            f'<value name="B">{right_xml}</value>'
+            '</block>'
+        )
+    unsupported.append(f"不支持表达式: {type(expr).__name__}")
+    return '<block type="text"><field name="TEXT">unsupported</field></block>'
+
+
+def _python_stmt_to_blockly_xml(node: "ast.stmt", unsupported: List[str]) -> str:
+    if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+        var_name = node.targets[0].id
+        value_xml = _python_expr_to_blockly_xml(node.value, unsupported)
+        return (
+            '<block type="variables_set">'
+            f'<field name="VAR">{_blockly_xml_escape(var_name)}</field>'
+            f'<value name="VALUE">{value_xml}</value>'
+            '</block>'
+        )
+
+    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+        call = node.value
+        if isinstance(call.func, ast.Name) and call.func.id == "print":
+            arg = call.args[0] if call.args else ast.Constant(value="")
+            return (
+                '<block type="text_print">'
+                f'<value name="TEXT">{_python_expr_to_blockly_xml(arg, unsupported)}</value>'
+                '</block>'
+            )
+        unsupported.append(f"不支持函数调用: {ast.unparse(call.func) if hasattr(ast, 'unparse') else 'call'}")
+        return (
+            '<block type="text_print">'
+            '<value name="TEXT"><block type="text"><field name="TEXT">unsupported_call</field></block></value>'
+            '</block>'
+        )
+
+    if isinstance(node, ast.If):
+        condition_xml = _python_expr_to_blockly_xml(node.test, unsupported)
+        do_xml = _python_stmts_to_blockly_xml(node.body, unsupported) or (
+            '<block type="text_print"><value name="TEXT"><block type="text">'
+            '<field name="TEXT">if branch</field></block></value></block>'
+        )
+        block = (
+            '<block type="controls_if">'
+            f'<value name="IF0">{condition_xml}</value>'
+            f'<statement name="DO0">{do_xml}</statement>'
+        )
+        if node.orelse:
+            else_xml = _python_stmts_to_blockly_xml(node.orelse, unsupported)
+            block += f'<statement name="ELSE">{else_xml}</statement>'
+        block += '</block>'
+        return block
+
+    if isinstance(node, ast.For) and isinstance(node.target, ast.Name):
+        if isinstance(node.iter, ast.Call) and isinstance(node.iter.func, ast.Name) and node.iter.func.id == "range":
+            args = node.iter.args
+            if len(args) == 1:
+                from_expr, to_expr, by_expr = ast.Constant(value=0), args[0], ast.Constant(value=1)
+            elif len(args) == 2:
+                from_expr, to_expr, by_expr = args[0], args[1], ast.Constant(value=1)
+            elif len(args) >= 3:
+                from_expr, to_expr, by_expr = args[0], args[1], args[2]
+            else:
+                from_expr, to_expr, by_expr = ast.Constant(value=0), ast.Constant(value=10), ast.Constant(value=1)
+            body_xml = _python_stmts_to_blockly_xml(node.body, unsupported) or (
+                '<block type="text_print"><value name="TEXT"><block type="text">'
+                '<field name="TEXT">for loop</field></block></value></block>'
+            )
+            return (
+                '<block type="controls_for">'
+                f'<field name="VAR">{_blockly_xml_escape(node.target.id)}</field>'
+                f'<value name="FROM">{_python_expr_to_blockly_xml(from_expr, unsupported)}</value>'
+                f'<value name="TO">{_python_expr_to_blockly_xml(to_expr, unsupported)}</value>'
+                f'<value name="BY">{_python_expr_to_blockly_xml(by_expr, unsupported)}</value>'
+                f'<statement name="DO">{body_xml}</statement>'
+                '</block>'
+            )
+        unsupported.append("仅支持 for ... in range(...)")
+        return (
+            '<block type="text_print"><value name="TEXT"><block type="text">'
+            '<field name="TEXT">unsupported_for</field></block></value></block>'
+        )
+
+    if isinstance(node, ast.While):
+        body_xml = _python_stmts_to_blockly_xml(node.body, unsupported) or (
+            '<block type="text_print"><value name="TEXT"><block type="text">'
+            '<field name="TEXT">while loop</field></block></value></block>'
+        )
+        return (
+            '<block type="controls_whileUntil">'
+            '<field name="MODE">WHILE</field>'
+            f'<value name="BOOL">{_python_expr_to_blockly_xml(node.test, unsupported)}</value>'
+            f'<statement name="DO">{body_xml}</statement>'
+            '</block>'
+        )
+
+    unsupported.append(f"不支持语句: {type(node).__name__}")
+    return (
+        '<block type="text_print"><value name="TEXT"><block type="text">'
+        '<field name="TEXT">unsupported_statement</field></block></value></block>'
+    )
+
+
+def _python_stmts_to_blockly_xml(nodes: List["ast.stmt"], unsupported: List[str]) -> str:
+    if not nodes:
+        return ""
+    rendered = [_python_stmt_to_blockly_xml(node, unsupported) for node in nodes]
+    chain = rendered[-1]
+    for item in reversed(rendered[:-1]):
+        head, sep, tail = item.rpartition("</block>")
+        chain = f"{head}<next>{chain}</next>{sep}{tail}" if sep else item
+    return chain
+
+
+def python_to_blockly_workspace_xml(python_code: str) -> Tuple[str, List[str]]:
+    """Convert a simple Python snippet into Blockly workspace XML.
+
+    Supports a small subset of Python (assignments, print, if/else,
+    for-range, while) sufficient for teacher-authored demo scripts. Anything
+    unsupported is reported in the returned list rather than silently dropped.
+    """
+    source = str(python_code or "").strip()
+    if not source:
+        return (
+            '<xml xmlns="https://developers.google.com/blockly/xml">'
+            '<block type="text_print" x="32" y="32"><value name="TEXT"><block type="text">'
+            '<field name="TEXT">empty python input</field></block></value></block></xml>',
+            ["输入 Python 为空，已生成占位工作区"],
+        )
+    unsupported: List[str] = []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return (
+            '<xml xmlns="https://developers.google.com/blockly/xml">'
+            '<block type="text_print" x="32" y="32"><value name="TEXT"><block type="text">'
+            f'<field name="TEXT">syntax error: {_blockly_xml_escape(exc.msg)}</field>'
+            '</block></value></block></xml>',
+            [f"Python 语法错误: {exc.msg} (line {exc.lineno})"],
+        )
+    chain = _python_stmts_to_blockly_xml(list(tree.body), unsupported)
+    if not chain:
+        chain = (
+            '<block type="text_print"><value name="TEXT"><block type="text">'
+            '<field name="TEXT">no executable statements</field></block></value></block>'
+        )
+    chain = chain.replace("<block ", '<block x="32" y="32" ', 1) if chain.startswith("<block ") else chain
+    xml = f'<xml xmlns="https://developers.google.com/blockly/xml">{chain}</xml>'
+    dedup_unsupported = []
+    seen = set()
+    for message in unsupported:
+        if message in seen:
+            continue
+        seen.add(message)
+        dedup_unsupported.append(message)
+    return xml, dedup_unsupported

@@ -86,6 +86,19 @@ import {
     pickAutoTestEntry,
 } from "./resources/course-inspection-utils.js";
 import {
+    STUDENT_WORKSPACE_TABS,
+    getStudentVisibleLessonContexts,
+    getStudentWorkspaceEmptyText,
+    getStudentWorkspaceFilesForOverview,
+    getStudentWorkspacePageClass,
+    getStudentWorkspaceTabConfig,
+    getStudentWorkspaceTabDescription,
+    getStudentWorkspaceTabTitle,
+    normalizeStudentWorkspaceTabId,
+    pickFirstExperimentWithFiles,
+    shouldHideJupyterForStudentTab,
+} from "./resources/student-workspace-utils.js";
+import {
     buildCourseSyncFingerprint,
     getCourseOrigin,
     getLocalCourseChangeState,
@@ -165,6 +178,9 @@ let cloudTempToken = "";
 let defaultCloudSourceConfigured = false;
 let activeSectionIndex = 0;
 let activeExperimentIndex = 0;
+let activeCourseWorkspaceTab = "route";
+let openingStudentLessonTab = false;
+let pendingTeacherModeShellSync = false;
 let sectionDetailMode = false;
 let runningExperimentKey = "";
 let remoteSource = "remote";
@@ -192,6 +208,8 @@ let detailMoreMenuBound = false;
 let createEntryMenuBound = false;
 let resourcesSearchExpanded = false;
 let resourcesPageReady = false;
+let resourcesPageInitPromise = null;
+let resourcesIndexLoadPromise = null;
 const courseInspectionState = {
     courseId: "",
     loading: false,
@@ -220,6 +238,7 @@ const pageState = {
 };
 
 const sectionGridSize = 6;
+const courseWorkspaceTabs = STUDENT_WORKSPACE_TABS;
 
 const createRequiredFields = ["resources-create-title"];
 const createFieldLabels = {
@@ -648,7 +667,6 @@ function isStep2Complete() {
     // Local creation: step 2 is optional and should not block navigation.
     return true;
 }
-
 function getSectionStats() {
     const sections = getEffectiveSections();
     const sectionCount = sections?.length || 0;
@@ -2035,7 +2053,7 @@ function renderMaterialList() {
             pickBtn.disabled = readOnly;
             if (!readOnly) {
                 pickBtn.addEventListener("click", async () => {
-                    if (!window.electronAPI || typeof window.electronAPI.selectFolder !== "function") {
+                    if (!window.electronAPI || typeof window.electronAPI.invoke !== "function") {
                         alert("请在桌面应用中使用本地上传功能");
                         return;
                     }
@@ -2044,7 +2062,7 @@ function renderMaterialList() {
                         alert("请先选择课程目录");
                         return;
                     }
-                    const folderPath = await window.electronAPI.selectFolder();
+                    const folderPath = await window.electronAPI.invoke("select-folder");
                     if (!folderPath) return;
                     try {
                         const response = await apiClient.post("/api/resources/scan-folder", {
@@ -2696,6 +2714,35 @@ function loadLocalCourses() {
     }
 }
 
+async function refreshLocalCoursesFromDisk(courses = []) {
+    if (!Array.isArray(courses) || !courses.length) return [];
+    const refreshed = await Promise.all(courses.map(async (course) => {
+        const localPath = (course?.local_path || "").toString().trim();
+        if (!localPath) return course;
+        try {
+            const response = await apiClient.post("/api/resources/scan", {
+                local_path: localPath,
+                init_if_missing: false,
+                auto_build: false,
+            });
+            if (response?.success && response.course) {
+                return {
+                    ...course,
+                    ...response.course,
+                    local_path: localPath,
+                    source: "local",
+                    origin: course.origin || response.course.origin,
+                    sync: course.sync || response.course.sync,
+                };
+            }
+        } catch (error) {
+            console.warn("刷新本地课程失败，继续使用缓存:", localPath, error);
+        }
+        return course;
+    }));
+    return refreshed;
+}
+
 function saveLocalCourses(list) {
     try {
         localStorage.setItem(localCoursesKey, JSON.stringify(list));
@@ -2821,7 +2868,12 @@ function updateTeacherModeUI() {
     }
     try {
         if (window.app && window.app.system && typeof window.app.system.updateSettingsVisibility === "function") {
-            window.app.system.updateSettingsVisibility(Boolean(teacherMode.unlocked));
+            if (!openingStudentLessonTab) {
+                pendingTeacherModeShellSync = false;
+                window.app.system.updateSettingsVisibility(Boolean(teacherMode.unlocked));
+            } else {
+                pendingTeacherModeShellSync = true;
+            }
         }
     } catch (error) {
         console.warn("更新设置页教师模式可见性失败:", error);
@@ -2911,6 +2963,7 @@ async function unlockTeacherMode() {
         cancelText: "取消",
     });
     if (!input) return false;
+    await window.app?.jupyter?.setVisibility?.(false);
     const code = input.trim();
     const ok = await verifyTeacherCode(code);
     if (!ok) {
@@ -2940,6 +2993,7 @@ async function ensureTeacherModeForEdit(actionLabel = "编辑") {
 }
 
 async function handleTeacherModeToggle() {
+    await window.app?.jupyter?.setVisibility?.(false);
     await ensureTeacherModeReady();
     if (teacherMode.unlocked) {
         const ok = await openResourcesConfirm({
@@ -3367,6 +3421,963 @@ function getCourseInspectionStatus(sectionIndex, expIndex) {
     return getInspectionExperiment(courseInspectionState.inspection, sectionIndex, expIndex);
 }
 
+function isStudentLessonMode() {
+    if (!teacherMode.unlocked) return true;
+    return Boolean(document.querySelector(".student-nav-item.active"));
+}
+
+function normalizeWorkspaceTabId(tabId = "route") {
+    return normalizeStudentWorkspaceTabId(tabId);
+}
+
+function getWorkspaceTabConfig(tabId = activeCourseWorkspaceTab) {
+    return getStudentWorkspaceTabConfig(tabId);
+}
+
+function getWorkspaceTabTitle(tabId = activeCourseWorkspaceTab) {
+    return getStudentWorkspaceTabTitle(tabId, isStudentLessonMode());
+}
+
+function getWorkspaceTabDescription(tabId = activeCourseWorkspaceTab) {
+    return getStudentWorkspaceTabDescription(tabId, isStudentLessonMode());
+}
+
+function getWorkspaceTabPageClass(tabId = activeCourseWorkspaceTab) {
+    return getStudentWorkspacePageClass(tabId);
+}
+
+function getCurrentLessonIndex(resource) {
+    const sections = normalizeSections(resource);
+    if (!sections.length) return 0;
+    let sectionIndex = activeSectionIndex;
+    if (classroomState.active && isActiveCourse(resource) && classroomState.activeSectionIndex !== null) {
+        sectionIndex = classroomState.activeSectionIndex;
+    }
+    if (!Number.isFinite(sectionIndex) || sectionIndex < 0 || sectionIndex >= sections.length) {
+        sectionIndex = 0;
+    }
+    return sectionIndex;
+}
+
+function getVisibleLessonContexts(resource, sections = normalizeSections(resource)) {
+    return getStudentVisibleLessonContexts(sections, getCurrentLessonIndex(resource), isStudentLessonMode());
+}
+
+function pickStudentCurrentCourse() {
+    const active = getActiveLocalCourse();
+    if (active) return active;
+    if (currentResource) return currentResource;
+    if (localCourses.length) return localCourses[0];
+    if (resourcesCache.length) return resourcesCache.find((course) => course?.source === "local") || resourcesCache[0];
+    return null;
+}
+
+function syncStudentLessonNav(tabId = activeCourseWorkspaceTab) {
+    const map = {
+        route: "nav-student-lesson-item",
+        experience: "nav-student-experience-item",
+        visual: "nav-student-visual-item",
+        python: "nav-student-python-item",
+    };
+    const navId = map[normalizeWorkspaceTabId(tabId)];
+    document.querySelectorAll(".nav-item").forEach((item) => {
+        item.classList.remove("active");
+    });
+    const target = document.getElementById(navId);
+    if (target) target.classList.add("active");
+}
+
+function syncStudentPageBodyState(tabId = activeCourseWorkspaceTab) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    document.body.classList.toggle("student-page-route", normalized === "route");
+    document.body.classList.toggle("student-page-experience", normalized === "experience");
+    document.body.classList.toggle("student-page-visual", normalized === "visual");
+    document.body.classList.toggle("student-page-python", normalized === "python");
+}
+
+function syncLessonPageTitle(resource, tabId = activeCourseWorkspaceTab) {
+    const titleEl = document.getElementById("page-title");
+    const subtitleEl = document.getElementById("page-subtitle");
+    if (!isStudentLessonMode()) return;
+    const tabTitle = getWorkspaceTabTitle(tabId);
+    const sections = normalizeSections(resource || {});
+    const lessonIndex = getCurrentLessonIndex(resource || {});
+    const section = sections[lessonIndex] || null;
+    if (titleEl) titleEl.textContent = tabTitle;
+    if (subtitleEl) {
+        subtitleEl.textContent = section
+            ? `${section.title || `第 ${lessonIndex + 1} 课`} / ${resource?.title || "当前课程"}`
+            : "等待课堂课程";
+    }
+}
+
+function getExperimentStudentTasks(exp) {
+    const rawTasks = exp?.student_tasks || exp?.studentTasks || exp?.tasks || [];
+    if (Array.isArray(rawTasks)) {
+        return rawTasks.map((task) => String(task || "").trim()).filter(Boolean);
+    }
+    if (typeof rawTasks === "string") {
+        return rawTasks
+            .split(/\n|；|;/)
+            .map((task) => task.trim())
+            .filter(Boolean);
+    }
+    return [];
+}
+
+function normalizeTextList(value) {
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item || "").trim()).filter(Boolean);
+    }
+    if (typeof value === "string") {
+        return value
+            .split(/\n|；|;/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+    return [];
+}
+
+function getSectionLearningObjectives(section) {
+    return normalizeTextList(
+        section?.learning_objectives ||
+        section?.learningObjectives ||
+        section?.objectives ||
+        section?.goals
+    );
+}
+
+function getSectionKeyPoints(section) {
+    return normalizeTextList(section?.key_points || section?.keyPoints || section?.focus || section?.important_points);
+}
+
+function getSectionDifficulties(section) {
+    return normalizeTextList(section?.difficulties || section?.difficulty || section?.hard_points || section?.hardPoints);
+}
+
+function buildExperimentResourceContext(resource, section, sectionIndex, exp, expIndex) {
+    const overview = getExperimentFileOverview(exp);
+    return {
+        resource,
+        section,
+        sectionIndex,
+        exp,
+        expIndex,
+        overview,
+    };
+}
+
+function getResourceButtonLabel(file, kind) {
+    if (kind === "html") return "打开体验";
+    if (kind === "scratch") return "打开 Scratch";
+    if (kind === "blockly") return "打开图形化";
+    if (kind === "notebook") return "打开 Notebook";
+    if (kind === "python") return "打开 Python";
+    if (isDirectory(file)) return "打开目录";
+    return "打开资源";
+}
+
+function makeExperimentResourceButton(file, context, options = {}) {
+    const kind = options.kind || getEntryKindForFile(file);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `btn ${options.primary ? "btn-primary" : "btn-secondary"} btn-sm`;
+    button.textContent = options.label || getResourceButtonLabel(file, kind);
+    button.addEventListener("click", async () => {
+        activeSectionIndex = context.sectionIndex;
+        activeExperimentIndex = context.expIndex;
+        if (isStudentLessonMode() && (kind === "notebook" || kind === "python")) {
+            await openStudentPythonWorkspace(context.resource, {
+                section: context.section,
+                sectionIndex: context.sectionIndex,
+                exp: context.exp,
+                expIndex: context.expIndex,
+                overview: context.overview,
+                file,
+                files: getWorkspaceFilesForOverview(context.overview, "python"),
+            });
+            return;
+        }
+        if (isStudentLessonMode() && (kind === "scratch" || kind === "blockly")) {
+            await openStudentBlocklyWorkspace(context.resource, {
+                section: context.section,
+                sectionIndex: context.sectionIndex,
+                exp: context.exp,
+                expIndex: context.expIndex,
+                overview: context.overview,
+                file,
+                files: getWorkspaceFilesForOverview(context.overview, "visual"),
+            });
+            return;
+        }
+        await openExperimentEntry(file, kind, {
+            resource: context.resource,
+            sectionIndex: context.sectionIndex,
+            expIndex: context.expIndex,
+            experimentOverview: context.overview,
+        });
+    });
+    return button;
+}
+
+async function openStudentExperimentPage(tabId, context, file = null) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    if (!context?.resource) return null;
+    activeCourseWorkspaceTab = normalized;
+    activeSectionIndex = context.sectionIndex;
+    activeExperimentIndex = context.expIndex;
+
+    if (normalized === "python") {
+        return openStudentPythonWorkspace(context.resource, {
+            ...context,
+            file: file || getWorkspaceFilesForOverview(context.overview, "python")[0] || null,
+            files: getWorkspaceFilesForOverview(context.overview, "python"),
+        });
+    }
+
+    if (normalized === "visual") {
+        return openStudentBlocklyWorkspace(context.resource, {
+            ...context,
+            file: file || getWorkspaceFilesForOverview(context.overview, "visual")[0] || null,
+            files: getWorkspaceFilesForOverview(context.overview, "visual"),
+        });
+    }
+
+    if (shouldHideJupyterForStudentTab(normalized)) {
+        await window.app?.jupyter?.setVisibility?.(false);
+    }
+    if (window.app?.ui?.showTab) {
+        const navMap = {
+            experience: "nav-student-experience-item",
+            visual: "nav-student-visual-item",
+            route: "nav-student-lesson-item",
+        };
+        window.app.ui.showTab("resources", document.getElementById(navMap[normalized] || "nav-student-lesson-item"));
+    }
+    showDetailView(context.resource, {
+        tabId: normalized,
+        sectionIndex: context.sectionIndex,
+        expIndex: context.expIndex,
+        preserveSection: true,
+        preserveExperiment: true,
+    });
+    return context.resource;
+}
+
+function makeStudentRouteButton(tabId, context, options = {}) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `btn ${options.primary ? "btn-primary" : "btn-secondary"} btn-sm`;
+    button.textContent = options.label || getWorkspaceTabTitle(tabId);
+    button.addEventListener("click", async () => {
+        await openStudentExperimentPage(tabId, context, options.file || null);
+    });
+    return button;
+}
+
+function buildStudentRouteEntryCard(tabId, context, options = {}) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    const file = options.file || null;
+    const available = Boolean(file);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = [
+        "resources-course-entry-card",
+        `is-${normalized}`,
+        available ? "is-ready" : "is-empty",
+        options.primary ? "is-primary" : "",
+    ].filter(Boolean).join(" ");
+    card.disabled = !available;
+
+    if (available) {
+        card.addEventListener("click", async () => {
+            await openStudentExperimentPage(normalized, context, file);
+        });
+    }
+
+    const icon = document.createElement("div");
+    icon.className = "resources-course-entry-icon";
+    icon.textContent = options.icon || "•";
+    card.appendChild(icon);
+
+    const body = document.createElement("div");
+    body.className = "resources-course-entry-body";
+
+    const title = document.createElement("div");
+    title.className = "resources-course-entry-title";
+    title.textContent = options.title || getWorkspaceTabTitle(normalized);
+    body.appendChild(title);
+
+    const desc = document.createElement("div");
+    desc.className = "resources-course-entry-desc";
+    desc.textContent = options.desc || "";
+    body.appendChild(desc);
+
+    const meta = document.createElement("div");
+    meta.className = "resources-course-entry-meta";
+    meta.textContent = available
+        ? (options.meta || getBaseName(file.path || file.name || "") || "已配置")
+        : (options.emptyMeta || "待配置");
+    body.appendChild(meta);
+
+    card.appendChild(body);
+
+    const action = document.createElement("div");
+    action.className = "resources-course-entry-action";
+    action.textContent = available ? (options.action || "进入") : "暂无";
+    card.appendChild(action);
+
+    return card;
+}
+
+function appendStudentRouteEntryCards(parent, context) {
+    const html = context.overview.htmlFiles[0] || null;
+    const scratch = context.overview.scratchFiles?.[0] || null;
+    const blockly = context.overview.blocklyFiles[0] || null;
+    const visual = scratch || blockly;
+    const python = context.overview.notebookFiles[0] || context.overview.pythonFiles[0] || null;
+    const grid = document.createElement("div");
+    grid.className = "resources-course-entry-grid";
+    grid.appendChild(buildStudentRouteEntryCard("experience", context, {
+        file: html,
+        icon: "▶",
+        title: "互动体验",
+        desc: "先看现象，理解本实验要观察什么。",
+        action: "打开体验",
+        meta: html ? getBaseName(html.path || html.name || "") : "",
+    }));
+    grid.appendChild(buildStudentRouteEntryCard("visual", context, {
+        file: visual,
+        icon: "▦",
+        title: "图形编程",
+        desc: scratch ? "进入 Scratch，使用积木完成任务流程。" : "进入 Blockly，用积木完成任务流程。",
+        action: scratch ? "打开 Scratch" : "开始搭建",
+        meta: visual ? getBaseName(visual.path || visual.name || "") : "",
+        primary: Boolean(visual),
+    }));
+    grid.appendChild(buildStudentRouteEntryCard("python", context, {
+        file: python,
+        icon: "</>",
+        title: "Python 实验",
+        desc: "打开 Notebook / Python，继续代码实践。",
+        action: "进入代码",
+        meta: python ? getBaseName(python.path || python.name || "") : "",
+    }));
+    parent.appendChild(grid);
+}
+
+function getStudentExperimentEntryCopy(tabId) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    if (normalized === "experience") {
+        return {
+            title: "互动体验",
+            desc: "本页面直接展示当前实验的 HTML 体验内容。",
+            empty: "当前实验没有配置互动体验页。",
+            button: "查看体验页",
+        };
+    }
+    if (normalized === "visual") {
+        return {
+            title: "图形编程入口",
+            desc: "先确认本实验任务，再点击进入 Scratch / Blockly 工作台完成积木编程。",
+            empty: "当前实验没有配置 Scratch 或图形编程资源。",
+            button: "打开图形编程",
+        };
+    }
+    return {
+        title: "Python实验入口",
+        desc: "点击后进入 Jupyter Lab，保持 Notebook / Python 编程环境。",
+        empty: "当前实验没有配置 Python 实验资源。",
+        button: "打开 Python实验",
+    };
+}
+
+function buildStudentExperimentEntryCard(context, tabId = activeCourseWorkspaceTab) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    const copy = getStudentExperimentEntryCopy(normalized);
+    const files = getWorkspaceFilesForOverview(context.overview, normalized);
+    const card = document.createElement("div");
+    card.className = `resources-student-entry-card is-${normalized}`;
+
+    const header = document.createElement("div");
+    header.className = "resources-student-entry-head";
+    const title = document.createElement("div");
+    title.className = "resources-student-entry-title";
+    title.textContent = copy.title;
+    header.appendChild(title);
+    const badge = document.createElement("span");
+    badge.className = "resource-card-badge";
+    badge.textContent = files.length ? `${files.length} 个入口` : "待补充";
+    header.appendChild(badge);
+    card.appendChild(header);
+
+    const desc = document.createElement("div");
+    desc.className = "resources-student-entry-desc";
+    desc.textContent = copy.desc;
+    card.appendChild(desc);
+
+    if (!files.length) {
+        const empty = document.createElement("div");
+        empty.className = "resources-course-empty";
+        empty.textContent = copy.empty;
+        card.appendChild(empty);
+        return card;
+    }
+
+    const list = document.createElement("div");
+    list.className = "resources-student-entry-list";
+    files.forEach((file, index) => {
+        const row = document.createElement("div");
+        row.className = "resources-student-entry-row";
+
+        const info = document.createElement("div");
+        info.className = "resources-student-entry-info";
+        const name = document.createElement("div");
+        name.className = "resources-student-entry-name";
+        name.textContent = file.name || getBaseName(file.path || "") || file.path || `入口 ${index + 1}`;
+        info.appendChild(name);
+        const path = document.createElement("div");
+        path.className = "resources-student-entry-path";
+        path.textContent = file.path || file.name || "";
+        info.appendChild(path);
+        row.appendChild(info);
+
+        const actions = document.createElement("div");
+        actions.className = "resources-student-entry-actions";
+        actions.appendChild(makeExperimentResourceButton(file, context, {
+            kind: getEntryKindForFile(file),
+            label: index === 0 ? copy.button : getResourceButtonLabel(file, getEntryKindForFile(file)),
+            primary: index === 0,
+        }));
+        row.appendChild(actions);
+        list.appendChild(row);
+    });
+    card.appendChild(list);
+    return card;
+}
+
+function buildLocalCourseFileUrl(resource, filePath = "") {
+    const basePath = (resource?.local_path || "").trim();
+    const relPath = String(filePath || "").trim().replace(/^\/+/, "");
+    if (!basePath || !relPath || isRemotePath(relPath)) return "";
+    const encodedRelPath = relPath
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/");
+    return `${getApiBaseUrl(apiClient)}/api/resources/local-file/${encodePathToken(basePath)}/${encodedRelPath}`;
+}
+
+function buildStudentHtmlExperienceView(context) {
+    const htmlFiles = Array.isArray(context?.overview?.htmlFiles) ? context.overview.htmlFiles : [];
+    const primaryHtml = htmlFiles[0] || null;
+    const experimentTitle = context?.exp?.title || `实验 ${Number.isFinite(context?.expIndex) ? context.expIndex + 1 : 1}`;
+    const experimentDesc = String(context?.exp?.description || "").trim();
+    const wrap = document.createElement("section");
+    wrap.className = "resources-student-html-experience";
+
+    const head = document.createElement("div");
+    head.className = "resources-student-html-experience-head";
+    const info = document.createElement("div");
+    info.className = "resources-student-html-experience-info";
+    const title = document.createElement("div");
+    title.className = "resources-student-html-experience-title";
+    title.textContent = experimentTitle;
+    info.appendChild(title);
+    if (experimentDesc) {
+        const desc = document.createElement("div");
+        desc.className = "resources-student-html-experience-desc";
+        desc.textContent = experimentDesc;
+        info.appendChild(desc);
+    }
+    const meta = document.createElement("div");
+    meta.className = "resources-student-html-experience-meta";
+    meta.textContent = primaryHtml
+        ? `${primaryHtml.name || getBaseName(primaryHtml.path || "") || "HTML 体验页"} · ${primaryHtml.path || ""}`
+        : "当前实验没有配置 HTML 体验页";
+    info.appendChild(meta);
+    head.appendChild(info);
+
+    const badge = document.createElement("span");
+    badge.className = "resource-card-badge";
+    badge.textContent = primaryHtml
+        ? htmlFiles.length > 1
+            ? `${htmlFiles.length} 个体验页，当前显示第 1 个`
+            : "HTML 体验页"
+        : "待补充";
+    head.appendChild(badge);
+    wrap.appendChild(head);
+
+    if (!primaryHtml) {
+        const empty = document.createElement("div");
+        empty.className = "resources-course-empty";
+        empty.textContent = "本实验还没有可直接展示的互动体验页面。";
+        wrap.appendChild(empty);
+        return wrap;
+    }
+
+    const frameUrl =
+        buildLocalCourseFileUrl(context.resource, primaryHtml.path || "") ||
+        resolveResourceUrl(primaryHtml.path || "", context.resource, { repoUrl, rawBaseUrl, indexBranch });
+
+    if (!frameUrl) {
+        const empty = document.createElement("div");
+        empty.className = "resources-course-empty";
+        empty.textContent = "无法解析互动体验页面地址，请检查课程文件路径。";
+        wrap.appendChild(empty);
+        return wrap;
+    }
+
+    const frameWrap = document.createElement("div");
+    frameWrap.className = "resources-student-html-frame-wrap";
+    const frame = document.createElement("iframe");
+    frame.className = "resources-student-html-frame";
+    frame.title = primaryHtml.name || primaryHtml.path || "互动体验";
+    frame.src = frameUrl;
+    frame.loading = "eager";
+    frameWrap.appendChild(frame);
+    wrap.appendChild(frameWrap);
+    const openBrowserBtn = document.createElement("button");
+    openBrowserBtn.type = "button";
+    openBrowserBtn.className = "btn btn-secondary btn-sm resources-student-html-open";
+    openBrowserBtn.textContent = "在新窗口打开体验";
+    openBrowserBtn.addEventListener("click", () => {
+        openExternal(frameUrl).catch((error) => {
+            console.warn("打开互动体验页面失败:", error);
+        });
+    });
+    wrap.appendChild(openBrowserBtn);
+    return wrap;
+}
+
+async function openStudentPythonWorkspace(course, context = null) {
+    const resource = course || pickStudentCurrentCourse();
+    if (!resource) return null;
+    const target = context || findFirstExperimentWithWorkspaceFiles(resource, "python");
+    const sectionIndex = Number.isFinite(target?.sectionIndex) ? target.sectionIndex : getCurrentLessonIndex(resource);
+    const expIndex = Number.isFinite(target?.expIndex) ? target.expIndex : 0;
+    activeCourseWorkspaceTab = "python";
+    activeSectionIndex = sectionIndex;
+    activeExperimentIndex = expIndex;
+    syncStudentLessonNav("python");
+    syncLessonPageTitle(resource, "python");
+
+    const lessonTitle = target?.section?.title || `第 ${sectionIndex + 1} 课`;
+    const expTitle = target?.exp?.title || "Python实验";
+    const sourceLabel = target?.file
+        ? `${lessonTitle} / ${expTitle}`
+        : `${lessonTitle} / 本节未配置 Python 文件`;
+    const file = target?.file || null;
+    const fileKind = getEntryKindForFile(file);
+    const openWorkspace = window.app?.workspace?.openJupyterWorkspace;
+    if (openWorkspace) {
+        await openWorkspace({
+            projectDir: resource.local_path || "",
+            filePath: fileKind === "notebook" || fileKind === "python" ? (file?.path || "") : "",
+            sourceLabel,
+            sourcePage: "student-python",
+        }, { force: true });
+        return resource;
+    }
+    if (file) {
+        await openExperimentEntry(file, fileKind, {
+            resource,
+            sectionIndex,
+            expIndex,
+            experimentOverview: target?.overview || getExperimentFileOverview(target?.exp || {}),
+        });
+    }
+    return resource;
+}
+
+async function openStudentBlocklyWorkspace(course, context = null) {
+    const currentCourse = pickStudentCurrentCourse();
+    const resource = currentCourse || course;
+    if (!resource) return null;
+    const target = context || findFirstExperimentWithWorkspaceFiles(resource, "visual");
+    const sectionIndex = Number.isFinite(target?.sectionIndex) ? target.sectionIndex : getCurrentLessonIndex(resource);
+    const expIndex = Number.isFinite(target?.expIndex) ? target.expIndex : 0;
+    const overview = target?.overview || getExperimentFileOverview(target?.exp || {});
+    const file = target?.file || getWorkspaceFilesForOverview(overview, "visual")[0] || null;
+
+    activeCourseWorkspaceTab = "visual";
+    activeSectionIndex = sectionIndex;
+    activeExperimentIndex = expIndex;
+    syncStudentLessonNav("visual");
+    syncLessonPageTitle(resource, "visual");
+
+    if (!file) {
+        showDetailView(resource, {
+            tabId: "visual",
+            sectionIndex,
+            expIndex,
+            preserveSection: true,
+            preserveExperiment: true,
+        });
+        return resource;
+    }
+
+    await window.app?.jupyter?.setVisibility?.(false);
+    await openExperimentEntry(file, getEntryKindForFile(file), {
+        resource,
+        sectionIndex,
+        expIndex,
+        experimentOverview: overview,
+    });
+    return resource;
+}
+
+function appendExperimentTaskList(parent, tasks) {
+    if (!tasks.length) return;
+    const list = document.createElement("ul");
+    list.className = "resources-course-task-list";
+    const visibleTasks = isStudentLessonMode() ? tasks.slice(0, 2) : tasks.slice(0, 4);
+    visibleTasks.forEach((task) => {
+        const item = document.createElement("li");
+        item.textContent = task;
+        list.appendChild(item);
+    });
+    parent.appendChild(list);
+}
+
+function appendCourseSummaryList(parent, items) {
+    if (!items.length) return;
+    const list = document.createElement("ul");
+    list.className = "resources-course-summary-list";
+    items.forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        list.appendChild(li);
+    });
+    parent.appendChild(list);
+}
+
+function buildCourseSummaryFocusCard(label, items, tone = "") {
+    const card = document.createElement("div");
+    card.className = "resources-course-focus-card";
+    if (tone) card.classList.add(`is-${tone}`);
+
+    const badge = document.createElement("div");
+    badge.className = "resources-course-focus-label";
+    badge.textContent = label;
+    card.appendChild(badge);
+
+    appendCourseSummaryList(card, items);
+    return card;
+}
+
+function buildCourseWorkspaceSummary(resource, sectionEntries) {
+    const sectionContexts = normalizeSectionContexts(sectionEntries);
+    const summary = document.createElement("div");
+    summary.className = "resources-course-summary";
+    if (isStudentLessonMode()) {
+        summary.classList.add("is-student-lesson");
+    }
+
+    const text = document.createElement("div");
+    text.className = "resources-course-summary-content";
+    const title = document.createElement("div");
+    title.className = "resources-course-summary-title";
+    if (isStudentLessonMode()) {
+        title.textContent = getWorkspaceTabTitle(activeCourseWorkspaceTab);
+    } else {
+        title.textContent = activeCourseWorkspaceTab === "route"
+            ? "从学习路线开始"
+            : getWorkspaceTabTitle(activeCourseWorkspaceTab);
+    }
+    text.appendChild(title);
+
+    const current = sectionContexts[0];
+    const currentSection = current?.section || null;
+    const desc = document.createElement("div");
+    desc.className = "resources-course-summary-desc";
+    if (isStudentLessonMode()) {
+        const currentDesc = currentSection?.description || getWorkspaceTabDescription(activeCourseWorkspaceTab);
+        desc.textContent = currentDesc || "本节课的实验入口已经按课堂顺序整理。";
+    } else {
+        desc.textContent = getWorkspaceTabDescription(activeCourseWorkspaceTab) || getText(resource, "description", "");
+    }
+    text.appendChild(desc);
+
+    if (isStudentLessonMode() && currentSection) {
+        const objectives = getSectionLearningObjectives(currentSection);
+        const keyPoints = getSectionKeyPoints(currentSection);
+        const difficulties = getSectionDifficulties(currentSection);
+
+        if (objectives.length || keyPoints.length || difficulties.length) {
+            const focusGrid = document.createElement("div");
+            focusGrid.className = "resources-course-focus-grid";
+            if (objectives.length) {
+                focusGrid.appendChild(buildCourseSummaryFocusCard("本课目标", objectives.slice(0, 4), "goal"));
+            }
+            if (keyPoints.length) {
+                focusGrid.appendChild(buildCourseSummaryFocusCard("课程重点", keyPoints, "key"));
+            }
+            if (difficulties.length) {
+                focusGrid.appendChild(buildCourseSummaryFocusCard("课程难点", difficulties, "hard"));
+            }
+            text.appendChild(focusGrid);
+        }
+    }
+
+    summary.appendChild(text);
+    return summary;
+}
+
+function normalizeSectionContexts(sectionEntries = []) {
+    if (!Array.isArray(sectionEntries)) return [];
+    return sectionEntries
+        .map((entry, index) => {
+            if (entry && typeof entry === "object" && Object.prototype.hasOwnProperty.call(entry, "section")) {
+                return {
+                    section: entry.section,
+                    sectionIndex: Number.isFinite(entry.sectionIndex) ? entry.sectionIndex : index,
+                };
+            }
+            return {
+                section: entry,
+                sectionIndex: index,
+            };
+        })
+        .filter((entry) => entry.section);
+}
+
+function collectExperimentContexts(resource, sectionEntries) {
+    const contexts = [];
+    normalizeSectionContexts(sectionEntries).forEach(({ section, sectionIndex }) => {
+        const list = Array.isArray(section?.experiments) ? section.experiments : [];
+        list.forEach((exp, expIndex) => {
+            contexts.push(buildExperimentResourceContext(resource, section, sectionIndex, exp, expIndex));
+        });
+    });
+    return contexts;
+}
+
+function uniqueResourceFiles(files = []) {
+    const seen = new Set();
+    return files.filter((file) => {
+        const key = `${file?.path || ""}|${file?.name || ""}`;
+        if (!key.trim() || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function isPythonSupportFile(file) {
+    const lowerPath = (file?.path || file?.name || "").toString().toLowerCase();
+    if (!lowerPath) return false;
+    if (lowerPath.endsWith(".doc") || lowerPath.endsWith(".docx")) return false;
+    if (lowerPath.endsWith(".ppt") || lowerPath.endsWith(".pptx")) return false;
+    if (lowerPath.endsWith(".pdf")) return false;
+    return (
+        lowerPath.includes("/data/") ||
+        lowerPath.includes("/code/") ||
+        lowerPath.endsWith("readme.md") ||
+        lowerPath.endsWith("requirements.txt") ||
+        lowerPath.endsWith(".json") ||
+        lowerPath.endsWith(".csv") ||
+        lowerPath.endsWith(".txt")
+    );
+}
+
+function getPythonWorkspaceFiles(overview) {
+    return uniqueResourceFiles([
+        ...overview.notebookFiles,
+        ...overview.pythonFiles,
+        ...overview.codeFiles.filter((file) => !isHtmlFile(file) && !isBlocklyFile(file)),
+        ...overview.otherFiles.filter((file) => isPythonSupportFile(file)),
+    ]);
+}
+
+function getWorkspaceFilesForOverview(overview, tabId = activeCourseWorkspaceTab) {
+    return getStudentWorkspaceFilesForOverview(
+        { ...overview, pythonWorkspaceFiles: getPythonWorkspaceFiles(overview) },
+        tabId
+    );
+}
+
+function getWorkspaceEmptyText(tabId = activeCourseWorkspaceTab) {
+    return getStudentWorkspaceEmptyText(tabId);
+}
+
+function findFirstExperimentWithWorkspaceFiles(resource, tabId = activeCourseWorkspaceTab) {
+    const sections = normalizeSections(resource || {});
+    const sectionIndex = getCurrentLessonIndex(resource || {});
+    return pickFirstExperimentWithFiles({
+        sections,
+        sectionIndex,
+        tabId,
+        getOverview: getExperimentFileOverview,
+        getFilesForOverview: getWorkspaceFilesForOverview,
+    });
+}
+
+function pickExperimentIndexForWorkspaceTab(experiments = [], tabId = activeCourseWorkspaceTab, currentIndex = 0) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    if (normalized === "route") return currentIndex;
+    const currentExperiment = experiments[currentIndex] || null;
+    if (currentExperiment) {
+        const currentOverview = getExperimentFileOverview(currentExperiment);
+        if (getWorkspaceFilesForOverview(currentOverview, normalized).length) {
+            return currentIndex;
+        }
+    }
+    const matchedIndex = experiments.findIndex((exp) => {
+        const overview = getExperimentFileOverview(exp);
+        return getWorkspaceFilesForOverview(overview, normalized).length > 0;
+    });
+    return matchedIndex >= 0 ? matchedIndex : currentIndex;
+}
+
+function renderCourseWorkspace(resource, sections, mainPane) {
+    const visibleSectionContexts = getVisibleLessonContexts(resource, sections);
+    mainPane.classList.add(getWorkspaceTabPageClass(activeCourseWorkspaceTab));
+    const summary = buildCourseWorkspaceSummary(resource, visibleSectionContexts);
+
+    if (isStudentLessonMode() && activeCourseWorkspaceTab === "route") {
+        const shell = document.createElement("div");
+        shell.className = "resources-route-workbench-shell";
+
+        const guide = document.createElement("aside");
+        guide.className = "resources-route-guide";
+        guide.appendChild(summary);
+        shell.appendChild(guide);
+
+        const stage = document.createElement("section");
+        stage.className = "resources-route-stage";
+        const stageHead = document.createElement("div");
+        stageHead.className = "resources-route-stage-head";
+        const stageEyebrow = document.createElement("div");
+        stageEyebrow.className = "resources-route-stage-eyebrow";
+        stageEyebrow.textContent = "本节实践入口";
+        stageHead.appendChild(stageEyebrow);
+        const stageTitle = document.createElement("div");
+        stageTitle.className = "resources-route-stage-title";
+        stageTitle.textContent = "选择下一步要进入的学习空间";
+        stageHead.appendChild(stageTitle);
+        const stageDesc = document.createElement("div");
+        stageDesc.className = "resources-route-stage-desc";
+        stageDesc.textContent = "建议按课堂顺序：先观察现象，再搭建图形程序，最后进入 Python / Notebook 做代码实验。";
+        stageHead.appendChild(stageDesc);
+        stage.appendChild(stageHead);
+        renderLearningRouteWorkspace(stage, resource, visibleSectionContexts);
+        shell.appendChild(stage);
+
+        mainPane.appendChild(shell);
+        return;
+    }
+
+    mainPane.appendChild(summary);
+    renderLearningRouteWorkspace(mainPane, resource, visibleSectionContexts);
+}
+
+function renderLearningRouteWorkspace(mainPane, resource, sectionEntries) {
+    const route = document.createElement("div");
+    route.className = "resources-learning-route";
+    if (isStudentLessonMode()) {
+        route.classList.add("is-student-lesson");
+    }
+
+    normalizeSectionContexts(sectionEntries).forEach(({ section, sectionIndex }) => {
+        const experiments = Array.isArray(section?.experiments) ? section.experiments : [];
+        if (!experiments.length) {
+            const empty = document.createElement("div");
+            empty.className = "resources-course-empty";
+            empty.textContent = "本课还没有配置实验。";
+            route.appendChild(empty);
+        }
+
+        if (section.description && !isStudentLessonMode()) {
+            const sectionCard = document.createElement("section");
+            sectionCard.className = "resources-route-section";
+            const desc = document.createElement("div");
+            desc.className = "resources-route-section-desc";
+            desc.textContent = section.description;
+            sectionCard.appendChild(desc);
+            route.appendChild(sectionCard);
+        }
+
+        experiments.forEach((exp, expIndex) => {
+            const context = buildExperimentResourceContext(resource, section, sectionIndex, exp, expIndex);
+            route.appendChild(buildRouteExperimentCard(context));
+        });
+    });
+
+    mainPane.appendChild(route);
+}
+
+function buildRouteExperimentCard(context) {
+    const card = document.createElement("article");
+    card.className = "resources-route-exp";
+
+    if (isStudentLessonMode()) {
+        appendStudentRouteEntryCards(card, context);
+        return card;
+    }
+
+    const head = document.createElement("div");
+    head.className = "resources-route-exp-head";
+    const title = document.createElement("div");
+    title.className = "resources-route-exp-title";
+    title.textContent = context.exp.title || `实验 ${context.expIndex + 1}`;
+    head.appendChild(title);
+
+    const resourceKinds = [];
+    if (context.overview.htmlFiles.length) resourceKinds.push("互动体验");
+    if (context.overview.blocklyFiles.length) resourceKinds.push("可视化编程");
+    if (context.overview.notebookFiles.length || context.overview.pythonFiles.length) {
+        resourceKinds.push("Python编程");
+    }
+    const kind = document.createElement("div");
+    kind.className = "resources-route-exp-kind";
+    kind.textContent = resourceKinds.join(" / ") || "资源待补充";
+    head.appendChild(kind);
+    card.appendChild(head);
+
+    if (context.exp.description) {
+        const desc = document.createElement("div");
+        desc.className = "resources-route-exp-desc";
+        desc.textContent = context.exp.description;
+        card.appendChild(desc);
+    }
+
+    appendExperimentTaskList(card, getExperimentStudentTasks(context.exp));
+
+    const actions = document.createElement("div");
+    actions.className = "resources-course-actions";
+    const html = context.overview.htmlFiles[0];
+    const blockly = context.overview.blocklyFiles[0];
+    const python = context.overview.notebookFiles[0] || context.overview.pythonFiles[0];
+    if (html) {
+        actions.appendChild(makeStudentRouteButton("experience", context, {
+            label: "进入互动体验",
+            primary: !blockly && !python,
+            file: html,
+        }));
+    }
+    if (blockly) {
+        actions.appendChild(makeStudentRouteButton("visual", context, {
+            label: isStudentLessonMode() ? "进入图形编程" : "进入可视化编程",
+            primary: isStudentLessonMode(),
+            file: blockly,
+        }));
+    }
+    if (python) {
+        actions.appendChild(makeStudentRouteButton("python", context, {
+            label: isStudentLessonMode() ? "进入Python实验" : "进入Python编程",
+            primary: !blockly && !html,
+            file: python,
+        }));
+    }
+    if (!actions.children.length) {
+        const empty = document.createElement("span");
+        empty.className = "resources-course-muted";
+        empty.textContent = "暂无可打开资源";
+        actions.appendChild(empty);
+    }
+    card.appendChild(actions);
+    return card;
+}
+
 function getMutableSections(resource) {
     if (!resource) return null;
     if (Array.isArray(resource.sections)) return resource.sections;
@@ -3688,7 +4699,7 @@ function updateResourcesSearchUI({ focus = false } = {}) {
 }
 
 function applyFilters() {
-    if (currentResource) {
+    if (currentResource && !isStudentLessonMode()) {
         showListView();
     }
     let filtered = resourcesCache.slice();
@@ -3733,6 +4744,13 @@ function applyFilters() {
     updateResourcesSearchUI();
 }
 
+function setResourcesListToolbarForStudent(tabId = activeCourseWorkspaceTab) {
+    const title = document.querySelector("#resources-list-view .resources-title");
+    const count = document.getElementById("resources-count");
+    if (title) title.textContent = getWorkspaceTabTitle(tabId);
+    if (count) count.textContent = "只显示当前课程";
+}
+
 function buildAddCard() {
     const card = document.createElement("div");
     card.className = "resource-card resource-card-add";
@@ -3774,7 +4792,7 @@ function buildPlaceholderCard() {
     return card;
 }
 
-function renderResources(list) {
+function renderResources(list = []) {
     const container = document.getElementById("resources-list");
     const empty = document.getElementById("resources-empty");
     const count = document.getElementById("resources-count");
@@ -3786,6 +4804,18 @@ function renderResources(list) {
     if (!container || !empty) return;
 
     container.innerHTML = "";
+    displayedResources = [];
+
+    if (isStudentLessonMode()) {
+        const course = pickStudentCurrentCourse() || (Array.isArray(list) && list.length ? list[0] : null);
+        if (course) {
+            activeSectionIndex = getCurrentLessonIndex(course);
+            showDetailView(course, { tabId: activeCourseWorkspaceTab, preserveExperiment: true });
+            return;
+        }
+        renderStudentLessonEmpty(activeCourseWorkspaceTab);
+        return;
+    }
 
     if (count) {
         count.textContent = `${list.length} 门课程`;
@@ -3814,10 +4844,11 @@ function renderResources(list) {
 
     if (!list.length) {
         empty.style.display = "flex";
-        empty.textContent =
-            filterState.query || filterState.grade || filterState.subject || filterState.tag
-                ? "没有匹配课程"
-                : "暂无课程";
+        if (filterState.query || filterState.grade || filterState.subject || filterState.tag) {
+            empty.textContent = "没有匹配课程";
+        } else {
+            renderLearningSpaceEmpty(empty);
+        }
         if (paginationBar) {
             paginationBar.style.display = "none";
         }
@@ -3961,6 +4992,95 @@ function renderResources(list) {
     // 不再渲染空位卡片，避免课程列表出现占位
 }
 
+function renderLearningSpaceEmpty(empty) {
+    empty.innerHTML = "";
+    const wrap = document.createElement("div");
+    wrap.className = "resources-learning-space-empty";
+
+    const eyebrow = document.createElement("div");
+    eyebrow.className = "resources-learning-space-eyebrow";
+    eyebrow.textContent = "学习空间";
+    wrap.appendChild(eyebrow);
+
+    const title = document.createElement("div");
+    title.className = "resources-learning-space-title";
+    title.textContent = "先添加一门课程，再开始实验";
+    wrap.appendChild(title);
+
+    const desc = document.createElement("div");
+    desc.className = "resources-learning-space-desc";
+    desc.textContent = "这里会显示当前课程、课堂课程和上次学习入口。没有课程时，可以打开本地课程、加入课堂或刷新学习空间。";
+    wrap.appendChild(desc);
+
+    const actions = document.createElement("div");
+    actions.className = "resources-learning-space-actions";
+    [
+        { label: "打开本地课程", action: "import-local", primary: true },
+        { label: "加入课堂", action: "connect-classroom" },
+        { label: "刷新学习空间", action: "refresh" },
+    ].forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `btn ${item.primary ? "btn-primary" : "btn-secondary"}`;
+        button.dataset.learningSpaceAction = item.action;
+        button.textContent = item.label;
+        actions.appendChild(button);
+    });
+    wrap.appendChild(actions);
+    empty.appendChild(wrap);
+}
+
+function renderStudentLessonEmpty(tabId = activeCourseWorkspaceTab) {
+    const listView = document.getElementById("resources-list-view");
+    const detailView = document.getElementById("resources-detail-view");
+    const createView = document.getElementById("resources-create-view");
+    const container = document.getElementById("resources-list");
+    const empty = document.getElementById("resources-empty");
+    const paginationBar = document.getElementById("resources-pagination-bar");
+    currentResource = null;
+    if (listView) listView.style.display = "flex";
+    if (detailView) detailView.style.display = "none";
+    if (createView) createView.style.display = "none";
+    if (container) container.innerHTML = "";
+    if (paginationBar) paginationBar.style.display = "none";
+    setResourcesListToolbarForStudent(tabId);
+    syncStudentLessonNav(tabId);
+    syncLessonPageTitle(null, tabId);
+    if (!empty) return;
+
+    empty.style.display = "flex";
+    empty.innerHTML = "";
+    const wrap = document.createElement("div");
+    wrap.className = "resources-student-empty";
+
+    const title = document.createElement("div");
+    title.className = "resources-student-empty-title";
+    title.textContent = "还没有当前课程";
+    wrap.appendChild(title);
+
+    const desc = document.createElement("div");
+    desc.className = "resources-student-empty-desc";
+    desc.textContent = `${getWorkspaceTabTitle(tabId)}会在加入课堂或打开本地课程后显示，只呈现当前课程当前课节对应的学习内容。`;
+    wrap.appendChild(desc);
+
+    const actions = document.createElement("div");
+    actions.className = "resources-learning-space-actions";
+    [
+        { label: "加入课堂", action: "connect-classroom", primary: true },
+        { label: "打开本地课程", action: "import-local" },
+        { label: "刷新学习空间", action: "refresh" },
+    ].forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `btn ${item.primary ? "btn-primary" : "btn-secondary"}`;
+        button.dataset.learningSpaceAction = item.action;
+        button.textContent = item.label;
+        actions.appendChild(button);
+    });
+    wrap.appendChild(actions);
+    empty.appendChild(wrap);
+}
+
 function appendMeta(container, label, value) {
     const span = document.createElement("span");
     span.textContent = `${label}: ${value}`;
@@ -3989,7 +5109,7 @@ function showListView() {
     currentResource = null;
 }
 
-function showDetailView(resource) {
+function showDetailView(resource, options = {}) {
     const listView = document.getElementById("resources-list-view");
     const detailView = document.getElementById("resources-detail-view");
     if (listView) listView.style.display = "none";
@@ -3997,20 +5117,57 @@ function showDetailView(resource) {
     currentResource = resource;
     resetCourseInspectionState(resource);
     sectionDetailMode = false;
-    if (isActiveCourse(resource) && classroomState.activeSectionIndex !== null) {
-        activeSectionIndex = classroomState.activeSectionIndex;
-    } else {
-        activeSectionIndex = 0;
+    activeCourseWorkspaceTab = normalizeWorkspaceTabId(
+        options.tabId || (options.preserveTab ? activeCourseWorkspaceTab : "route")
+    );
+
+    const sections = normalizeSections(resource);
+    const activeClassroomSection =
+        isActiveCourse(resource) && classroomState.activeSectionIndex !== null
+            ? Number(classroomState.activeSectionIndex)
+            : null;
+    const lastLearning = activeClassroomSection === null ? getLastLearning(resource) : null;
+    let nextSectionIndex = Number.isFinite(options.sectionIndex) ? Number(options.sectionIndex) : null;
+    if (nextSectionIndex === null) {
+        if (activeClassroomSection !== null) {
+            nextSectionIndex = activeClassroomSection;
+        } else if (options.preserveSection) {
+            nextSectionIndex = activeSectionIndex;
+        } else if (lastLearning) {
+            nextSectionIndex = Math.max(0, lastLearning.sectionIndex);
+        } else {
+            nextSectionIndex = 0;
+        }
     }
-    activeExperimentIndex = 0;
-    const lastLearning = getLastLearning(resource);
-    if (lastLearning) {
-        activeSectionIndex = Math.max(0, lastLearning.sectionIndex);
-        activeExperimentIndex = Math.max(0, lastLearning.expIndex);
+    if (!Number.isFinite(nextSectionIndex) || nextSectionIndex < 0 || nextSectionIndex >= sections.length) {
+        nextSectionIndex = 0;
     }
+    activeSectionIndex = nextSectionIndex;
+
+    const selectedSection = sections[activeSectionIndex] || null;
+    const experiments = Array.isArray(selectedSection?.experiments) ? selectedSection.experiments : [];
+    let nextExperimentIndex = Number.isFinite(options.expIndex) ? Number(options.expIndex) : null;
+    if (nextExperimentIndex === null) {
+        if (options.preserveExperiment) {
+            nextExperimentIndex = activeExperimentIndex;
+        } else if (lastLearning && lastLearning.sectionIndex === activeSectionIndex) {
+            nextExperimentIndex = Math.max(0, lastLearning.expIndex);
+        } else {
+            nextExperimentIndex = 0;
+        }
+    }
+    if (!Number.isFinite(nextExperimentIndex) || nextExperimentIndex < 0 || nextExperimentIndex >= experiments.length) {
+        nextExperimentIndex = 0;
+    }
+    activeExperimentIndex = nextExperimentIndex;
+
     const coursePrefix = `${(resource?.id || "").toString().trim()}:`;
     if (coursePrefix && runningExperimentKey && !runningExperimentKey.startsWith(coursePrefix)) {
         runningExperimentKey = "";
+    }
+    if (isStudentLessonMode()) {
+        syncStudentLessonNav(activeCourseWorkspaceTab);
+        syncLessonPageTitle(resource, activeCourseWorkspaceTab);
     }
     renderResourceDetail(resource);
 }
@@ -4032,10 +5189,20 @@ function renderResourceDetailSplitContent(resource, contentEl) {
     if (activeSectionIndex < 0 || activeSectionIndex >= sections.length) {
         activeSectionIndex = 0;
     }
+    if (isStudentLessonMode()) {
+        activeSectionIndex = getCurrentLessonIndex(resource);
+    }
     const selectedSection = sections[activeSectionIndex];
     const experiments = Array.isArray(selectedSection?.experiments) ? selectedSection.experiments : [];
     if (activeExperimentIndex < 0 || activeExperimentIndex >= experiments.length) {
         activeExperimentIndex = 0;
+    }
+    if (isStudentLessonMode() && activeCourseWorkspaceTab !== "route") {
+        activeExperimentIndex = pickExperimentIndexForWorkspaceTab(
+            experiments,
+            activeCourseWorkspaceTab,
+            activeExperimentIndex
+        );
     }
     const selectedExperiment = experiments[activeExperimentIndex] || null;
     const canManageCourse = canEditResource(resource) && teacherMode.unlocked;
@@ -4043,17 +5210,30 @@ function renderResourceDetailSplitContent(resource, contentEl) {
 
     const split = document.createElement("div");
     split.className = "resources-outline-layout";
+    if (isStudentLessonMode() && activeCourseWorkspaceTab === "route") {
+        split.classList.add("is-student-workspace");
+    }
+    if (isStudentLessonMode() && activeCourseWorkspaceTab === "experience") {
+        split.classList.add("is-experience-workbench");
+    }
 
-    const outlinePane = document.createElement("aside");
-    outlinePane.className = "resources-outline-pane";
-    const outlineTitle = document.createElement("div");
-    outlineTitle.className = "resources-outline-title";
-    outlineTitle.textContent = "课程大纲";
-    outlinePane.appendChild(outlineTitle);
+    let outlineList = null;
+    let outlinePane = null;
+    if (!isStudentLessonMode() || activeCourseWorkspaceTab !== "route") {
+        outlinePane = document.createElement("aside");
+        outlinePane.className = "resources-outline-pane";
+        const outlineTitle = document.createElement("div");
+        outlineTitle.className = "resources-outline-title";
+        outlineTitle.textContent = isStudentLessonMode() ? "本节实验" : "课程大纲";
+        outlinePane.appendChild(outlineTitle);
 
-    const outlineList = document.createElement("div");
-    outlineList.className = "resources-outline-list";
-    sections.forEach((section, sectionIndex) => {
+        outlineList = document.createElement("div");
+        outlineList.className = "resources-outline-list";
+    }
+    const outlineSections = isStudentLessonMode()
+        ? getVisibleLessonContexts(resource, sections)
+        : normalizeSectionContexts(sections);
+    if (outlineList) outlineSections.forEach(({ section, sectionIndex }) => {
         const sectionNode = document.createElement("div");
         sectionNode.className = `resources-outline-section${sectionIndex === activeSectionIndex ? " is-active" : ""}`;
         if (canManageCourse) {
@@ -4162,7 +5342,13 @@ function renderResourceDetailSplitContent(resource, contentEl) {
 
             expNode.addEventListener("click", () => {
                 activeSectionIndex = sectionIndex;
-                activeExperimentIndex = expIndex;
+                activeExperimentIndex = isStudentLessonMode() && activeCourseWorkspaceTab !== "route"
+                    ? pickExperimentIndexForWorkspaceTab(
+                        Array.isArray(section.experiments) ? section.experiments : [],
+                        activeCourseWorkspaceTab,
+                        expIndex
+                    )
+                    : expIndex;
                 const currentStatus = getExperimentProgress(resource, sectionIndex, expIndex) || "in_progress";
                 setExperimentProgress(resource, sectionIndex, expIndex, currentStatus);
                 renderResourceDetail(resource);
@@ -4172,11 +5358,22 @@ function renderResourceDetailSplitContent(resource, contentEl) {
         sectionNode.appendChild(expList);
         outlineList.appendChild(sectionNode);
     });
-    outlinePane.appendChild(outlineList);
-    split.appendChild(outlinePane);
+    if (outlinePane && outlineList) {
+        outlinePane.appendChild(outlineList);
+        split.appendChild(outlinePane);
+    }
 
     const mainPane = document.createElement("section");
+    if (isStudentLessonMode() && activeCourseWorkspaceTab === "route") {
+        mainPane.className = "resources-experiment-pane resources-course-workspace";
+        renderCourseWorkspace(resource, sections, mainPane);
+        split.appendChild(mainPane);
+        contentEl.appendChild(split);
+        return;
+    }
+
     mainPane.className = "resources-experiment-pane";
+    mainPane.classList.add(getWorkspaceTabPageClass(activeCourseWorkspaceTab));
     if (!selectedExperiment) {
         const empty = document.createElement("div");
         empty.className = "resources-empty";
@@ -4187,11 +5384,16 @@ function renderResourceDetailSplitContent(resource, contentEl) {
         return;
     }
 
-    const breadcrumb = document.createElement("div");
-    breadcrumb.className = "resources-experiment-breadcrumb";
-    breadcrumb.textContent = `${resource.title || "课程"} / ${selectedSection.title || `第 ${activeSectionIndex + 1} 课`} / ${selectedExperiment.title || `实验 ${activeExperimentIndex + 1}`}`;
-    mainPane.appendChild(breadcrumb);
-
+    const overview = getExperimentFileOverview(selectedExperiment);
+    const compactStudentExperience = isStudentLessonMode() && activeCourseWorkspaceTab === "experience";
+    if (!compactStudentExperience) {
+        const breadcrumb = document.createElement("div");
+        breadcrumb.className = "resources-experiment-breadcrumb";
+        breadcrumb.textContent = isStudentLessonMode()
+            ? `${getWorkspaceTabTitle(activeCourseWorkspaceTab)} / ${selectedSection.title || `第 ${activeSectionIndex + 1} 课`} / ${selectedExperiment.title || `实验 ${activeExperimentIndex + 1}`}`
+            : `${resource.title || "课程"} / ${selectedSection.title || `第 ${activeSectionIndex + 1} 课`} / ${selectedExperiment.title || `实验 ${activeExperimentIndex + 1}`}`;
+        mainPane.appendChild(breadcrumb);
+    }
     const expCard = document.createElement("div");
     expCard.className = "resource-card";
     const expHeader = document.createElement("div");
@@ -4202,10 +5404,12 @@ function renderResourceDetailSplitContent(resource, contentEl) {
     expHeader.appendChild(expTitle);
     const expBadge = document.createElement("div");
     expBadge.className = "resource-card-badge";
-    expBadge.textContent = `${getExperimentFileOverview(selectedExperiment).allFiles.length} 个文件`;
+    expBadge.textContent = isStudentLessonMode()
+        ? getWorkspaceTabTitle(activeCourseWorkspaceTab)
+        : `${overview.allFiles.length} 个文件`;
     expHeader.appendChild(expBadge);
     const quickFormConfig = getEffectiveExperimentQuickForm(resource, activeSectionIndex, activeExperimentIndex);
-    if (quickFormConfig.submit_url) {
+    if (quickFormConfig.submit_url && !isStudentLessonMode()) {
         const qfBadge = document.createElement("div");
         qfBadge.className = "resource-card-badge";
         qfBadge.textContent = "QuickForm";
@@ -4220,24 +5424,41 @@ function renderResourceDetailSplitContent(resource, contentEl) {
         expCard.appendChild(expDesc);
     }
 
-    const overview = getExperimentFileOverview(selectedExperiment);
-    mainPane.appendChild(expCard);
+    appendExperimentTaskList(expCard, getExperimentStudentTasks(selectedExperiment));
+    if (!compactStudentExperience) {
+        mainPane.appendChild(expCard);
+    }
 
-    mainPane.appendChild(buildExperimentFilesCard({
-        overview,
-        onOpenFile: async (file) => {
-            await openExperimentEntry(
-                file,
-                getEntryKindForFile(file),
-                {
-                    resource,
-                    sectionIndex: activeSectionIndex,
-                    expIndex: activeExperimentIndex,
-                    experimentOverview: overview,
-                }
-            );
-        },
-    }));
+    const context = buildExperimentResourceContext(
+        resource,
+        selectedSection,
+        activeSectionIndex,
+        selectedExperiment,
+        activeExperimentIndex
+    );
+    if (isStudentLessonMode()) {
+        mainPane.appendChild(
+            activeCourseWorkspaceTab === "experience"
+                ? buildStudentHtmlExperienceView(context)
+                : buildStudentExperimentEntryCard(context, activeCourseWorkspaceTab)
+        );
+    } else {
+        mainPane.appendChild(buildExperimentFilesCard({
+            overview,
+            onOpenFile: async (file) => {
+                await openExperimentEntry(
+                    file,
+                    getEntryKindForFile(file),
+                    {
+                        resource,
+                        sectionIndex: activeSectionIndex,
+                        expIndex: activeExperimentIndex,
+                        experimentOverview: overview,
+                    }
+                );
+            },
+        }));
+    }
 
     split.appendChild(mainPane);
     contentEl.appendChild(split);
@@ -4248,6 +5469,11 @@ function renderResourceDetail(resource) {
     const detailView = document.getElementById("resources-detail-view");
     if (detailView) {
         detailView.classList.toggle("is-section-detail", sectionDetailMode);
+        detailView.classList.toggle("is-student-lesson", isStudentLessonMode());
+        detailView.classList.toggle("is-route-page", isStudentLessonMode() && activeCourseWorkspaceTab === "route");
+        detailView.classList.toggle("is-experience-page", isStudentLessonMode() && activeCourseWorkspaceTab === "experience");
+        detailView.classList.toggle("is-visual-page", isStudentLessonMode() && activeCourseWorkspaceTab === "visual");
+        detailView.classList.toggle("is-python-page", isStudentLessonMode() && activeCourseWorkspaceTab === "python");
     }
     const titleEl = document.getElementById("resources-detail-title");
     const metaEl = document.getElementById("resources-detail-meta");
@@ -4266,13 +5492,21 @@ function renderResourceDetail(resource) {
     const classroomCodeEl = document.getElementById("resources-detail-classroom-code");
     const moreBtn = document.getElementById("resources-detail-more-btn");
     const moreMenu = document.getElementById("resources-detail-more-menu");
+    const backBtn = document.getElementById("resources-back-btn");
 
     if (moreMenu) {
         moreMenu.classList.remove("is-open");
     }
 
     if (titleEl) {
-        titleEl.textContent = getText(resource, "title", "课程详情");
+        if (isStudentLessonMode()) {
+            const sections = normalizeSections(resource);
+            const lessonIndex = getCurrentLessonIndex(resource);
+            const section = sections[lessonIndex] || null;
+            titleEl.textContent = section?.title || getText(resource, "title", "当前课程");
+        } else {
+            titleEl.textContent = getText(resource, "title", "课程详情");
+        }
     }
 
     if (metaEl) {
@@ -4294,6 +5528,10 @@ function renderResourceDetail(resource) {
             .map((item) => `<span>${escapeAttr(item.label)}: ${escapeAttr(item.value)}</span>`)
             .join("");
         metaEl.style.display = parts.length ? "flex" : "none";
+    }
+
+    if (backBtn) {
+        backBtn.style.display = isStudentLessonMode() ? "none" : "inline-flex";
     }
 
     if (coverWrap && coverImg) {
@@ -4396,7 +5634,7 @@ function renderResourceDetail(resource) {
             resource.local_path &&
             overviewForOpen &&
             overviewForOpen.notebookFiles.length > 0;
-        if (canOpenMainConsole) {
+        if (canOpenMainConsole && !isStudentLessonMode()) {
             openBtn.style.display = "inline-flex";
             openBtn.dataset.path = resource.local_path;
         } else {
@@ -4410,7 +5648,7 @@ function renderResourceDetail(resource) {
             teacherMode.unlocked &&
             resource.source === "local" &&
             Boolean(resource.local_path);
-        classroomStartBtn.style.display = canStart ? "inline-flex" : "none";
+        classroomStartBtn.style.display = canStart && !isStudentLessonMode() ? "inline-flex" : "none";
         classroomStartBtn.disabled = !canStart;
         if (canStart) {
             const sectionNo = Number.isFinite(activeSectionIndex) ? activeSectionIndex + 1 : 1;
@@ -4421,13 +5659,13 @@ function renderResourceDetail(resource) {
 
     if (classroomStopBtn) {
         const canStop = teacherMode.unlocked && isActiveCourse(resource);
-        classroomStopBtn.style.display = canStop ? "inline-flex" : "none";
+        classroomStopBtn.style.display = canStop && !isStudentLessonMode() ? "inline-flex" : "none";
         classroomStopBtn.disabled = !canStop;
     }
 
     if (classroomCodeEl) {
         const active = teacherMode.unlocked && classroomState.active && isActiveCourse(resource);
-        classroomCodeEl.style.display = active ? "inline-flex" : "none";
+        classroomCodeEl.style.display = active && !isStudentLessonMode() ? "inline-flex" : "none";
         classroomCodeEl.textContent = active && classroomConfig.teacherCode
             ? `课堂码：${classroomConfig.teacherCode}`
             : "";
@@ -4436,7 +5674,7 @@ function renderResourceDetail(resource) {
     if (moreBtn && moreMenu) {
         const menuButtons = Array.from(moreMenu.querySelectorAll("button"));
         const hasVisible = menuButtons.some((btn) => btn.style.display !== "none");
-        const showMore = !sectionDetailMode && hasVisible;
+        const showMore = !sectionDetailMode && hasVisible && !isStudentLessonMode();
         moreBtn.style.display = showMore ? "inline-flex" : "none";
         if (!hasVisible) {
             moreMenu.classList.remove("is-open");
@@ -4595,6 +5833,9 @@ function normalizeSections(resource) {
 function normalizeSection(section, index) {
     const title = section.title || section.name || `第 ${index + 1} 节`;
     const description = section.description || section.desc || "";
+    const learningObjectives = getSectionLearningObjectives(section);
+    const keyPoints = getSectionKeyPoints(section);
+    const difficulties = getSectionDifficulties(section);
     let experiments = [];
 
     if (Array.isArray(section.experiments)) {
@@ -4618,6 +5859,9 @@ function normalizeSection(section, index) {
     return {
         title,
         description,
+        learning_objectives: learningObjectives,
+        key_points: keyPoints,
+        difficulties,
         experiments
     };
 }
@@ -4631,6 +5875,7 @@ function normalizeExperiment(exp, index) {
     return {
         title,
         description,
+        student_tasks: getExperimentStudentTasks(exp),
         files,
         quickform: normalizeQuickFormConfig(exp.quickform || {})
     };
@@ -4663,6 +5908,13 @@ function isBlocklyFile(file) {
     if (file.type && file.type.toString().toLowerCase() === "blockly") return true;
     const filePath = (file.path || "").toString().toLowerCase();
     return filePath.endsWith(".blockly.xml") || filePath.endsWith(".blockly.json");
+}
+
+function isScratchFile(file) {
+    if (!file) return false;
+    if (file.type && file.type.toString().toLowerCase() === "scratch") return true;
+    const filePath = (file.path || "").toString().toLowerCase();
+    return filePath.endsWith(".sb3");
 }
 
 function isHtmlFile(file) {
@@ -4700,6 +5952,7 @@ function findPairedPythonFile(blocklyFile, candidates = [], fallback = null) {
 }
 
 function getEntryKindForFile(file) {
+    if (isScratchFile(file)) return "scratch";
     if (isBlocklyFile(file)) return "blockly";
     if (isNotebookFile(file)) return "notebook";
     if (isHtmlFile(file)) return "html";
@@ -4709,10 +5962,11 @@ function getEntryKindForFile(file) {
 
 function filePriority(file) {
     if (isHtmlFile(file)) return 0;
-    if (isBlocklyFile(file)) return 1;
-    if (isNotebookFile(file) || isPythonScriptFile(file)) return 2;
-    if (isDirectory(file)) return 3;
-    return 4;
+    if (isScratchFile(file)) return 1;
+    if (isBlocklyFile(file)) return 2;
+    if (isNotebookFile(file) || isPythonScriptFile(file)) return 3;
+    if (isDirectory(file)) return 4;
+    return 5;
 }
 
 function sortFiles(files) {
@@ -4761,11 +6015,13 @@ function getExperimentFileOverview(exp) {
     const flatFiles = flattenFiles(sourceFiles, []);
     const allFiles = flatFiles.filter((file) => file && !isDirectory(file) && (file.path || file.name));
     const htmlFiles = allFiles.filter((file) => isHtmlFile(file));
+    const scratchFiles = allFiles.filter((file) => isScratchFile(file));
     const blocklyFiles = allFiles.filter((file) => isBlocklyFile(file));
     const notebookFiles = allFiles.filter((file) => isNotebookFile(file));
     const pythonFiles = allFiles.filter((file) => isPythonScriptFile(file));
     const primaryPythonFile = notebookFiles[0] || pythonFiles[0] || null;
     const primaryBlocklyFile = blocklyFiles[0] || null;
+    const primaryScratchFile = scratchFiles[0] || null;
     const pairedPythonFile = primaryBlocklyFile
         ? findPairedPythonFile(primaryBlocklyFile, [...notebookFiles, ...pythonFiles], primaryPythonFile)
         : primaryPythonFile;
@@ -4776,12 +6032,15 @@ function getExperimentFileOverview(exp) {
     });
     const otherFiles = allFiles.filter((file) => {
         if (htmlFiles.includes(file)) return false;
+        if (scratchFiles.includes(file)) return false;
+        if (blocklyFiles.includes(file)) return false;
         if (notebookFiles.includes(file)) return false;
         if (codeFiles.includes(file)) return false;
         return true;
     });
     const primaryEntry =
         (htmlFiles[0] && { file: htmlFiles[0], kind: "html" }) ||
+        (primaryScratchFile && { file: primaryScratchFile, kind: "scratch" }) ||
         (primaryBlocklyFile && { file: primaryBlocklyFile, kind: "blockly" }) ||
         (primaryPythonFile && { file: primaryPythonFile, kind: getEntryKindForFile(primaryPythonFile) }) ||
         (allFiles[0] && { file: allFiles[0], kind: getEntryKindForFile(allFiles[0]) }) ||
@@ -4789,6 +6048,7 @@ function getExperimentFileOverview(exp) {
     return {
         allFiles,
         htmlFiles,
+        scratchFiles,
         blocklyFiles,
         notebookFiles,
         pythonFiles,
@@ -4797,6 +6057,7 @@ function getExperimentFileOverview(exp) {
         topLevelFolders,
         primaryPythonFile,
         primaryBlocklyFile,
+        primaryScratchFile,
         pairedPythonFile,
         primaryEntry,
     };
@@ -4807,6 +6068,7 @@ function buildCurrentExperimentContext(resource, sectionIndex, expIndex, experim
     const selectedSection = normalizeSections(resource || {})[sectionIndex] || null;
     const primaryPythonFile = normalizedOverview.primaryPythonFile || null;
     const primaryBlocklyFile = normalizedOverview.primaryBlocklyFile || null;
+    const primaryScratchFile = normalizedOverview.primaryScratchFile || null;
     const primaryHtmlFile = normalizedOverview.htmlFiles?.[0] || null;
     return {
         source: resource?.source || "",
@@ -4826,12 +6088,14 @@ function buildCurrentExperimentContext(resource, sectionIndex, expIndex, experim
         },
         entries: {
             html: primaryHtmlFile ? JSON.parse(JSON.stringify(primaryHtmlFile)) : null,
+            scratch: primaryScratchFile ? JSON.parse(JSON.stringify(primaryScratchFile)) : null,
             blockly: primaryBlocklyFile ? JSON.parse(JSON.stringify(primaryBlocklyFile)) : null,
             notebook: normalizedOverview.notebookFiles?.[0] ? JSON.parse(JSON.stringify(normalizedOverview.notebookFiles[0])) : null,
             python: primaryPythonFile ? JSON.parse(JSON.stringify(primaryPythonFile)) : null,
         },
         overview: {
             htmlFiles: (normalizedOverview.htmlFiles || []).map((file) => JSON.parse(JSON.stringify(file))),
+            scratchFiles: (normalizedOverview.scratchFiles || []).map((file) => JSON.parse(JSON.stringify(file))),
             blocklyFiles: (normalizedOverview.blocklyFiles || []).map((file) => JSON.parse(JSON.stringify(file))),
             notebookFiles: (normalizedOverview.notebookFiles || []).map((file) => JSON.parse(JSON.stringify(file))),
             pythonFiles: (normalizedOverview.pythonFiles || []).map((file) => JSON.parse(JSON.stringify(file))),
@@ -4876,14 +6140,17 @@ async function openExperimentEntry(file, kind = "file", context = null) {
             overview?.primaryPythonFile || null
         );
         if (window.app?.workspace?.openBlocklyWorkspace) {
+            const sourcePage = isStudentLessonMode()
+                ? "student-visual"
+                : "resources";
             window.app.workspace.openBlocklyWorkspace({
                 localPath: context.resource.local_path || "",
                 workspacePath: file.path || "",
                 practicePath: pairedPython?.path || "",
                 sourceLabel: `${context.resource.title || "课程"} / ${file.name || file.path || "Blockly"}`,
-                sourcePage: teacherMode.unlocked ? "resources" : "main",
+                sourcePage,
             });
-            if (currentResource) {
+            if (currentResource && sourcePage !== "student-visual") {
                 renderResourceDetail(currentResource);
             }
             return;
@@ -4891,7 +6158,26 @@ async function openExperimentEntry(file, kind = "file", context = null) {
         alert("Blockly 工作台当前仅支持本地课程实验。");
         return;
     }
-    if (kind === "html" && context?.resource && !isRemotePath(file?.path || "")) {
+    if (kind === "scratch" && context?.resource && !isRemotePath(file?.path || "")) {
+        if (window.app?.workspace?.openScratchWorkspace) {
+            const sourcePage = isStudentLessonMode()
+                ? "student-visual"
+                : "resources";
+            window.app.workspace.openScratchWorkspace({
+                localPath: context.resource.local_path || "",
+                projectPath: file.path || "",
+                sourceLabel: `${context.resource.title || "课程"} / ${file.name || file.path || "Scratch"}`,
+                sourcePage,
+            });
+            if (currentResource && sourcePage !== "student-visual") {
+                renderResourceDetail(currentResource);
+            }
+            return;
+        }
+        alert("Scratch 编辑器当前仅支持本地课程项目。");
+        return;
+    }
+    if (!isStudentLessonMode() && kind === "html" && context?.resource && !isRemotePath(file?.path || "")) {
         const quickform = getEffectiveExperimentQuickForm(
             context.resource,
             context.sectionIndex || 0,
@@ -4928,12 +6214,14 @@ function pickExperimentEntries(exp) {
     if (!exp) return [];
     const overview = getExperimentFileOverview(exp);
     const html = overview.htmlFiles[0];
+    const scratch = overview.primaryScratchFile;
     const blockly = overview.primaryBlocklyFile;
     const python = overview.primaryPythonFile;
     const fallback = overview.allFiles[0];
 
     const entries = [];
     if (html) entries.push({ file: html, kind: "html" });
+    if (scratch) entries.push({ file: scratch, kind: "scratch" });
     if (blockly) entries.push({ file: blockly, kind: "blockly" });
     if (python) entries.push({ file: python, kind: getEntryKindForFile(python) });
     if (!entries.length && fallback) entries.push({ file: fallback, kind: "file" });
@@ -4997,6 +6285,7 @@ function renderFileItem(file, depth = 0) {
     const isFolder = isDirectory(file);
     const filePath = file.path || "";
     const isNotebook = isNotebookFile(file);
+    const isScratch = isScratchFile(file);
     const isBlockly = isBlocklyFile(file);
     const isHtml = isHtmlFile(file);
     const { localTargetPath, targetUrl } = resolveFileTargets(file);
@@ -5023,7 +6312,7 @@ function renderFileItem(file, depth = 0) {
 
     const icon = document.createElement("span");
     icon.className = "resources-file-icon";
-    icon.textContent = isFolder ? "📁" : isBlockly ? "🧱" : isNotebook ? "📓" : isHtml ? "🧪" : "📄";
+    icon.textContent = isFolder ? "📁" : isScratch ? "🎨" : isBlockly ? "🧱" : isNotebook ? "📓" : isHtml ? "🧪" : "📄";
     info.appendChild(icon);
 
     const label = document.createElement("span");
@@ -5038,6 +6327,8 @@ function renderFileItem(file, depth = 0) {
         action.className = "btn btn-secondary";
         action.textContent = isFolder
             ? "打开目录"
+            : isScratch
+                ? "在 Scratch 中打开"
             : isBlockly
                 ? "在 Blockly 中打开"
             : isNotebook
@@ -5050,6 +6341,14 @@ function renderFileItem(file, depth = 0) {
         action.addEventListener("click", async () => {
             if (isBlockly) {
                 await openExperimentEntry(file, "blockly", {
+                    resource: currentResource,
+                    sectionIndex: activeSectionIndex,
+                    expIndex: activeExperimentIndex,
+                });
+                return;
+            }
+            if (isScratch) {
+                await openExperimentEntry(file, "scratch", {
                     resource: currentResource,
                     sectionIndex: activeSectionIndex,
                     expIndex: activeExperimentIndex,
@@ -5816,12 +7115,17 @@ async function importRemoteCourse(resource, options = {}) {
 }
 
 async function loadResourcesIndex() {
-    return loadResourcesIndexFlow({
+    if (resourcesIndexLoadPromise) {
+        return resourcesIndexLoadPromise;
+    }
+    resourcesIndexLoadPromise = loadResourcesIndexFlow({
         documentRef: document,
         setLocalCourses: (value) => { localCourses = value; },
         localCourses: () => localCourses,
         loadLocalCourses,
+        refreshLocalCoursesFromDisk,
         clearDemoCourseBindingIfNeeded,
+        persistLocalCoursesState,
         scheduleClassroomSync,
         classroomState,
         buildClassroomBaseUrl,
@@ -5829,7 +7133,10 @@ async function loadResourcesIndex() {
         applyResourcesIndex,
         mockResourcesIndex,
         updateClassroomBanner,
+    }).finally(() => {
+        resourcesIndexLoadPromise = null;
     });
+    return resourcesIndexLoadPromise;
 }
 
 function handleSearchInput(event) {
@@ -5844,6 +7151,12 @@ function handleSearchInput(event) {
 }
 
 function handleListClick(event) {
+    const learningSpaceAction = event.target.closest("[data-learning-space-action]");
+    if (learningSpaceAction) {
+        handleLearningSpaceAction(learningSpaceAction.dataset.learningSpaceAction);
+        return;
+    }
+
     const actionBtn = event.target.closest("[data-action]");
     if (actionBtn) {
         const action = actionBtn.dataset.action;
@@ -5877,6 +7190,22 @@ function handleListClick(event) {
     }
 
     showDetailView(displayedResources[index]);
+}
+
+async function handleLearningSpaceAction(action) {
+    if (action === "import-local") {
+        openCreateView();
+        chooseCreateEntryMode("pack-import");
+        return;
+    }
+    if (action === "connect-classroom") {
+        await discoverClassrooms();
+        await loadResourcesIndex();
+        return;
+    }
+    if (action === "refresh") {
+        await loadResourcesIndex();
+    }
 }
 
 function toggleDetailMoreMenu() {
@@ -6008,25 +7337,105 @@ function bindEvents() {
 }
 
 export async function initResourcesPage() {
+    if (isStudentLessonMode()) {
+        syncStudentPageBodyState(activeCourseWorkspaceTab);
+    }
+    if (resourcesPageInitPromise) {
+        return resourcesPageInitPromise;
+    }
     if (!initialized) {
         bindEvents();
         initialized = true;
     }
     if (resourcesPageReady) {
-        updateTeacherModeUI();
         return;
     }
-    await loadQuickFormSettings();
-    await initClassroom();
-    await loadResourcesIndex();
-    showListView();
-    resourcesPageReady = true;
+    resourcesPageInitPromise = (async () => {
+        await loadQuickFormSettings();
+        await initClassroom();
+        await loadResourcesIndex();
+        if (!isStudentLessonMode()) {
+            showListView();
+        } else if (!currentResource) {
+            renderStudentLessonEmpty(activeCourseWorkspaceTab);
+        }
+        resourcesPageReady = true;
+    })();
+    try {
+        await resourcesPageInitPromise;
+    } finally {
+        resourcesPageInitPromise = null;
+    }
+}
+
+export async function openStudentLessonTab(tabId = "route", navItem = null) {
+    openingStudentLessonTab = true;
+    activeCourseWorkspaceTab = normalizeWorkspaceTabId(tabId);
+    syncStudentPageBodyState(activeCourseWorkspaceTab);
+    try {
+        if (shouldHideJupyterForStudentTab(activeCourseWorkspaceTab)) {
+            await window.app?.jupyter?.setVisibility?.(false);
+        }
+        if (navItem) {
+            document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
+            navItem.classList.add("active");
+        } else {
+            syncStudentLessonNav(activeCourseWorkspaceTab);
+        }
+
+        if (activeCourseWorkspaceTab !== "python" && activeCourseWorkspaceTab !== "visual" && window.app?.ui?.showTab) {
+            window.app.ui.showTab("resources", navItem || document.getElementById("nav-student-lesson-item"));
+        }
+
+        const cachedCourse = pickStudentCurrentCourse();
+        if (cachedCourse && (activeCourseWorkspaceTab === "python" || activeCourseWorkspaceTab === "visual")) {
+            initResourcesPage().catch((error) => {
+                console.warn("后台刷新课程资源失败:", error);
+            });
+            if (activeCourseWorkspaceTab === "python") {
+                return openStudentPythonWorkspace(cachedCourse);
+            }
+            return openStudentBlocklyWorkspace(cachedCourse);
+        }
+
+        await initResourcesPage();
+        const currentCourse = pickStudentCurrentCourse();
+        if (!currentCourse) {
+            renderStudentLessonEmpty(activeCourseWorkspaceTab);
+            return null;
+        }
+        if (activeCourseWorkspaceTab === "python") {
+            return openStudentPythonWorkspace(currentCourse);
+        }
+        if (activeCourseWorkspaceTab === "visual") {
+            return openStudentBlocklyWorkspace(currentCourse);
+        }
+        activeSectionIndex = getCurrentLessonIndex(currentCourse);
+        showDetailView(currentCourse, {
+            tabId: activeCourseWorkspaceTab,
+            preserveExperiment: true,
+            preserveSection: true,
+        });
+        return currentCourse;
+    } finally {
+        openingStudentLessonTab = false;
+        if (pendingTeacherModeShellSync) {
+            updateTeacherModeUI();
+        }
+    }
 }
 
 export async function refreshResources() {
     await loadQuickFormSettings();
     resourcesPageReady = true;
     await loadResourcesIndex();
+}
+
+export async function openResourcesLibrary() {
+    await initResourcesPage();
+    activeCourseWorkspaceTab = "route";
+    showListView();
+    renderResources(filteredResources);
 }
 
 export function openSubmitPage() {

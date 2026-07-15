@@ -1,11 +1,23 @@
 import { defineConfig } from 'vite'
+import { cpSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
 const rendererPort = Number.parseInt(process.env.XEDU_RENDERER_PORT || '3002', 10) || 3002
+const rendererAssetDir = resolve(__dirname, 'renderer/assets')
+const buildAssetDir = resolve(__dirname, 'build/assets')
 
 export default defineConfig({
   root: 'renderer',
   base: './',
+  plugins: [
+    {
+      name: 'copy-renderer-static-assets',
+      closeBundle() {
+        mkdirSync(buildAssetDir, { recursive: true })
+        cpSync(rendererAssetDir, buildAssetDir, { recursive: true })
+      }
+    }
+  ],
   build: {
     outDir: '../build',
     emptyOutDir: true,

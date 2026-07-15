@@ -2,6 +2,8 @@ const CATEGORY_REQUIRED_NAMES = new Set([
   'XEdu',
   'XEduHub',
   '媒体与设备',
+  '行空板K10',
+  'K10',
   '调试与扩展',
   '图像与视频',
   '图像视频',

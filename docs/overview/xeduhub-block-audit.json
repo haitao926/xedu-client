@@ -2,20 +2,20 @@
   "meta": {
     "source_file": "renderer/js/blockly/xeduhub-blocks.js",
     "generated_by": "scripts/generate_xeduhub_block_audit.mjs",
-    "block_count": 90,
-    "runnable_block_count": 69,
+    "block_count": 93,
+    "runnable_block_count": 72,
     "legacy_compat_count": 15,
     "semantic_task_count": 22,
     "registry_default_task_id": "det_body"
   },
   "summary": {
     "conclusions": {
-      "一致": 34,
+      "一致": 37,
       "废弃兼容": 15,
       "弱一致": 41
     },
     "groups": {
-      "结果读取/计算类": 10,
+      "结果读取/计算类": 13,
       "通信/设备/兼容类": 23,
       "结果展示类": 5,
       "图像与视频处理类": 19,
@@ -1736,6 +1736,124 @@
       "test_assertions": [
         "断言生成代码非空且可编译。",
         "断言父流程接入时不会破坏 spec/变量绑定。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_k10_gpio_write",
+      "group": "结果读取/计算类",
+      "title": "行空板 K10 设置引脚 D4 值 ?",
+      "user_visible_fields": [
+        "PIN=D4"
+      ],
+      "tooltip": "控制行空板 K10 的数字引脚输出。",
+      "generated_python": "k10_pin = pin(\"D4\")\nk10_pin.write_digital(0)",
+      "generated_python_summary": "k10_pin = pin(\"D4\") k10_pin.write_digital(0)",
+      "hidden_globals": [],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "本地 Python 执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_k10_pwm_write",
+      "group": "结果读取/计算类",
+      "title": "行空板 K10 PWM 引脚 D4 占空比 ? 频率 1000",
+      "user_visible_fields": [
+        "PIN=D4",
+        "FREQ=1000"
+      ],
+      "tooltip": "控制行空板 K10 的 PWM 输出。",
+      "generated_python": "k10_pin = pin(\"D4\")\nk10_pin.write_analog(0.5, freq=1000)",
+      "generated_python_summary": "k10_pin = pin(\"D4\") k10_pin.write_analog(0.5, freq=1000)",
+      "hidden_globals": [],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "本地 Python 执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
+      ],
+      "audit_conclusion": "一致",
+      "issue_level": "P3",
+      "findings": [
+        "可见字段和生成代码基本一致，主要风险在父流程装配而不在块本身。"
+      ],
+      "remediation": [
+        "保持现有行为，同时依赖自动审计防止后续语义漂移。"
+      ],
+      "semantic_task_id": "",
+      "semantic_task_label": "",
+      "backed_by_registry_runnable": false
+    },
+    {
+      "id": "xeduhub_k10_uart_send",
+      "group": "结果读取/计算类",
+      "title": "行空板 K10 串口发送 uart1 内容 ?",
+      "user_visible_fields": [
+        "PORT=uart1"
+      ],
+      "tooltip": "通过行空板 K10 串口发送文本指令。",
+      "generated_python": "uart1 = pin(\"uart1\")\nuart1.write(\"hello\")",
+      "generated_python_summary": "uart1 = pin(\"uart1\") uart1.write(\"hello\")",
+      "hidden_globals": [],
+      "ui_behavior": "按父流程参与数据或变量计算",
+      "is_legacy_compat": false,
+      "is_runnable": true,
+      "runtime_entrypoint": "/api/python/run",
+      "current_test_coverage": {
+        "status": "已覆盖（含定向断言）",
+        "items": [
+          "runtime-helpers.test.js: 全量 compile/stub/workspace scenario sweep",
+          "runtime-helpers.test.js: 定向命中 1 次"
+        ]
+      },
+      "test_strategy": "本地 Python 执行测试",
+      "test_assertions": [
+        "断言生成代码可编译并可执行。",
+        "断言默认字段值会进入预期变量或调用。"
       ],
       "audit_conclusion": "一致",
       "issue_level": "P3",

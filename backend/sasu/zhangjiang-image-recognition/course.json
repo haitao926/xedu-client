@@ -32,12 +32,60 @@
             {
               "path": "lesson1/exp1/index.html",
               "type": "html"
+            },
+            {
+              "path": "lesson1/exp1/scratch/pixel_image_classification_test.sb3",
+              "type": "scratch",
+              "name": "第1课图像分类 Scratch 测试"
+            },
+            {
+              "path": "lesson1/exp1/blockly/pixel_image_classification_test.blockly.xml",
+              "type": "blockly",
+              "name": "历史 Blockly 兼容资源"
+            },
+            {
+              "path": "assets/xedu-test-scene-1.png",
+              "type": "file",
+              "name": "XEdu 测试图片"
             }
+          ],
+          "student_tasks": [
+            "打开图形编程页，运行第1课图像分类 Scratch 测试，观察图片分类结果。"
           ],
           "title": "实验1：像素魔术师"
         }
       ],
       "title": "第1课：像素魔术师"
+    },
+    {
+      "title": "第2课：图像预处理",
+      "description": "掌握图像预处理与图形化 AI 实验流程",
+      "experiments": [
+        {
+          "title": "实验1：图像预处理",
+          "description": "图像标准化、灰度转换、二值化、数据增强",
+          "files": [
+            {
+              "path": "lesson2/exp1/scratch/image_classification_test.sb3",
+              "type": "scratch",
+              "name": "第2课图像分类 Scratch 测试"
+            },
+            {
+              "path": "lesson2/exp1/blockly/image_classification_test.blockly.xml",
+              "type": "blockly",
+              "name": "历史 Blockly 兼容资源"
+            },
+            {
+              "path": "assets/xedu-test-scene-1.png",
+              "type": "file",
+              "name": "XEdu 测试图片"
+            }
+          ],
+          "student_tasks": [
+            "打开图形编程页，运行第2课图像分类 Scratch 测试，观察图片分类结果。"
+          ]
+        }
+      ]
     }
   ],
   "quickform_defaults": {
