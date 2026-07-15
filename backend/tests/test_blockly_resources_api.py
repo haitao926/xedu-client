@@ -1,4 +1,3 @@
-import base64
 import io
 import json
 import os
@@ -20,6 +19,8 @@ from api.resource_runtime import (  # noqa: E402
     guess_blockly_notebook_path,
     guess_blockly_python_path,
     guess_blockly_toolbox_path,
+    issue_resource_handle,
+    register_resource_root,
 )
 from services.gitea_service import _guess_file_type  # noqa: E402
 
@@ -35,10 +36,16 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         app = create_app(Path(self.temp_dir.name))
         app.testing = True
+        self.app = app
         self.client = app.test_client()
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def _resource_handle(self, course_dir: Path, operation: str = "read") -> str:
+        with self.app.app_context():
+            root_id = register_resource_root(course_dir, "course", "test")
+            return issue_resource_handle(root_id, "", operation)
 
     def test_guess_file_type_marks_blockly(self):
         self.assertEqual(_guess_file_type("lesson1/demo.blockly.xml"), "blockly")
@@ -53,7 +60,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
         course_dir.mkdir(parents=True, exist_ok=True)
         (course_dir / "demo.blockly.xml").write_text("<xml xmlns=\"https://developers.google.com/blockly/xml\"></xml>", encoding="utf-8")
         (course_dir / "demo.ipynb").write_text("{\"cells\": [], \"metadata\": {}, \"nbformat\": 4, \"nbformat_minor\": 5}", encoding="utf-8")
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir)
 
         response = self.client.get(f"/api/resources/blockly-playground/{token}?workspace=demo.blockly.xml")
         self.assertEqual(response.status_code, 200)
@@ -89,7 +96,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
         course_dir.mkdir(parents=True, exist_ok=True)
         (course_dir / "loop.blockly.xml").write_text("<xml xmlns=\"https://developers.google.com/blockly/xml\"></xml>", encoding="utf-8")
         (course_dir / "loop.py").write_text("print('hello')\n", encoding="utf-8")
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir)
 
         with patch(
             "services.blockly_xeduhub_support._get_runtime_supported_tasks",
@@ -185,7 +192,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
             encoding="utf-8",
         )
         (course_dir / "workspace_json_roundtrip.py").write_text("counter = 2\n", encoding="utf-8")
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir)
 
         response = self.client.get(f"/api/resources/blockly-playground/{token}?workspace=workspace_json_roundtrip.blockly.json")
         self.assertEqual(response.status_code, 200)
@@ -215,7 +222,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir)
 
         response = self.client.get(f"/api/resources/blockly-playground/{token}?workspace=custom_toolbox.blockly.xml")
         self.assertEqual(response.status_code, 200)
@@ -361,7 +368,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["sample"]["label"], "默认测试样例")
         self.assertIn("course", payload["sample"])
-        self.assertIn("path", payload["sample"])
+        self.assertIn("resource_handle", payload["sample"])
 
     def test_blockly_xeduhub_execute_route_reports_missing_package(self):
         image_path = Path(self.temp_dir.name) / "demo.jpg"
@@ -881,7 +888,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
         course_dir = Path(self.temp_dir.name) / "course"
         course_dir.mkdir(parents=True, exist_ok=True)
         (course_dir / "demo.blockly.xml").write_text("<xml></xml>", encoding="utf-8")
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir, "write")
         payload = {
             "role": "teacher",
             "root_token": token,
@@ -911,7 +918,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
     def test_blockly_toolbox_save_route_rejects_student(self):
         course_dir = Path(self.temp_dir.name) / "course"
         course_dir.mkdir(parents=True, exist_ok=True)
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir, "write")
         payload = {
             "role": "student",
             "root_token": token,
@@ -926,7 +933,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
     def test_blockly_toolbox_save_route_rejects_illegal_path(self):
         course_dir = Path(self.temp_dir.name) / "course"
         course_dir.mkdir(parents=True, exist_ok=True)
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir, "write")
         payload = {
             "role": "teacher",
             "root_token": token,
@@ -942,7 +949,7 @@ class BlocklyResourcesApiTestCase(unittest.TestCase):
     def test_blockly_toolbox_save_route_derives_json_workspace_path(self):
         course_dir = Path(self.temp_dir.name) / "course"
         course_dir.mkdir(parents=True, exist_ok=True)
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir, "write")
         payload = {
             "role": "teacher",
             "root_token": token,

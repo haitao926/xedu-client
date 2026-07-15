@@ -1,4 +1,3 @@
-import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +10,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from api.app import create_app  # noqa: E402
+from api.resource_runtime import issue_resource_handle, register_resource_root  # noqa: E402
 
 
 class FakeResponse:
@@ -27,10 +27,16 @@ class QuickFormApiTestCase(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         app = create_app(Path(self.temp_dir.name))
         app.testing = True
+        self.app = app
         self.client = app.test_client()
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def _resource_handle(self, course_dir: Path) -> str:
+        with self.app.app_context():
+            root_id = register_resource_root(course_dir, "course", "test")
+            return issue_resource_handle(root_id, "", "read")
 
     def test_save_and_load_quickform_config(self):
         save_resp = self.client.post(
@@ -92,7 +98,7 @@ class QuickFormApiTestCase(unittest.TestCase):
         course_dir.mkdir(parents=True, exist_ok=True)
         html_file = course_dir / "index.html"
         html_file.write_text("<html><body>Hello</body></html>", encoding="utf-8")
-        token = base64.urlsafe_b64encode(str(course_dir.resolve()).encode("utf-8")).decode("utf-8").rstrip("=")
+        token = self._resource_handle(course_dir)
 
         response = self.client.get(f"/api/resources/local-file/{token}/index.html")
         self.assertEqual(response.status_code, 200)

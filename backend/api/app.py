@@ -12,6 +12,7 @@ import os
 from typing import Any, Dict
 
 from flask import Flask, jsonify, request
+from flask.testing import FlaskClient
 from werkzeug.exceptions import HTTPException
 
 from models.config import AppConfig
@@ -44,6 +45,17 @@ from .resource_runtime import ResourceHandleRegistry
 logger = get_logger(__name__)
 
 
+class XEduTestClient(FlaskClient):
+    """Keep legacy business tests authenticated without weakening real requests."""
+
+    def open(self, *args, **kwargs):
+        if self.application.testing and self.application.config.get("XEDU_TEST_AUTO_CAPABILITY", True):
+            headers = dict(kwargs.pop("headers", {}) or {})
+            headers.setdefault("X-XEdu-Client-Token", self.application.config["XEDU_PROCESS_CAPABILITY"])
+            kwargs["headers"] = headers
+        return super().open(*args, **kwargs)
+
+
 def create_app(config_dir=None) -> Flask:
     """
     构建 Flask 应用。
@@ -60,6 +72,7 @@ def create_app(config_dir=None) -> Flask:
     classroom_service = ClassroomService()
 
     app = Flask(__name__)
+    app.test_client_class = XEduTestClient
     configure_security(app)
     app.extensions["xedu_resource_handles"] = ResourceHandleRegistry()
 

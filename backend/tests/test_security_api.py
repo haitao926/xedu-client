@@ -17,6 +17,7 @@ class SecurityApiTestCase(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         app = create_app(Path(self.temp_dir.name))
         app.testing = True
+        app.config["XEDU_TEST_AUTO_CAPABILITY"] = False
         self.client = app.test_client()
 
     def tearDown(self):
