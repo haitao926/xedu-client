@@ -42,7 +42,7 @@
 - Windows 正式安装包尚未签名；macOS 尚未完成 Developer ID 签名、公证和 staple。
 - 没有完成 30 台物理终端课堂矩阵、Windows 进程树/故障注入和独立教师试用。
 - Scratch lock 当前有 `22` 项审计发现（`5 critical / 6 high / 11 moderate / 0 low`）；完整 Python requirements resolver 实际失败为 `resolution-too-deep`，依赖门禁未关闭。
-- 干净 checkout 不包含被 Git 忽略的约 `2.4 GB` checkpoint bundle；正式 release workflow 会在签名构建前快速失败，必须先接入固定来源和 SHA-256 清单。
+- 干净 checkout 不包含被 Git 忽略的约 `2.4 GB` checkpoint bundle；release workflow 已接入 `XEDU_CHECKPOINT_BUNDLE_URL` 与 `XEDU_CHECKPOINT_BUNDLE_SHA256` 的下载、路径安全和哈希校验，但 protected release environment 尚未配置这两个 secret。
 
 ### 本轮执行状态（2026-07-19）
 

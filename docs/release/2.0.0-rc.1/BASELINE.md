@@ -47,7 +47,9 @@ Recorded on 2026-07-19:
 - macOS arm64: DMG plus zip, with hardened runtime and entitlements.
 - The official workflow is `.github/workflows/release.yml` and requires an
   exact version tag, platform signing credentials, the checkpoint bundle, and
-  independent artifact verification.
+  independent artifact verification. A clean runner provisions the model
+  archive through `XEDU_CHECKPOINT_BUNDLE_URL` and verifies
+  `XEDU_CHECKPOINT_BUNDLE_SHA256` before building.
 
 ## Not Yet Evidence
 

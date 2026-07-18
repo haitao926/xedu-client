@@ -74,6 +74,12 @@ jobs:
       - name: Install Scratch dependencies
         run: npm ci --prefix scratch-editor
 
+      - name: Provision checkpoint bundle
+        env:
+          XEDU_CHECKPOINT_BUNDLE_URL: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_URL }}
+          XEDU_CHECKPOINT_BUNDLE_SHA256: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_SHA256 }}
+        run: node scripts/provision_checkpoint_bundle.mjs
+
       - name: Install backend test dependencies and smoke model builder
         run: |
           python -m pip install --upgrade pip
@@ -122,6 +128,12 @@ jobs:
 
       - name: Install Scratch dependencies
         run: npm ci --prefix scratch-editor
+
+      - name: Provision checkpoint bundle
+        env:
+          XEDU_CHECKPOINT_BUNDLE_URL: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_URL }}
+          XEDU_CHECKPOINT_BUNDLE_SHA256: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_SHA256 }}
+        run: node scripts/provision_checkpoint_bundle.mjs
 
       - name: Check release model assets
         run: node scripts/check_release_inputs.mjs
@@ -179,6 +191,12 @@ jobs:
 
       - name: Install Scratch dependencies
         run: npm ci --prefix scratch-editor
+
+      - name: Provision checkpoint bundle
+        env:
+          XEDU_CHECKPOINT_BUNDLE_URL: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_URL }}
+          XEDU_CHECKPOINT_BUNDLE_SHA256: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_SHA256 }}
+        run: node scripts/provision_checkpoint_bundle.mjs
 
       - name: Check release model assets
         run: node scripts/check_release_inputs.mjs
