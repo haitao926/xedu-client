@@ -73,24 +73,14 @@ function shouldDisplayEmbeddedJupyter() {
     return workspaceActive && !hasVisibleModal;
 }
 
-// Ensure API calls hit the backend over HTTP even when loaded via file://
-const DEFAULT_API_BASE = (typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
-    ? window.xeduConfig.apiBase
-    : 'http://127.0.0.1:5123';
-const API_BASE = (apiClient && apiClient.baseURL ? apiClient.baseURL : DEFAULT_API_BASE).replace(/\/$/, '');
 const STATUS_FETCH_TIMEOUT_MS = 2000;
 const READY_STATUS_FETCH_TIMEOUT_MS = 2500;
 const apiFetch = (path, options = {}) => {
     const { timeoutMs = 0, ...fetchOptions } = options || {};
-    if (!timeoutMs || fetchOptions.signal) {
-        return fetch(`${API_BASE}${path}`, fetchOptions);
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    return fetch(`${API_BASE}${path}`, {
+    return apiClient.request(path, {
         ...fetchOptions,
-        signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
+        timeoutMs,
+    });
 };
 
 function setBackendDisconnectedStatus() {

@@ -1,10 +1,17 @@
-﻿const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
+﻿const { app, BrowserWindow, Menu, shell, ipcMain, dialog, clipboard } = require('electron');
 const { session } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
+const {
+    getPythonDialogFilters,
+    isUsablePythonExecutable,
+    readConfiguredPythonExecutable,
+    resolvePythonExecutable,
+    validatePythonExecutable,
+} = require('./python-runtime');
 
 function isBrokenPipeError(error) {
     return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
@@ -87,6 +94,37 @@ const gotTheLock = app.requestSingleInstanceLock();
 let jupyterManagedPid = null;
 const backendCapability = process.env.XEDU_CLIENT_CAPABILITY || crypto.randomBytes(32).toString('base64url');
 const approvedLocalRoots = new Set();
+let backendStartupAttemptCount = 0;
+let selectedPythonExecutable = '';
+let backendStartupState = {
+    status: 'idle',
+    message: '后端尚未启动。',
+    canRetry: true,
+    updatedAt: new Date().toISOString(),
+    attemptCount: 0,
+    logDirectory: null,
+};
+
+const DIAGNOSTIC_SECRET_LABELS = [
+    'authorization',
+    'token',
+    'password',
+    'api_key',
+    'api-key',
+    'secret',
+    'teacher_code',
+    'teacher-code',
+    'classroom_teacher_code',
+    'classroom-teacher-code',
+    '教师口令',
+    '课堂口令',
+];
+const DIAGNOSTIC_BODY_LABELS = ['request_body', 'request-body', 'request body', '请求正文'];
+
+const API_REQUEST_ALLOWLIST = Object.freeze([
+    { method: 'GET', pattern: /^\/api\/(?:health|status|detect_python|load_config|documents(?:\/|$)|classroom\/(?:status|discover|index|course\/|file\/|package\/)|resources\/(?:default-sample|index|local-file\/|scan|inspect-course|scan-folder)|projects\/templates)(?:\?.*)?$/ },
+    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|projects\/create|ai\/(?:ask|test_config|save_config)|quickform\/(?:test|tasks(?:\/create)?$)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|inspect-course|publish|pull|ensure-repo|save-course|import-package-local|quickform\/inject|scratch-workspace))(?:\?.*)?$/ },
+]);
 
 const DEV_RENDERER_CANDIDATES = [
     process.env.ELECTRON_RENDERER_URL,
@@ -96,6 +134,10 @@ const DEV_RENDERER_CANDIDATES = [
 
 function isTrustedRenderer(event) {
     return Boolean(mainWindow && event?.sender === mainWindow.webContents);
+}
+
+function isAllowedApiRequest(method, relativePath) {
+    return API_REQUEST_ALLOWLIST.some((rule) => rule.method === method && rule.pattern.test(relativePath));
 }
 
 function isSafeExternalUrl(value) {
@@ -126,6 +168,108 @@ function isApprovedLocalPath(targetPath) {
     } catch (_) {
         return false;
     }
+}
+
+function getBackendLogDirectory() {
+    try {
+        return path.join(app.getPath('userData'), 'logs');
+    } catch (_) {
+        return null;
+    }
+}
+
+function getBackendConfigFile() {
+    try {
+        return path.join(app.getPath('userData'), 'config', 'config.json');
+    } catch (_) {
+        return null;
+    }
+}
+
+function createPythonSetupRequiredError() {
+    const error = new Error('尚未选择本机 Python 解释器，请在 Python 设置中选择可用的 Python 环境。');
+    error.code = 'XEDU_PYTHON_REQUIRED';
+    return error;
+}
+
+function ensureBackendLogDirectory() {
+    const logDir = getBackendLogDirectory();
+    if (!logDir) {
+        throw new Error('无法定位日志目录');
+    }
+    fs.mkdirSync(logDir, { recursive: true });
+    return logDir;
+}
+
+function getBackendStartupStateSnapshot() {
+    return {
+        ...backendStartupState,
+        logDirectory: backendStartupState.logDirectory || getBackendLogDirectory(),
+    };
+}
+
+function emitBackendStartupState() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow?.webContents.send('backend-startup-state', getBackendStartupStateSnapshot());
+    }
+}
+
+function updateBackendStartupState(patch = {}) {
+    backendStartupState = {
+        ...backendStartupState,
+        ...patch,
+        attemptCount: patch.attemptCount ?? backendStartupAttemptCount,
+        logDirectory: patch.logDirectory ?? backendStartupState.logDirectory ?? getBackendLogDirectory(),
+        updatedAt: new Date().toISOString(),
+    };
+    emitBackendStartupState();
+    return getBackendStartupStateSnapshot();
+}
+
+function redactSensitiveDiagnosticText(value) {
+    let text = String(value || '');
+    if (!text) return '';
+
+    for (const label of DIAGNOSTIC_BODY_LABELS) {
+        const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp(`(${escaped}\\s*[:：=]\\s*)([^\\n\\r]*)`, 'gi'), '$1[redacted]');
+        text = text.replace(new RegExp(`([?&]${escaped}=)[^&\\s]+`, 'gi'), '$1[redacted]');
+    }
+
+    for (const label of DIAGNOSTIC_SECRET_LABELS) {
+        const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp(`("${escaped}"\\s*:\\s*)"([^"]*)"`, 'gi'), '$1"[redacted]"');
+        text = text.replace(new RegExp(`(${escaped}\\s*[:：=]\\s*)([^\\s,;\\n\\r]+)`, 'gi'), '$1[redacted]');
+        text = text.replace(new RegExp(`([?&]${escaped}=)[^&\\s]+`, 'gi'), '$1[redacted]');
+    }
+
+    text = text.replace(/(Authorization\s*:\s*Bearer\s+)[^\s]+/gi, '$1[redacted]');
+    return text;
+}
+
+function buildBackendDiagnosticSummary(message) {
+    const recent = redactSensitiveDiagnosticText(backendRecentOutput.slice(-8).join('\n'));
+    const summaryLines = [
+        'XEdu Client 启动诊断摘要',
+        `状态: ${backendStartupState.status}`,
+        `时间: ${new Date().toISOString()}`,
+        `尝试次数: ${backendStartupAttemptCount}`,
+        `说明: ${redactSensitiveDiagnosticText(message || backendStartupState.message || '后端服务在预期时间内未准备好')}`,
+    ];
+    if (backendLastExit) {
+        summaryLines.push(`后端退出: code=${backendLastExit.code}, signal=${backendLastExit.signal}`);
+    }
+    const logDir = getBackendLogDirectory();
+    if (logDir) {
+        summaryLines.push(`日志目录: ${logDir}`);
+    }
+    if (backendLogFile) {
+        summaryLines.push(`日志文件: ${backendLogFile}`);
+    }
+    if (recent) {
+        summaryLines.push(`最近输出:\n${recent}`);
+    }
+    return redactSensitiveDiagnosticText(summaryLines.join('\n'));
 }
 
 // 规范化 Jupyter URL，修正偶发的 "/lablocale=en"（缺少 '?') 等问题
@@ -313,6 +457,8 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        minWidth: 960,
+        minHeight: 600,
         show: false,
         center: true,
         icon: iconPath,
@@ -320,7 +466,8 @@ function createWindow() {
             nodeIntegration: false,
             contextIsolation: true,
             enableRemoteModule: false,
-            webSecurity: !isDev,
+            sandbox: true,
+            webSecurity: true,
             preload: path.join(__dirname, '../preload/index.js')
         },
         title: 'XEdu Client'
@@ -389,6 +536,7 @@ function createWindow() {
     mainWindow.webContents.on('did-finish-load', () => {
         clearTimeout(fallbackShowTimer);
         showMainWindow('did-finish-load');
+        emitBackendStartupState();
         if (pendingPracticeDeepLink) {
             mainWindow.webContents.send('deep-link-open-practice', pendingPracticeDeepLink);
             pendingPracticeDeepLink = null;
@@ -552,6 +700,33 @@ ipcMain.handle('select-image-file', async (event) => {
     return null;
 });
 
+ipcMain.handle('select-python', async (event) => {
+    if (!isTrustedRenderer(event)) {
+        return { success: false, error: 'forbidden' };
+    }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: getPythonDialogFilters(process.platform),
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, canceled: true };
+    }
+
+    const selectedPath = path.resolve(result.filePaths[0]);
+    const validation = validatePythonExecutable(selectedPath, { platform: process.platform, fsImpl: fs });
+    if (!validation.success) {
+        return {
+            success: false,
+            error: validation.message,
+        };
+    }
+
+    selectedPythonExecutable = selectedPath;
+    rememberApprovedPath(selectedPath);
+    return { success: true, path: selectedPath };
+});
+
 ipcMain.handle('open-external', async (event, url) => {
     if (!isTrustedRenderer(event) || !isSafeExternalUrl(url)) {
         return { success: false, error: 'invalid-url' };
@@ -570,6 +745,73 @@ ipcMain.handle('open-path', async (event, targetPath) => {
         return { success: false, error: result };
     }
     return { success: true };
+});
+
+ipcMain.handle('backend:open-log-directory', async (event) => {
+    if (!isTrustedRenderer(event)) {
+        return { success: false, error: 'forbidden' };
+    }
+    try {
+        const logDir = ensureBackendLogDirectory();
+        const result = await shell.openPath(logDir);
+        if (result) {
+            return { success: false, error: result, path: logDir };
+        }
+        return { success: true, path: logDir };
+    } catch (error) {
+        return { success: false, error: error?.message || 'open-log-directory-failed' };
+    }
+});
+
+ipcMain.handle('backend:copy-diagnostic-summary', async (event) => {
+    if (!isTrustedRenderer(event)) {
+        return { success: false, error: 'forbidden' };
+    }
+    try {
+        const summary = buildBackendDiagnosticSummary();
+        clipboard.writeText(summary);
+        return { success: true, summary };
+    } catch (error) {
+        return { success: false, error: error?.message || 'copy-diagnostic-summary-failed' };
+    }
+});
+
+ipcMain.handle('backend:get-startup-state', async (event) => {
+    if (!isTrustedRenderer(event)) {
+        return { success: false, error: 'forbidden' };
+    }
+    return { success: true, state: getBackendStartupStateSnapshot() };
+});
+
+ipcMain.handle('backend:retry-startup', async (event) => {
+    if (!isTrustedRenderer(event)) {
+        return { success: false, error: 'forbidden' };
+    }
+    try {
+        if (cleanupBackend) {
+            cleanupBackend();
+        } else if (backendProcess && !backendProcess.killed) {
+            backendProcess.kill();
+        }
+    } catch (error) {
+        console.warn('清理失败的后端进程失败:', error?.message || error);
+    } finally {
+        backendProcess = null;
+        cleanupBackend = null;
+        backendReadyPromise = null;
+        jupyterManagedPid = null;
+    }
+
+    try {
+        await startBackendServer({ force: true, reason: 'manual-retry' });
+        return { success: true, state: getBackendStartupStateSnapshot() };
+    } catch (error) {
+        return {
+            success: false,
+            error: error?.message || 'retry-backend-startup-failed',
+            state: getBackendStartupStateSnapshot(),
+        };
+    }
 });
 
 ipcMain.handle('get-system-info', () => {
@@ -591,7 +833,7 @@ ipcMain.handle('api:request', async (event, request) => {
     const method = String(request.method || 'GET').toUpperCase();
     const relativePath = String(request.path || '');
     const allowedMethods = new Set(['GET', 'POST']);
-    if (!allowedMethods.has(method) || !relativePath.startsWith('/api/') || relativePath.includes('://')) {
+    if (!allowedMethods.has(method) || !relativePath.startsWith('/api/') || relativePath.includes('://') || !isAllowedApiRequest(method, relativePath)) {
         return { status: 400, headers: {}, body: JSON.stringify({ success: false, message: 'invalid request' }) };
     }
     const body = request.body == null ? '' : String(request.body);
@@ -625,6 +867,110 @@ ipcMain.handle('api:request', async (event, request) => {
         proxyRequest.on('timeout', () => {
             proxyRequest.destroy();
             resolve({ status: 504, headers: {}, body: JSON.stringify({ success: false, message: 'request timeout' }) });
+        });
+        proxyRequest.end(body);
+    });
+});
+
+ipcMain.handle('api:scratch-request', async (event, request) => {
+    if (!isTrustedRenderer(event) || !request || typeof request !== 'object') {
+        return { status: 403, headers: {}, body: JSON.stringify({ success: false, message: 'forbidden' }) };
+    }
+    const method = String(request.method || 'POST').toUpperCase();
+    const relativePath = String(request.path || '').split('?')[0];
+    if (method !== 'POST' || relativePath !== '/api/resources/xeduhub/execute') {
+        return { status: 400, headers: {}, body: JSON.stringify({ success: false, message: 'invalid Scratch request' }) };
+    }
+    const body = request.body == null ? '' : String(request.body);
+    if (Buffer.byteLength(body, 'utf8') > 1024 * 1024) {
+        return { status: 413, headers: {}, body: JSON.stringify({ success: false, message: 'request too large' }) };
+    }
+    return new Promise((resolve) => {
+        const proxyRequest = http.request({
+            host: BACKEND_HOST,
+            port: BACKEND_PORT,
+            path: '/api/resources/xeduhub/execute',
+            method: 'POST',
+            timeout: 30000,
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body, 'utf8'),
+                'X-XEdu-Client-Token': backendCapability,
+            },
+        }, (response) => {
+            let responseBody = '';
+            response.setEncoding('utf8');
+            response.on('data', (chunk) => { responseBody += chunk; });
+            response.on('end', () => resolve({
+                status: response.statusCode || 502,
+                headers: { 'content-type': String(response.headers['content-type'] || 'application/json') },
+                body: responseBody,
+            }));
+        });
+        proxyRequest.on('error', () => resolve({ status: 502, headers: {}, body: JSON.stringify({ success: false, message: 'backend unavailable' }) }));
+        proxyRequest.on('timeout', () => {
+            proxyRequest.destroy();
+            resolve({ status: 504, headers: {}, body: JSON.stringify({ success: false, message: 'request timeout' }) });
+        });
+        proxyRequest.end(body);
+    });
+});
+
+ipcMain.handle('api:pip-stream', async (event, request) => {
+    if (!isTrustedRenderer(event) || !request || typeof request !== 'object') {
+        return { status: 403, headers: {}, body: JSON.stringify({ success: false, message: 'forbidden' }) };
+    }
+    const requestId = String(request.requestId || '');
+    const action = String(request.action || '').toLowerCase();
+    const packageName = String(request.package || '').trim();
+    if (!requestId || !['install', 'uninstall', 'list', 'upgrade'].includes(action)) {
+        return { status: 400, headers: {}, body: JSON.stringify({ success: false, message: 'invalid pip request' }) };
+    }
+    if (action !== 'list' && !packageName) {
+        return { status: 400, headers: {}, body: JSON.stringify({ success: false, message: 'package is required' }) };
+    }
+    const body = JSON.stringify({
+        action,
+        package: packageName,
+        use_mirror: Boolean(request.useMirror),
+        stream: true,
+    });
+    return new Promise((resolve) => {
+        const send = (payload) => {
+            if (!event.sender.isDestroyed()) {
+                event.sender.send('pip-stream-event', { requestId, ...payload });
+            }
+        };
+        const proxyRequest = http.request({
+            host: BACKEND_HOST,
+            port: BACKEND_PORT,
+            path: '/api/python/pip',
+            method: 'POST',
+            timeout: 300000,
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body, 'utf8'),
+                'X-XEdu-Client-Token': backendCapability,
+            },
+        }, (response) => {
+            response.setEncoding('utf8');
+            response.on('data', (chunk) => send({ type: 'data', chunk }));
+            response.on('end', () => {
+                send({ type: 'end' });
+                resolve({
+                    status: response.statusCode || 502,
+                    headers: { 'content-type': String(response.headers['content-type'] || 'text/plain') },
+                });
+            });
+        });
+        proxyRequest.on('error', () => {
+            send({ type: 'error', error: 'backend unavailable' });
+            resolve({ status: 502, headers: {}, body: '' });
+        });
+        proxyRequest.on('timeout', () => {
+            proxyRequest.destroy();
+            send({ type: 'error', error: 'request timeout' });
+            resolve({ status: 504, headers: {}, body: '' });
         });
         proxyRequest.end(body);
     });
@@ -700,8 +1046,8 @@ function rememberBackendOutput(output) {
 }
 
 function buildBackendFailureMessage(message) {
-    const recent = backendRecentOutput.slice(-8).join('\n');
-    const parts = [message || '后端服务在预期时间内未准备好'];
+    const recent = redactSensitiveDiagnosticText(backendRecentOutput.slice(-8).join('\n'));
+    const parts = [redactSensitiveDiagnosticText(message || '后端服务在预期时间内未准备好')];
     if (backendLastExit) {
         parts.push(`后端退出: code=${backendLastExit.code}, signal=${backendLastExit.signal}`);
     }
@@ -711,7 +1057,7 @@ function buildBackendFailureMessage(message) {
     if (recent) {
         parts.push(`最近输出:\n${recent}`);
     }
-    return parts.join('\n');
+    return redactSensitiveDiagnosticText(parts.join('\n'));
 }
 
 function stopJupyterGracefully(timeoutMs = 3000) {
@@ -769,11 +1115,20 @@ function stopJupyterGracefully(timeoutMs = 3000) {
     });
 }
 
-function startBackendServer() {
-    if (backendReadyPromise) {
+function startBackendServer(options = {}) {
+    const { force = false, reason = 'initial' } = options;
+    if (backendReadyPromise && !force) {
         return backendReadyPromise;
     }
 
+    backendStartupAttemptCount += 1;
+    updateBackendStartupState({
+        status: 'starting',
+        message: reason === 'manual-retry' ? '正在重试后端启动…' : '正在启动后端服务…',
+        canRetry: false,
+        attemptCount: backendStartupAttemptCount,
+        logDirectory: getBackendLogDirectory(),
+    });
     console.log('启动后端服务器...');
 
     const occupied = findProcessOnPort(BACKEND_PORT);
@@ -783,79 +1138,68 @@ function startBackendServer() {
         backendReadyPromise = waitForBackendReady(5000)
             .then(() => {
                 console.log('检测到已有运行的后端服务');
+                updateBackendStartupState({
+                    status: 'ready',
+                    message: '检测到可用的后端服务。',
+                    canRetry: false,
+                    logDirectory: getBackendLogDirectory(),
+                });
                 return true;
             })
             .catch(() => {
                 const errMsg = `${occupiedMsgBase}，且 /api/health 无响应，请先关闭该进程后重试。`;
                 console.error(errMsg);
                 mainWindow?.webContents.send('log-update', { type: 'error', message: errMsg });
+                updateBackendStartupState({
+                    status: 'error',
+                    message: buildBackendFailureMessage(errMsg),
+                    canRetry: true,
+                });
+                backendReadyPromise = null;
                 throw new Error(errMsg);
             });
         return backendReadyPromise;
     }
 
-    const fs = require('fs');
+    const configuredPython = readConfiguredPythonExecutable(getBackendConfigFile(), fs);
+    const pythonCmd = resolvePythonExecutable({
+        platform: process.platform,
+        packaged: app.isPackaged,
+        configuredPath: configuredPython,
+        selectedPath: selectedPythonExecutable,
+        envPath: process.env.XEDU_PYTHON_EXECUTABLE || '',
+        projectRoot: path.resolve(__dirname, '../..'),
+        fsImpl: fs,
+    });
 
-    const resolveBundledPython = () => {
-        const resourceRoot = process.resourcesPath;
-        const candidates = [];
-
-        if (process.platform === 'win32') {
-            candidates.push(path.join(resourceRoot, 'python_env', 'Scripts', 'python.exe'));
-            candidates.push(path.join(resourceRoot, 'python_env', 'python.exe'));
-            candidates.push(path.join(resourceRoot, 'app.asar.unpacked', 'python_env', 'Scripts', 'python.exe'));
-            candidates.push(path.join(resourceRoot, 'app.asar.unpacked', 'python_env', 'python.exe'));
-            candidates.push(path.join(path.dirname(process.execPath), 'python_env', 'Scripts', 'python.exe'));
-            candidates.push(path.join(path.dirname(process.execPath), 'python_env', 'python.exe'));
-        } else {
-            candidates.push(path.join(resourceRoot, 'python_env', 'bin', 'python3'));
-            candidates.push(path.join(resourceRoot, 'app.asar.unpacked', 'python_env', 'bin', 'python3'));
-            candidates.push(path.join(path.dirname(process.execPath), 'python_env', 'bin', 'python3'));
-        }
-
-        for (const c of candidates) {
-            if (fs.existsSync(c)) {
-                return c;
-            }
-        }
-        return null;
-    };
-
-    let pythonCmd = null;
-
-    if (app.isPackaged) {
-        pythonCmd = resolveBundledPython();
-        if (!pythonCmd) {
-            const errMsg = '未找到内置 Python 解释器，请确认安装包中包含 python_env 目录。';
-            console.error(errMsg);
-            dialog.showErrorBox('后端启动失败', errMsg);
-            backendReadyPromise = Promise.reject(new Error(errMsg));
-            return backendReadyPromise;
-        }
-        console.log(`使用打包的Python解释器 ${pythonCmd}`);
-    } else {
-        const pythonEnvDir = path.join(__dirname, '../../python_env');
-        const devCandidates = [];
-        if (process.platform === 'win32') {
-            devCandidates.push(path.join(pythonEnvDir, 'Scripts', 'python.exe'));
-            devCandidates.push(path.join(pythonEnvDir, 'python.exe'));
-        } else {
-            devCandidates.push(path.join(pythonEnvDir, 'bin', 'python3'));
-            devCandidates.push(path.join(pythonEnvDir, 'python3'));
-        }
-
-        pythonCmd = devCandidates.find((c) => fs.existsSync(c)) || null;
-
-        if (pythonCmd) {
-            console.log(`使用本地开发环境的Python解释器 ${pythonCmd}`);
-        } else {
-            const errMsg = '未找到本地 python_env 下的 Python 解释器（尝试了 Scripts/python.exe 和 python.exe），请确认安装包或开发环境完整。';
-            console.error(errMsg);
-            dialog.showErrorBox('后端启动失败', errMsg);
-            backendReadyPromise = Promise.reject(new Error(errMsg));
-            return backendReadyPromise;
-        }
+    if (!pythonCmd) {
+        const setupError = app.isPackaged
+            ? createPythonSetupRequiredError()
+            : new Error('未找到可用的 Python 解释器，请确认开发环境已安装 Python。');
+        console.warn(setupError.message);
+        updateBackendStartupState({
+            status: 'error',
+            message: setupError.message,
+            canRetry: true,
+            logDirectory: getBackendLogDirectory(),
+        });
+        return Promise.reject(setupError);
     }
+
+    const pythonValidation = validatePythonExecutable(pythonCmd, { platform: process.platform, fsImpl: fs });
+    if (!pythonValidation.success) {
+        const setupError = new Error(pythonValidation.message);
+        setupError.code = 'XEDU_PYTHON_REQUIRED';
+        updateBackendStartupState({
+            status: 'error',
+            message: setupError.message,
+            canRetry: true,
+            logDirectory: getBackendLogDirectory(),
+        });
+        return Promise.reject(setupError);
+    }
+
+    console.log(`使用 Python 解释器 ${pythonCmd}`);
 
     let serverScript;
     if (app.isPackaged) {
@@ -870,8 +1214,12 @@ function startBackendServer() {
             const errMsg = '未找到后端入口脚本 backend_main.py，请检查安装包完整性。';
             console.error(errMsg);
             dialog.showErrorBox('后端启动失败', errMsg);
-            backendReadyPromise = Promise.reject(new Error(errMsg));
-            return backendReadyPromise;
+            updateBackendStartupState({
+                status: 'error',
+                message: buildBackendFailureMessage(errMsg),
+                canRetry: true,
+            });
+            return Promise.reject(new Error(errMsg));
         }
     } else {
         serverScript = path.join(__dirname, '../../backend/backend_main.py');
@@ -883,7 +1231,7 @@ function startBackendServer() {
 
     const launchBackend = () => {
         const userDataDir = app.getPath('userData');
-        const logDir = path.join(userDataDir, 'logs');
+        const logDir = getBackendLogDirectory() || path.join(userDataDir, 'logs');
         try {
             fs.mkdirSync(logDir, { recursive: true });
         } catch (e) {
@@ -900,6 +1248,12 @@ function startBackendServer() {
             }
         };
         appendBackendLog(`\n\n[${new Date().toISOString()}] launch backend\n`);
+        updateBackendStartupState({
+            status: 'starting',
+            message: '正在启动后端服务…',
+            canRetry: false,
+            logDirectory: logDir,
+        });
 
         // 计算文档目录
         let docsDir;
@@ -934,6 +1288,7 @@ function startBackendServer() {
             XEDU_API_HOST: BACKEND_HOST,
             XEDU_CLIENT_CAPABILITY: backendCapability,
             XEDU_CHECKPOINT_DIRS: checkpointDirs.join(path.delimiter),
+            XEDU_PYTHON_EXECUTABLE: pythonCmd,
             PYTHONPATH: path.dirname(serverScript),
             PYTHONHOME: '',
         };
@@ -992,20 +1347,27 @@ function startBackendServer() {
             console.log(`后端服务器退出，代码: ${code}, 信号: ${signal}`);
             backendLastExit = { code, signal };
             const exitMessage = `后端服务器退出，代码: ${code}, 信号: ${signal}`;
+            const failureMessage = buildBackendFailureMessage(exitMessage);
             appendBackendLog(`\n[${new Date().toISOString()}] ${exitMessage}\n`);
             safeSendLog({
                 type: code === 0 || code === null ? 'warning' : 'error',
-                message: buildBackendFailureMessage(exitMessage)
+                message: failureMessage
             });
             backendReadyPromise = null;
             jupyterManagedPid = null;
+            updateBackendStartupState({
+                status: code === 0 || code === null ? 'idle' : 'error',
+                message: code === 0 || code === null ? '后端已停止。' : failureMessage,
+                canRetry: true,
+                logDirectory: getBackendLogDirectory(),
+            });
             if (code !== 0 && code !== null) {
                 console.error('后端服务器异常退出');
                 if (code === 1) {
                     console.log('尝试重启后端服务器...');
                     setTimeout(() => {
                         backendReadyPromise = null;
-                        startBackendServer();
+                        startBackendServer({ reason: 'auto-retry' });
                     }, 2000);
                 }
             }
@@ -1022,7 +1384,14 @@ function startBackendServer() {
             console.error('启动后端服务器失败', err);
             rememberBackendOutput(err?.stack || err?.message || String(err));
             appendBackendLog(`\n[${new Date().toISOString()}] spawn error\n${err?.stack || err}\n`);
-            safeSendLog({ type: 'error', message: buildBackendFailureMessage(err.message || '启动后端服务器失败') });
+            const failureMessage = buildBackendFailureMessage(err.message || '启动后端服务器失败');
+            safeSendLog({ type: 'error', message: failureMessage });
+            updateBackendStartupState({
+                status: 'error',
+                message: failureMessage,
+                canRetry: true,
+                logDirectory: getBackendLogDirectory(),
+            });
             if (err.code === 'ENOENT') {
                 console.error('Python解释器未找到，请检查Python安装');
             } else if (err.code === 'EACCES') {
@@ -1068,12 +1437,27 @@ function startBackendServer() {
         })
         .then(() => {
             console.log('后端服务器已准备好');
+            updateBackendStartupState({
+                status: 'ready',
+                message: '后端服务已就绪。',
+                canRetry: false,
+                logDirectory: getBackendLogDirectory(),
+            });
             return true;
         })
         .catch((err) => {
             const message = buildBackendFailureMessage(err.message);
             mainWindow?.webContents.send('log-update', { type: 'error', message });
-            throw new Error(message);
+            updateBackendStartupState({
+                status: 'error',
+                message,
+                canRetry: true,
+                logDirectory: getBackendLogDirectory(),
+            });
+            backendReadyPromise = null;
+            const wrappedError = new Error(message);
+            wrappedError.code = err.code;
+            throw wrappedError;
         });
 
     backendReadyPromise = readyPromise;
@@ -1106,8 +1490,9 @@ function setupJupyterView() {
             webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
+                sandbox: true,
                 session: mainWindow.webContents.session,
-                webSecurity: false
+                webSecurity: true
             }
         });
 
@@ -1191,7 +1576,7 @@ function setupJupyterView() {
 
         try {
             // 只有当前应显示 Jupyter 时才重新附加 BrowserView。
-            // 隐藏状态下只缓存 bounds，避免窗口 resize/布局同步把它重新盖到 Blockly 上。
+            // 隐藏状态下只缓存 bounds，避免窗口 resize/布局同步重新覆盖主页面。
             if (isJupyterViewVisible && mainWindow.getBrowserView() !== jupyterView) {
                 mainWindow.setBrowserView(jupyterView);
             }
@@ -1218,7 +1603,7 @@ function setupJupyterView() {
                 mainWindow.setBrowserView(jupyterView);
             }
         } else {
-            // 隐藏视图时真正移除 BrowserView，避免残留覆盖在 Blockly 上方
+            // 隐藏视图时真正移除 BrowserView，避免残留覆盖在主页面上方
             isJupyterViewVisible = false;
             try {
                 mainWindow.removeBrowserView(jupyterView);
@@ -1276,6 +1661,22 @@ function setupJupyterView() {
 
 function setupMenu() {
 // ... existing code ...
+    const viewSubmenu = [
+        {
+            label: '重新加载',
+            accelerator: 'CmdOrCtrl+R',
+            click: () => { mainWindow.reload(); }
+        }
+    ];
+
+    if (!app.isPackaged) {
+        viewSubmenu.push({
+            label: '开发者工具',
+            accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
+            click: () => { mainWindow.webContents.toggleDevTools(); }
+        });
+    }
+
     const template = [
         {
             label: '应用',
@@ -1301,18 +1702,7 @@ function setupMenu() {
         },
         {
             label: '视图',
-            submenu: [
-                {
-                    label: '重新加载',
-                    accelerator: 'CmdOrCtrl+R',
-                    click: () => { mainWindow.reload(); }
-                },
-                {
-                    label: '开发者工具',
-                    accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
-                    click: () => { mainWindow.webContents.toggleDevTools(); }
-                }
-            ]
+            submenu: viewSubmenu
         },
         {
             label: '帮助',
@@ -1355,7 +1745,9 @@ if (!gotTheLock) {
                     mainWindow.webContents.send('log-update', { type: 'error', message });
                 });
             }
-            dialog.showErrorBox('后端启动失败', message);
+            if (error.code !== 'XEDU_PYTHON_REQUIRED') {
+                dialog.showErrorBox('后端启动失败', message);
+            }
         });
     });
 

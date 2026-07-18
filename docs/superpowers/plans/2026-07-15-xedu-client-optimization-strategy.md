@@ -8,6 +8,28 @@
 
 **Tech Stack:** Electron 39, Flask, Python 3.12, Vite, 原生 ES Modules, Node `node:test`, Pytest, Scratch GUI/VM 14.2。
 
+## 当前执行状态（2026-07-16）
+
+本次 Phase 0 Security Closure 安全止血已完成，具体实现队列和验收证据见
+[Phase 0 Security Closure](/Users/apple/Documents/GitHub/xedu-client/docs/superpowers/plans/2026-07-15-xedu-client-phase-0-security-closure.md)。
+当前证据为：后端 `125 passed`、Blockly `50 passed`、Scratch `18 passed`、
+Student-shell `11 passed`、资源检查 `5 passed`、Electron 安全测试 `2 passed`，
+Scratch/Vite 构建和 bundle 检查均通过。
+
+2026-07-16 Phase 1 增量已完成：APIClient 已移除全局 `window.fetch` 劫持并覆盖
+IPC、FormData、流式 fetch、超时和日志脱敏；重复 `escapeHtml` 已收敛到共享工具；
+静态 Shell、文档搜索和 AI 输入已迁移到白名单 `data-action` 事件分发，并有契约测试。
+`resources.js`、`index.html` 的组件化拆分、CSS 拆分和后端长服务拆分仍未宣称完成，
+必须在这些边界继续补测试后再做结构性搬迁。
+
+后续只允许从 Phase 1 开始：先做 APIClient、HTML escaping 和事件边界的
+测试保护，再拆 `resources.js`、`index.html` 与 CSS。Scratch Track B、模型
+按需下载和 Python 环境瘦身不得绕过已完成的 capability、opaque handle、
+同源/归档校验和 Electron 隔离规则。Scratch 依赖审计发现的高危/严重漏洞
+另建依赖治理任务，不在本次 Phase 0 安全完成声明中隐瞒。
+父策略中未纳入本次 closure 的配置脱敏、通用 IPC 收窄和历史模块拆分项
+仍保持未完成状态，不因本次安全收口而提前打勾。
+
 ## Global Constraints
 
 - 不更换现有桌面、后端和前端技术栈；优化以边界收紧、测试补齐和渐进拆分为主。

@@ -5,6 +5,8 @@
 
 from flask import jsonify, request
 
+from api.security import require_capability
+
 
 def register_project_routes(app, services: dict):
     """注册项目相关路由"""
@@ -26,6 +28,7 @@ def register_project_routes(app, services: dict):
             return jsonify({"success": False, "message": "获取模板失败"}), 500
 
     @app.route("/api/projects/create", methods=["POST"])
+    @require_capability("resource:write")
     def create_project():
         payload = request.get_json(silent=True) or {}
         name = payload.get("name", "").strip()

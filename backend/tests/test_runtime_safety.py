@@ -5,15 +5,19 @@ from pathlib import Path
 from unittest.mock import Mock
 from types import SimpleNamespace
 
+import psutil
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from api.app import create_app  # noqa: E402
+from api.routes.python import _append_capped_output, _create_output_state, _finalize_capped_output  # noqa: E402
 from models.config import JupyterConfig  # noqa: E402
 from services.jupyter_service import JupyterManager  # noqa: E402
 from utils.logger import BackendLogger  # noqa: E402
+from api_test_utils import authorized_test_client  # noqa: E402
 
 
 class RuntimeSafetyTestCase(unittest.TestCase):
@@ -22,7 +26,7 @@ class RuntimeSafetyTestCase(unittest.TestCase):
         app = create_app(Path(self.temp_dir.name))
         app.testing = True
         self.app = app
-        self.client = app.test_client()
+        self.client = authorized_test_client(app)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -102,6 +106,57 @@ class RuntimeSafetyTestCase(unittest.TestCase):
         manager.cleanup_all_jupyter_processes()
 
         self.assertEqual(set(stopped), {111, 222, 333})
+
+    def test_python_timeout_terminates_spawned_child_process_tree(self):
+        child_pid_file = Path(self.temp_dir.name) / "python-run-child.pid"
+        code = (
+            "import subprocess, sys, time\n"
+            f"pid_file = {str(child_pid_file)!r}\n"
+            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+            "with open(pid_file, 'w', encoding='utf-8') as handle:\n"
+            "    handle.write(str(child.pid))\n"
+            "    handle.flush()\n"
+            "time.sleep(30)\n"
+        )
+
+        response = self.client.post(
+            "/api/python/run",
+            json={"code": code, "timeout_seconds": 1},
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertTrue(child_pid_file.exists())
+        child_pid = int(child_pid_file.read_text(encoding="utf-8").strip())
+
+        try:
+            self.assertFalse(psutil.pid_exists(child_pid))
+        finally:
+            if psutil.pid_exists(child_pid):
+                process = psutil.Process(child_pid)
+                for descendant in process.children(recursive=True):
+                    descendant.kill()
+                process.kill()
+                process.wait(timeout=3)
+
+    def test_python_output_limit_reports_truncation_at_byte_boundary(self):
+        state = _create_output_state(5)
+        _append_capped_output(state, "stdout", "你好")
+        _append_capped_output(state, "stdout", "!")
+
+        outputs, events = _finalize_capped_output(state)
+
+        self.assertEqual(outputs["stdout"], "你\n...[stdout 输出已截断，已达到 1 MiB 上限]")
+        self.assertEqual(outputs["stderr"], "")
+        self.assertEqual(events, [{"type": "output_truncated", "stream": "stdout", "limit_bytes": 5}])
+
+    def test_python_output_limit_keeps_exact_limit_without_truncation_event(self):
+        state = _create_output_state(3)
+        _append_capped_output(state, "stderr", "abc")
+
+        outputs, events = _finalize_capped_output(state)
+
+        self.assertEqual(outputs["stderr"], "abc")
+        self.assertEqual(events, [])
 
 
 if __name__ == "__main__":

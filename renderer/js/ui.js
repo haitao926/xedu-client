@@ -110,7 +110,6 @@ export function showTab(tabId, navItem, options = {}) {
     if (targetSection) {
         targetSection.classList.add('active');
     }
-    document.body.classList.toggle('blockly-toolbar-top', tabId === 'blockly-workspace');
     document.body.classList.toggle('ai-toolbar-compact', tabId === 'ai-assistant');
 
     const titleConfig = getPageCopy(tabId);

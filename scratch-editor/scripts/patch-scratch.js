@@ -120,7 +120,7 @@ function assertExists(filePath) {
 }
 
 const extensionSourceDir = path.join(root, 'src', 'extensions', 'scratch3_xedu_ai');
-const extensionFiles = ['index.js', 'descriptor.js', 'stage-sensing.js'];
+const extensionFiles = ['index.js', 'descriptor.js', 'stage-sensing.js', 'api-request.js'];
 const moduleExtensionFiles = xeduExtensions
   .filter(extension => extension.moduleFile)
   .map(extension => [extension.moduleFile, extension.moduleFile]);

@@ -6,7 +6,10 @@
 from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, Any, List
 import json
+import os
 from pathlib import Path
+
+from utils.python_runtime import inspect_python_executable
 
 
 @dataclass
@@ -28,17 +31,19 @@ class JupyterConfig:
 
     def __post_init__(self):
         """初始化后的处理"""
-        # 如果没有指定Python解释器，自动检测项目虚拟环境
+        # 如果没有指定 Python 解释器，优先使用 Electron 传入的解释器。
         if not self.python_executable:
             # 获取项目根目录
             try:
                 # 获取当前文件的路径并向上查找项目根目录
-                current_file = Path(__file__).resolve()
-                project_root = current_file.parent.parent.parent
-                venv_python = project_root / "python_env" / "Scripts" / "python.exe"
-
-                if venv_python.exists():
-                    self.python_executable = str(venv_python)
+                env_python = os.environ.get("XEDU_PYTHON_EXECUTABLE", "").strip()
+                if env_python and Path(env_python).is_file():
+                    self.python_executable = str(Path(env_python).resolve())
+                    return
+                # The lightweight release does not ship a Python runtime. Keep
+                # the default empty so the manager uses its own interpreter;
+                # packaged or Electron-managed interpreters must be explicit.
+                self.python_executable = ""
             except Exception:
                 # 如果检测失败，保持为空字符串
                 pass
@@ -52,6 +57,10 @@ class JupyterConfig:
 
         if self.python_executable and not Path(self.python_executable).exists():
             errors.append(f"Python 解释器不存在: {self.python_executable}")
+        elif self.python_executable:
+            python_check = inspect_python_executable(self.python_executable)
+            if not python_check["success"]:
+                errors.append(python_check["message"])
 
         if self.project_dir and not Path(self.project_dir).exists():
             errors.append(f"项目目录不存在: {self.project_dir}")

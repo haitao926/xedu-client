@@ -34,14 +34,14 @@ export function getFileDisplayIcon(kind) {
     if (kind === "notebook") return "📓";
     if (kind === "python") return "🐍";
     if (kind === "html") return "🌐";
-    if (kind === "blockly") return "🧱";
+    if (kind === "blockly") return "⚠️";
     if (kind === "folder") return "📁";
     if (kind === "code") return "🧩";
     return "📄";
 }
 
 export function getFileDisplayLabel(kind) {
-    if (kind === "blockly") return "Blockly";
+    if (kind === "blockly") return "旧图形资源（不支持）";
     if (kind === "notebook") return "Notebook";
     if (kind === "html") return "HTML";
     if (kind === "python") return "Python";
@@ -55,9 +55,9 @@ export function buildExperimentPathHint({ primaryBlocklyFile, primaryPythonFile 
     pathHint.className = "resource-card-desc resources-experiment-pathway";
     const pythonLabel = primaryPythonFile?.name || primaryPythonFile?.path || "代码实践文件";
     if (primaryBlocklyFile && primaryPythonFile) {
-        pathHint.textContent = `学习路径：先看讲解，再用 Blockly 理解逻辑，最后进入 ${pythonLabel} 做代码实践。`;
+        pathHint.textContent = `该实验类型已不再支持；可进入 ${pythonLabel} 做代码实践。`;
     } else if (primaryBlocklyFile) {
-        pathHint.textContent = "学习路径：先看讲解，再用 Blockly 做可视化编程练习。";
+        pathHint.textContent = "该实验类型已不再支持，请使用 Scratch 版本资源。";
     } else if (primaryPythonFile) {
         pathHint.textContent = `学习路径：先看讲解，再进入 ${pythonLabel} 做代码实践。`;
     } else {

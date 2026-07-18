@@ -10,7 +10,7 @@
       "category": "overview",
       "tags": ["架构", "项目地图", "功能导览", "健康检查"],
       "difficulty": "intermediate",
-      "keywords": ["XEdu Client", "Electron", "Flask", "Blockly", "Jupyter", "课堂", "AI"],
+      "keywords": ["XEdu Client", "Electron", "Flask", "Scratch", "Jupyter", "课堂", "AI"],
       "last_updated": "2026-05-30",
       "author": "Codex"
     },

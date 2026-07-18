@@ -66,3 +66,19 @@ def register_config_routes(app, services: dict):
                 "config": app_config.to_public_dict(),
             }
         )
+
+    @app.route("/api/reset_config", methods=["POST"])
+    @require_capability("config:write")
+    def reset_config():
+        if not config_service.reset_config():
+            return jsonify({"success": False, "message": "恢复默认配置失败"}), 500
+        app_config = config_service.load_config()
+        set_app_config(app_config)
+        jupyter_manager.config = app_config.jupyter
+        ai_service.config = app_config.ai
+        app.config["ALLOW_NETWORK_ACCESS"] = bool(getattr(app_config.ui, "allow_network_access", False))
+        return jsonify({
+            "success": True,
+            "message": "已恢复默认配置，原配置已保存在备份目录",
+            "config": app_config.to_public_dict(),
+        })

@@ -9,6 +9,7 @@ import os
 
 from flask import Response, after_this_request, jsonify, request, send_file
 
+from api.security import require_capability
 from services.classroom_service import ClassroomService, ClassroomServiceError
 
 
@@ -20,12 +21,14 @@ def register_classroom_routes(app, services: dict):
     validate_teacher_code = services["validate_teacher_code"]
 
     @app.route("/api/classroom/sync-courses", methods=["POST"])
+    @require_capability("resource:write")
     def classroom_sync_courses():
         courses = (request.get_json(silent=True) or {}).get("courses", [])
         count = classroom_service.update_courses(courses)
         return jsonify({"success": True, "count": count})
 
     @app.route("/api/classroom/start", methods=["POST"])
+    @require_capability("resource:write")
     def classroom_start():
         payload = request.get_json(silent=True) or {}
         if not validate_teacher_code(request):
@@ -47,6 +50,7 @@ def register_classroom_routes(app, services: dict):
         return jsonify({"success": True, "status": status})
 
     @app.route("/api/classroom/stop", methods=["POST"])
+    @require_capability("resource:write")
     def classroom_stop():
         if not validate_teacher_code(request):
             return jsonify({"success": False, "message": "教师口令错误"}), 403
@@ -58,6 +62,7 @@ def register_classroom_routes(app, services: dict):
         return jsonify({"success": True, "status": classroom_service.status()})
 
     @app.route("/api/classroom/verify-teacher", methods=["POST"])
+    @require_capability("config:read")
     def classroom_verify_teacher():
         return jsonify({"success": validate_teacher_code(request)})
 
@@ -69,6 +74,7 @@ def register_classroom_routes(app, services: dict):
         return jsonify({"success": True, "classrooms": results})
 
     @app.route("/api/classroom/fetch-index", methods=["POST"])
+    @require_capability("resource:read")
     def classroom_fetch_index():
         payload = request.get_json(silent=True) or {}
         base_url = payload.get("base_url", "")
@@ -152,6 +158,7 @@ def register_classroom_routes(app, services: dict):
         )
 
     @app.route("/api/classroom/pull", methods=["POST"])
+    @require_capability("resource:write")
     def classroom_pull():
         payload = request.get_json(silent=True) or {}
         package_url = payload.get("package_url", "")

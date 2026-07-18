@@ -53,9 +53,9 @@
 
 新增网络相关配置字段：
 
-- `ui.allow_network_access: boolean`  
+- `ui.allow_network_access: boolean`
   控制后端 Flask 默认监听地址（`false => 127.0.0.1`，`true => 0.0.0.0`）。
-- `jupyter.allow_remote_access: boolean`  
+- `jupyter.allow_remote_access: boolean`
   控制 Jupyter 绑定地址与安全参数（远程模式下不再默认关闭 token/xsrf）。
 
 ### AI / Agent

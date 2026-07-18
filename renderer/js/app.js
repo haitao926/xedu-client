@@ -273,7 +273,7 @@ class App {
             targetTab.classList.add('active');
         }
 
-        const targetBtn = document.querySelector(`[onclick="showTab('${tabName}')"]`);
+        const targetBtn = document.querySelector(`[data-action="ui.showTab"][data-action-value="${tabName}"]`);
         if (targetBtn) {
             targetBtn.classList.add('active');
         }

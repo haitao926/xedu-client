@@ -20,7 +20,6 @@ def register_ai_routes(app, services: dict):
     looks_like_confirmation = services["looks_like_confirmation"]
     looks_like_quickform_request = services["looks_like_quickform_request"]
     looks_like_xedu_pack_request = services["looks_like_xedu_pack_request"]
-    looks_like_blockly_builder_request = services["looks_like_blockly_builder_request"]
     get_app_config = services["get_app_config"]
     config_service = services["config_service"]
 
@@ -29,17 +28,12 @@ def register_ai_routes(app, services: dict):
         if "quickform" in lowered or "表单" in question:
             return (
                 "这个聊天助手现在聚焦学生实验答疑，不负责 QuickForm 接入或数据统计。"
-                "如果你正在做实验，我可以帮你理解任务、分析报错、解释 Blockly 或 Python 步骤。"
+                "如果你正在做实验，我可以帮你理解任务、分析报错、解释 Scratch 或 Python 步骤。"
             )
         if "pack" in lowered or "打包" in question or "发布" in question:
             return (
                 "这个聊天助手现在聚焦学生实验答疑，不负责课程打包或发布。"
                 "如果你是在学习当前实验，我可以帮你梳理实验目标、代码含义和下一步操作。"
-            )
-        if "blockly" in lowered or "积木" in question:
-            return (
-                "这个聊天助手现在聚焦学生实验答疑，不生成 Blockly 草稿或教师侧资源。"
-                "你可以把当前积木运行结果、报错或不理解的步骤发给我，我会帮你分析。"
             )
         return (
             "这个聊天助手现在聚焦学生实验答疑。"
@@ -47,6 +41,7 @@ def register_ai_routes(app, services: dict):
         )
 
     @app.route("/api/ai/ask", methods=["POST"])
+    @require_capability("python:run")
     def ai_ask():
         payload = request.get_json() or {}
         question = (payload.get("question") or "").strip()
@@ -73,8 +68,7 @@ def register_ai_routes(app, services: dict):
         }
         quickform_request = looks_like_quickform_request(question, history)
         xedu_pack_request = looks_like_xedu_pack_request(question, history)
-        blockly_builder_request = looks_like_blockly_builder_request(question, history)
-        matched_teacher_agent = quickform_request or xedu_pack_request or blockly_builder_request
+        matched_teacher_agent = quickform_request or xedu_pack_request
 
         if matched_teacher_agent:
             response = {

@@ -5,6 +5,7 @@ Jupyter 管理路由模块
 
 from flask import jsonify, request
 from api.security import require_capability
+from utils.python_runtime import inspect_python_executable
 
 
 def register_jupyter_routes(app, services: dict):
@@ -50,8 +51,13 @@ def register_jupyter_routes(app, services: dict):
         return jsonify(result), (200 if result.get("success") else 500)
 
     @app.route("/api/detect_python")
+    @require_capability("python:run")
     def detect_python():
         requested_python = (request.args.get("python_executable") or "").strip()
+        if requested_python:
+            validation = inspect_python_executable(requested_python)
+            if not validation["success"]:
+                return jsonify({"success": False, "message": validation["message"]}), 400
         info = collect_system_info(requested_python or None)
         return jsonify(
             {

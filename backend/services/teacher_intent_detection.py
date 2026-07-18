@@ -4,8 +4,8 @@
 """
 学生端聊天边界检测。
 
-用于识别落在教师侧内容生产范围内的问题（QuickForm 接入、课程打包/发布、
-Blockly 草稿生成），从而让 /api/ai/ask 返回边界提示而不是把问题转发给
+用于识别落在教师侧内容生产范围内的问题（QuickForm 接入、课程打包/发布），
+从而让 /api/ai/ask 返回边界提示而不是把问题转发给
 学生学习助手。这些能力现在完全由 Claude skill（xedu-pack /
 xedu-course-builder）承接，聊天助手只负责识别并拒绝，不再执行任何操作。
 """
@@ -30,9 +30,6 @@ _QUICKFORM_KEYWORDS = (
     "apiid",
 )
 _PACK_KEYWORDS = ("xedu-pack", "xedu pack", "打包", "课程包", "发布课程", "推送仓库", "推送gitea")
-_BLOCKLY_KEYWORDS = (
-    "blockly", "积木", "xeduhub", "workflow", "模型推理", "搭积木", "toolbox"
-)
 
 
 def _normalize_text(value: Any) -> str:
@@ -62,12 +59,3 @@ def looks_like_xedu_pack_request(text: str, history: Optional[List[Dict[str, str
         " ".join(_normalize_text(item.get("content")) for item in history[-6:]),
     ]).lower()
     return any(keyword in source for keyword in _PACK_KEYWORDS)
-
-
-def looks_like_blockly_builder_request(text: str, history: Optional[List[Dict[str, str]]] = None) -> bool:
-    history = history or []
-    source = " ".join([
-        text or "",
-        " ".join(_normalize_text(item.get("content")) for item in history[-6:]),
-    ]).lower()
-    return any(keyword in source for keyword in _BLOCKLY_KEYWORDS)

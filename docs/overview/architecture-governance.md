@@ -22,7 +22,7 @@
   - `detail-renderer.js`（详情页文件视图渲染）
   - `course-create-utils.js`（课程创建数据组装）
 - `resources.js` 保持懒加载，避免主包耦合过大。
-- `blockly-workspace.js` 改为轻量 loader，运行时动态加载 `blockly-workspace.runtime.js`。
+- Scratch 编辑器通过独立构建产物加载；旧 Blockly 工作区文件不再作为应用模块。
 
 ### Backend API（`backend/api/`）
 

@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
 from models.config import JupyterConfig, JupyterStatus
+from services.jupyter_environment import (
+    build_jupyter_command,
+    evaluate_environment_validation,
+    merge_jupyter_config,
+)
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -68,48 +73,6 @@ class JupyterManager:
 
         logger.info(f"JupyterManager initialized with config: port={config.port}")
 
-    def _resolve_bundled_python(self) -> Optional[str]:
-        """Resolve the bundled python executable path."""
-        try:
-            # 1. Try to find relative to the current file (dev mode or unpacked)
-            current_file = Path(__file__).resolve()
-            project_root = current_file.parent.parent.parent
-            
-            logger.info(f"DEBUG: Resolving bundled python. Current file: {current_file}")
-            logger.info(f"DEBUG: Project root derived: {project_root}")
-            
-            candidates = []
-            if platform.system() == "Windows":
-                candidates.append(project_root / "python_env" / "Scripts" / "python.exe")
-                candidates.append(project_root / "python_env" / "python.exe")
-            else:
-                candidates.append(project_root / "python_env" / "bin" / "python3")
-                candidates.append(project_root / "python_env" / "python3")
-
-            # 2. Try to find relative to sys.executable (packaged mode)
-            sys_exec_path = Path(sys.executable).resolve()
-            logger.info(f"DEBUG: sys.executable: {sys_exec_path}")
-            
-            # If running from a venv, sys.executable IS the venv python
-            if "python_env" in str(sys_exec_path):
-                 candidates.insert(0, sys_exec_path)
-
-            # Check candidates
-            for cand in candidates:
-                exists = cand.exists()
-                is_file = cand.is_file() if exists else False
-                logger.info(f"DEBUG: Checking candidate: {cand} (Exists: {exists}, IsFile: {is_file})")
-                
-                if exists and is_file:
-                    logger.info(f"Resolved bundled python: {cand}")
-                    return str(cand)
-            
-            logger.warning("DEBUG: No bundled python found in candidates.")
-            return None
-        except Exception as e:
-            logger.error(f"Error resolving bundled python: {e}")
-            return None
-
     def start(self, **kwargs) -> Dict[str, Any]:
         """启动 Jupyter Notebook/Lab（线程安全，串行化并发请求）"""
         with self._lock:
@@ -118,14 +81,6 @@ class JupyterManager:
     def _start_impl(self, **kwargs) -> Dict[str, Any]:
         logger.info("Starting Jupyter...")
 
-        # 强制检测并使用打包环境
-        bundled_python = self._resolve_bundled_python()
-        if bundled_python:
-            logger.info(f"Forcing use of bundled python: {bundled_python}")
-            kwargs['python_executable'] = bundled_python
-        
-        logger.info(f"DEBUG: sys.executable = {sys.executable}")
-        
         # 合并配置参数
         merged_config = self._merge_config(**kwargs)
         logger.info(f"DEBUG: merged_config.python_executable = {merged_config.python_executable}")
@@ -591,86 +546,51 @@ class JupyterManager:
 
     def _merge_config(self, **kwargs) -> JupyterConfig:
         """合并启动参数"""
-        # 从当前配置创建新配置
-        config_dict = self.config.to_dict()
-
-        # 更新传入的参数，确保类型转换
-        for key, value in kwargs.items():
-            if key in config_dict:
-                # 根据字段名进行类型转换
-                if key == 'port' and isinstance(value, (int, str)):
-                    config_dict[key] = int(value)
-                elif key in ['use_notebook', 'auto_start', 'auto_restart', 'debug'] and isinstance(value, (bool, str)):
-                    config_dict[key] = bool(value)
-                elif key in ['check_interval', 'max_restarts'] and isinstance(value, (int, str)):
-                    config_dict[key] = int(value)
-                else:
-                    config_dict[key] = value
-
-        return JupyterConfig.from_dict(config_dict)
+        return merge_jupyter_config(self.config, kwargs)
 
     def _validate_environment(self, config: JupyterConfig) -> bool:
         """验证运行环境（带缓存优化）"""
         logger.debug("Validating environment...")
-
         current_time = time.time()
-        cache_key = f"{config.python_executable or ''}_{config.project_dir or ''}"
 
-        # 检查缓存是否有效
-        if (current_time - self._env_cache['last_check'] < self._env_cache['cache_duration'] and
-            self._env_cache['python_exe'] == config.python_executable and
-            self._env_cache['venv_valid'] is not None):
+        validation_result = evaluate_environment_validation(
+            config,
+            current_time=current_time,
+            cached_python_executable=self._env_cache['python_exe'],
+            cached_venv_valid=self._env_cache['venv_valid'],
+            cached_project_dir_valid=self._env_cache['project_dir_valid'],
+            last_check=self._env_cache['last_check'],
+            cache_duration=self._env_cache['cache_duration'],
+            backend_python_executable=sys.executable,
+        )
+
+        if validation_result.used_cache:
             logger.debug("Using cached environment validation")
-            return self._env_cache['venv_valid']
+            return validation_result.is_valid
 
-        # 检查 Python 解释器
-        python_valid = True
-        python_exe = config.python_executable
+        if (
+            not config.python_executable
+            and not self._env_cache['python_exe']
+            and validation_result.python_executable
+        ):
+            logger.info(f"Using backend Python: {validation_result.python_executable}")
 
-        if not python_exe:
-            # 自动检测项目虚拟环境中的Python（只在第一次检测）
-            if not self._env_cache['python_exe']:
-                bundled_python = self._resolve_bundled_python()
-                if bundled_python:
-                    python_exe = bundled_python
-                    logger.info(f"Auto-detected virtual environment Python: {python_exe}")
-                else:
-                    python_exe = sys.executable
-                    logger.warning(f"Using system Python: {python_exe}")
-                self._env_cache['python_exe'] = python_exe
-        else:
-            python_path = Path(python_exe)
-            if not python_path.exists():
-                logger.error(f"Python executable not found: {python_exe}")
-                python_valid = False
-            else:
-                python_exe = str(python_path.resolve())
+        for error in validation_result.errors:
+            logger.error(error)
 
-        # 检查项目目录
-        dir_valid = True
-        if config.project_dir:
-            project_path = Path(config.project_dir)
-            if not project_path.exists():
-                logger.error(f"Project directory not found: {config.project_dir}")
-                dir_valid = False
-            elif not project_path.is_dir():
-                logger.error(f"Project path is not a directory: {config.project_dir}")
-                dir_valid = False
-
-        # 更新缓存
         self._env_cache.update({
-            'python_exe': python_exe,
-            'venv_valid': python_valid and dir_valid,
-            'project_dir_valid': dir_valid,
+            'python_exe': validation_result.python_executable,
+            'venv_valid': validation_result.is_valid,
+            'project_dir_valid': validation_result.project_dir_valid,
             'last_check': current_time
         })
 
-        if python_valid and dir_valid:
+        if validation_result.is_valid:
             logger.debug("Environment validation passed (cached)")
             return True
-        else:
-            logger.debug("Environment validation failed")
-            return False
+
+        logger.debug("Environment validation failed")
+        return False
 
     def _start_process(self, config: JupyterConfig) -> Dict[str, Any]:
         """启动 Jupyter 进程"""
@@ -775,145 +695,46 @@ class JupyterManager:
 
     def _build_command(self, config: JupyterConfig) -> list[str]:
         """构建启动命令"""
-        # 如果没有指定Python解释器，优先使用项目虚拟环境
-        if config.python_executable:
-            python_exe = config.python_executable
-            logger.info(f"DEBUG: Using configured python_executable: {python_exe}")
-        else:
-            bundled_python = self._resolve_bundled_python()
-            if bundled_python:
-                python_exe = bundled_python
-                logger.info(f"使用项目虚拟环境Python: {python_exe}")
-            else:
-                python_exe = sys.executable
-                logger.warning(f"未找到项目虚拟环境，使用系统Python: {python_exe}")
-        
-        # 处理Python可执行文件的相对路径
-        if config.python_executable:
-            python_path = Path(config.python_executable)
-            if not python_path.is_absolute():
-                # 如果是相对路径，基于项目根目录解析
-                project_root = Path(__file__).parent.parent.parent
-                python_path = project_root / python_path
-                if python_path.exists():
-                    python_exe = str(python_path)
-                else:
-                    logger.warning(f"Python可执行文件不存在: {python_path}，使用系统Python")
-                    python_exe = sys.executable
-
-        module_name = "notebook" if config.use_notebook else "jupyterlab"
-
-        # 确定工作目录
-        work_dir = config.project_dir or ""
-
-        # 处理空的工作目录
-        if not work_dir.strip():
-            work_dir = ""
-            logger.info("使用当前目录作为 Jupyter 工作目录")
-        else:
-            work_path = Path(work_dir)
-            if not work_path.exists():
-                logger.warning(f"工作目录不存在: {work_dir}，使用当前目录")
-                work_dir = ""
-            elif not work_path.is_dir():
-                logger.error(f"工作路径不是目录: {work_dir}")
-                work_dir = ""
-            else:
-                # 确保使用绝对路径
-                work_dir = str(work_path.absolute())
-                logger.info(f"使用工作目录: {work_dir}")
-
-        remote_access_enabled = bool(getattr(config, "allow_remote_access", False))
-        bind_ip = "0.0.0.0" if remote_access_enabled else "127.0.0.1"
-
-        # 构建基础命令 - 优化参数以提升启动速度
-        cmd = [
-            python_exe, "-m", module_name,
-            f"--port={config.port}",
-            "--no-browser",
-            "--allow-root",
-            f"--ServerApp.ip={bind_ip}",
-            "--ServerApp.open_browser=False",  # 明确禁用浏览器
-            "--LabApp.default_url=/lab",  # 直接打开lab界面，跳过选择页面
-            "--LabApp.core_mode=False",  # 禁用core_mode以提升速度
-            "--ServerApp.max_buffer_size=1000000000",  # 增加缓冲区大小
-            "--ServerApp.iopub_msg_rate_limit=1000000",  # 提高消息速率限制
-            "--ServerApp.rate_limit_window=3.0",  # 减少速率限制窗口
-            # 注意：在开发环境中可以禁用一些安全检查来提升速度
-            # 生产环境建议启用必要的安全措施
-        ]
-
-        # 仅在本地回环访问场景下允许无鉴权模式。
-        if not remote_access_enabled:
-            cmd.extend([
-                "--ServerApp.token=",
-                "--ServerApp.password=",
-                "--ServerApp.password_required=False",
-                "--IdentityProvider.token=",
-                "--IdentityProvider.password_required=False",
-                "--ServerApp.disable_check_xsrf=True",
-                "--NotebookApp.token=",
-                "--NotebookApp.password=",
-                "--NotebookApp.password_required=False",
-                "--NotebookApp.disable_check_xsrf=True"
-            ])
-
-        # 只有在工作目录不为空时才添加目录参数
-        if work_dir:
-            cmd.append(f"--ServerApp.root_dir={work_dir}")
-            cmd.append(f"--ServerApp.notebook_dir={work_dir}")
-
-        # 添加额外参数
-        if config.args:
-            cmd.extend(config.args.split())
-
-        if config.debug:
-            cmd.append("--debug")
-
-        return cmd
+        return build_jupyter_command(
+            config,
+            backend_python_executable=sys.executable,
+            project_root=Path(__file__).parent.parent.parent,
+        )
 
     def _prepare_environment(self, config: JupyterConfig) -> dict:
         """准备环境变量"""
         env = os.environ.copy()
 
-        # 如果使用虚拟环境的Python，设置必要的环境变量
-        if config.python_executable and "python_env" in config.python_executable:
-            # 提取虚拟环境路径
-            scripts_path = Path(config.python_executable).parent
-            # 兼容传入 python_env\python.exe 或 python_env\Scripts\python.exe
-            if scripts_path.name.lower() == "scripts":
-                venv_root = scripts_path.parent
-            elif scripts_path.name.lower() == "bin":
-                venv_root = scripts_path.parent
-            elif scripts_path.name.lower() == "python_env":
-                venv_root = scripts_path
-                scripts_path = scripts_path / "Scripts"
-            else:
-                venv_root = scripts_path.parent
-            logger.info(f"使用虚拟环境Python: {scripts_path}")
+        # 如果配置指向标准虚拟环境，设置必要的环境变量。
+        if config.python_executable:
+            executable_path = Path(config.python_executable)
+            scripts_path = executable_path.parent
+            venv_root = scripts_path.parent if scripts_path.name.lower() in {"scripts", "bin"} else None
+            if not venv_root or not (venv_root / "pyvenv.cfg").is_file():
+                venv_root = None
 
-            # 设置虚拟环境相关环境变量
-            env['VIRTUAL_ENV'] = str(venv_root)
-            env['PYTHONHOME'] = ''  # 清除 PYTHONHOME
+            if venv_root:
+                logger.info(f"使用虚拟环境 Python: {scripts_path}")
+                env['VIRTUAL_ENV'] = str(venv_root)
+                env['PYTHONHOME'] = ''
 
-            # 更新 PATH，将虚拟环境的 Scripts 目录放在前面，并补充根目录以便加载 DLL（如 sqlite3）
-            current_path = env.get('PATH', '')
-            new_paths = [str(scripts_path), str(venv_root)]
-            for p in new_paths:
-                if p not in current_path:
-                    current_path = p + os.pathsep + current_path
-            env['PATH'] = current_path
+                current_path = env.get('PATH', '')
+                new_paths = [str(scripts_path), str(venv_root)]
+                for p in new_paths:
+                    if p not in current_path:
+                        current_path = p + os.pathsep + current_path
+                env['PATH'] = current_path
 
-            logger.info(f"虚拟环境环境变量设置完成: VIRTUAL_ENV={venv_root}")
+                logger.info(f"虚拟环境环境变量设置完成: VIRTUAL_ENV={venv_root}")
 
         # 如果配置了激活脚本（兼容旧配置）
-        elif config.activate_script:
+        if not venv_root and config.activate_script:
             # 处理相对路径，使其基于项目根目录
             activate_script_path = Path(config.activate_script)
             if not activate_script_path.is_absolute():
                 # 如果是相对路径，基于项目根目录解析
                 project_root = Path(__file__).parent.parent.parent
-                activate_script_path = project_root / activate_script
+                activate_script_path = project_root / config.activate_script
 
             if activate_script_path.exists():
                 logger.info(f"激活虚拟环境: {activate_script_path}")

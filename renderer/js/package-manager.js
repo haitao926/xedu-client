@@ -104,46 +104,46 @@ async function managePackage(action) {
     setBusy(true);
 
     try {
-        const apiBase = (apiClient && apiClient.baseURL)
-            ? apiClient.baseURL.replace(/\/$/, '')
-            : ((typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
-                ? window.xeduConfig.apiBase.replace(/\/$/, '')
-                : 'http://127.0.0.1:5123');
-        const resp = await fetch(`${apiBase}/api/python/pip`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'text/plain'
-            },
-            body: JSON.stringify({
-                action,
-                package: pkg,
-                use_mirror: useMirror,
-                stream: true
-            })
-        });
-
-        if (!resp.ok) {
-            const text = await resp.text();
-            throw new Error(text || `HTTP ${resp.status}`);
-        }
-
-        const reader = resp.body?.getReader();
-        if (!reader) {
-            throw new Error('浏览器不支持流式读取响应');
-        }
-
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
-        const state = { result: null };
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
+        const state = { result: null, bridgeError: null };
+        const consumeChunk = (chunk) => {
+            buffer += String(chunk || '');
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
             lines.forEach((line) => appendStreamLine(line, state));
+        };
+
+        const streamPip = window.electronAPI?.streamPip;
+        if (typeof streamPip === 'function') {
+            const bridgeResult = await streamPip({
+                action,
+                package: pkg,
+                useMirror,
+            }, (event) => {
+                if (event.type === 'data') consumeChunk(event.chunk);
+                if (event.type === 'error') state.bridgeError = event.error || 'pip 请求失败';
+            });
+            if (state.bridgeError) throw new Error(state.bridgeError);
+            if (bridgeResult.status < 200 || bridgeResult.status >= 300) {
+                throw new Error(`HTTP ${bridgeResult.status}`);
+            }
+        } else {
+            const resp = await apiClient.request('/api/python/pip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'text/plain' },
+                body: JSON.stringify({ action, package: pkg, use_mirror: useMirror, stream: true }),
+                transport: 'fetch',
+            });
+            if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+            const reader = resp.body?.getReader();
+            if (!reader) throw new Error('浏览器不支持流式读取响应');
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                consumeChunk(decoder.decode(value, { stream: true }));
+            }
+            consumeChunk(decoder.decode());
         }
 
         if (buffer) {

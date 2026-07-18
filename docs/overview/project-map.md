@@ -4,13 +4,13 @@
 
 1. 这个项目的真实架构是什么
 2. 当前工程健康状况和技术债集中在哪里
-3. `Jupyter / Blockly / 资源 / 课堂 / AI` 五个功能域分别由哪些模块负责
+3. `Jupyter / Scratch / 资源 / 课堂 / AI` 五个功能域分别由哪些模块负责
 
 ## 一句话定位
 
 `xedu-client` 不是单纯的前端项目，也不是单纯的 Jupyter 启动器。
 
-它是一个 `Electron + Vite + Flask` 的本地桌面应用，用来把课程资源、Jupyter 实验、Blockly 积木实验、课堂分发和教师 AI 辅助放在同一个宿主里运行。
+它是一个 `Electron + Vite + Flask` 的本地桌面应用，用来把课程资源、Jupyter 实验、Scratch 图形化实验、课堂分发和教师 AI 辅助放在同一个宿主里运行。
 
 ## 架构总览
 
@@ -35,7 +35,7 @@ Service 层
 
 本地资源层
   -> 课程目录
-  -> Blockly / Notebook / Python 文件
+  -> Scratch / Notebook / Python 文件
   -> 模型与样例资源
 ```
 
@@ -55,7 +55,7 @@ Service 层
 2. 主进程拉起 [backend/backend_main.py](/Users/apple/Documents/GitHub/xedu-client/backend/backend_main.py)。
 3. 后端构建 Flask app，并注册 `jupyter/resources/classroom/ai/python/...` 路由。
 4. Renderer 启动后，通过 [renderer/js/api.js](/Users/apple/Documents/GitHub/xedu-client/renderer/js/api.js) 调本地 `/api/*`。
-5. 用户从资源页进入 Jupyter、Blockly、课堂或 AI 助手。
+5. 用户从资源页进入 Jupyter、Scratch、课堂或 AI 助手。
 
 ### 请求链路
 
@@ -77,7 +77,8 @@ Service 层
 - 扫描本地课程目录
 - 解析 `course.json`
 - 发布和拉取课程
-- 为 Blockly 提供工作区和工具箱文件
+- 识别旧 Blockly 文件并显示不支持提示
+- 为 Scratch 提供项目文件和编辑器入口
 - 为 Jupyter 提供 notebook / python 实验入口
 - 为课堂模式提供课程索引与课程包
 
@@ -100,17 +101,19 @@ Service 层
 - 后端路由：[backend/api/routes/jupyter.py](/Users/apple/Documents/GitHub/xedu-client/backend/api/routes/jupyter.py)
 - 后端服务：[backend/services/jupyter_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/jupyter_service.py)
 
-### Blockly 域
+### Scratch 域
 
-它是可视化实验运行面。
+它是当前唯一受支持的图形化实验运行面。Scratch 的 XEdu AI 扩展复用独立的 XEduHub 执行路由和中性运行时，不依赖 Blockly 编辑器。
 
 相关模块：
 
-- 前端 loader：[renderer/js/blockly-workspace.js](/Users/apple/Documents/GitHub/xedu-client/renderer/js/blockly-workspace.js)
-- 前端 runtime：[renderer/js/blockly-workspace.runtime.js](/Users/apple/Documents/GitHub/xedu-client/renderer/js/blockly-workspace.runtime.js)
-- Blockly 语义积木：[renderer/js/blockly/xeduhub-blocks.js](/Users/apple/Documents/GitHub/xedu-client/renderer/js/blockly/xeduhub-blocks.js)
-- 后端路由：[backend/api/routes/resources.py](/Users/apple/Documents/GitHub/xedu-client/backend/api/routes/resources.py)
-- 后端支撑：[backend/services/blockly_xeduhub_support.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/blockly_xeduhub_support.py)
+- 编辑器源码：[scratch-editor/src](/Users/apple/Documents/GitHub/xedu-client/scratch-editor/src)
+- 编辑器构建产物：[scratch-editor/build](/Users/apple/Documents/GitHub/xedu-client/scratch-editor/build)
+- XEduHub 路由：[backend/api/routes/xeduhub.py](/Users/apple/Documents/GitHub/xedu-client/backend/api/routes/xeduhub.py)
+- XEduHub 服务：[backend/services/xeduhub_support.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/xeduhub_support.py)
+- 视频/摄像头运行时：[backend/runtime/xeduhub_runtime.py](/Users/apple/Documents/GitHub/xedu-client/backend/runtime/xeduhub_runtime.py)
+
+旧 `.blockly.xml` / `.blockly.json` 仅保留资源识别能力，进入后显示“该实验类型已不再支持”，不会加载编辑器。
 
 ### 课堂域
 
@@ -134,7 +137,6 @@ Service 层
   - [backend/services/ai_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/ai_service.py)
   - [backend/services/quickform_agent_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/quickform_agent_service.py)
   - [backend/services/xedu_pack_agent_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/xedu_pack_agent_service.py)
-  - [backend/services/blockly_builder_agent_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/blockly_builder_agent_service.py)
 
 ## 功能导览
 
@@ -155,22 +157,21 @@ Service 层
 - `POST /api/restart`
 - `GET /api/detect_python`
 
-### 2. Blockly 积木实验
+### 2. Scratch 图形化实验
 
 用户路径：
 
-1. 从资源详情进入 Blockly playground
-2. 后端根据课程根目录 token 动态生成 Blockly 页面
-3. 前端 runtime 加载 workspace / toolbox / 关联 practice 文件
-4. 用户可校验 toolbox、保存 toolbox、生成 Python 或执行 XEduHub 任务
+1. 从资源详情进入 Scratch 项目
+2. 后端通过短期资源句柄提供 `.sb3` 文件读写
+3. Scratch 编辑器加载项目并调用 XEduHub 扩展
+4. 用户在 Scratch 中运行积木、查看结果并保存项目
 
 关键接口：
 
-- `GET /api/resources/blockly-playground/<root_token>`
-- `GET /api/resources/blockly-playground-blank`
-- `POST /api/resources/blockly/validate-toolbox`
-- `POST /api/resources/blockly/toolbox/save`
-- `POST /api/resources/blockly/xeduhub/execute`
+- `GET /api/scratch-editor/index.html`
+- `GET /api/resources/scratch-project/<root_token>/<path:relpath>`
+- `PUT /api/resources/scratch-project/<root_token>/<path:relpath>`
+- `POST /api/resources/xeduhub/execute`
 - `POST /api/python/run`
 
 ### 3. 课程资源
@@ -219,7 +220,7 @@ Service 层
 1. 前端提交问题、历史和上下文
 2. 后端根据教师/学生模式和意图做分流
 3. 普通问答走 `AIService`
-4. 教师态问题可命中 QuickForm / 打包 / Blockly Builder 等代理能力
+4. 教师态问题可命中 QuickForm / 打包等代理能力
 
 关键接口：
 
@@ -238,7 +239,7 @@ Service 层
 - [electron/main/main.js](/Users/apple/Documents/GitHub/xedu-client/electron/main/main.js)
 - [renderer/js/main.js](/Users/apple/Documents/GitHub/xedu-client/renderer/js/main.js)
 - [renderer/js/resources.js](/Users/apple/Documents/GitHub/xedu-client/renderer/js/resources.js)
-- [renderer/js/blockly-workspace.runtime.js](/Users/apple/Documents/GitHub/xedu-client/renderer/js/blockly-workspace.runtime.js)
+- [scratch-editor/src/extensions/scratch3_xedu_ai/index.js](/Users/apple/Documents/GitHub/xedu-client/scratch-editor/src/extensions/scratch3_xedu_ai/index.js)
 - [backend/api/app.py](/Users/apple/Documents/GitHub/xedu-client/backend/api/app.py)
 - [backend/api/routes/resources.py](/Users/apple/Documents/GitHub/xedu-client/backend/api/routes/resources.py)
 - [backend/services/jupyter_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/jupyter_service.py)
@@ -247,10 +248,10 @@ Service 层
 ### 当前确认的工程债
 
 - 根目录混入源码、课程、模型、打包产物、Python 运行时、说明文档。
-- `resources.py` 承担了过多职责：资源索引、课程扫描、发布拉取、Blockly playground、本地文件预览、QuickForm 注入。
+- `resources.js` 承担了过多职责：资源索引、课程扫描、发布拉取、本地文件预览、Scratch 入口和 QuickForm 注入。
 - `app.py` 仍然是大型装配中心，依赖注入 helper 很多。
 - `api.js` 里存在全局 `fetch` 改写，说明前端对本地 API 的运行环境假设很强。
-- `build/assets/blockly-workspace.runtime.js` 当前超过 `1.1 MB`，构建会持续给出大 chunk 警告。
+- Scratch 编辑器是独立构建产物，根前端不再包含 Blockly chunk。
 
 ### 冗余与边界问题
 
@@ -258,11 +259,11 @@ Service 层
   - `checkpoint/`
   - `checkpoints/`
   - `backend/checkpoint/`
-  当前运行时已经优先收口到 `courses/blockly-smoke/checkpoints/`，其余目录应视为遗留兼容资产，而不是继续写入的主来源。
+当前运行时已经优先收口到 `courses/xeduhub-smoke/checkpoints/`，其余目录应视为遗留兼容资产，而不是继续写入的主来源。
 - 两套 Python 运行时目录并存：
   - `python_env/`
   - `python_env_win/`
-- `courses/blockly-smoke` 同时承担样例课程、测试 fixture、运行时默认资源三种职责。
+- `courses/xeduhub-smoke` 仅承担 XEduHub 运行时的样例输入和 checkpoint fixture。
 - `dist-final/`、`build/`、`output/`、缓存目录都很重，不适合和核心代码放在同一认知层面。
 
 ### 质量门禁现状
@@ -270,9 +271,9 @@ Service 层
 当前可见的高价值门禁有：
 
 - `npm run build`
-- `npm run test:blockly-runtime`
-- `PYTHONPATH=backend python3 -m pytest backend/tests/test_blockly_resources_api.py -q`
-- `node scripts/generate_xeduhub_block_audit.mjs --check`
+- `npm run test:student-shell`
+- `PYTHONPATH=backend python3 -m pytest backend/tests/test_xeduhub_resources_api.py -q`
+- `npm run quality-gate`
 
 当前缺口：
 
@@ -283,9 +284,9 @@ Service 层
 ### 治理优先级建议
 
 1. 先收紧目录边界，不要继续把运行时大资产和源码逻辑混在一起。
-2. 优先治理 `resources.py`、`app.py`、`blockly-workspace.runtime.js` 三个热点。
+2. 优先治理 `resources.js`、`app.py`、`scratch-editor` 构建边界三个热点。
 3. 给 renderer / electron / python 增加最基本的静态检查门禁。
-4. 把 `courses/blockly-smoke` 从“默认业务资源”逐步降级为“明确标注的 fixture/sample”。
+4. 保持 `courses/xeduhub-smoke` 只作为明确标注的运行时 fixture/sample。
 
 ## 推荐阅读顺序
 

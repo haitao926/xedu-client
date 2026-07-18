@@ -51,7 +51,7 @@ const EXPECTED_BLOCK_IDS = [
   'xeduhub_workflow_infer_var', 'xeduhub_workflow_set_params', 'xeduhub_workflow_set_task',
 ];
 
-test('Scratch exposes every XEduHub block that Blockly currently registers', () => {
+test('Scratch exposes every supported XEduHub teaching block', () => {
   assert.deepEqual([...XEDU_BLOCK_IDS].sort(), [...EXPECTED_BLOCK_IDS].sort());
   assert.equal(new Set(XEDU_BLOCK_IDS).size, 93);
 });
@@ -348,6 +348,15 @@ test('Scratch AI execution calls the neutral XEduHub endpoint', async () => {
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test('embedded Scratch routes XEduHub execution through the host bridge', () => {
+  const extensionSource = fs.readFileSync(path.join(__dirname, '../src/extensions/scratch3_xedu_ai/index.js'), 'utf8');
+  const sensingSource = fs.readFileSync(path.join(__dirname, '../src/extensions/scratch3_xedu_ai/stage-sensing.js'), 'utf8');
+  const patchSource = fs.readFileSync(path.join(__dirname, '../scripts/patch-scratch.js'), 'utf8');
+  assert.match(extensionSource, /requestXEduApi/);
+  assert.match(sensingSource, /requestXEduApi/);
+  assert.match(patchSource, /'api-request\.js'/);
 });
 
 test('Scratch keeps deterministic XEdu math and result helpers', () => {

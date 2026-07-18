@@ -13,7 +13,8 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from api.app import create_app  # noqa: E402
-from runtime.blockly_runtime import XEduCamera  # noqa: E402
+from runtime.xeduhub_runtime import XEduCamera  # noqa: E402
+from api_test_utils import authorized_test_client  # noqa: E402
 
 
 class FakePopen:
@@ -31,7 +32,7 @@ class PipApiTestCase(unittest.TestCase):
         self.python_path = '/tmp/xedu-python'
         app = create_app(Path(self.temp_dir.name))
         app.testing = True
-        self.client = app.test_client()
+        self.client = authorized_test_client(app)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -56,10 +57,10 @@ class PipApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertTrue(data['success'])
+        self.assertNotEqual(run_mock.call_args.args[0][0], self.python_path)
         self.assertEqual(
-            run_mock.call_args.args[0],
+            run_mock.call_args.args[0][1:],
             [
-                self.python_path,
                 '-m',
                 'pip',
                 'install',
@@ -80,10 +81,10 @@ class PipApiTestCase(unittest.TestCase):
             })
 
         self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(run_mock.call_args.args[0][0], self.python_path)
         self.assertEqual(
-            run_mock.call_args.args[0],
+            run_mock.call_args.args[0][1:],
             [
-                self.python_path,
                 '-m',
                 'pip',
                 'install',
@@ -105,10 +106,10 @@ class PipApiTestCase(unittest.TestCase):
             })
 
         self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(run_mock.call_args.args[0][0], self.python_path)
         self.assertEqual(
-            run_mock.call_args.args[0],
+            run_mock.call_args.args[0][1:],
             [
-                self.python_path,
                 '-m',
                 'pip',
                 'uninstall',
@@ -142,8 +143,14 @@ class PipApiTestCase(unittest.TestCase):
         self.assertEqual(result, {'return_code': 1, 'success': False})
 
     def test_run_python_executes_code(self):
-        completed = SimpleNamespace(returncode=0, stdout='你好\n', stderr='')
-        with patch('api.routes.python.subprocess.run', return_value=completed) as run_mock:
+        completed = {
+            'return_code': 0,
+            'stdout': '你好\n',
+            'stderr': '',
+            'resource_events': [],
+            'timed_out': False,
+        }
+        with patch('api.routes.python._run_python_subprocess', return_value=completed) as run_mock:
             response = self.post_run({
                 'code': "print('你好')",
                 'python_executable': self.python_path,
@@ -154,12 +161,19 @@ class PipApiTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertTrue(data['success'])
         self.assertEqual(data['output'], '你好')
-        self.assertEqual(run_mock.call_args.args[0], [self.python_path, '-c', "print('你好')"])
+        self.assertNotEqual(run_mock.call_args.args[0][0], self.python_path)
+        self.assertEqual(run_mock.call_args.args[0][1:], ['-c', "print('你好')"])
         self.assertEqual(run_mock.call_args.kwargs['cwd'], self.temp_dir.name)
 
     def test_run_python_injects_backend_pythonpath(self):
-        completed = SimpleNamespace(returncode=0, stdout='ok\n', stderr='')
-        with patch('api.routes.python.subprocess.run', return_value=completed) as run_mock:
+        completed = {
+            'return_code': 0,
+            'stdout': 'ok\n',
+            'stderr': '',
+            'resource_events': [],
+            'timed_out': False,
+        }
+        with patch('api.routes.python._run_python_subprocess', return_value=completed) as run_mock:
             response = self.post_run({
                 'code': "print('ok')",
                 'python_executable': self.python_path,
@@ -178,7 +192,14 @@ class PipApiTestCase(unittest.TestCase):
             stdout="__XEDU_RUNTIME__={'type': 'stream_opened', 'stream_kind': 'camera', 'source': '0', 'window': 'demo'}\n",
             stderr="OpenCV: not authorized to capture video (status 0), requesting...\nOpenCV: camera failed to properly initialize!\n",
         )
-        with patch('api.routes.python.subprocess.run', return_value=completed):
+        completed = {
+            'return_code': 0,
+            'stdout': completed.stdout,
+            'stderr': completed.stderr,
+            'resource_events': [],
+            'timed_out': False,
+        }
+        with patch('api.routes.python._run_python_subprocess', return_value=completed):
             response = self.post_run({
                 'code': "camera = xrt.XEduCamera.camera(0)\n",
                 'python_executable': self.python_path,
@@ -204,7 +225,14 @@ class PipApiTestCase(unittest.TestCase):
             ]),
             stderr="",
         )
-        with patch('api.routes.python.subprocess.run', return_value=completed):
+        completed = {
+            'return_code': 0,
+            'stdout': completed.stdout,
+            'stderr': completed.stderr,
+            'resource_events': [],
+            'timed_out': False,
+        }
+        with patch('api.routes.python._run_python_subprocess', return_value=completed):
             response = self.post_run({
                 'code': "video = xrt.XEduCamera.video('demo.mp4')\n",
                 'python_executable': self.python_path,
@@ -219,7 +247,14 @@ class PipApiTestCase(unittest.TestCase):
 
     def test_runtime_video_alias_resolves_repo_sample_path(self):
         camera = XEduCamera.__new__(XEduCamera)
-        resolved = camera._normalize_source('demo.mp4', stream_kind='video')
+        sample_video = Path(self.temp_dir.name) / 'generated-demo.mp4'
+        sample_video.write_bytes(b'test-video')
+        with patch.object(
+            XEduCamera,
+            '_materialize_demo_video_from_image',
+            return_value=str(sample_video),
+        ):
+            resolved = camera._normalize_source('demo.mp4', stream_kind='video')
         self.assertTrue(str(resolved).endswith('.mp4'))
         self.assertTrue(Path(resolved).exists())
 

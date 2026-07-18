@@ -22,13 +22,11 @@ from services.teacher_intent_detection import (
     looks_like_confirmation,
     looks_like_quickform_request,
     looks_like_xedu_pack_request,
-    looks_like_blockly_builder_request,
 )
 from services.classroom_service import (
     ClassroomService,
 )
 from services.jupyter_service import JupyterManager
-from services.blockly_xeduhub_support import get_nonblocking_supported_tasks_snapshot
 from utils.logger import get_logger
 from .app_support import (
     build_route_services,
@@ -94,8 +92,6 @@ def create_app(config_dir=None) -> Flask:
         looks_like_confirmation=looks_like_confirmation,
         looks_like_quickform_request=looks_like_quickform_request,
         looks_like_xedu_pack_request=looks_like_xedu_pack_request,
-        looks_like_blockly_builder_request=looks_like_blockly_builder_request,
-        get_nonblocking_supported_tasks_snapshot=get_nonblocking_supported_tasks_snapshot,
     )
 
     services["logger"] = logger
@@ -106,6 +102,6 @@ def create_app(config_dir=None) -> Flask:
         if isinstance(error, HTTPException):
             return error
         logger.exception("后端发生未处理异常")
-        return jsonify({"success": False, "message": str(error)}), 500
+        return jsonify({"success": False, "message": "internal server error"}), 500
 
     return app

@@ -11,7 +11,7 @@
 ```javascript
 function createWindow() {
     const isDev = !app.isPackaged;
-    
+
     // 根据平台选择正确的图标格式
     let iconPath;
     if (isDev) {

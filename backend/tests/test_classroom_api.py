@@ -1,5 +1,9 @@
+import io
 import json
+import stat
 import tempfile
+import threading
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -12,7 +16,8 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from api.app import create_app  # noqa: E402
-from services.classroom_service import ClassroomServiceError  # noqa: E402
+from services.classroom_service import ClassroomService, ClassroomServiceError  # noqa: E402
+from api_test_utils import authorized_test_client  # noqa: E402
 
 
 class ClassroomApiTestCase(unittest.TestCase):
@@ -20,10 +25,111 @@ class ClassroomApiTestCase(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         app = create_app(Path(self.temp_dir.name))
         app.testing = True
-        self.client = app.test_client()
+        self.client = authorized_test_client(app)
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    @staticmethod
+    def _package_bytes(entries):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for name, data in entries:
+                if isinstance(name, zipfile.ZipInfo):
+                    archive.writestr(name, data)
+                else:
+                    archive.writestr(name, data)
+        return buffer.getvalue()
+
+    def _write_local_course(self, *, course_id: str, version: str = "1.0") -> Path:
+        course_dir = Path(self.temp_dir.name) / course_id
+        (course_dir / "lesson").mkdir(parents=True, exist_ok=True)
+        (course_dir / "lesson" / "readme.txt").write_text("hello", encoding="utf-8")
+        (course_dir / "course.json").write_text(
+            json.dumps(
+                {
+                    "id": course_id,
+                    "title": f"课程 {course_id}",
+                    "version": version,
+                    "sections": [],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return course_dir
+
+    @staticmethod
+    def _read_zip_member(zip_path: Path, member: str) -> str:
+        with zipfile.ZipFile(zip_path, "r") as archive:
+            return archive.read(member).decode("utf-8")
+
+    def test_pull_package_rejects_non_http_url(self):
+        target = Path(self.temp_dir.name) / "course"
+
+        with self.assertRaisesRegex(ClassroomServiceError, "HTTP"):
+            ClassroomService.pull_package("file:///etc/passwd", str(target))
+
+    def test_pull_package_rejects_url_credentials(self):
+        target = Path(self.temp_dir.name) / "course"
+
+        with self.assertRaisesRegex(ClassroomServiceError, "凭据"):
+            ClassroomService.pull_package("http://user:password@example.test/course.zip", str(target))
+
+    def test_pull_package_rejects_oversized_download(self):
+        target = Path(self.temp_dir.name) / "course"
+        response = io.BytesIO(b"01234567890")
+
+        with patch("services.classroom_service.MAX_CLASSROOM_PACKAGE_BYTES", 10), patch(
+            "services.classroom_service.urlrequest.urlopen",
+            return_value=response,
+        ), self.assertRaisesRegex(ClassroomServiceError, "下载大小"):
+            ClassroomService.pull_package("http://classroom.test/course.zip", str(target))
+
+    def test_pull_package_rejects_unsafe_archive_members(self):
+        target = Path(self.temp_dir.name) / "course"
+        symlink = zipfile.ZipInfo("lesson/link")
+        symlink.create_system = 3
+        symlink.external_attr = (stat.S_IFLNK | 0o777) << 16
+        unsafe_packages = (
+            self._package_bytes((("course.json", "{}"), ("../escape.txt", "escape"))),
+            self._package_bytes((("course.json", "{}"), (symlink, "../../escape"))),
+        )
+
+        for package in unsafe_packages:
+            with self.subTest(size=len(package)), patch(
+                "services.classroom_service.urlrequest.urlopen",
+                return_value=io.BytesIO(package),
+            ), self.assertRaisesRegex(ClassroomServiceError, "不安全"):
+                ClassroomService.pull_package("http://classroom.test/course.zip", str(target))
+
+    def test_pull_package_rejects_oversized_expanded_archive(self):
+        target = Path(self.temp_dir.name) / "course"
+        package = self._package_bytes((("course.json", "{}"), ("lesson/data.txt", "01234567890")))
+
+        with patch("services.classroom_service.MAX_CLASSROOM_EXPANDED_BYTES", 10), patch(
+            "services.classroom_service.urlrequest.urlopen",
+            return_value=io.BytesIO(package),
+        ), self.assertRaisesRegex(ClassroomServiceError, "解压大小"):
+            ClassroomService.pull_package("http://classroom.test/course.zip", str(target))
+
+    def test_pull_package_extracts_valid_classroom_archive(self):
+        target = Path(self.temp_dir.name) / "course"
+        package = self._package_bytes(
+            (
+                ("course.json", json.dumps({"id": "course-1", "title": "课堂课程"})),
+                ("lesson/readme.txt", "hello"),
+            )
+        )
+
+        with patch(
+            "services.classroom_service.urlrequest.urlopen",
+            return_value=io.BytesIO(package),
+        ):
+            result = ClassroomService.pull_package("http://classroom.test/course.zip", str(target))
+
+        self.assertEqual(result["course"]["id"], "course-1")
+        self.assertEqual((target / "lesson" / "readme.txt").read_text(encoding="utf-8"), "hello")
 
     def test_fetch_index_returns_flattened_contract(self):
         upstream = {
@@ -156,6 +262,115 @@ class ClassroomApiTestCase(unittest.TestCase):
             with zipfile.ZipFile(temp_zip.name, "r") as zipf:
                 package_course = json.loads(zipf.read("course.json").decode("utf-8"))
         self.assertEqual(len(package_course["sections"]), 2)
+
+    def test_build_package_concurrent_requests_generate_single_shared_zip(self):
+        service = ClassroomService()
+        course_dir = self._write_local_course(course_id="course-cache")
+        service.update_courses(
+            [
+                {
+                    "id": "course-cache",
+                    "title": "缓存课程",
+                    "local_path": str(course_dir),
+                }
+            ]
+        )
+
+        paths = []
+        errors = []
+        path_lock = threading.Lock()
+        start_barrier = threading.Barrier(2)
+        write_count = 0
+        write_count_lock = threading.Lock()
+        real_write_package_zip = ClassroomService._write_package_zip
+
+        def instrumented_write(service_self, local_path, course_json_bytes, target_path):
+            nonlocal write_count
+            with write_count_lock:
+                write_count += 1
+                current_count = write_count
+            if current_count == 1:
+                time.sleep(0.2)
+            return real_write_package_zip(service_self, local_path, course_json_bytes, target_path)
+
+        def worker():
+            try:
+                start_barrier.wait(timeout=2)
+                zip_path = service.build_package("course-cache", "1.0")
+                with path_lock:
+                    paths.append(zip_path)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        with patch.object(ClassroomService, "_write_package_zip", autospec=True, side_effect=instrumented_write):
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=5)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(paths), 2)
+        self.assertEqual(write_count, 1)
+        self.assertNotEqual(paths[0], paths[1])
+
+        payload_a = paths[0].read_bytes()
+        paths[0].unlink(missing_ok=True)
+        payload_b = paths[1].read_bytes()
+        self.assertEqual(payload_a, payload_b)
+        paths[1].unlink(missing_ok=True)
+
+    def test_build_package_regenerates_when_content_summary_changes(self):
+        service = ClassroomService()
+        course_dir = self._write_local_course(course_id="course-cache-refresh")
+        lesson_file = course_dir / "lesson" / "readme.txt"
+        service.update_courses(
+            [
+                {
+                    "id": "course-cache-refresh",
+                    "title": "缓存课程",
+                    "local_path": str(course_dir),
+                }
+            ]
+        )
+
+        write_count = 0
+        real_write_package_zip = ClassroomService._write_package_zip
+
+        def instrumented_write(service_self, local_path, course_json_bytes, target_path):
+            nonlocal write_count
+            write_count += 1
+            return real_write_package_zip(service_self, local_path, course_json_bytes, target_path)
+
+        with patch.object(ClassroomService, "_write_package_zip", autospec=True, side_effect=instrumented_write):
+            first_zip = service.build_package("course-cache-refresh", "1.0")
+            second_zip = service.build_package("course-cache-refresh", "1.0")
+            time.sleep(0.01)
+            lesson_file.write_text("updated", encoding="utf-8")
+            third_zip = service.build_package("course-cache-refresh", "1.0")
+
+        self.assertEqual(write_count, 2)
+        self.assertEqual(self._read_zip_member(first_zip, "lesson/readme.txt"), "hello")
+        self.assertEqual(self._read_zip_member(second_zip, "lesson/readme.txt"), "hello")
+        self.assertEqual(self._read_zip_member(third_zip, "lesson/readme.txt"), "updated")
+
+        first_zip.unlink(missing_ok=True)
+        second_zip.unlink(missing_ok=True)
+        third_zip.unlink(missing_ok=True)
+
+    def test_stopping_classroom_clears_shared_cache_but_keeps_active_lease(self):
+        service = ClassroomService()
+        course_dir = self._write_local_course(course_id="course-cache-stop")
+        service.update_courses([{"id": "course-cache-stop", "title": "缓存课程", "local_path": str(course_dir)}])
+        lease = service.build_package("course-cache-stop", "1.0")
+
+        service.stop()
+
+        self.assertEqual(service._package_cache, {})
+        self.assertTrue(lease.exists())
+        with zipfile.ZipFile(lease, "r") as archive:
+            self.assertIn("course.json", archive.namelist())
+        lease.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

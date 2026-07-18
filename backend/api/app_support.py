@@ -12,25 +12,22 @@ from typing import Any, Dict
 from flask import request
 
 from models.config import AppConfig, SystemInfo
+from utils.python_runtime import inspect_python_executable
 from services.ai_service import AIService
 from services.config_service import ConfigService
 from services.quickform_service import QuickFormService, QuickFormServiceError
+from services.xeduhub_support import execute_xeduhub_runtime
 from .config_utils import build_ai_service, merge_jupyter_payload, normalize_config_payload
 from .quickform_runtime import merge_quickform_config
 from .resource_runtime import (
-    build_blockly_playground_html,
     build_single_course_source_entry,
     collect_resource_sources,
     derive_course_id_from_path,
     issue_resource_handle,
     register_resource_root,
     resolve_resource_handle,
-    execute_xeduhub_runtime,
     get_frontend_build_dir,
     get_scratch_editor_build_dir,
-    guess_blockly_notebook_path,
-    guess_blockly_python_path,
-    guess_blockly_toolbox_path,
     normalize_resource_source,
     resolve_local_course_file,
     resolve_resource_source_for_request,
@@ -119,12 +116,19 @@ def _resolve_site_packages(python_executable: str) -> Path | None:
 
 
 def collect_system_info(python_executable: str | None = None) -> SystemInfo:
+    executable = python_executable or sys.executable
+    python_check = inspect_python_executable(executable)
     info = SystemInfo(
-        python_version=platform.python_version(),
-        python_executable=python_executable or sys.executable,
+        python_version=python_check.get("version") or platform.python_version(),
+        python_executable=executable,
         platform=platform.platform(),
         xedu_expected_version=EXPECTED_XEDU_VERSION,
     )
+
+    if not python_check["success"]:
+        info.xedu_version_ok = False
+        info.xedu_runtime_message = python_check["message"]
+        return info
 
     try:
         import jupyterlab  # type: ignore
@@ -239,8 +243,6 @@ def build_route_services(
     looks_like_confirmation,
     looks_like_quickform_request,
     looks_like_xedu_pack_request,
-    looks_like_blockly_builder_request,
-    get_nonblocking_supported_tasks_snapshot,
 ) -> dict:
     def _merge_jupyter_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         return merge_jupyter_payload(
@@ -277,7 +279,6 @@ def build_route_services(
         "looks_like_confirmation": looks_like_confirmation,
         "looks_like_quickform_request": looks_like_quickform_request,
         "looks_like_xedu_pack_request": looks_like_xedu_pack_request,
-        "looks_like_blockly_builder_request": looks_like_blockly_builder_request,
         "parse_bool": parse_bool,
         "resolve_resources_token": resolve_resources_token,
         "normalize_resource_source": lambda raw, fallback_id: normalize_resource_source(raw, fallback_id, parse_bool),
@@ -292,12 +293,7 @@ def build_route_services(
         "issue_resource_handle": issue_resource_handle,
         "register_resource_root": register_resource_root,
         "resolve_resource_handle": resolve_resource_handle,
-        "guess_blockly_toolbox_path": guess_blockly_toolbox_path,
-        "guess_blockly_python_path": guess_blockly_python_path,
-        "guess_blockly_notebook_path": guess_blockly_notebook_path,
         "get_frontend_build_dir": get_frontend_build_dir,
         "get_scratch_editor_build_dir": get_scratch_editor_build_dir,
-        "build_blockly_playground_html": build_blockly_playground_html,
         "execute_xeduhub_runtime": execute_xeduhub_runtime,
-        "get_nonblocking_supported_tasks_snapshot": get_nonblocking_supported_tasks_snapshot,
     }

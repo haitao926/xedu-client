@@ -5,23 +5,42 @@ const root = path.resolve(__dirname, '..');
 const guiRoot = path.join(root, 'node_modules', '@scratch', 'scratch-gui');
 const sourceBuild = path.join(guiRoot, 'dist');
 const targetBuild = path.join(root, 'build');
+const stagingBuild = path.join(root, `.build-staging-${process.pid}`);
+const staleBuild = path.join(root, `.build-stale-${process.pid}-${Date.now()}`);
 
 if (!fs.existsSync(sourceBuild)) {
   throw new Error(`Scratch GUI build output not found: ${sourceBuild}`);
 }
 
-fs.rmSync(targetBuild, { recursive: true, force: true });
-fs.cpSync(sourceBuild, targetBuild, {
-  recursive: true,
-  filter: (source) => {
-    const relative = path.relative(sourceBuild, source).replace(/\\/g, '/');
-    if (!relative) return true;
-    if (relative.endsWith('.map')) return false;
-    if (relative === 'scratch-gui.js' || relative === 'scratch-gui.js.LICENSE.txt') return false;
-    return true;
+const shouldCopy = (source) => {
+  const relative = path.relative(sourceBuild, source).replace(/\\/g, '/');
+  if (!relative) return true;
+  if (relative.endsWith('.map')) return false;
+  if (relative === 'scratch-gui.js' || relative === 'scratch-gui.js.LICENSE.txt') return false;
+  return true;
+};
+
+const linkBuildTree = (source, target) => {
+  if (!shouldCopy(source)) return;
+  const entry = fs.lstatSync(source);
+  if (entry.isDirectory()) {
+    fs.mkdirSync(target, { recursive: true });
+    for (const child of fs.readdirSync(source)) {
+      linkBuildTree(path.join(source, child), path.join(target, child));
+    }
+    return;
   }
-});
-fs.writeFileSync(path.join(targetBuild, 'index.html'), `<!doctype html>
+  try {
+    fs.linkSync(source, target);
+  } catch (error) {
+    if (!['EXDEV', 'EPERM', 'EEXIST'].includes(error?.code)) throw error;
+    fs.copyFileSync(source, target);
+  }
+};
+
+fs.rmSync(stagingBuild, { recursive: true, force: true });
+linkBuildTree(sourceBuild, stagingBuild);
+fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -128,4 +147,17 @@ fs.writeFileSync(path.join(targetBuild, 'index.html'), `<!doctype html>
 </body>
 </html>
 `, 'utf8');
+if (fs.existsSync(targetBuild)) {
+  fs.renameSync(targetBuild, staleBuild);
+}
+fs.renameSync(stagingBuild, targetBuild);
+if (fs.existsSync(staleBuild)) {
+  const { spawn } = require('child_process');
+  const cleanup = spawn(process.execPath, [
+    '-e',
+    'require("fs").rmSync(process.argv[1], { recursive: true, force: true });',
+    staleBuild,
+  ], { detached: true, stdio: 'ignore' });
+  cleanup.unref();
+}
 console.log(`[xedu-scratch] copied ${sourceBuild} -> ${targetBuild}`);

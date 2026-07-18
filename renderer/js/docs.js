@@ -1,6 +1,7 @@
 // 文档管理功能
 import apiClient from './api.js';
 import { sanitizeHtml } from './html-sanitizer.js';
+import { escapeHtml } from './utils/html.js';
 
 // 全局变量
 let currentDocument = null;
@@ -161,7 +162,7 @@ function displaySearchResults(results, query) {
         content.innerHTML = `
             <div class="search-results">
                 <h2>搜索结果</h2>
-                <p>未找到与 "${query}" 相关的文档</p>
+                <p>未找到与 "${escapeHtml(query)}" 相关的文档</p>
             </div>
         `;
         return;
@@ -173,15 +174,16 @@ function displaySearchResults(results, query) {
     `;
 
     results.forEach(result => {
+        const documentId = escapeHtml(result.document_id);
         html += `
-            <div class="search-result-item" onclick="loadDocument('${result.document_id}')">
-                <div class="search-result-title">${result.section_title}</div>
-                <div class="search-result-path">${result.document_title} / ${result.section_title}</div>
-                <div class="search-result-content">${result.content}</div>
+            <div class="search-result-item" data-action="docs.loadDocument" data-action-value="${documentId}">
+                <div class="search-result-title">${escapeHtml(result.section_title)}</div>
+                <div class="search-result-path">${escapeHtml(result.document_title)} / ${escapeHtml(result.section_title)}</div>
+                <div class="search-result-content">${escapeHtml(result.content)}</div>
                 <div class="search-result-meta">
-                    <span>分类: ${result.category}</span>
-                    <span>组件: ${result.component}</span>
-                    <span>难度: ${result.difficulty}</span>
+                    <span>分类: ${escapeHtml(result.category)}</span>
+                    <span>组件: ${escapeHtml(result.component)}</span>
+                    <span>难度: ${escapeHtml(result.difficulty)}</span>
                 </div>
             </div>
         `;
@@ -196,7 +198,8 @@ export async function loadDocument(docId) {
     try {
         // 更新侧边栏高亮状态
         document.querySelectorAll('.doc-item').forEach(el => el.classList.remove('active'));
-        const sidebarItem = document.querySelector(`.doc-item[data-doc-id="${docId}"]`);
+        const sidebarItem = Array.from(document.querySelectorAll('.doc-item[data-doc-id]'))
+            .find((element) => element.dataset.docId === String(docId));
         if (sidebarItem) {
             sidebarItem.classList.add('active');
             // 自动展开父级分组
@@ -210,8 +213,7 @@ export async function loadDocument(docId) {
         }
 
         // 使用渲染端点获取HTML内容
-        const baseURL = apiClient.baseURL.replace(/\/$/, '');
-        const response = await fetch(`${baseURL}/api/documents/${docId}/render`);
+        const response = await apiClient.request(`/api/documents/${docId}/render`);
         if (response.ok) {
             const htmlContent = await response.text();
             currentDocument = { id: docId };
@@ -402,18 +404,6 @@ function formatContent(content) {
     return content;
 }
 
-// HTML转义
-function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
-}
-
 // 打开指定索引的组件组
 function openComponentGroup(index) {
     const headers = document.querySelectorAll('.component-header');
@@ -433,8 +423,8 @@ function showWelcomePage() {
             <p style="margin-top: 12px; font-size: 13px; opacity: 0.7;">请在左侧选择组件查看详细 API 文档，或使用上方搜索栏查找内容。</p>
             
             <div style="margin-top: 40px; display: flex; gap: 16px; justify-content: center;">
-                <button class="btn btn-primary" onclick="loadDocument('quickstart')">快速入门</button>
-                <button class="btn btn-secondary" onclick="loadDocument('xedu-introduction')">了解更多</button>
+                <button class="btn btn-primary" data-action="docs.loadDocument" data-action-value="quickstart">快速入门</button>
+                <button class="btn btn-secondary" data-action="docs.loadDocument" data-action-value="xedu-introduction">了解更多</button>
             </div>
         </div>
     `;
@@ -466,10 +456,3 @@ function showMessage(message, type = 'info') {
     // 这里可以使用 toast 或其他通知方式
     console.log(`[${type}] ${message}`);
 }
-
-// 暴露到全局
-window.loadDocument = loadDocument;
-window.searchDocs = searchDocs;
-window.performSearch = performSearch;
-window.showTutorials = showTutorials;
-window.openComponentGroup = openComponentGroup;

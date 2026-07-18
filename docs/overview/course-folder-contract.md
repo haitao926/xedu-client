@@ -1,6 +1,6 @@
 # XEdu Client 课程文件夹契约（v1）
 
-`xedu-client` 在 v1 中只负责接收、校验、预览、运行和发布课程。  
+`xedu-client` 在 v1 中只负责接收、校验、预览、运行和发布课程。
 外部 AI 或其他工具如果要与它衔接，主交付物应当是一个本地课程文件夹，或 `xedu-pack` 生成的标准课程包。
 
 ## 1. 什么是课程根目录 / 课程包
@@ -36,8 +36,8 @@
   - `.ipynb`
   - `.py`
   - `.html`
-  - `.blockly.xml`
-  - `.blockly.json`
+  - `.sb3`
+  - 旧 `.blockly.xml` / `.blockly.json`（仅用于识别并显示不支持提示，不可写入或运行）
   - 图片资源
   - 数据文件
 
@@ -64,7 +64,7 @@
 以下内容不作为 `xedu-client` 的内置能力：
 
 - 外部 skill 编排
-- 自动生成 Blockly 草稿
+- 自动生成 Blockly 草稿；Blockly 编辑器已移除，旧格式不再作为新课交付物
 - 自动课程打包智能流程
 - 自动 QuickForm 工作流接入
 

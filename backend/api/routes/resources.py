@@ -12,8 +12,14 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import Response, jsonify, request, send_file
-from api.resource_runtime import InvalidResourceHandle, ResourceHandleExpired
-from api.security import require_capability
+from api.resource_runtime import (
+    InvalidResourceHandle,
+    InvalidScratchProject,
+    ResourceHandleExpired,
+    ScratchProjectTooLarge,
+    validate_scratch_project_archive,
+)
+from api.security import require_capability, require_same_origin_or_native
 
 from services.gitea_service import (
     GiteaServiceError,
@@ -25,6 +31,9 @@ from services.gitea_service import (
     scan_course,
     scan_folder,
 )
+
+
+MAX_SCRATCH_PROJECT_BYTES = 64 * 1024 * 1024
 
 
 def register_resource_routes(app, services: dict):
@@ -165,6 +174,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "读取本地预览文件失败"}), 500
 
     @app.route("/api/resources/scratch-project/<root_token>/<path:relpath>", methods=["GET"])
+    @require_same_origin_or_native()
     def resources_scratch_project_file(root_token, relpath):
         try:
             clean_relpath = str(relpath or "").strip().lstrip("/")
@@ -183,22 +193,36 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "读取 Scratch 项目文件失败"}), 500
 
     @app.route("/api/resources/scratch-project/<root_token>/<path:relpath>", methods=["PUT", "POST"])
+    @require_same_origin_or_native()
     def resources_scratch_project_save(root_token, relpath):
+        temp_path = None
         try:
             clean_relpath = str(relpath or "").strip().lstrip("/")
             if not clean_relpath.lower().endswith(".sb3"):
                 return jsonify({"success": False, "message": "仅支持保存 Scratch .sb3 项目文件"}), 400
             file_path = resolve_resource_handle(root_token, "write", clean_relpath)
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            data = request.get_data(cache=False)
+            if request.content_length is not None and request.content_length > MAX_SCRATCH_PROJECT_BYTES:
+                return jsonify({"success": False, "message": "Scratch 项目超过允许的上传大小"}), 413
+            data = request.stream.read(MAX_SCRATCH_PROJECT_BYTES + 1)
             if not data:
                 return jsonify({"success": False, "message": "Scratch 项目内容为空"}), 400
+            if len(data) > MAX_SCRATCH_PROJECT_BYTES:
+                return jsonify({"success": False, "message": "Scratch 项目超过允许的上传大小"}), 413
+            try:
+                validate_scratch_project_archive(data)
+            except ScratchProjectTooLarge as exc:
+                return jsonify({"success": False, "message": str(exc)}), 413
+            except InvalidScratchProject as exc:
+                return jsonify({"success": False, "message": str(exc)}), 400
+
+            file_path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
                 mode="wb", dir=file_path.parent, prefix=f".{file_path.name}.", delete=False
             ) as temp_file:
                 temp_file.write(data)
                 temp_path = Path(temp_file.name)
             os.replace(temp_path, file_path)
+            temp_path = None
             return jsonify({
                 "success": True,
                 "message": "Scratch 项目已保存",
@@ -213,6 +237,12 @@ def register_resource_routes(app, services: dict):
         except Exception as exc:
             logger.error(f"保存 Scratch 项目文件失败: {exc}")
             return jsonify({"success": False, "message": "保存 Scratch 项目文件失败"}), 500
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("清理 Scratch 临时文件失败: %s", temp_path)
 
     @app.route("/api/resources/scratch-workspace", methods=["POST"])
     @require_capability("resource:write")
@@ -227,7 +257,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "Scratch 项目目录不存在"}), 400
         try:
             root_id = register_resource_root(local_path, "scratch-workspace", "electron-client")
-            project_handle = issue_resource_handle(root_id, project_path, "write")
+            project_handle = issue_resource_handle(root_id, project_path, "write", 3600)
             return jsonify({"success": True, "project_handle": project_handle})
         except (InvalidResourceHandle, ValueError) as exc:
             return jsonify({"success": False, "message": str(exc)}), 400

@@ -20,18 +20,18 @@ def _load_sample_assets_config() -> dict:
 
 
 SAMPLE_ASSETS_CONFIG = _load_sample_assets_config()
-BLOCKLY_SMOKE_CONFIG = SAMPLE_ASSETS_CONFIG.get("blocklySmoke", {}) if isinstance(SAMPLE_ASSETS_CONFIG.get("blocklySmoke"), dict) else {}
+XEDUHUB_SMOKE_CONFIG = SAMPLE_ASSETS_CONFIG.get("xeduhubSmoke", {}) if isinstance(SAMPLE_ASSETS_CONFIG.get("xeduhubSmoke"), dict) else {}
 
-BLOCKLY_SMOKE_ROOT = str(BLOCKLY_SMOKE_CONFIG.get("root") or "courses/blockly-smoke")
-BLOCKLY_SMOKE_IMAGE = str(BLOCKLY_SMOKE_CONFIG.get("image") or f"{BLOCKLY_SMOKE_ROOT}/demo.jpg")
-BLOCKLY_SMOKE_VIDEO = str(BLOCKLY_SMOKE_CONFIG.get("video") or f"{BLOCKLY_SMOKE_ROOT}/demo.mp4")
-BLOCKLY_SMOKE_AUDIO = str(BLOCKLY_SMOKE_CONFIG.get("audio") or f"{BLOCKLY_SMOKE_ROOT}/demo.wav")
-BLOCKLY_SMOKE_VIDEO_POSTER = str(BLOCKLY_SMOKE_CONFIG.get("videoPoster") or f"{BLOCKLY_SMOKE_ROOT}/assets/xedu-test-scene-1.png")
-BLOCKLY_SMOKE_CHECKPOINTS_ROOT = str(BLOCKLY_SMOKE_CONFIG.get("checkpointsRoot") or f"{BLOCKLY_SMOKE_ROOT}/checkpoints")
+XEDUHUB_SMOKE_ROOT = str(XEDUHUB_SMOKE_CONFIG.get("root") or "courses/xeduhub-smoke")
+XEDUHUB_SMOKE_IMAGE = str(XEDUHUB_SMOKE_CONFIG.get("image") or f"{XEDUHUB_SMOKE_ROOT}/demo.jpg")
+XEDUHUB_SMOKE_VIDEO = str(XEDUHUB_SMOKE_CONFIG.get("video") or f"{XEDUHUB_SMOKE_ROOT}/demo.mp4")
+XEDUHUB_SMOKE_AUDIO = str(XEDUHUB_SMOKE_CONFIG.get("audio") or f"{XEDUHUB_SMOKE_ROOT}/demo.wav")
+XEDUHUB_SMOKE_VIDEO_POSTER = str(XEDUHUB_SMOKE_CONFIG.get("videoPoster") or f"{XEDUHUB_SMOKE_ROOT}/assets/xedu-test-scene-1.png")
+XEDUHUB_SMOKE_CHECKPOINTS_ROOT = str(XEDUHUB_SMOKE_CONFIG.get("checkpointsRoot") or f"{XEDUHUB_SMOKE_ROOT}/checkpoints")
 
-BLOCKLY_SMOKE_IMAGE_ALIASES = tuple(str(item) for item in (BLOCKLY_SMOKE_CONFIG.get("inputAliases") or {}).get("image", []))
-BLOCKLY_SMOKE_VIDEO_ALIASES = tuple(str(item) for item in (BLOCKLY_SMOKE_CONFIG.get("inputAliases") or {}).get("video", []))
-BLOCKLY_SMOKE_AUDIO_ALIASES = tuple(str(item) for item in (BLOCKLY_SMOKE_CONFIG.get("inputAliases") or {}).get("audio", []))
+XEDUHUB_SMOKE_IMAGE_ALIASES = tuple(str(item) for item in (XEDUHUB_SMOKE_CONFIG.get("inputAliases") or {}).get("image", []))
+XEDUHUB_SMOKE_VIDEO_ALIASES = tuple(str(item) for item in (XEDUHUB_SMOKE_CONFIG.get("inputAliases") or {}).get("video", []))
+XEDUHUB_SMOKE_AUDIO_ALIASES = tuple(str(item) for item in (XEDUHUB_SMOKE_CONFIG.get("inputAliases") or {}).get("audio", []))
 CHECKPOINT_ROOTS = tuple(str(item) for item in SAMPLE_ASSETS_CONFIG.get("checkpointRoots", []))
 
 
@@ -39,8 +39,8 @@ def repo_path(relative_path: str) -> Path:
     return (REPO_ROOT / str(relative_path or "").strip()).resolve()
 
 
-def blockly_smoke_path(relative_path: str = "") -> Path:
-    base = repo_path(BLOCKLY_SMOKE_ROOT)
+def xeduhub_smoke_path(relative_path: str = "") -> Path:
+    base = repo_path(XEDUHUB_SMOKE_ROOT)
     if not relative_path:
         return base
     return (base / relative_path).resolve()
@@ -69,15 +69,15 @@ def _write_generated_sample_image(target: Path) -> None:
     image.save(target, format="JPEG", quality=90)
 
 
-def ensure_blockly_smoke_image() -> Path | None:
+def ensure_xeduhub_smoke_image() -> Path | None:
     for candidate in (
-        repo_path(BLOCKLY_SMOKE_IMAGE),
+        repo_path(XEDUHUB_SMOKE_IMAGE),
         repo_path("demo.jpg"),
     ):
         if candidate.exists():
             return candidate
 
-    target = (_runtime_assets_root() / BLOCKLY_SMOKE_IMAGE).resolve()
+    target = (_runtime_assets_root() / XEDUHUB_SMOKE_IMAGE).resolve()
     if target.exists():
         return target
     try:
@@ -128,7 +128,7 @@ def resolve_checkpoint_file(filename: str) -> Path | None:
         if candidate.exists():
             return candidate
 
-    preferred = repo_path(f"{BLOCKLY_SMOKE_CHECKPOINTS_ROOT}/{candidate_name}")
+    preferred = repo_path(f"{XEDUHUB_SMOKE_CHECKPOINTS_ROOT}/{candidate_name}")
     if preferred.exists():
         return preferred
     return None

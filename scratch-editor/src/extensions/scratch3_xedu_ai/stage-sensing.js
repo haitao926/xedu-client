@@ -1,5 +1,6 @@
 const DEFAULT_INTERVAL_MS = 500;
 const sessions = new WeakMap();
+const {requestXEduApi} = require('./api-request');
 
 class StageSensingSession {
     constructor (runtime, options = {}) {
@@ -94,7 +95,7 @@ class StageSensingSession {
     async _request (taskId, frame) {
         if (this.options.request) return this.options.request(taskId, frame);
         const apiBase = (this.options.apiBase?.() || 'http://127.0.0.1:5123').replace(/\/$/, '');
-        const response = await fetch(`${apiBase}/api/resources/xeduhub/execute`, {
+        const response = await requestXEduApi(`${apiBase}/api/resources/xeduhub/execute`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({code: '', project_root: this.options.projectRoot?.() || '', spec: {task_id: taskId, input: frame}}),
         });

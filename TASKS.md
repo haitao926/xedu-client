@@ -1,4 +1,6 @@
-# Current Task List
+# Current Task List（历史归档）
+
+> 本文档中的 Blockly UI 优化与共存迁移任务已被 Scratch-only 决策取代，不再作为执行清单。当前发布任务和验收标准以 `docs/PRE_RELEASE_AUDIT_2026-07-16.md` 为准。
 
 _Last updated: 2026-07-09_
 

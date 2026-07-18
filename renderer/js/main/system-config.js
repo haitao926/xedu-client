@@ -50,6 +50,50 @@ export async function loadSystemConfigToInputs() {
     applySystemConfigToInputs(response);
 }
 
+export async function selectPythonEnvironment() {
+    const selectPython = window.electronAPI?.selectPython;
+    if (typeof selectPython !== 'function') {
+        showToast('浏览器模式不支持选择 Python 文件，请直接输入路径。', 'warning');
+        return null;
+    }
+
+    try {
+        const result = await selectPython();
+        if (!result?.success) {
+            if (!result?.canceled) {
+                throw new Error(result?.error || '选择 Python 环境失败');
+            }
+            return null;
+        }
+
+        const pythonPath = result.path.trim();
+        const pythonInput = document.getElementById('python-path-input');
+        if (pythonInput) pythonInput.value = pythonPath;
+        localStorage.setItem('python_path', pythonPath);
+
+        const startupState = await window.electronAPI.getBackendStartupState?.();
+        if (startupState?.state?.status === 'error' && window.electronAPI.retryBackendStartup) {
+            const retryResult = await window.electronAPI.retryBackendStartup();
+            if (!retryResult?.success) {
+                throw new Error(retryResult?.error || '使用所选 Python 启动后端失败');
+            }
+        }
+
+        const detected = await apiClient.get(`/api/detect_python?python_executable=${encodeURIComponent(pythonPath)}`);
+        if (!detected?.success) {
+            throw new Error(detected?.message || 'Python 环境检测失败');
+        }
+        log(`已选择 Python 环境: ${pythonPath}`, 'success');
+        showToast('Python 环境可用，请点击“保存设置”完成绑定', 'success');
+        return pythonPath;
+    } catch (error) {
+        console.error('选择 Python 环境失败:', error);
+        log(`选择 Python 环境失败: ${error.message}`, 'error');
+        showToast(`Python 环境不可用: ${error.message}`, 'error');
+        return null;
+    }
+}
+
 export async function saveSystemConfig() {
     console.log('saveSystemConfig 被调用');
     const apiKey = document.getElementById('api-key-input')?.value.trim();
@@ -84,6 +128,10 @@ export async function saveSystemConfig() {
         }
 
         if (pythonPath) {
+            const detected = await apiClient.get(`/api/detect_python?python_executable=${encodeURIComponent(pythonPath)}`);
+            if (!detected?.success) {
+                throw new Error(detected?.message || 'Python 环境检测失败');
+            }
             localStorage.setItem('python_path', pythonPath);
             log('Python 环境路径已保存', 'success');
         }

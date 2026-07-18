@@ -12,12 +12,15 @@ from uuid import uuid4
 
 from flask import jsonify, request
 
+from api.security import require_capability
+
 
 def register_system_routes(app, services: dict):
     """注册系统相关路由"""
     config_service = services.get('config_service')
     
     @app.route("/api/debug/env")
+    @require_capability("config:read")
     def debug_env():
         from services.markdown_document_service import get_markdown_document_service
         return jsonify({
@@ -61,6 +64,7 @@ def register_system_routes(app, services: dict):
         )
 
     @app.route("/api/system/import-image-file", methods=["POST"])
+    @require_capability("resource:write")
     def import_image_file():
         upload = request.files.get("file")
         if upload is None or not upload.filename:

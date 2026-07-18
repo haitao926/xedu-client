@@ -11,7 +11,7 @@ from .python import register_python_routes
 from .documents import register_document_routes
 from .classroom import register_classroom_routes
 from .resources import register_resource_routes
-from .resources_blockly import register_resource_blockly_routes
+from .xeduhub import register_xeduhub_routes
 from .projects import register_project_routes
 from .quickform import register_quickform_routes
 
@@ -32,6 +32,6 @@ def register_all_routes(app, services: dict):
     register_document_routes(app, services)
     register_classroom_routes(app, services)
     register_resource_routes(app, services)
-    register_resource_blockly_routes(app, services)
+    register_xeduhub_routes(app, services)
     register_project_routes(app, services)
     register_quickform_routes(app, services)

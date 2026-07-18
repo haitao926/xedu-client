@@ -7,15 +7,13 @@
     "dev": "concurrently -k -n api,renderer -c blue,green \"python3 scripts/dev_api_server.py\" \"npm run dev:renderer\"",
     "dev:renderer": "npx vite",
     "build": "npx vite build",
-    "quality-gate": "python3 scripts/run_quality_gate.py",
+    "quality-gate": "node scripts/run_quality_gate.mjs",
     "install:scratch": "npm install --prefix scratch-editor",
     "build:scratch": "npm run build --prefix scratch-editor",
-    "check:python-syntax": "python3 -m py_compile backend/backend_main.py backend/api/*.py backend/api/routes/*.py backend/services/*.py backend/runtime/*.py backend/models/*.py backend/utils/*.py",
+    "check:scratch-build": "node scripts/check_scratch_build.mjs",
+    "check:python-syntax": "node scripts/check_python_syntax.mjs",
     "check:renderer-syntax": "node --check electron/main/main.js",
     "check:bundle": "node scripts/check_bundle_size.js",
-    "test:blockly-runtime": "npm run seed:xedu-smoke && node --test renderer/js/blockly/runtime-helpers.test.js renderer/js/blockly/xeduhub-audit.test.js",
-    "seed:xedu-smoke": "python3 scripts/seed_xedu_smoke_assets.py && python3 scripts/seed_xedu_smoke_models.py && python3 scripts/seed_xedu_task_samples.py",
-    "test:blockly-real": "npm run seed:xedu-smoke && python3 scripts/blockly_real_runtime_audit.py",
     "test:student-shell": "node --test renderer/js/student-shell-contract.test.mjs",
     "test:scratch": "npm test --prefix scratch-editor",
     "preview": "npx vite preview",
@@ -26,19 +24,19 @@
     "test:resources-inspection": "node --test renderer/js/resources/student-workspace-utils.test.js",
     "electron": "electron .",
     "electron:dev": "concurrently -k -n renderer,electron -c green,magenta \"npm run dev:renderer\" \"electron .\"",
-    "electron:build": "npm run build:scratch && npm run build && electron-builder",
-    "electron:pack": "npm run build:scratch && npm run build && electron-builder --dir"
+    "electron:build": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder",
+    "electron:build:release": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.release.cjs",
+    "electron:pack": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --dir"
   },
   "dependencies": {
-    "blockly": "^12.5.1",
     "jszip": "^3.10.1"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "electron": "^39.2.1",
-    "electron-builder": "^26.0.12",
-    "rimraf": "^5.0.0",
-    "vite": "^5.0.0"
+    "concurrently": "^9.2.4",
+    "electron": "^39.8.5",
+    "electron-builder": "^26.15.3",
+    "rimraf": "^6.1.3",
+    "vite": "^8.1.5"
   },
   "build": {
     "appId": "com.xeduclient",
@@ -51,10 +49,7 @@
     "files": [
       "build/**/*",
       "electron/main/main.js",
-      "electron/preload/**/*",
-      "backend/**/*",
-      "config/**/*",
-      "scripts/**/*"
+      "electron/preload/**/*"
     ],
     "extraResources": [
       {
@@ -70,7 +65,20 @@
       },
       {
         "from": "backend",
-        "to": "backend"
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!**/tests",
+          "!**/tests/**/*",
+          "!**/__pycache__",
+          "!**/__pycache__/**/*",
+          "!**/.pytest_cache",
+          "!**/.pytest_cache/**/*",
+          "!**/checkpoint",
+          "!**/checkpoint/**/*",
+          "!sasu/zhangjiang-image-recognition-standard",
+          "!sasu/zhangjiang-image-recognition-standard/**/*"
+        ]
       },
       {
         "from": "config",
@@ -121,28 +129,26 @@
       ],
       "forceCodeSigning": false,
       "signAndEditExecutable": false,
-      "icon": "resources/xedu-logo.ico",
-      "extraResources": [
-        {
-          "from": "python_env_win",
-          "to": "python_env"
-        }
-      ]
+      "icon": "resources/xedu-logo.ico"
     },
     "mac": {
       "icon": "resources/xedu-logo.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist",
       "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
         {
           "target": "zip",
           "arch": [
             "arm64"
           ]
-        }
-      ],
-      "extraResources": [
-        {
-          "from": "python_env",
-          "to": "python_env"
         }
       ]
     }
@@ -157,5 +163,8 @@
     "data-science"
   ],
   "author": "XEdu Team",
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "lodash": "^4.18.1"
+  }
 }

@@ -21,6 +21,30 @@ export function bindResourcesUI(deps = {}) {
     startClassroomForResource,
     stopClassroomWithPrompt,
     resourcesSearchExpandedRef,
+    openCreateView,
+    toggleCreateEntryMenu,
+    bindCreateEntryMenu,
+    closeCreateEntryMenu,
+    chooseCreateEntryMode,
+    closeCreateView,
+    updateCreateFormState,
+    renderPackagePathSummary,
+    renderLocalPathSummary,
+    renderCloudCoursePreview,
+    createSource,
+    setCreateSource,
+    setCreateStep,
+    createStep,
+    pickLocalPackage,
+    useDefaultSampleCourse,
+    importLocalPackageToPath,
+    pickLocalCourse,
+    loadCloudCourseOptions,
+    importCloudCourseAndSave,
+    loadCloudCoursesFromTempSource,
+    clearCloudTempSourceAndReload,
+    updateCloudSourceActionUI,
+    teacherUnlocked = () => false,
   } = deps;
 
   const searchInput = documentRef.getElementById('resources-search-input');
@@ -44,6 +68,33 @@ export function bindResourcesUI(deps = {}) {
   const detailClassroomStopBtn = documentRef.getElementById('resources-detail-classroom-stop');
   const detailMoreBtn = documentRef.getElementById('resources-detail-more-btn');
   const detailMoreMenu = documentRef.getElementById('resources-detail-more-menu');
+  const addBtn = documentRef.getElementById('resources-add-btn');
+  const addLocalBtn = documentRef.getElementById('resources-add-local-btn');
+  const addCloudBtn = documentRef.getElementById('resources-add-cloud-btn');
+  const createBackBtn = documentRef.getElementById('resources-create-back-btn');
+  const createSaveBtn = documentRef.getElementById('resources-create-save-btn');
+  const sourceLocalBtn = documentRef.getElementById('resources-source-local');
+  const sourceCloudBtn = documentRef.getElementById('resources-source-cloud');
+  const pickPackageBtn = documentRef.getElementById('resources-pick-package-btn');
+  const useDefaultSampleBtn = documentRef.getElementById('resources-use-default-sample-btn');
+  const packageImportBtn = documentRef.getElementById('resources-package-import-btn');
+  const pickLocalBtn = documentRef.getElementById('resources-pick-local-btn');
+  const cloudRefreshBtn = documentRef.getElementById('resources-cloud-refresh-btn');
+  const cloudImportBtn = documentRef.getElementById('resources-cloud-import-btn');
+  const cloudDetailImportBtn = documentRef.getElementById('resources-cloud-detail-import-btn');
+  const cloudCourseSelect = documentRef.getElementById('resources-cloud-course-select');
+  const cloudTempLoadBtn = documentRef.getElementById('resources-cloud-temp-load-btn');
+  const cloudTempClearBtn = documentRef.getElementById('resources-cloud-temp-clear-btn');
+  const createPackagePathInput = documentRef.getElementById('resources-create-package-path');
+  const createLocalPathInput = documentRef.getElementById('resources-create-local-path');
+  const createTitleInput = documentRef.getElementById('resources-create-title');
+  const createDescInput = documentRef.getElementById('resources-create-desc');
+  const createGradeInput = documentRef.getElementById('resources-create-grade');
+  const createSubjectInput = documentRef.getElementById('resources-create-subject');
+  const createStepPrevBtn = documentRef.getElementById('resources-step-prev');
+  const createStepNextBtn = documentRef.getElementById('resources-step-next');
+  const cloudRepoAddressInput = documentRef.getElementById('resources-cloud-repo-address');
+  const cloudRepoTokenInput = documentRef.getElementById('resources-cloud-temp-token');
 
   if (searchInput) {
     searchInput.addEventListener('input', handleSearchInput);
@@ -144,4 +195,74 @@ export function bindResourcesUI(deps = {}) {
       await stopClassroomWithPrompt();
     });
   }
+
+  if (addBtn) {
+    addBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleCreateEntryMenu();
+    });
+    bindCreateEntryMenu();
+  }
+  if (addLocalBtn) {
+    addLocalBtn.addEventListener('click', () => {
+      if (!teacherUnlocked()) return;
+      closeCreateEntryMenu();
+      openCreateView();
+      chooseCreateEntryMode('pack-import');
+    });
+  }
+  if (addCloudBtn) {
+    addCloudBtn.addEventListener('click', () => {
+      if (!teacherUnlocked()) return;
+      closeCreateEntryMenu();
+      openCreateView();
+      chooseCreateEntryMode('cloud-import');
+    });
+  }
+  if (createBackBtn) createBackBtn.addEventListener('click', closeCreateView);
+  if (createSaveBtn) createSaveBtn.addEventListener('click', () => deps.saveLocalCourse?.());
+  if (sourceLocalBtn) sourceLocalBtn.addEventListener('click', () => setCreateSource('local'));
+  if (sourceCloudBtn) sourceCloudBtn.addEventListener('click', () => setCreateSource('cloud'));
+  if (pickPackageBtn) pickPackageBtn.addEventListener('click', pickLocalPackage);
+  if (useDefaultSampleBtn) useDefaultSampleBtn.addEventListener('click', useDefaultSampleCourse);
+  if (packageImportBtn) packageImportBtn.addEventListener('click', importLocalPackageToPath);
+  if (pickLocalBtn) pickLocalBtn.addEventListener('click', pickLocalCourse);
+  if (cloudRefreshBtn) cloudRefreshBtn.addEventListener('click', loadCloudCourseOptions);
+  if (cloudImportBtn) cloudImportBtn.addEventListener('click', importCloudCourseAndSave);
+  if (cloudDetailImportBtn) cloudDetailImportBtn.addEventListener('click', importCloudCourseAndSave);
+  if (cloudCourseSelect) cloudCourseSelect.addEventListener('change', () => {
+    renderCloudCoursePreview();
+    updateCreateFormState();
+  });
+  if (cloudTempLoadBtn) cloudTempLoadBtn.addEventListener('click', loadCloudCoursesFromTempSource);
+  if (cloudTempClearBtn) cloudTempClearBtn.addEventListener('click', clearCloudTempSourceAndReload);
+  if (cloudRepoAddressInput) cloudRepoAddressInput.addEventListener('input', updateCloudSourceActionUI);
+  if (cloudRepoTokenInput) cloudRepoTokenInput.addEventListener('input', updateCloudSourceActionUI);
+  [createTitleInput, createDescInput, createGradeInput, createSubjectInput].forEach((input) => {
+    if (input) input.addEventListener('input', updateCreateFormState);
+  });
+  if (createPackagePathInput) createPackagePathInput.addEventListener('input', () => {
+    renderPackagePathSummary();
+    updateCreateFormState();
+  });
+  if (createLocalPathInput) createLocalPathInput.addEventListener('input', () => {
+    renderLocalPathSummary();
+    updateCreateFormState();
+  });
+  if (createStepPrevBtn) createStepPrevBtn.addEventListener('click', () => {
+    if (createSource() === 'cloud') {
+      closeCreateView();
+      return;
+    }
+    setCreateStep(createStep() - 1);
+  });
+  if (createStepNextBtn) createStepNextBtn.addEventListener('click', () => {
+    if (createStep() < 3) {
+      setCreateStep(createStep() + 1);
+    } else {
+      closeCreateView();
+    }
+  });
+
+  updateCloudSourceActionUI();
 }

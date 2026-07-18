@@ -6,12 +6,23 @@ import { registerNamespace } from './app-context.js';
 import { ProjectWizard } from './project-wizard.js';
 import { createWorkspaceController } from './main/workspace-context.js';
 import { createDashboardController } from './main/dashboard.js';
-import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, ensureTeacherCodeInitialized } from './main/system-config.js';
+import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, selectPythonEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
 import { getExperienceMode, getPageCopy } from './experience-config.js';
+import { installUnhandledRejectionHandler } from './main/error-boundary.js';
+import { isTeacherModeUnlocked, readTeacherModeState } from './main/teacher-mode-state.js';
+import { createBackendStartupSupport } from './main/backend-startup-support.js';
+import { initSidebarCollapseToggle, showSettingsTab } from './main/shell-ui.js';
 import apiClient from './api.js';
+import './action-dispatcher.js';
 
 let resourcesModule = null;
 let resourcesModulePromise = null;
+
+installUnhandledRejectionHandler({
+    notify: (...args) => {
+        if (document.body) showToast(...args);
+    },
+});
 
 function loadResourcesModule() {
     if (!resourcesModulePromise) {
@@ -64,7 +75,8 @@ async function openStudentLessonTab(...args) {
 }
 
 function getChatContext() {
-    const isTeacher = sessionStorage.getItem('xedu_teacher_mode') === 'true';
+    const teacherState = readTeacherModeState();
+    const isTeacher = teacherState.unlocked;
     if (resourcesModule?.getChatContext) {
         return resourcesModule.getChatContext();
     }
@@ -72,7 +84,7 @@ function getChatContext() {
         experience_mode: getExperienceMode(isTeacher),
         teacher_mode: {
             unlocked: isTeacher,
-            code: sessionStorage.getItem('xedu_teacher_mode_code') || '',
+            code: teacherState.code,
         },
         course: null,
         experiment_context: null,
@@ -80,13 +92,23 @@ function getChatContext() {
 }
 
 // Initialize the Project Wizard globally
+const {
+    bindActions: bindBackendStartupSupportActions,
+    getState: getBackendStartupState,
+    onState: onBackendStartupState,
+    render: renderBackendStartupSupport,
+} = createBackendStartupSupport({
+    showToast,
+    apiClient,
+    applySystemConfigToInputs,
+    refreshStatus,
+});
+
 new ProjectWizard(apiClient);
 const workspaceController = createWorkspaceController({ showTab, openNotebookFile });
 const {
-    ensureBlocklyWorkspaceMounted,
     openResourcesOrClassroomSource,
     openJupyterWorkspace,
-    openBlocklyWorkspace,
     openScratchWorkspace,
     renderWorkspacePages,
     getLastOpenedJupyterWorkspace,
@@ -98,71 +120,6 @@ const {
     buildClassroomBaseUrl,
     updateSettingsVisibility,
 } = dashboardController;
-
-// 设置页选项卡切换
-function showSettingsTab(tab) {
-    const tabs = document.querySelectorAll('.settings-tab');
-    const sections = document.querySelectorAll('[data-settings-tab]');
-    const targetTab = document.querySelector(`.settings-tab[data-tab="${tab}"]`);
-    if (targetTab && targetTab.style.display === 'none') {
-        tab = 'about';
-    }
-
-    tabs.forEach((btn) => {
-        const isActive = btn.dataset.tab === tab;
-        btn.classList.toggle('active', isActive);
-    });
-
-    sections.forEach((section) => {
-        const isActive = section.dataset.settingsTab === tab;
-        section.classList.toggle('active', isActive);
-    });
-}
-
-const SIDEBAR_COLLAPSE_KEY = 'xedu-sidebar-collapsed';
-
-function readSidebarCollapsed() {
-    try {
-        return localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === '1';
-    } catch (_) {
-        return false;
-    }
-}
-
-function writeSidebarCollapsed(collapsed) {
-    try {
-        localStorage.setItem(SIDEBAR_COLLAPSE_KEY, collapsed ? '1' : '0');
-    } catch (_) {
-        // ignore
-    }
-}
-
-function applySidebarCollapsed(collapsed) {
-    document.body.classList.toggle('sidebar-collapsed', collapsed);
-    const toggleBtn = document.getElementById('sidebar-toggle-btn');
-    if (toggleBtn) {
-        const label = collapsed ? '展开侧边栏' : '收起侧边栏';
-        toggleBtn.title = label;
-        toggleBtn.setAttribute('aria-label', label);
-    }
-}
-
-function initSidebarCollapseToggle() {
-    const toggleBtn = document.getElementById('sidebar-toggle-btn');
-    if (!toggleBtn) return;
-
-    applySidebarCollapsed(readSidebarCollapsed());
-    toggleBtn.addEventListener('click', () => {
-        const collapsed = !document.body.classList.contains('sidebar-collapsed');
-        applySidebarCollapsed(collapsed);
-        writeSidebarCollapsed(collapsed);
-    });
-}
-
-function renderChipList(container, items = []) {
-    if (!container) return;
-    container.innerHTML = (items || []).map((item) => `<span>${item}</span>`).join('');
-}
 
 let dashboardInputMode = 'project';
 let dashboardProjectPathCache = '';
@@ -271,7 +228,7 @@ function syncActivePageTitle() {
         const studentTitleMap = {
             'nav-student-lesson-item': '课程任务中心',
             'nav-student-experience-item': '互动体验',
-            'nav-student-visual-item': tabId === 'blockly-workspace' ? '图形编程' : '图形编程',
+            'nav-student-visual-item': '图形编程',
             'nav-student-python-item': 'Python实验',
         };
         const titleEl = document.getElementById('page-title');
@@ -332,49 +289,6 @@ function registerPracticeDeepLinkHandler() {
     });
 }
 
-function registerBlocklyImagePickerBridge() {
-    window.addEventListener('message', async (event) => {
-        const payload = event?.data;
-        if (!payload || payload.type !== 'xedu:select-image-file') {
-            return;
-        }
-
-        const frame = document.getElementById('blockly-workspace-frame');
-        if (!frame?.contentWindow || event.source !== frame.contentWindow) {
-            return;
-        }
-
-        const requestId = String(payload.requestId || '').trim();
-        const respond = (message) => {
-            try {
-                frame.contentWindow.postMessage({
-                    type: 'xedu:select-image-file:response',
-                    requestId,
-                    ...message,
-                }, '*');
-            } catch (error) {
-                console.error('发送图片选择结果失败:', error);
-            }
-        };
-
-        if (!requestId) {
-            respond({ error: 'missing-request-id' });
-            return;
-        }
-
-        if (!window.electronAPI || typeof window.electronAPI.selectImageFile !== 'function') {
-            respond({ error: 'electron-api-unavailable' });
-            return;
-        }
-
-        try {
-            const selectedPath = await window.electronAPI.selectImageFile();
-            respond({ path: selectedPath || null });
-        } catch (error) {
-            respond({ error: error?.message || 'select-image-file-failed' });
-        }
-    });
-}
 
 registerNamespace('ui', { showTab, showModal, hideModal, log, showToast });
 registerNamespace('jupyter', {
@@ -417,15 +331,14 @@ registerNamespace('resources', {
 });
 
 registerNamespace('workspace', {
-    ensureBlocklyWorkspaceMounted,
     openJupyterWorkspace,
-    openBlocklyWorkspace,
     openScratchWorkspace,
 });
 
 registerNamespace('system', {
     saveSystemConfig,
     resetSystemConfig,
+    selectPythonEnvironment,
     installPackage,
     uninstallPackage,
     updatePackage,
@@ -453,10 +366,22 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // 初始化模态框事件监听器（点击外部关闭和ESC键关闭）
         initModalListeners();
-    initSidebarCollapseToggle();
-registerPracticeDeepLinkHandler();
-registerBlocklyImagePickerBridge();
-        const teacherUnlocked = sessionStorage.getItem('xedu_teacher_mode') === 'true';
+        initSidebarCollapseToggle();
+        registerPracticeDeepLinkHandler();
+        bindBackendStartupSupportActions();
+        renderBackendStartupSupport();
+        if (window.electronAPI?.onBackendStartupState) {
+            window.electronAPI.onBackendStartupState((state) => {
+                onBackendStartupState(state);
+            });
+        }
+        try {
+            const initialBackendState = await getBackendStartupState();
+            renderBackendStartupSupport(initialBackendState);
+        } catch (error) {
+            console.warn('获取后端启动状态失败:', error);
+        }
+        const teacherUnlocked = isTeacherModeUnlocked();
         updateSettingsVisibility(teacherUnlocked);
         showSettingsTab('about');
 
@@ -477,7 +402,6 @@ registerBlocklyImagePickerBridge();
         const dashboardHeroPrimaryBtn = document.getElementById('dashboard-hero-primary-btn');
         const dashboardHeroTertiaryBtn = document.getElementById('dashboard-hero-tertiary-btn');
         const dashboardLaunchJupyterBtn = document.getElementById('dashboard-launch-jupyter-btn');
-        const dashboardLaunchBlocklyBtn = document.getElementById('dashboard-launch-blockly-btn');
         const dashboardOpenSourceBtn = document.getElementById('dashboard-open-source-btn');
         const mainNavItem = document.getElementById('nav-main-item');
         const jupyterOpenBtn = document.getElementById('jupyter-open-context-btn');
@@ -618,11 +542,6 @@ registerBlocklyImagePickerBridge();
                 });
             });
         }
-        if (dashboardLaunchBlocklyBtn) {
-            dashboardLaunchBlocklyBtn.addEventListener('click', () => {
-                openScratchWorkspace({});
-            });
-        }
         if (dashboardOpenSourceBtn) {
             dashboardOpenSourceBtn.addEventListener('click', () => {
                 openResourcesOrClassroomSource(isTeacherModeActive() ? 'resources' : 'classroom').catch((error) => {
@@ -653,11 +572,6 @@ registerBlocklyImagePickerBridge();
             });
         }
         window.addEventListener('xedu:tab-changed', (event) => {
-            if (event?.detail?.tabId === 'blockly-workspace') {
-                ensureBlocklyWorkspaceMounted();
-                syncActivePageTitle();
-                return;
-            }
             renderWorkspacePages();
             syncActivePageTitle();
         });
@@ -690,7 +604,13 @@ registerBlocklyImagePickerBridge();
     // 监听 Electron 主进程日志
     if (window.electronAPI && window.electronAPI.onLogUpdate) {
         window.electronAPI.onLogUpdate((message) => {
-            log(message, 'info');
+            const type = typeof message === 'object' && typeof message?.type === 'string'
+                ? message.type
+                : 'info';
+            const content = typeof message === 'object' && Object.prototype.hasOwnProperty.call(message, 'message')
+                ? message.message
+                : message;
+            log(content, type);
         });
     }
 });

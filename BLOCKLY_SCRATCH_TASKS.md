@@ -1,4 +1,6 @@
-# Blockly / Scratch Task List
+# Blockly / Scratch Task List（已归档）
+
+> 本文档保留为历史记录，不再作为执行清单。Blockly 已从产品中移除，Scratch 是唯一继续维护的图形化编程主线；请以 `docs/PRE_RELEASE_AUDIT_2026-07-16.md` 和 `docs/teacher/QUICKSTART.md` 为准。
 
 _Updated: 2026-07-09_
 

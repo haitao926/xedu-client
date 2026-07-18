@@ -1,11 +1,5 @@
-function escapeHtml(value = '') {
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
+import { escapeHtml } from '../utils/html.js';
+import apiClient from '../api.js';
 
 function formatWorkspaceMeta(items = []) {
     const validItems = (items || []).filter(Boolean);
@@ -44,18 +38,6 @@ function normalizeWorkspaceSourceLabel(payload = {}, fallback = '') {
     return String(payload?.sourceLabel || payload?.originLabel || fallback || '').trim();
 }
 
-function fetchWithTimeout(url, options = {}, timeoutMs = 2000) {
-    if (!timeoutMs || options.signal) {
-        return fetch(url, options);
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    return fetch(url, {
-        ...options,
-        signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
-}
-
 function formatRecentOpenMeta(payload = {}, options = {}) {
     const items = [];
     const sourceLabel = normalizeWorkspaceSourceLabel(payload);
@@ -63,10 +45,6 @@ function formatRecentOpenMeta(payload = {}, options = {}) {
     if (options.kind === 'jupyter') {
         if (payload?.filePath) items.push(`文件：${getBaseName(payload.filePath)}`);
         if (payload?.projectDir) items.push(`目录：${payload.projectDir}`);
-    } else if (options.kind === 'blockly') {
-        if (payload?.workspacePath) items.push(`工作区：${getBaseName(payload.workspacePath)}`);
-        if (payload?.practicePath) items.push(`代码练习：${getBaseName(payload.practicePath)}`);
-        if (payload?.localPath) items.push(`目录：${payload.localPath}`);
     } else if (options.kind === 'scratch') {
         if (payload?.projectPath) items.push(`项目：${getBaseName(payload.projectPath)}`);
         if (payload?.localPath) items.push(`目录：${payload.localPath}`);
@@ -75,16 +53,17 @@ function formatRecentOpenMeta(payload = {}, options = {}) {
 }
 
 export function createWorkspaceController({ showTab, openNotebookFile }) {
+    const SCRATCH_RETRY_DELAY_MS = 2000;
+    const SCRATCH_LOAD_TIMEOUT_MS = 12000;
     let lastOpenedJupyterTarget = '';
     let lastOpenedJupyterWorkspace = null;
-    let lastOpenedBlocklyWorkspace = null;
     let lastOpenedScratchWorkspace = null;
-    let blocklyViewRevision = 0;
     let scratchViewRevision = 0;
-    let blocklyFrameRequestId = 0;
     let scratchFrameRequestId = 0;
-    let blocklyRetryTimer = null;
     let scratchRetryTimer = null;
+    let scratchLoadTimer = null;
+    let scratchBridgeBound = false;
+    let scratchHandleIssuedAt = 0;
 
     function getScratchHostMenuElements() {
         return {
@@ -188,21 +167,6 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         });
     }
 
-    function ensureBlocklyWorkspaceMounted() {
-        if (!lastOpenedBlocklyWorkspace) {
-            blocklyViewRevision += 1;
-            lastOpenedBlocklyWorkspace = {
-                localPath: '',
-                workspacePath: '',
-                practicePath: '',
-                sourceLabel: '',
-                sourcePage: '',
-                revision: blocklyViewRevision,
-            };
-        }
-        renderBlocklyWorkspaceContext({ preserveLoadedFrame: true });
-    }
-
     function isTeacherModeActive() {
         const label = document.body.classList.contains('student-mode');
         return !label;
@@ -235,30 +199,6 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         return false;
     }
 
-    function buildBlocklyWorkspaceUrl(payload = {}) {
-        const projectPath = String(payload?.localPath || '').trim();
-        const workspacePath = String(payload?.workspacePath || '').trim().replace(/^\/+/, '');
-        const apiBase = (window.xeduConfig?.apiBase || 'http://127.0.0.1:5123').replace(/\/$/, '');
-        const revision = Number(payload?.revision || 0);
-        const role = isTeacherModeActive() ? 'teacher' : 'student';
-        if (!projectPath || !workspacePath) {
-            const blankParams = new URLSearchParams();
-            if (revision > 0) blankParams.set('_rev', String(revision));
-            blankParams.set('role', role);
-            return blankParams.toString()
-                ? `${apiBase}/api/resources/blockly-playground-blank?${blankParams.toString()}`
-                : `${apiBase}/api/resources/blockly-playground-blank`;
-        }
-        const params = new URLSearchParams();
-        params.set('workspace', workspacePath);
-        params.set('role', role);
-        if (revision > 0) params.set('_rev', String(revision));
-        const practicePath = String(payload?.practicePath || '').trim().replace(/^\/+/, '');
-        if (practicePath) params.set('practice', practicePath);
-        const rootToken = btoa(unescape(encodeURIComponent(projectPath))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-        return `${apiBase}/api/resources/blockly-playground/${rootToken}?${params.toString()}`;
-    }
-
     function buildScratchWorkspaceUrl(payload = {}) {
         const apiBase = getApiBaseUrl();
         const params = new URLSearchParams();
@@ -273,11 +213,12 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
     }
 
     async function ensureScratchProjectHandle(payload = {}) {
-        if (payload?.projectHandle) return payload.projectHandle;
+        const handleFresh = payload?.projectHandle && Date.now() - scratchHandleIssuedAt < 45 * 60 * 1000;
+        if (handleFresh) return payload.projectHandle;
         const localPath = String(payload?.localPath || '').trim();
         const projectPath = String(payload?.projectPath || '').trim().replace(/^\/+/, '');
         if (!localPath || !projectPath) return '';
-        const response = await fetch(`${getApiBaseUrl()}/api/resources/scratch-workspace`, {
+        const response = await apiClient.request('/api/resources/scratch-workspace', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ local_path: localPath, project_path: projectPath }),
@@ -286,6 +227,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         if (!response.ok || !body.success || !body.project_handle) {
             throw new Error(body.message || '无法打开 Scratch 项目');
         }
+        scratchHandleIssuedAt = Date.now();
         return body.project_handle;
     }
 
@@ -293,11 +235,40 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         return (window.xeduConfig?.apiBase || 'http://127.0.0.1:5123').replace(/\/$/, '');
     }
 
-    function clearBlocklyRetryTimer() {
-        if (blocklyRetryTimer) {
-            clearTimeout(blocklyRetryTimer);
-            blocklyRetryTimer = null;
-        }
+    function bindScratchFrameBridge(frame) {
+        if (scratchBridgeBound) return;
+        scratchBridgeBound = true;
+        window.addEventListener('message', async (event) => {
+            const request = event.data;
+            if (request?.type !== 'xedu:scratch-api-request' || event.source !== frame.contentWindow) return;
+            let backendOrigin = '';
+            try {
+                backendOrigin = new URL(getApiBaseUrl()).origin;
+            } catch (_) {
+                return;
+            }
+            if (event.origin !== backendOrigin || typeof window.electronAPI?.scratchApiRequest !== 'function') return;
+            try {
+                const response = await window.electronAPI.scratchApiRequest({
+                    path: request.path,
+                    method: request.method,
+                    body: request.body,
+                });
+                frame.contentWindow.postMessage({
+                    type: 'xedu:scratch-api-response',
+                    requestId: request.requestId,
+                    status: response.status,
+                    headers: response.headers || {},
+                    body: response.body || '',
+                }, event.origin);
+            } catch (error) {
+                frame.contentWindow.postMessage({
+                    type: 'xedu:scratch-api-response',
+                    requestId: request.requestId,
+                    error: error?.message || 'Scratch AI 请求失败',
+                }, event.origin);
+            }
+        });
     }
 
     function clearScratchRetryTimer() {
@@ -307,15 +278,11 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         }
     }
 
-    function scheduleBlocklyRetry() {
-        clearBlocklyRetryTimer();
-        blocklyRetryTimer = setTimeout(() => {
-            blocklyRetryTimer = null;
-            const active = Boolean(document.getElementById('blockly-workspace')?.classList.contains('active'));
-            if (active) {
-                renderBlocklyWorkspaceContext();
-            }
-        }, 2000);
+    function clearScratchLoadTimer() {
+        if (scratchLoadTimer) {
+            clearTimeout(scratchLoadTimer);
+            scratchLoadTimer = null;
+        }
     }
 
     function scheduleScratchRetry() {
@@ -326,32 +293,28 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
             if (active) {
                 renderScratchWorkspaceContext();
             }
-        }, 2000);
+        }, SCRATCH_RETRY_DELAY_MS);
     }
 
-    function renderBlocklyPlaceholder(emptyEl, state = {}) {
-        const tone = state.tone || 'idle';
-        const title = state.title || '打开空白 Blockly 工作台';
-        const desc = state.desc || '可随时载入 `.blockly.xml` 或 `.blockly.json` 工作区。';
-        const buttonText = state.buttonText || '立即打开 Blockly';
-        const buttonDisabled = state.buttonDisabled ? ' disabled' : '';
-        const artSrc = tone === 'error' ? 'assets/icon-blockly-xedu.svg' : 'assets/blockly-stage-illustration.svg';
-        const artClass = tone === 'error' ? 'placeholder-art placeholder-art-error' : 'placeholder-art placeholder-art-blockly';
-        const artAlt = tone === 'error' ? 'Blockly 连接提示图标' : 'Blockly 与 XEdu Hub 工作台插画';
-        emptyEl.innerHTML = `
-            <img class="${artClass}" src="${artSrc}" alt="${escapeHtml(artAlt)}">
-            <div class="placeholder-title">${escapeHtml(title)}</div>
-            <div class="placeholder-desc">${escapeHtml(desc)}</div>
-            <button class="btn btn-primary mt-3" type="button" data-blockly-placeholder-action${buttonDisabled}>${escapeHtml(buttonText)}</button>
-        `;
-        emptyEl.querySelector('[data-blockly-placeholder-action]')?.addEventListener('click', () => {
-            if (state.buttonDisabled) return;
-            if (tone === 'error') {
-                renderBlocklyWorkspaceContext();
-            } else {
-                openBlocklyWorkspace({});
-            }
-        });
+    function scheduleScratchLoadTimeout(frame, emptyEl, requestId) {
+        clearScratchLoadTimer();
+        scratchLoadTimer = setTimeout(() => {
+            scratchLoadTimer = null;
+            if (requestId !== scratchFrameRequestId) return;
+            frame.removeAttribute('src');
+            frame.dataset.loadedScratchUrl = '';
+            frame.classList.remove('is-loading');
+            frame.style.display = 'none';
+            renderScratchPlaceholder(emptyEl, {
+                tone: 'error',
+                title: 'Scratch 加载超时',
+                desc: 'Scratch 编辑器连接超时；系统会自动重试，也可以立即重试。',
+                buttonText: '立即重试',
+            });
+            emptyEl.style.display = 'flex';
+            scheduleScratchRetry();
+            updateScratchHostMenuState(false);
+        }, SCRATCH_LOAD_TIMEOUT_MS);
     }
 
     function renderScratchPlaceholder(emptyEl, state = {}) {
@@ -361,7 +324,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         const buttonText = state.buttonText || '打开内置 Scratch';
         const buttonDisabled = state.buttonDisabled ? ' disabled' : '';
         emptyEl.innerHTML = `
-            <img class="placeholder-art placeholder-art-blockly" src="assets/icon-blockly-xedu.svg" alt="Scratch 与 XEdu AI">
+            <img class="placeholder-art placeholder-art-scratch" src="assets/icon-scratch-xedu.svg" alt="Scratch 与 XEdu AI">
             <div class="placeholder-title">${escapeHtml(title)}</div>
             <div class="placeholder-desc">${escapeHtml(desc)}</div>
             <button class="btn btn-primary mt-3" type="button" data-scratch-placeholder-action${buttonDisabled}>${escapeHtml(buttonText)}</button>
@@ -376,62 +339,13 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         });
     }
 
-    function notifyBlocklyFrameResize(frame) {
-        if (!frame?.contentWindow) return;
-        [0, 120, 360].forEach((delay) => {
-            window.setTimeout(() => {
-                try {
-                    frame.contentWindow.postMessage({ type: 'xedu:blockly-resize' }, '*');
-                } catch (_) {
-                    // Ignore frames that navigated away while a resize notification was pending.
-                }
-            }, delay);
-        });
-    }
-
-    async function waitForBlocklyBackend(frame, emptyEl, frameUrl, requestId) {
-        try {
-            const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/health`, {
-                method: 'GET',
-                cache: 'no-store',
-            }, 2000);
-            if (requestId !== blocklyFrameRequestId) return;
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            clearBlocklyRetryTimer();
-            const keepVisibleUntilLoad = frame.dataset.loadedBlocklyUrl && frame.dataset.loadedBlocklyUrl !== frameUrl;
-            if (frame.dataset.loadedBlocklyUrl !== frameUrl) {
-                frame.dataset.loadedBlocklyUrl = frameUrl;
-                frame.setAttribute('src', frameUrl);
-            }
-            if (!keepVisibleUntilLoad) {
-                frame.style.display = 'block';
-                emptyEl.style.display = 'none';
-            }
-            notifyBlocklyFrameResize(frame);
-        } catch (error) {
-            if (requestId !== blocklyFrameRequestId) return;
-            frame.removeAttribute('src');
-            frame.dataset.loadedBlocklyUrl = '';
-            frame.style.display = 'none';
-            renderBlocklyPlaceholder(emptyEl, {
-                tone: 'error',
-                title: 'Blockly 后端未连接',
-                desc: '请先启动 XEdu API 服务；后端恢复后这里会自动重试。',
-                buttonText: '立即重试',
-            });
-            emptyEl.style.display = 'flex';
-            scheduleBlocklyRetry();
-        }
-    }
-
     async function waitForScratchBackend(frame, emptyEl, frameUrl, requestId) {
         try {
-            const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/health`, {
+            const response = await apiClient.request('/api/health', {
                 method: 'GET',
                 cache: 'no-store',
-            }, 2000);
+                timeoutMs: 2000,
+            });
             if (requestId !== scratchFrameRequestId) return;
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             clearScratchRetryTimer();
@@ -439,12 +353,15 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
                 frame.dataset.loadedScratchUrl = frameUrl;
                 frame.setAttribute('src', frameUrl);
             }
+            scheduleScratchLoadTimeout(frame, emptyEl, requestId);
             frame.style.display = 'block';
             emptyEl.style.display = 'none';
         } catch (error) {
             if (requestId !== scratchFrameRequestId) return;
+            clearScratchLoadTimer();
             frame.removeAttribute('src');
             frame.dataset.loadedScratchUrl = '';
+            frame.classList.remove('is-loading');
             frame.style.display = 'none';
             renderScratchPlaceholder(emptyEl, {
                 tone: 'error',
@@ -493,46 +410,6 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         }
         await openNotebookFile(normalizedPayload.filePath, normalizedPayload.projectDir);
         lastOpenedJupyterTarget = targetKey;
-        return true;
-    }
-
-    function openBlocklyWorkspace(payload = {}) {
-        const nextPayload = {
-            localPath: String(payload?.localPath || '').trim(),
-            workspacePath: String(payload?.workspacePath || '').trim(),
-            practicePath: String(payload?.practicePath || '').trim(),
-            sourceLabel: normalizeWorkspaceSourceLabel(payload),
-            sourcePage: String(payload?.sourcePage || '').trim(),
-        };
-        const currentKey = JSON.stringify({
-            localPath: lastOpenedBlocklyWorkspace?.localPath || '',
-            workspacePath: lastOpenedBlocklyWorkspace?.workspacePath || '',
-            practicePath: lastOpenedBlocklyWorkspace?.practicePath || '',
-            sourceLabel: lastOpenedBlocklyWorkspace?.sourceLabel || '',
-            sourcePage: lastOpenedBlocklyWorkspace?.sourcePage || '',
-        });
-        const nextKey = JSON.stringify(nextPayload);
-        if (!lastOpenedBlocklyWorkspace || currentKey !== nextKey) {
-            blocklyViewRevision += 1;
-        }
-        const normalizedPayload = {
-            ...nextPayload,
-            revision: blocklyViewRevision,
-        };
-        // 先写入目标状态再切换页面，避免 Blockly tab 首帧显示空容器。
-        lastOpenedBlocklyWorkspace = normalizedPayload;
-        const isStudentVisual = nextPayload.sourcePage === 'student-visual' || document.body.classList.contains('student-mode');
-        const legacyBlocklyNavItem = isStudentVisual
-            ? document.getElementById('nav-student-visual-item')
-            : document.getElementById('nav-scratch-item');
-        if (legacyBlocklyNavItem || isStudentVisual) {
-            showTab('blockly-workspace', legacyBlocklyNavItem, {
-                pageTitle: isStudentVisual ? '图形编程' : undefined,
-                pageSubtitle: isStudentVisual ? normalizedPayload.sourceLabel : undefined,
-            });
-        }
-        renderBlocklyWorkspaceContext({ preserveLoadedFrame: true });
-        renderJupyterWorkspaceContext();
         return true;
     }
 
@@ -600,80 +477,15 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         openBtn.disabled = false;
     }
 
-    function renderBlocklyWorkspaceContext(options = {}) {
-        const frame = document.getElementById('blockly-workspace-frame');
-        const emptyEl = document.getElementById('blockly-workspace-empty');
-        if (!frame || !emptyEl) return;
-        const payload = lastOpenedBlocklyWorkspace;
-        const workspaceName = payload?.workspacePath
-            ? (getBaseName(payload.workspacePath) || 'Blockly 工作台')
-            : '';
-        const blocklySectionActive = Boolean(document.getElementById('blockly-workspace')?.classList.contains('active'));
-        if (blocklySectionActive) {
-            const subtitleEl = document.getElementById('page-subtitle');
-            if (subtitleEl) subtitleEl.textContent = workspaceName;
-        }
-        if (!blocklySectionActive && !lastOpenedBlocklyWorkspace) {
-            clearBlocklyRetryTimer();
-            frame.removeAttribute('src');
-            frame.dataset.loadedBlocklyUrl = '';
-            frame.style.display = 'none';
-            renderBlocklyPlaceholder(emptyEl);
-            emptyEl.style.display = 'flex';
-            return;
-        }
-        const frameUrl = buildBlocklyWorkspaceUrl(payload);
-        if (frameUrl) {
-            const nextRequestId = blocklyFrameRequestId + 1;
-            blocklyFrameRequestId = nextRequestId;
-            const alreadyLoaded = frame.dataset.loadedBlocklyUrl === frameUrl;
-            if (alreadyLoaded) {
-                clearBlocklyRetryTimer();
-                frame.style.display = 'block';
-                frame.classList.remove('is-loading');
-                emptyEl.style.display = 'none';
-                notifyBlocklyFrameResize(frame);
-                return;
-            }
-            const preserveLoadedFrame = Boolean(options.preserveLoadedFrame && frame.dataset.loadedBlocklyUrl);
-            renderBlocklyPlaceholder(emptyEl, {
-                title: '正在连接 Blockly 工作台',
-                desc: '正在检查本地 XEdu API 服务并加载积木环境。',
-                buttonText: '连接中...',
-                buttonDisabled: true,
-            });
-            emptyEl.style.display = preserveLoadedFrame ? 'none' : 'flex';
-            if (!preserveLoadedFrame) {
-                frame.style.display = 'none';
-            }
-            frame.classList.add('is-loading');
-            frame.addEventListener('load', () => {
-                if (blocklyFrameRequestId !== nextRequestId || frame.dataset.loadedBlocklyUrl !== frameUrl) {
-                    return;
-                }
-                frame.classList.remove('is-loading');
-                frame.style.display = 'block';
-                emptyEl.style.display = 'none';
-                notifyBlocklyFrameResize(frame);
-            }, { once: true });
-            waitForBlocklyBackend(frame, emptyEl, frameUrl, nextRequestId);
-        } else {
-            blocklyFrameRequestId += 1;
-            clearBlocklyRetryTimer();
-            frame.removeAttribute('src');
-            frame.dataset.loadedBlocklyUrl = '';
-            frame.style.display = 'none';
-            renderBlocklyPlaceholder(emptyEl);
-            emptyEl.style.display = 'flex';
-        }
-    }
-
     async function renderScratchWorkspaceContext(options = {}) {
         bindScratchHostMenu();
         const frame = document.getElementById('scratch-workspace-frame');
         const emptyEl = document.getElementById('scratch-workspace-empty');
         if (!frame || !emptyEl) return;
+        clearScratchRetryTimer();
+        clearScratchLoadTimer();
         const payload = lastOpenedScratchWorkspace;
+        bindScratchFrameBridge(frame);
         const projectName = payload?.projectPath
             ? (getBaseName(payload.projectPath) || 'Scratch 项目')
             : '';
@@ -696,8 +508,10 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         }
         if (!scratchSectionActive && !lastOpenedScratchWorkspace) {
             clearScratchRetryTimer();
+            clearScratchLoadTimer();
             frame.removeAttribute('src');
             frame.dataset.loadedScratchUrl = '';
+            frame.classList.remove('is-loading');
             frame.style.display = 'none';
             renderScratchPlaceholder(emptyEl);
             emptyEl.style.display = 'flex';
@@ -710,6 +524,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
             projectHandle = await ensureScratchProjectHandle(payload);
         } catch (error) {
             if (nextRequestId !== scratchFrameRequestId) return;
+            clearScratchLoadTimer();
             renderScratchPlaceholder(emptyEl, {
                 tone: 'error',
                 title: 'Scratch 项目未打开',
@@ -724,6 +539,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         const frameUrl = buildScratchWorkspaceUrl(payload);
         if (frame.dataset.loadedScratchUrl === frameUrl) {
             clearScratchRetryTimer();
+            clearScratchLoadTimer();
             frame.style.display = 'block';
             frame.classList.remove('is-loading');
             emptyEl.style.display = 'none';
@@ -741,6 +557,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         frame.classList.add('is-loading');
         frame.addEventListener('load', () => {
             if (scratchFrameRequestId !== nextRequestId || frame.dataset.loadedScratchUrl !== frameUrl) return;
+            clearScratchLoadTimer();
             frame.classList.remove('is-loading');
             frame.style.display = 'block';
             emptyEl.style.display = 'none';
@@ -751,7 +568,6 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
 
     function renderWorkspacePages() {
         renderJupyterWorkspaceContext();
-        renderBlocklyWorkspaceContext();
         renderScratchWorkspaceContext();
     }
 
@@ -760,10 +576,8 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
     }
 
     return {
-        ensureBlocklyWorkspaceMounted,
         openResourcesOrClassroomSource,
         openJupyterWorkspace,
-        openBlocklyWorkspace,
         openScratchWorkspace,
         renderWorkspacePages,
         getLastOpenedJupyterWorkspace,

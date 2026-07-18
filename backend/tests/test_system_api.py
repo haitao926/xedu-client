@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import sys
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +12,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from api.app import create_app  # noqa: E402
+from api_test_utils import authorized_test_client  # noqa: E402
 
 
 class SystemApiTestCase(unittest.TestCase):
@@ -18,7 +20,7 @@ class SystemApiTestCase(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         app = create_app(Path(self.temp_dir.name))
         app.testing = True
-        self.client = app.test_client()
+        self.client = authorized_test_client(app)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -82,13 +84,20 @@ class SystemApiTestCase(unittest.TestCase):
         ) as mock_xedu_version:
             mock_site_packages.return_value = Path(self.temp_dir.name)
             mock_xedu_version.return_value = "2.0.0"
-            response = self.client.get("/api/detect_python?python_executable=C:/Python/python.exe")
+            response = self.client.get(f"/api/detect_python?python_executable={sys.executable}")
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertTrue(data["success"])
         self.assertEqual(data["info"]["xedu_version"], "2.0.0")
         self.assertTrue(data["info"]["xedu_version_ok"])
+
+    def test_detect_python_rejects_missing_executable(self):
+        response = self.client.get("/api/detect_python?python_executable=/tmp/not-a-python-executable")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()["success"])
+        self.assertIn("不存在", response.get_json()["message"])
 
 
 if __name__ == "__main__":

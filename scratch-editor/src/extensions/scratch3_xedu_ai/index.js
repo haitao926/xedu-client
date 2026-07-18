@@ -14,6 +14,7 @@ const {
     summarizeXEduPayload,
 } = require('./descriptor');
 const {getStageSensingSession} = require('./stage-sensing');
+const {requestXEduApi} = require('./api-request');
 
 const fallbackIconUri = 'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2040%2040%22%3E%3Crect%20width%3D%2240%22%20height%3D%2240%22%20rx%3D%2210%22%20fill%3D%22%236366F1%22%2F%3E%3Cpath%20d%3D%22M12%2014h8m0%200v12m0-12%208%204m-8%208%208-4%22%20stroke%3D%22%23fff%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2214%22%20r%3D%224%22%20fill%3D%22%23fff%22%2F%3E%3Ccircle%20cx%3D%2220%22%20cy%3D%2226%22%20r%3D%224%22%20fill%3D%22%23fff%22%2F%3E%3Ccircle%20cx%3D%2228%22%20cy%3D%2218%22%20r%3D%224%22%20fill%3D%22%23fff%22%2F%3E%3Ccircle%20cx%3D%2228%22%20cy%3D%2222%22%20r%3D%224%22%20fill%3D%22%23fff%22%20opacity%3D%22.74%22%2F%3E%3C%2Fsvg%3E';
 
@@ -330,7 +331,7 @@ class Scratch3XEduAI {
         const taskId = LEGACY_TASK_ALIASES[stringValue(requestedTaskId).toLowerCase()] || requestedTaskId;
         const spec = buildTaskSpec(taskId, {...args, IMAGE: args.IMAGE || args.INPUT || args.INPUT_DATA || this._input});
         try {
-            const response = await fetch(`${this._apiBase()}/api/resources/xeduhub/execute`, {
+            const response = await requestXEduApi(`${this._apiBase()}/api/resources/xeduhub/execute`, {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({code: '', spec, project_root: this._projectRoot()}),
             });

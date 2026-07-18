@@ -2,6 +2,7 @@
 import apiClient from './api.js';
 import { EXPERIENCE_MODES, getExperienceConfig, getExperienceMode } from './experience-config.js';
 import { sanitizeHtml } from './html-sanitizer.js';
+import { escapeHtml } from './utils/html.js';
 
 let conversationHistory = [];
 let aiUiInitialized = false;
@@ -493,17 +494,6 @@ function renderInline(text) {
         formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
         return formatted;
     }).join('');
-}
-
-function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
 }
 
 export function handleKeyDown(event) {

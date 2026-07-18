@@ -10,8 +10,6 @@ const scratchEditorBuildDir = path.join(repoRoot, 'scratch-editor', 'build');
 const limits = {
   'main.js': 120 * 1024,
   'resources.js': 220 * 1024,
-  'blockly-workspace.js': 16 * 1024,
-  'blockly-workspace.runtime.js': 1024 * 1024,
 };
 
 const scratchEditorLimit = 180 * 1024 * 1024;

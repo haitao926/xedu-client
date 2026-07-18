@@ -11,10 +11,6 @@ const EXPERIENCE_CONFIG = Object.freeze({
                 title: '课程任务中心',
                 subtitle: '进入当前课节的任务与实验入口',
             },
-            'blockly-workspace': {
-                title: '旧版 Blockly',
-                subtitle: '仅用于打开历史 .blockly 项目',
-            },
             'scratch-workspace': {
                 title: 'Scratch 编程',
                 subtitle: 'XEdu Client 内置官方 Scratch 编辑器与 XEdu AI 扩展',
@@ -25,7 +21,7 @@ const EXPERIENCE_CONFIG = Object.freeze({
             },
             resources: {
                 title: '学习空间',
-                subtitle: '打开本地课程、进入课堂，并从课程任务中心选择实验入口',
+                subtitle: '加入课堂后，从课程任务中心选择实验入口',
             },
             settings: {
                 title: '设置',
@@ -50,7 +46,7 @@ const EXPERIENCE_CONFIG = Object.freeze({
                     primaryLabel: '继续代码实验',
                     secondaryLabel: '查看实验来源',
                 },
-                blockly: {
+                scratch: {
                     title: 'Scratch 编程',
                     desc: '从课程任务中心直接进入内置 Scratch 编辑器，完成本节课的图形化编程实践。',
                     meta: ['内置 Scratch', '支持 XEdu AI 扩展'],
@@ -115,7 +111,7 @@ const EXPERIENCE_CONFIG = Object.freeze({
                 notes: [],
             },
         },
-        blockly: {
+        scratch: {
             eyebrow: 'Student Scratch',
             title: '进入 Scratch 继续完成当前任务',
             desc: '学生模式下会优先保留实验上下文与继续学习的路径，不展示教师侧的构建与导入语义。',
@@ -132,10 +128,6 @@ const EXPERIENCE_CONFIG = Object.freeze({
             main: {
                 title: '总控制台',
                 subtitle: '',
-            },
-            'blockly-workspace': {
-                title: '旧版 Blockly',
-                subtitle: '仅用于打开历史 .blockly 项目',
             },
             'scratch-workspace': {
                 title: 'Scratch 编程',
@@ -172,7 +164,7 @@ const EXPERIENCE_CONFIG = Object.freeze({
                     primaryLabel: '启动 Jupyter',
                     secondaryLabel: '继续最近文件',
                 },
-                blockly: {
+                scratch: {
                     title: 'Scratch 实验台',
                     desc: '进入内置 Scratch 工作区调试课内实验，适合课前预演与课堂准备。',
                     meta: ['内置 Scratch', '支持教师调试'],
@@ -211,7 +203,7 @@ const EXPERIENCE_CONFIG = Object.freeze({
             contextTitle: '当前为学习助手',
             composerLabel: '直接提问',
             composerCaption: '',
-            placeholder: '输入学习问题：实验目标、概念、报错、Blockly 或 Python 步骤',
+            placeholder: '输入学习问题：实验目标、概念、报错、Scratch 或 Python 步骤',
             guard: '',
             status: {
                 idle: '等待提问',
@@ -237,10 +229,10 @@ const EXPERIENCE_CONFIG = Object.freeze({
                 notes: [],
             },
         },
-        blockly: {
+        scratch: {
             eyebrow: 'Teacher Scratch',
             title: '在 Scratch 实验台里调试、预览并准备课堂内容',
-            desc: '教师模式下优先使用内置 Scratch 工作区，旧版 Blockly 仅作为历史资源兼容入口。',
+            desc: '教师模式下优先使用内置 Scratch 工作区，课程中的旧图形资源会显示不支持提示。',
             notes: ['适合课前调试', '可联动教师 AI 导航', '课堂内容准备更完整'],
         },
         teacherToggle: {

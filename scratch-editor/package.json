@@ -4,15 +4,42 @@
   "private": true,
   "description": "XEdu Client embedded Scratch editor with XEdu AI extension.",
   "scripts": {
-    "test": "node --test test/xedu-extension.test.js",
+    "test": "node --test test/xedu-extension.test.js test/hull-security.test.js",
     "postinstall": "node scripts/patch-scratch.js",
-    "prepare:upstream": "npm install --prefix node_modules/@scratch/scratch-gui --include=dev --ignore-scripts --cache .npm-cache && node scripts/prepare-upstream.js",
+    "prepare:upstream": "node scripts/ensure-upstream-deps.js && node scripts/prepare-upstream.js",
     "build": "npm run prepare:upstream && node scripts/patch-scratch.js && npm run build:dist-standalone --prefix node_modules/@scratch/scratch-gui && node scripts/copy-build.js",
     "build:upstream": "npm run prepare:upstream && npm run build:dist-standalone --prefix node_modules/@scratch/scratch-gui"
   },
   "dependencies": {
     "@scratch/scratch-gui": "14.2.0-2026-07-02.1",
-    "@scratch/scratch-vm": "14.2.0-2026-07-02.1"
+    "@scratch/scratch-vm": "14.2.0-2026-07-02.1",
+    "hull.js": "file:vendor/hull.js"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/preset-env": "7.29.7",
+    "@babel/preset-react": "7.29.7",
+    "babel-core": "7.0.0-bridge.0",
+    "babel-loader": "9.2.1",
+    "babel-plugin-react-intl": "3.5.1",
+    "cross-env": "7.0.3",
+    "file-loader": "6.2.0",
+    "html-webpack-plugin": "5.6.7",
+    "scratch-webpack-configuration": "3.1.2",
+    "stream-browserify": "3.0.0",
+    "ts-loader": "9.6.0",
+    "typescript": "5.9.3",
+    "url-loader": "4.1.1",
+    "webpack": "5.107.2",
+    "webpack-cli": "5.1.4"
+  },
+  "overrides": {
+    "hull.js": "file:vendor/hull.js",
+    "@scratch/scratch-gui": {
+      "cookie": "0.7.2"
+    },
+    "@scratch/scratch-vm": {
+      "uuid": "11.1.1"
+    }
+  }
 }

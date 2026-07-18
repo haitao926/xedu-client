@@ -9,14 +9,200 @@ import ast
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from flask import Response, jsonify, request, stream_with_context
 from api.security import require_capability
-from services.blockly_xeduhub_support import SMOKE_CHECKPOINT_MAP
+from services.xeduhub_support import SMOKE_CHECKPOINT_MAP
 from runtime.sample_assets import resolve_checkpoint_file
+
+PYTHON_OUTPUT_LIMIT_BYTES = 1024 * 1024
+_OUTPUT_TRUNCATION_NOTICE = "\n...[{stream} 输出已截断，已达到 1 MiB 上限]"
+
+
+def _create_output_state(limit_bytes: int):
+    return {
+        "limit_bytes": limit_bytes,
+        "remaining_bytes": limit_bytes,
+        "buffers": {"stdout": [], "stderr": []},
+        "truncated": {"stdout": False, "stderr": False},
+        "lock": threading.Lock(),
+    }
+
+
+def _append_capped_output(state, stream_name: str, text: str):
+    if not text:
+        return
+
+    encoded = str(text).encode("utf-8", errors="replace")
+    with state["lock"]:
+        remaining = state["remaining_bytes"]
+        kept_bytes = encoded[:remaining] if remaining > 0 else b""
+        if kept_bytes:
+            state["buffers"][stream_name].append(kept_bytes.decode("utf-8", errors="ignore"))
+            state["remaining_bytes"] -= len(kept_bytes)
+        if len(kept_bytes) < len(encoded):
+            state["truncated"][stream_name] = True
+
+
+def _drain_process_stream(stream, stream_name: str, state):
+    if stream is None:
+        return
+
+    try:
+        while True:
+            chunk = stream.read(8192)
+            if not chunk:
+                break
+            _append_capped_output(state, stream_name, chunk)
+    finally:
+        stream.close()
+
+
+def _finalize_capped_output(state):
+    resource_events = []
+    outputs = {}
+    for stream_name in ("stdout", "stderr"):
+        text = "".join(state["buffers"][stream_name])
+        if state["truncated"][stream_name]:
+            text = f"{text}{_OUTPUT_TRUNCATION_NOTICE.format(stream=stream_name)}"
+            resource_events.append(
+                {
+                    "type": "output_truncated",
+                    "stream": stream_name,
+                    "limit_bytes": state["limit_bytes"],
+                }
+            )
+        outputs[stream_name] = text
+    return outputs, resource_events
+
+
+def _terminate_python_process_tree(proc, logger):
+    process_exited = proc.poll() is not None
+
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=5,
+            )
+        except Exception as exc:
+            logger.warning(f"taskkill 终止 Python 进程树失败: {exc}")
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        return
+
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        # POSIX runs use start_new_session=True, so the Popen PID is also the
+        # process-group ID even if the parent exited just before cleanup.
+        if os.name != "nt" and process_exited:
+            pgid = proc.pid
+        else:
+            return
+    except Exception as exc:
+        logger.warning(f"获取 Python 进程组失败: {exc}")
+        pgid = None
+
+    if pgid is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=3)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        return
+
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            pass
+
+        # The parent can exit after SIGTERM while child processes remain in
+        # the session. Escalate only if the captured process group still
+        # exists, so timeouts cannot leave camera/model workers behind.
+        try:
+            os.killpg(pgid, 0)
+        except ProcessLookupError:
+            return
+        else:
+            os.killpg(pgid, signal.SIGKILL)
+            try:
+                proc.wait(timeout=3)
+            except Exception:
+                pass
+    except ProcessLookupError:
+        return
+    except Exception as exc:
+        logger.warning(f"终止 Python 进程组失败: {exc}")
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _run_python_subprocess(command, *, cwd, env, timeout_seconds, logger):
+    popen_kwargs = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "cwd": cwd,
+        "env": env,
+        "bufsize": 1,
+    }
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(command, **popen_kwargs)
+    output_state = _create_output_state(PYTHON_OUTPUT_LIMIT_BYTES)
+    threads = []
+    for stream_name, stream in (("stdout", proc.stdout), ("stderr", proc.stderr)):
+        thread = threading.Thread(
+            target=_drain_process_stream,
+            args=(stream, stream_name, output_state),
+            daemon=True,
+        )
+        thread.start()
+        threads.append(thread)
+
+    timed_out = False
+    try:
+        return_code = proc.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        return_code = -1
+        _terminate_python_process_tree(proc, logger)
+    finally:
+        for thread in threads:
+            thread.join(timeout=5)
+
+    outputs, resource_events = _finalize_capped_output(output_state)
+    return {
+        "return_code": return_code,
+        "stdout": outputs["stdout"],
+        "stderr": outputs["stderr"],
+        "resource_events": resource_events,
+        "timed_out": timed_out,
+    }
 
 
 def register_python_routes(app, services: dict):
@@ -134,8 +320,7 @@ def register_python_routes(app, services: dict):
 
         app_config = get_app_config()
         python_path = (
-            payload.get("python_executable")
-            or app_config.jupyter.python_executable
+            app_config.jupyter.python_executable
             or sys.executable
         )
         timeout_seconds = int(payload.get("timeout_seconds") or 20)
@@ -164,33 +349,56 @@ def register_python_routes(app, services: dict):
         )
 
         try:
-            result = subprocess.run(
+            result = _run_python_subprocess(
                 [python_path, "-c", code],
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                check=False,
                 cwd=cwd,
                 env=env,
+                timeout_seconds=timeout_seconds,
+                logger=logger,
             )
-            success = result.returncode == 0
-            runtime_events, cleaned_stdout = _parse_runtime_markers(result.stdout)
-            cleaned_stderr = str(result.stderr or "").strip()
+            if result["timed_out"]:
+                resource_events = list(result["resource_events"])
+                resource_events.append(
+                    {
+                        "type": "timeout_terminated",
+                        "limit_seconds": timeout_seconds,
+                    }
+                )
+                return jsonify({
+                    "success": False,
+                    "message": "Python 代码执行超时",
+                    "result": {
+                        "stdout": str(result["stdout"] or "").strip(),
+                        "stderr": str(result["stderr"] or "").strip(),
+                        "return_code": -1,
+                        "resource_events": resource_events,
+                    },
+                    "result_summary": {
+                        "headline": "视频流执行超时" if _is_stream_python(code) else "Python 代码执行超时",
+                        "metrics": [],
+                        "hints": ["请缩短视频样例时长，或检查是否未手动关闭摄像头/视频窗口。"] if _is_stream_python(code) else [],
+                    },
+                }), 500
+
+            success = result["return_code"] == 0
+            runtime_events, cleaned_stdout = _parse_runtime_markers(result["stdout"])
+            cleaned_stderr = str(result["stderr"] or "").strip()
             response_payload = {
                 "success": success,
                 "message": "运行成功" if success else "运行失败",
                 "output": cleaned_stdout,
                 "error_output": cleaned_stderr,
-                "return_code": result.returncode,
+                "return_code": result["return_code"],
                 "result": {
                     "stdout": cleaned_stdout,
                     "stderr": cleaned_stderr,
-                    "return_code": result.returncode,
+                    "return_code": result["return_code"],
                     "runtime_events": runtime_events,
+                    "resource_events": result["resource_events"],
                 },
             }
             if _is_stream_python(code):
-                stream_summary = _stream_summary_from_events(runtime_events, cleaned_stdout, cleaned_stderr, result.returncode)
+                stream_summary = _stream_summary_from_events(runtime_events, cleaned_stdout, cleaned_stderr, result["return_code"])
                 response_payload["message"] = stream_summary["headline"]
                 response_payload["result"]["is_stream_run"] = True
                 response_payload["result"]["stream_status"] = stream_summary["stream_status"]
@@ -210,22 +418,12 @@ def register_python_routes(app, services: dict):
                 jsonify(response_payload),
                 200 if response_payload["success"] else 400,
             )
-        except subprocess.TimeoutExpired:
-            return jsonify({
-                "success": False,
-                "message": "Python 代码执行超时",
-                "result": {"stdout": "", "stderr": "", "return_code": -1},
-                "result_summary": {
-                    "headline": "视频流执行超时" if _is_stream_python(code) else "Python 代码执行超时",
-                    "metrics": [],
-                    "hints": ["请缩短视频样例时长，或检查是否未手动关闭摄像头/视频窗口。"] if _is_stream_python(code) else [],
-                },
-            }), 500
         except Exception as exc:
             logger.error(f"Python 代码执行异常: {exc}")
-            return jsonify({"success": False, "message": str(exc)}), 500
+            return jsonify({"success": False, "message": "Python 代码执行失败"}), 500
 
     @app.route("/api/python/pip", methods=["POST"])
+    @require_capability("python:run")
     def manage_python_package():
         payload = request.get_json(silent=True) or {}
         action = (payload.get("action") or "").lower()
@@ -242,8 +440,7 @@ def register_python_routes(app, services: dict):
 
         app_config = get_app_config()
         python_path = (
-            payload.get("python_executable")
-            or app_config.jupyter.python_executable
+            app_config.jupyter.python_executable
             or sys.executable
         )
 
@@ -281,8 +478,9 @@ def register_python_routes(app, services: dict):
                     payload = {'return_code': ret, 'success': ret == 0}
                     yield f"__XEDU_PIP_RESULT__={json.dumps(payload, ensure_ascii=False)}\n"
                 except Exception as exc:
-                    yield f"\n[error] {str(exc)}\n"
-                    payload = {'return_code': -1, 'success': False, 'message': str(exc)}
+                    logger.error(f"pip 流式命令执行异常: {exc}")
+                    yield "\n[error] pip 命令执行失败\n"
+                    payload = {'return_code': -1, 'success': False, 'message': "pip 命令执行失败"}
                     yield f"__XEDU_PIP_RESULT__={json.dumps(payload, ensure_ascii=False)}\n"
 
             return Response(stream_with_context(generate()), mimetype="text/plain")
@@ -308,4 +506,4 @@ def register_python_routes(app, services: dict):
             return jsonify({"success": False, "message": "pip 命令执行超时"}), 500
         except Exception as exc:
             logger.error(f"pip 命令执行异常: {exc}")
-            return jsonify({"success": False, "message": str(exc)}), 500
+            return jsonify({"success": False, "message": "pip 命令执行失败"}), 500

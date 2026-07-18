@@ -12,17 +12,19 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import socket
+import stat
 import tempfile
 import threading
 import time
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from pathlib import Path, PurePosixPath
+from typing import Any, Dict, List, Optional, Tuple
 from urllib import error as urlerror, request as urlrequest
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from utils.logger import get_logger
 
@@ -30,6 +32,11 @@ logger = get_logger(__name__)
 
 DISCOVERY_PORT = 39527
 BROADCAST_INTERVAL = 2.0
+MAX_CLASSROOM_PACKAGE_BYTES = 256 * 1024 * 1024
+MAX_CLASSROOM_EXPANDED_BYTES = 1024 * 1024 * 1024
+MAX_CLASSROOM_ARCHIVE_MEMBERS = 10_000
+CLASSROOM_PACKAGE_CACHE_TTL_SECONDS = 300.0
+CLASSROOM_PACKAGE_CACHE_MAX_ENTRIES = 8
 
 DEFAULT_EXCLUDES = {
     ".git",
@@ -44,6 +51,101 @@ DEFAULT_EXCLUDES = {
 
 class ClassroomServiceError(RuntimeError):
     pass
+
+
+def _validate_package_url(package_url: str) -> str:
+    value = str(package_url or "").strip()
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ClassroomServiceError("课堂课程包仅支持 HTTP(S) 地址")
+    if parsed.username is not None or parsed.password is not None:
+        raise ClassroomServiceError("课堂课程包地址不得包含凭据")
+    return value
+
+
+def _download_package(package_url: str) -> bytes:
+    request = urlrequest.Request(package_url)
+    try:
+        with urlrequest.urlopen(request, timeout=60) as response:
+            chunks = []
+            total = 0
+            while True:
+                chunk = response.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_CLASSROOM_PACKAGE_BYTES:
+                    raise ClassroomServiceError("课堂课程包超过允许的下载大小")
+                chunks.append(chunk)
+            return b"".join(chunks)
+    except ClassroomServiceError:
+        raise
+    except (urlerror.HTTPError, urlerror.URLError, TimeoutError, OSError) as exc:
+        raise ClassroomServiceError("课堂课程包地址不可用") from exc
+
+
+def _validated_archive_members(archive: zipfile.ZipFile) -> List[zipfile.ZipInfo]:
+    members = archive.infolist()
+    if len(members) > MAX_CLASSROOM_ARCHIVE_MEMBERS:
+        raise ClassroomServiceError("课堂课程包包含过多文件")
+
+    expanded_size = 0
+    for member in members:
+        normalized_name = member.filename.replace("\\", "/")
+        relative = PurePosixPath(normalized_name)
+        if (
+            not normalized_name
+            or "\x00" in normalized_name
+            or relative.is_absolute()
+            or any(part in {"", ".", ".."} for part in relative.parts)
+            or stat.S_ISLNK(member.external_attr >> 16)
+        ):
+            raise ClassroomServiceError("课堂课程包包含不安全的文件路径")
+        expanded_size += max(0, member.file_size)
+        if expanded_size > MAX_CLASSROOM_EXPANDED_BYTES:
+            raise ClassroomServiceError("课堂课程包超过允许的解压大小")
+    return members
+
+
+def _extract_archive(archive: zipfile.ZipFile, members: List[zipfile.ZipInfo], staging_dir: Path) -> None:
+    staging_root = staging_dir.resolve()
+    for member in members:
+        relative = PurePosixPath(member.filename.replace("\\", "/"))
+        destination = (staging_root / Path(*relative.parts)).resolve()
+        if staging_root != destination and staging_root not in destination.parents:
+            raise ClassroomServiceError("课堂课程包包含不安全的文件路径")
+        if member.is_dir():
+            destination.mkdir(parents=True, exist_ok=True)
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(member, "r") as source, destination.open("wb") as target:
+            shutil.copyfileobj(source, target)
+
+
+def _copy_staged_course(staging_dir: Path, target_dir: Path) -> None:
+    target_root = target_dir.resolve()
+    target_root.mkdir(parents=True, exist_ok=True)
+    for source in staging_dir.rglob("*"):
+        relative = source.relative_to(staging_dir)
+        destination = target_root / relative
+        resolved_parent = destination.parent.resolve()
+        if target_root != resolved_parent and target_root not in resolved_parent.parents:
+            raise ClassroomServiceError("课堂课程目标目录包含不安全的符号链接")
+        if destination.is_symlink():
+            raise ClassroomServiceError("课堂课程目标目录包含不安全的符号链接")
+        if source.is_dir():
+            destination.mkdir(parents=True, exist_ok=True)
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            delete=False,
+        ) as temp_file, source.open("rb") as source_file:
+            shutil.copyfileobj(source_file, temp_file)
+            temp_path = Path(temp_file.name)
+        os.replace(temp_path, destination)
 
 
 def _generate_course_id(title: str) -> str:
@@ -98,9 +200,24 @@ class ClassroomConfig:
     active_section_title: str = ""
 
 
+@dataclass
+class _PackageCacheEntry:
+    share_id: str
+    version: str
+    summary_digest: str
+    master_path: Path
+    building: bool = True
+    build_error: Optional[BaseException] = None
+    last_accessed_at: float = 0.0
+
+
 class ClassroomService:
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._package_cache_lock = threading.Lock()
+        self._package_cache_condition = threading.Condition(self._package_cache_lock)
+        self._package_cache_dir = Path(tempfile.mkdtemp(prefix="xedu-classroom-package-cache-"))
+        self._package_cache: Dict[str, _PackageCacheEntry] = {}
         self._config = ClassroomConfig()
         self._courses: List[Dict[str, Any]] = []
         self._course_map: Dict[str, Dict[str, Any]] = {}
@@ -219,7 +336,20 @@ class ClassroomService:
             self._config.code = ""
             self._broadcast_stop.set()
             self._clear_active_course()
+        self._clear_package_cache()
         return self.status()
+
+    def _clear_package_cache(self) -> None:
+        """Drop shared masters while leaving active request leases readable."""
+        with self._package_cache_condition:
+            entries = list(self._package_cache.values())
+            self._package_cache.clear()
+            for entry in entries:
+                try:
+                    entry.master_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            self._package_cache_condition.notify_all()
 
     def status(self) -> Dict[str, Any]:
         with self._lock:
@@ -385,6 +515,175 @@ class ClassroomService:
         data["tags"] = _normalize_tags(data.get("tags"))
         return data
 
+    def _summarize_package_content(self, local_path: Path, course_json_bytes: bytes) -> str:
+        digest = hashlib.sha256()
+        digest.update(course_json_bytes)
+        for file_path, rel_path in sorted(_iter_course_files(local_path), key=lambda item: item[1]):
+            if rel_path == "course.json":
+                continue
+            try:
+                stat_result = file_path.stat()
+                file_bytes = file_path.read_bytes()
+            except OSError as exc:
+                raise ClassroomServiceError("课程目录不可读") from exc
+            digest.update(rel_path.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(str(stat_result.st_size).encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(file_bytes)
+            digest.update(b"\0")
+        return digest.hexdigest()
+
+    @staticmethod
+    def _package_cache_key(share_id: str, version: str, summary_digest: str) -> str:
+        return f"{share_id}:{version}:{summary_digest}"
+
+    def _package_cache_master_path(self, cache_key: str) -> Path:
+        safe_name = hashlib.sha1(cache_key.encode("utf-8")).hexdigest()
+        return self._package_cache_dir / f"master-{safe_name}.zip"
+
+    def _lease_package_path(self, master_path: Path) -> Path:
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            dir=self._package_cache_dir,
+            prefix="lease-",
+            suffix=".zip",
+        ) as temp_file:
+            lease_path = Path(temp_file.name)
+        lease_path.unlink(missing_ok=True)
+        try:
+            os.link(master_path, lease_path)
+        except OSError:
+            shutil.copyfile(master_path, lease_path)
+        return lease_path
+
+    def _write_package_zip(self, local_path: Path, course_json_bytes: bytes, target_path: Path) -> None:
+        with zipfile.ZipFile(target_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for file_path, rel_path in _iter_course_files(local_path):
+                if rel_path == "course.json":
+                    continue
+                zipf.write(file_path, rel_path)
+            zipf.writestr("course.json", course_json_bytes)
+
+    def _prune_package_cache_locked(
+        self,
+        *,
+        keep_key: Optional[str] = None,
+        active_scope: Optional[Tuple[str, str]] = None,
+    ) -> None:
+        now = time.monotonic()
+        removable: List[str] = []
+        scope_key = active_scope or ("", "")
+
+        for cache_key, entry in self._package_cache.items():
+            if cache_key == keep_key or entry.building:
+                continue
+            expired = now - entry.last_accessed_at > CLASSROOM_PACKAGE_CACHE_TTL_SECONDS
+            missing = not entry.master_path.exists()
+            superseded = (
+                active_scope is not None
+                and (entry.share_id, entry.version) == scope_key
+                and cache_key != keep_key
+            )
+            if expired or missing or superseded:
+                removable.append(cache_key)
+
+        ready_entries = [
+            key
+            for key, entry in self._package_cache.items()
+            if not entry.building and key not in removable
+        ]
+        if len(ready_entries) > CLASSROOM_PACKAGE_CACHE_MAX_ENTRIES:
+            ready_entries.sort(key=lambda key: self._package_cache[key].last_accessed_at)
+            removable.extend(ready_entries[: len(ready_entries) - CLASSROOM_PACKAGE_CACHE_MAX_ENTRIES])
+
+        for cache_key in set(removable):
+            entry = self._package_cache.pop(cache_key, None)
+            if not entry:
+                continue
+            try:
+                entry.master_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _get_cached_package_path(
+        self,
+        *,
+        share_id: str,
+        version: str,
+        local_path: Path,
+        course_json_bytes: bytes,
+    ) -> Path:
+        summary_digest = self._summarize_package_content(local_path, course_json_bytes)
+        cache_key = self._package_cache_key(share_id, version, summary_digest)
+        scope = (share_id, version)
+        builder = False
+        master_path = self._package_cache_master_path(cache_key)
+
+        while True:
+            with self._package_cache_condition:
+                self._prune_package_cache_locked(keep_key=cache_key, active_scope=scope)
+                entry = self._package_cache.get(cache_key)
+                if entry and not entry.building and entry.build_error is None and entry.master_path.exists():
+                    entry.last_accessed_at = time.monotonic()
+                    return self._lease_package_path(entry.master_path)
+                if entry and entry.build_error is not None:
+                    error = entry.build_error
+                    self._package_cache.pop(cache_key, None)
+                    raise ClassroomServiceError("生成课程包失败") from error
+                if entry and entry.building:
+                    self._package_cache_condition.wait()
+                    continue
+
+                self._package_cache[cache_key] = _PackageCacheEntry(
+                    share_id=share_id,
+                    version=version,
+                    summary_digest=summary_digest,
+                    master_path=master_path,
+                    building=True,
+                    last_accessed_at=time.monotonic(),
+                )
+                builder = True
+                break
+
+        if builder:
+            temp_master = self._package_cache_dir / f".{master_path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+            try:
+                self._write_package_zip(local_path, course_json_bytes, temp_master)
+                os.replace(temp_master, master_path)
+            except Exception as exc:
+                try:
+                    temp_master.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                with self._package_cache_condition:
+                    entry = self._package_cache.get(cache_key)
+                    if entry:
+                        entry.building = False
+                        entry.build_error = exc
+                    self._package_cache_condition.notify_all()
+                raise
+
+            with self._package_cache_condition:
+                entry = self._package_cache.get(cache_key)
+                if not entry:
+                    entry = _PackageCacheEntry(
+                        share_id=share_id,
+                        version=version,
+                        summary_digest=summary_digest,
+                        master_path=master_path,
+                        building=False,
+                        last_accessed_at=time.monotonic(),
+                    )
+                    self._package_cache[cache_key] = entry
+                entry.building = False
+                entry.build_error = None
+                entry.last_accessed_at = time.monotonic()
+                self._prune_package_cache_locked(keep_key=cache_key, active_scope=scope)
+                lease_path = self._lease_package_path(entry.master_path)
+                self._package_cache_condition.notify_all()
+                return lease_path
+
     def build_package(self, share_id: str, version: str) -> Path:
         with self._lock:
             active_course_id = self._config.active_course_id
@@ -401,19 +700,17 @@ class ClassroomService:
         data["id"] = data.get("id") or share_id
         data["version"] = version or data.get("version") or "1.0"
         course_json_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-
-        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-        tmp_file.close()
-        zip_path = Path(tmp_file.name)
-
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for file_path, rel_path in _iter_course_files(local_path):
-                if rel_path == "course.json":
-                    continue
-                zipf.write(file_path, rel_path)
-            zipf.writestr("course.json", course_json_bytes)
-
-        return zip_path
+        try:
+            return self._get_cached_package_path(
+                share_id=share_id,
+                version=str(data["version"]),
+                local_path=local_path,
+                course_json_bytes=course_json_bytes,
+            )
+        except ClassroomServiceError:
+            raise
+        except Exception as exc:
+            raise ClassroomServiceError("生成课程包失败") from exc
 
     def read_course_json_bytes(self, share_id: str) -> bytes:
         with self._lock:
@@ -532,33 +829,37 @@ class ClassroomService:
 
     @staticmethod
     def pull_package(package_url: str, target_path: str) -> Dict[str, Any]:
-        if not package_url:
-            raise ClassroomServiceError("课程包地址为空")
+        package_url = _validate_package_url(package_url)
 
         if not target_path:
             default_root = Path.home() / "Documents" / "XeduCourses"
             default_root.mkdir(parents=True, exist_ok=True)
             target_path = str(default_root / "course")
 
-        target_dir = Path(target_path)
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        req = urlrequest.Request(package_url)
-        with urlrequest.urlopen(req, timeout=60) as resp:
-            data = resp.read()
+        target_dir = Path(target_path).expanduser()
+        data = _download_package(package_url)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             zip_path = Path(tmp_dir) / "course.zip"
             zip_path.write_bytes(data)
-            with zipfile.ZipFile(zip_path, "r") as zipf:
-                zipf.extractall(target_dir)
+            staging_dir = Path(tmp_dir) / "extracted"
+            staging_dir.mkdir()
+            try:
+                with zipfile.ZipFile(zip_path, "r") as archive:
+                    members = _validated_archive_members(archive)
+                    _extract_archive(archive, members, staging_dir)
+            except (zipfile.BadZipFile, OSError) as exc:
+                raise ClassroomServiceError("课堂课程包格式错误") from exc
 
-        # Load course.json for response
-        course_json_path = target_dir / "course.json"
-        if not course_json_path.exists():
-            raise ClassroomServiceError("课程包缺少 course.json")
-        with course_json_path.open("r", encoding="utf-8") as f:
-            course_data = json.load(f)
+            course_json_path = staging_dir / "course.json"
+            if not course_json_path.is_file():
+                raise ClassroomServiceError("课程包缺少 course.json")
+            try:
+                with course_json_path.open("r", encoding="utf-8") as course_file:
+                    course_data = json.load(course_file)
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise ClassroomServiceError("课程包 course.json 无法解析") from exc
+            _copy_staged_course(staging_dir, target_dir)
 
         return {
             "course": course_data,

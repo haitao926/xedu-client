@@ -7,9 +7,21 @@ const DEFAULT_BASE_URL = (typeof window !== 'undefined' && window.xeduConfig && 
     ? window.xeduConfig.apiBase
     : 'http://127.0.0.1:5123';
 
-// 处理 file:// 场景下 /api/* 变成 file:///.../api/* 的问题
 const rawFetch = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : fetch;
 const trimTrailingSlash = (url) => url ? url.replace(/\/$/, '') : '';
+const isFormDataBody = (body) => typeof FormData !== 'undefined' && body instanceof FormData;
+const SENSITIVE_HEADER_PATTERN = /authorization|cookie|token|secret|api[-_]key/i;
+const getRequestLogMeta = (config) => ({
+    method: config.method || 'GET',
+    headers: config.headers
+        ? Object.fromEntries(Array.from(new Headers(config.headers).entries()).map(([name, value]) => [
+            name,
+            SENSITIVE_HEADER_PATTERN.test(name) ? '[redacted]' : value,
+        ]))
+        : {},
+    body: config.body == null ? undefined : '[redacted]',
+});
+
 const normalizeApiUrl = (url, base = DEFAULT_BASE_URL) => {
     if (typeof url !== 'string') return url;
     const cleanedBase = trimTrailingSlash(base || DEFAULT_BASE_URL);
@@ -33,15 +45,62 @@ const normalizeApiUrl = (url, base = DEFAULT_BASE_URL) => {
     return url;
 };
 
-const fetchWithBase = async (url, options = {}, base = DEFAULT_BASE_URL) => {
+const shouldUseElectronRequest = (url, options = {}, base = DEFAULT_BASE_URL, transport = 'auto') => {
+    if (transport !== 'auto') {
+        return false;
+    }
+    const electronRequest = typeof window !== 'undefined' && window.electronAPI?.apiRequest;
+    if (!electronRequest || typeof url !== 'string') {
+        return false;
+    }
+
+    const method = String(options.method || 'GET').toUpperCase();
+    if (!['GET', 'POST'].includes(method)) {
+        return false;
+    }
+
+    const normalizedUrl = normalizeApiUrl(url, base);
+    const apiPrefix = `${trimTrailingSlash(base || DEFAULT_BASE_URL)}/api/`;
+    if (!normalizedUrl.startsWith(apiPrefix)) {
+        return false;
+    }
+
+    const body = options.body;
+    if (isFormDataBody(body)) {
+        return false;
+    }
+
+    return body == null || typeof body === 'string';
+};
+
+const fetchWithBase = async (url, options = {}, base = DEFAULT_BASE_URL, transport = 'auto') => {
     const normalizedUrl = normalizeApiUrl(url, base);
     const electronRequest = typeof window !== 'undefined' && window.electronAPI?.apiRequest;
-    if (electronRequest && normalizedUrl.startsWith(trimTrailingSlash(DEFAULT_BASE_URL) + '/api/')) {
+    if (shouldUseElectronRequest(normalizedUrl, options, base, transport)) {
         const parsed = new URL(normalizedUrl);
-        const result = await electronRequest({
-            method: options.method || 'GET',
-            path: `${parsed.pathname}${parsed.search}`,
-            body: options.body || '',
+        const result = await new Promise((resolve, reject) => {
+            let settled = false;
+            const cleanup = () => options.signal?.removeEventListener('abort', onAbort);
+            const finish = (callback, value) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                callback(value);
+            };
+            const onAbort = () => finish(reject, options.signal.reason || new DOMException('The operation was aborted.', 'AbortError'));
+            if (options.signal?.aborted) {
+                onAbort();
+                return;
+            }
+            options.signal?.addEventListener('abort', onAbort, { once: true });
+            electronRequest({
+                method: options.method || 'GET',
+                path: `${parsed.pathname}${parsed.search}`,
+                body: options.body || '',
+            }).then(
+                (value) => finish(resolve, value),
+                (error) => finish(reject, error),
+            );
         });
         return new Response(result.body, { status: result.status, headers: result.headers });
     }
@@ -56,6 +115,7 @@ export const API_ENDPOINTS = Object.freeze({
     JUPYTER_RESTART: '/api/restart',
     CONFIG_SAVE: '/api/save_config',
     CONFIG_LOAD: '/api/load_config',
+    CONFIG_RESET: '/api/reset_config',
     QUICKFORM_TEST: '/api/quickform/test',
     QUICKFORM_TASKS: '/api/quickform/tasks',
     QUICKFORM_CREATE_TASK: '/api/quickform/tasks/create',
@@ -66,18 +126,45 @@ export const API_ENDPOINTS = Object.freeze({
     PYTHON_PIP: '/api/python/pip',
 });
 
-// 全局兜底：如果其他代码还在用 fetch('/api/...')，强制改写为 http://127.../api/...
-if (typeof window !== 'undefined' && !window.__XEDU_FETCH_PATCHED__) {
-    window.__XEDU_FETCH_PATCHED__ = true;
-    const originalFetch = rawFetch;
-    window.fetch = (url, options) => fetchWithBase(url, options);
-    window.__XEDU_ORIGINAL_FETCH__ = originalFetch;
-}
-
 class APIClient {
     constructor(baseURL = DEFAULT_BASE_URL) {
         this.baseURL = baseURL;
         this.timeout = 25000; // 25秒超时，优化后的启动时间
+    }
+
+    async request(endpoint, options = {}) {
+        const url = normalizeApiUrl(endpoint, this.baseURL);
+        const { timeoutMs = this.timeout, headers, transport = 'auto', ...restOptions } = options || {};
+        const requestHeaders = new Headers(headers || {});
+        if (!isFormDataBody(restOptions.body) && !requestHeaders.has('Content-Type')) {
+            requestHeaders.set('Content-Type', 'application/json');
+        }
+
+        const config = {
+            ...restOptions,
+            headers: requestHeaders,
+        };
+
+        console.debug(`[API] Request: ${config.method || 'GET'} ${url}`, getRequestLogMeta(config));
+
+        const controller = new AbortController();
+        const signal = config.signal || controller.signal;
+        const timeoutId = timeoutMs > 0 && !config.signal
+            ? setTimeout(() => controller.abort(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs)
+            : null;
+
+        try {
+            return await fetchWithBase(url, { ...config, signal }, this.baseURL, transport);
+        } catch (error) {
+            if (error?.name === 'AbortError' || /timeout/i.test(String(error?.message || ''))) {
+                throw new APIError(`Request timeout after ${timeoutMs}ms`, 0, error?.message || 'Request timeout');
+            }
+            throw new APIError(`Network error: ${error?.message || 'Unknown error'}`, 0, error?.message || '');
+        } finally {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+        }
     }
 
     /**
@@ -87,25 +174,8 @@ class APIClient {
      * @returns {Promise} API响应
      */
     async call(endpoint, options = {}) {
-        const url = normalizeApiUrl(endpoint, this.baseURL);
-
-        const config = {
-            headers: { 'Content-Type': 'application/json' },
-            ...options
-        };
-
-        console.debug(`[API] Request: ${options.method || 'GET'} ${url}`, config);
-
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-            let response;
-            try {
-                response = await fetch(url, { ...config, signal: controller.signal });
-            } finally {
-                clearTimeout(timeoutId);
-            }
-
+            const response = await this.request(endpoint, options);
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new APIError(
@@ -115,16 +185,21 @@ class APIClient {
                 );
             }
 
-            const data = await response.json();
-            console.debug(`[API] Response: ${endpoint}`, data);
+            const rawText = await response.text();
+            const data = rawText ? JSON.parse(rawText) : {};
+            console.debug(`[API] Response: ${endpoint}`, { status: response.status });
             return data;
 
         } catch (error) {
-            console.error(`[API] Error: ${endpoint}`, error);
+            console.error(`[API] Error: ${endpoint}`, {
+                name: error?.name || 'Error',
+                status: error?.status || 0,
+                message: error instanceof APIError ? error.message : 'API request failed',
+            });
             if (error instanceof APIError) {
                 throw error;
             }
-            throw new APIError(`Network error: ${error.message}`, 0, error.message);
+            throw new APIError(`Invalid JSON response: ${error.message}`, 200, error.message);
         }
     }
 
@@ -212,6 +287,10 @@ class JupyterAPI extends APIClient {
 
     async loadConfig() {
         return this.get(API_ENDPOINTS.CONFIG_LOAD);
+    }
+
+    async resetConfig() {
+        return this.post(API_ENDPOINTS.CONFIG_RESET, {});
     }
 
     async testQuickForm(config = {}) {

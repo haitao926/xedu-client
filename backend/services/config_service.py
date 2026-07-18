@@ -128,8 +128,11 @@ class ConfigService:
                 # 检查是否需要迁移配置
                 data = self._migrate_config(data)
 
+                original_python_path = ((data.get("jupyter") or {}).get("python_executable") or "")
                 self._config = AppConfig.from_dict(data)
                 self._ensure_valid_python_path(self._config)
+                if self._config.jupyter.python_executable != original_python_path:
+                    self._save_config_internal(self._config)
                 logger.info("配置文件加载成功")
                 return self._config
 
@@ -393,22 +396,22 @@ class ConfigService:
     def _ensure_valid_python_path(self, app_config: AppConfig):
         """
         确保 jupyter.python_executable 可用；不存在时回退为当前运行的解释器。
-        打包环境下当前解释器即内置 python_env，可避免跨机器绝对路径失效。
         """
         try:
             project_root = Path(__file__).resolve().parent.parent.parent
-            embedded_py = project_root / "python_env" / "Scripts" / "python.exe"
-            embedded_py_alt = project_root / "python_env" / "python.exe"
-
             py_path_str = getattr(app_config, "jupyter", None) and app_config.jupyter.python_executable
             py_path = Path(py_path_str) if py_path_str else None
             if not py_path or not py_path.exists():
+                env_python = os.environ.get("XEDU_PYTHON_EXECUTABLE", "").strip()
                 candidates = [
-                    embedded_py,
-                    embedded_py_alt,
                     Path(sys.executable),
+                    Path(env_python) if env_python else None,
+                    project_root / "python_env" / "Scripts" / "python.exe",
+                    project_root / "python_env" / "bin" / "python3",
+                    project_root / "python_env" / "python.exe",
+                    project_root / "python_env" / "python3",
                 ]
-                fallback = next((p for p in candidates if p.exists()), None)
+                fallback = next((p for p in candidates if p and p.is_file()), None)
                 original_path = py_path_str if py_path_str else "<empty>"
                 if fallback:
                     app_config.jupyter.python_executable = str(fallback.resolve())

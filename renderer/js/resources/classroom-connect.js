@@ -14,6 +14,32 @@ function normalizeClassroomCode(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+export function normalizeClassroomAddress(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { error: '请输入教师课堂地址' };
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (_) {
+    return { error: '请输入完整地址，例如 http://教师IP:5123' };
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return { error: '课堂地址仅支持 HTTP(S)' };
+  }
+  if (!parsed.hostname || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    return { error: '课堂地址格式无效，请检查 IP、端口和协议' };
+  }
+  const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return { error: '端口必须是 1-65535 之间的数字' };
+  }
+  return {
+    base_url: parsed.origin,
+    host: parsed.hostname,
+    port,
+  };
+}
+
 function matchClassroomByCode(list, code) {
   if (!Array.isArray(list) || !list.length) return null;
   const normalizedCode = normalizeClassroomCode(code);
@@ -140,6 +166,22 @@ export async function connectStudentClassroomByCodeFlow(code, options = {}, deps
         const loopbackResp = await tryLoopbackSource();
         if (loopbackResp?.success) {
           return { success: true, source: deps.classroomState.source, prefetched: loopbackResp };
+        }
+      }
+      if (typeof deps.requestManualClassroomAddress === 'function') {
+        const manualSource = await deps.requestManualClassroomAddress();
+        if (manualSource?.base_url) {
+          const manualResp = await fetchIndexBySource(manualSource);
+          if (manualResp?.success) {
+            deps.classroomState.source = {
+              ...manualSource,
+              name: manualSource.name || '手动课堂',
+            };
+            deps.classroomState.connected = true;
+            deps.rememberClassroomSource?.(deps.classroomState.source);
+            return { success: true, source: deps.classroomState.source, prefetched: manualResp };
+          }
+          return { success: false, message: manualResp?.message || '教师课堂地址不可用，请检查地址和防火墙' };
         }
       }
       return { success: false, message: '未发现课堂，请确认教师已开启课堂' };

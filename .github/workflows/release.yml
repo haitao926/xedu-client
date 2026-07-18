@@ -1,0 +1,215 @@
+name: Official Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build (for example v2.0.0-rc.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xedu-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.release-ref.outputs.tag }}
+      source_commit: ${{ steps.release-ref.outputs.commit }}
+    steps:
+      - name: Checkout requested release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve and validate release tag
+        id: release-ref
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="$REQUESTED_TAG"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || {
+            echo "Expected an exact version tag, got: $tag" >&2
+            exit 1
+          }
+          commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-list -n 1 "$tag^{commit}")"
+          test "$commit" = "$tag_commit" || {
+            echo "Checked out commit does not match tag $tag" >&2
+            exit 1
+          }
+          version="$(node -p "require('./package.json').version")"
+          test "$version" = "${tag#v}" -o "$tag" = "v${version}-rc.1" || {
+            echo "Tag $tag does not match package version $version" >&2
+            exit 1
+          }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Scratch dependencies
+        run: npm ci --prefix scratch-editor
+
+      - name: Install backend test dependencies and smoke model builder
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements_ci.txt numpy==1.26.4 onnx==1.20.1
+          python scripts/seed_xedu_smoke_models.py
+          python scripts/seed_xedu_smoke_assets.py
+
+      - name: Run complete quality gate
+        run: npm run quality-gate
+
+      - name: Audit root npm lockfile
+        run: npm audit --audit-level=high --package-lock-only
+
+      - name: Audit Scratch npm lockfile
+        run: npm audit --prefix scratch-editor --audit-level=high --package-lock-only
+
+      - name: Audit fixed Python direct dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install pip-audit
+          awk 'NF && $1 !~ /^#/ && $1 ~ /^[A-Za-z0-9_.-]+==[^;[:space:]]+$/' backend/requirements.txt > /tmp/xedu-pinned-requirements.txt
+          python -m pip_audit -r /tmp/xedu-pinned-requirements.txt --no-deps
+
+      - name: Resolve and audit complete Python requirements
+        run: python -m pip_audit -r backend/requirements.txt
+
+  windows-release:
+    runs-on: windows-2022
+    needs: quality-gate
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.quality-gate.outputs.source_commit }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Scratch dependencies
+        run: npm ci --prefix scratch-editor
+
+      - name: Check release model assets
+        run: node scripts/check_release_inputs.mjs
+
+      - name: Build signed Windows release
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npm run electron:build:release
+
+      - name: Verify packaged contents and write manifest
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-evidence | Out-Null
+          $installer = (Get-ChildItem -Path dist-release -Filter *.exe -File | Select-Object -First 1).FullName
+          if (-not $installer) { throw 'Windows installer was not produced.' }
+          $signedFiles = @($installer, (Join-Path (Resolve-Path dist-release/win-unpacked) 'XEdu Client.exe'))
+          $uninstaller = Get-ChildItem -Path dist-release/win-unpacked -Filter 'Uninstall*.exe' -File | Select-Object -First 1
+          if ($uninstaller) { $signedFiles += $uninstaller.FullName }
+          foreach ($file in $signedFiles) {
+            if (-not (Test-Path $file)) { throw "Signed file is missing: $file" }
+            signtool verify /pa /v $file
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed: $file" }
+          }
+          node scripts/verify_release_artifact.mjs dist-release/win-unpacked --version 2.0.0 --tag "${{ needs.quality-gate.outputs.release_tag }}" --commit "${{ needs.quality-gate.outputs.source_commit }}" --artifact $installer --manifest release-evidence/windows-manifest.json --platform win32 --arch x64
+          Get-ChildItem -Path dist-release -File | Get-FileHash -Algorithm SHA256 | ConvertTo-Json -Depth 3 | Out-File release-evidence/windows-artifacts-sha256.json -Encoding utf8
+
+      - name: Upload Windows release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: xedu-client-${{ needs.quality-gate.outputs.release_tag }}-windows
+          path: |
+            dist-release
+            release-evidence
+          if-no-files-found: error
+
+  macos-release:
+    runs-on: macos-14
+    needs: quality-gate
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.quality-gate.outputs.source_commit }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Scratch dependencies
+        run: npm ci --prefix scratch-editor
+
+      - name: Check release model assets
+        run: node scripts/check_release_inputs.mjs
+
+      - name: Build signed and notarized macOS release
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run electron:build:release
+
+      - name: Verify packaged contents and write manifest
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence
+          dmg="$(find dist-release -maxdepth 1 -name '*.dmg' -print -quit)"
+          zip="$(find dist-release -maxdepth 1 -name '*.zip' -print -quit)"
+          test -n "$dmg" && test -n "$zip"
+          node scripts/verify_release_artifact.mjs "dist-release/mac-arm64/XEdu Client.app" --version 2.0.0 --tag "${{ needs.quality-gate.outputs.release_tag }}" --commit "${{ needs.quality-gate.outputs.source_commit }}" --artifact "$dmg" --artifact "$zip" --manifest release-evidence/macos-manifest.json --platform darwin --arch arm64
+          codesign --verify --deep --strict --verbose=2 "dist-release/mac-arm64/XEdu Client.app"
+          spctl --assess --type execute -vv "dist-release/mac-arm64/XEdu Client.app"
+          xcrun stapler validate "$dmg"
+          find dist-release -maxdepth 1 -type f -print0 | xargs -0 shasum -a 256 > release-evidence/macos-artifacts-sha256.txt
+
+      - name: Upload macOS release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: xedu-client-${{ needs.quality-gate.outputs.release_tag }}-macos
+          path: |
+            dist-release
+            release-evidence
+          if-no-files-found: error

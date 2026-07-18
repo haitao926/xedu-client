@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from flask import jsonify, request
 
+from api.security import require_capability
 from services.quickform_service import QuickFormServiceError
 
 
@@ -18,6 +19,7 @@ def register_quickform_routes(app, services: dict):
     logger = services["logger"]
 
     @app.route("/api/quickform/test", methods=["POST"])
+    @require_capability("config:read")
     def quickform_test():
         payload = request.get_json(silent=True) or {}
         overrides = payload.get("config") if isinstance(payload.get("config"), dict) else payload
@@ -42,6 +44,7 @@ def register_quickform_routes(app, services: dict):
             return jsonify({"success": False, "message": "QuickForm 测试失败"}), 500
 
     @app.route("/api/quickform/tasks", methods=["POST"])
+    @require_capability("config:read")
     def quickform_tasks():
         payload = request.get_json(silent=True) or {}
         overrides = payload.get("config") if isinstance(payload.get("config"), dict) else payload
@@ -59,6 +62,7 @@ def register_quickform_routes(app, services: dict):
             return jsonify({"success": False, "message": "读取 QuickForm 任务失败"}), 500
 
     @app.route("/api/quickform/tasks/create", methods=["POST"])
+    @require_capability("config:write")
     def quickform_create_task():
         payload = request.get_json(silent=True) or {}
         overrides = payload.get("config") if isinstance(payload.get("config"), dict) else None

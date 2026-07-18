@@ -11,7 +11,7 @@ import math
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SMOKE_DIR = REPO_ROOT / "courses" / "blockly-smoke"
+SMOKE_DIR = REPO_ROOT / "courses" / "xeduhub-smoke"
 ROIL_DIR = REPO_ROOT / "output" / "roil-drawing"
 SMOKE_ASSET_DIR = SMOKE_DIR / "assets"
 

@@ -8,10 +8,23 @@ const tsconfigPath = path.join(guiRoot, 'tsconfig.json');
 const microbitStaticDir = path.join(guiRoot, 'static', 'microbit');
 const microbitStaticPath = path.join(microbitStaticDir, 'scratch-microbit-1.2.0.hex');
 
-const webpackConfig = `const path = require('path');
+const webpackConfig = `const fs = require('fs');
+const path = require('path');
 const webpack = require('webpack');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const ScratchWebpackConfigBuilder = require('scratch-webpack-configuration');
+const packageRoot = (name) => {
+    let current = path.dirname(require.resolve(name));
+    while (current !== path.dirname(current)) {
+        if (fs.existsSync(path.join(current, 'package.json'))) return current;
+        current = path.dirname(current);
+    }
+    throw new Error('Unable to locate package root for ' + name);
+};
+const scratchBlocksMedia = path.join(packageRoot('scratch-blocks'), 'media');
+const scratchVmWeb = path.join(packageRoot('@scratch/scratch-vm'), 'dist', 'web');
+const scratchStorageWeb = path.join(packageRoot('scratch-storage'), 'dist', 'web');
+const mediapipeFaceDetection = packageRoot('@mediapipe/face_detection');
 
 const cssModuleExceptions = [
     /\\.raw\\.css$/,
@@ -62,11 +75,11 @@ const baseConfig = new ScratchWebpackConfigBuilder({
     .addPlugin(new CopyWebpackPlugin({
         patterns: [
             {
-                from: 'node_modules/scratch-blocks/media',
+                from: scratchBlocksMedia,
                 to: 'static/blocks-media/default'
             },
             {
-                from: 'node_modules/scratch-blocks/media',
+                from: scratchBlocksMedia,
                 to: 'static/blocks-media/high-contrast'
             },
             {
@@ -75,22 +88,22 @@ const baseConfig = new ScratchWebpackConfigBuilder({
                 force: true
             },
             {
-                context: 'node_modules/@scratch/scratch-vm/dist/web',
+                context: scratchVmWeb,
                 from: 'extension-worker.{js,js.map}',
                 noErrorOnMissing: true
             },
             {
-                context: 'node_modules/scratch-storage/dist/web',
+                context: scratchStorageWeb,
                 from: 'chunks/fetch-worker.*.{js,js.map}',
                 noErrorOnMissing: true
             },
             {
-                context: 'node_modules/scratch-storage/dist/web',
+                context: scratchStorageWeb,
                 from: 'chunks/vendors-*.{js,js.map}',
                 noErrorOnMissing: true
             },
             {
-                from: 'node_modules/@mediapipe/face_detection',
+                from: mediapipeFaceDetection,
                 to: 'chunks/mediapipe/face_detection'
             }
         ]

@@ -45,6 +45,17 @@ def is_allowed_origin(origin: str | None) -> bool:
     return origin.rstrip("/") in current_app.config["XEDU_ALLOWED_ORIGINS"]
 
 
+def is_same_origin_or_native(origin: str | None) -> bool:
+    """Allow native requests, the backend origin, and explicit dev origins."""
+
+    if origin is None:
+        return True
+    normalized = origin.rstrip("/")
+    if normalized in current_app.config["XEDU_ALLOWED_ORIGINS"]:
+        return True
+    return normalized == request.host_url.rstrip("/")
+
+
 def _unauthorized() -> tuple[Response, int]:
     return jsonify({"success": False, "message": "unauthorized"}), 401
 
@@ -68,6 +79,21 @@ def require_capability(scope: str) -> Callable:
                 return _unauthorized()
 
             if scope not in current_app.config["XEDU_PROCESS_SCOPES"]:
+                return _forbidden()
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def require_same_origin_or_native() -> Callable:
+    """Protect binary iframe routes without exposing the process capability."""
+
+    def decorator(view: Callable) -> Callable:
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not is_same_origin_or_native(request.headers.get("Origin")):
                 return _forbidden()
             return view(*args, **kwargs)
 
