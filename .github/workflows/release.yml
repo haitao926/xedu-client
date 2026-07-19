@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing version tag to build (for example v2.0.0-rc.3)'
+        description: 'Existing version tag to build (for example v2.0.0-rc.4)'
         required: true
         type: string
 
@@ -75,14 +75,37 @@ jobs:
       - name: Install Scratch dependencies
         run: npm ci --prefix scratch-editor
 
-      - name: Validate checkpoint bundle credentials
+      - name: Validate protected release credentials
         env:
           XEDU_CHECKPOINT_BUNDLE_URL: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_URL }}
           XEDU_CHECKPOINT_BUNDLE_SHA256: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_SHA256 }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          test -n "$XEDU_CHECKPOINT_BUNDLE_URL" || { echo 'Missing XEDU_CHECKPOINT_BUNDLE_URL release secret.' >&2; exit 1; }
-          test -n "$XEDU_CHECKPOINT_BUNDLE_SHA256" || { echo 'Missing XEDU_CHECKPOINT_BUNDLE_SHA256 release secret.' >&2; exit 1; }
+          missing=()
+          for name in \
+            XEDU_CHECKPOINT_BUNDLE_URL \
+            XEDU_CHECKPOINT_BUNDLE_SHA256 \
+            WIN_CSC_LINK \
+            WIN_CSC_KEY_PASSWORD \
+            CSC_LINK \
+            CSC_KEY_PASSWORD \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing protected release secrets:\n' >&2
+            printf ' - %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
 
       - name: Provision checkpoint bundle
         env:
@@ -173,7 +196,7 @@ jobs:
         run: |
           node scripts/check_scratch_dependency_gate.mjs \
             --audit release-evidence/dependency-audit/scratch-npm.json \
-            --exceptions docs/release/2.0.0-rc.3/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
+            --exceptions docs/release/2.0.0-rc.4/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
             --build scratch-editor/build \
             --report release-evidence/dependency-audit/scratch-reachability.json
 

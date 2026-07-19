@@ -106,13 +106,24 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /-rc\\\.\[0-9\]\+/);
   assert.doesNotMatch(workflow, /v\$\{version\}-rc\.1/);
   assert.match(workflow, /check_release_inputs\.mjs/);
-  assert.match(workflow, /Validate checkpoint bundle credentials/);
+  assert.match(workflow, /Validate protected release credentials/);
   assert.match(workflow, /XEDU_CHECKPOINT_BUNDLE_URL/);
   assert.match(workflow, /XEDU_CHECKPOINT_BUNDLE_SHA256/);
+  for (const secret of [
+    'WIN_CSC_LINK',
+    'WIN_CSC_KEY_PASSWORD',
+    'CSC_LINK',
+    'CSC_KEY_PASSWORD',
+    'APPLE_ID',
+    'APPLE_APP_SPECIFIC_PASSWORD',
+    'APPLE_TEAM_ID',
+  ]) {
+    assert.match(workflow, new RegExp(secret));
+  }
   assert.match(workflow, /npm audit --audit-level=high --package-lock-only/);
   assert.match(workflow, /npm audit --prefix scratch-editor --audit-level=high --package-lock-only/);
   assert.match(workflow, /release-evidence\/dependency-audit\/scratch-npm\.json/);
-  assert.match(workflow, /docs\/release\/2\.0\.0-rc\.3\/SCRATCH_DEPENDENCY_EXCEPTIONS\.json/);
+  assert.match(workflow, /docs\/release\/2\.0\.0-rc\.4\/SCRATCH_DEPENDENCY_EXCEPTIONS\.json/);
   assert.match(workflow, /Enforce dependency audit gate/);
   assert.match(workflow, /- name: Enforce dependency audit gate\n\s+if: success\(\)/);
   assert.match(workflow, /shopt -s nullglob/);

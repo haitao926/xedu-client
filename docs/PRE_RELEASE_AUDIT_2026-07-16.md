@@ -4,7 +4,7 @@
 > 发布对象：参加培训的教师、回校后独立使用软件的教师
 > 教学场景：1 名教师组织 30 名学生进入课程并完成 Jupyter 或 Scratch 实验
 > 审计范围：当前工作区源码、`dist-final/` 现有产物、构建配置、安全边界和课堂运行链路
-> 状态说明：源码整改与本地质量门禁已完成复核；RC3 发布候选已由 `v2.0.0-rc.3` 标识，基线实现为 `89cdbd95`，但现有 `dist-*` 仍是本地诊断产物。只有从该 tag 重新构建、签名并完成实机验收的内容才算正式关闭。
+> 状态说明：源码整改与本地质量门禁已完成复核；RC4 发布候选已由 `v2.0.0-rc.4` 标识，基线实现为 `89cdbd95`，但现有 `dist-*` 仍是本地诊断产物。只有从该 tag 重新构建、签名并完成实机验收的内容才算正式关闭。
 
 > **产品方向：Scratch 是唯一继续维护的图形化编程主线。本次发布前完全移除 Blockly 编辑器、入口、依赖和专属代码，不保留旧课程编辑兼容；旧 Blockly 课程统一显示“该实验类型已不再支持”，并保证应用不崩溃。Scratch 正在使用的 XEduHub 共享设施必须先迁移并验证，不得随 Blockly 专属代码一起删除。**
 
@@ -36,7 +36,7 @@
 | 受控培训试点 | **Conditional Go** | 课前统一预装、同一网段、课程提前下载、现场配备助教和离线备用包 |
 | 开发与教研内部验证 | **Go** | 使用当前源码运行质量门禁，不把旧安装包当作候选发布包 |
 
-RC3 已进入提交和 tag，但本地 `dist-*` 安装包不能替代 tag 产物。团队必须从 `v2.0.0-rc.3` 重新构建、签名并验收最终安装包。
+RC4 已进入提交和 tag，但本地 `dist-*` 安装包不能替代 tag 产物。团队必须从 `v2.0.0-rc.4` 重新构建、签名并验收最终安装包。
 
 ### 1.2 当前最高风险
 
@@ -960,7 +960,7 @@ npm run test:student-shell
 | `npm audit --audit-level=high --json` | 通过：root 项目 `0` 项漏洞；Vite 已升级到 `8.1.5`，lodash 通过 npm override 收口 |
 | `npm audit --prefix scratch-editor --package-lock-only --json` | 原始命令为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`）；`check_scratch_dependency_gate.mjs` 已按 owner、到期日、缓解措施和 `scratch-editor/build` 入口生成例外与 reachability report，安全负责人批准仍未完成 |
 | Python requirements 审计 | 固定直接依赖 24 个、`requirements.txt` 和 `requirements_full.txt` 审计结果为 `0` 个已知漏洞；教师设置页已加入所选解释器探针和精确 `xedu-python==2.0.0` 元数据修复，跨平台实际 `pip check` 与推理验收仍待完成 |
-| 正式 release workflow 与模型预检 | RC3 官方运行 `29668051557` 已验证 tag/commit 校验通过；随后因缺少 `XEDU_CHECKPOINT_BUNDLE_URL` 和 `XEDU_CHECKPOINT_BUNDLE_SHA256` 在 checkpoint 前置检查处唯一失败，审计门禁和平台构建均按预期跳过 |
+| 正式 release workflow 与模型预检 | RC3 官方运行 `29668051557` 已验证 tag/commit 校验通过；RC4 增加了 checkpoint、Windows 签名、macOS 签名和公证 secret 的统一前置检查，待官方运行验证 |
 | 正式 release 配置契约 | 通过：`electron-builder.release.cjs` 按目标平台 fail-closed，发布/产物契约测试通过；签名凭据和真实产物仍未执行 |
 | 发布产物校验增强 | 通过：版本读取、app.asar 残留扫描、Git tag/commit 独立校验、旧产物清理和跨平台签名证据归档规则已加入代码与 workflow |
 | 资源页状态迁移契约 | 通过：课堂状态不再出现错误嵌套，Scratch/工作区调用保持位置参数；Renderer 相关契约测试通过 |
@@ -973,13 +973,13 @@ npm run test:student-shell
 
 ### C.2 尚未完成
 
-- 没有从 `v2.0.0-rc.3` 重新生成并验收完整 Windows 和 macOS 签名安装包。
+- 没有从 `v2.0.0-rc.4` 重新生成并验收完整 Windows 和 macOS 签名安装包。
 - 没有在干净 Windows 机器验证 SmartScreen、签名和安装。
 - 没有完成 macOS Developer ID 签名、公证与 Gatekeeper 验证。
 - 没有完成真实 `.sb3` 打开、运行、保存、重开和 XEdu AI 图片推理的 GUI 记录。
 - 没有执行真实 30 机课堂并发测试。
 - 没有完成跨 VLAN、Windows 超时、配置损坏和端口占用的实机故障注入。
-- RC3 官方 release workflow 已执行，但因受保护 checkpoint secrets 尚未配置，没有生成候选版本的依赖审计原始 JSON、签名输出或 notarization evidence artifact；前置失败不会再触发二次审计错误，待 secrets 配置后重新运行同一 tag。
+- RC3 官方 release workflow 已执行，但因受保护 secrets 尚未配置，没有生成候选版本的依赖审计原始 JSON、签名输出或 notarization evidence artifact；RC4 的统一 secret 前置检查待官方运行确认，配置完成后应重新运行同一 tag。
 - `xedu-python==2.0.0` 的跨平台真实兼容性仍未完成：未修补元数据会使 `pip check` 报告 `onnxruntime<1.16.0`、`Pillow<=9.5.0` 冲突；代码侧已有显式修复和复探针，但不能用本地单测替代 Windows/macOS 实际环境验收。
 - 没有完成教师独立安装和回校授课试点。
 
