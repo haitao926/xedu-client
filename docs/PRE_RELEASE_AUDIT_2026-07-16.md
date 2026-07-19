@@ -960,7 +960,7 @@ npm run test:student-shell
 | `npm audit --audit-level=high --json` | 通过：root 项目 `0` 项漏洞；Vite 已升级到 `8.1.5`，lodash 通过 npm override 收口 |
 | `npm audit --prefix scratch-editor --package-lock-only --json` | 原始命令为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`）；`check_scratch_dependency_gate.mjs` 已按 owner、到期日、缓解措施和 `scratch-editor/build` 入口生成例外与 reachability report，安全负责人批准仍未完成 |
 | Python requirements 审计 | 固定直接依赖 24 个、`requirements.txt` 和 `requirements_full.txt` 审计结果为 `0` 个已知漏洞；教师设置页已加入所选解释器探针和精确 `xedu-python==2.0.0` 元数据修复，跨平台实际 `pip check` 与推理验收仍待完成 |
-| 正式 release workflow 与模型预检 | RC3 官方运行 `29668051557` 已验证 tag/commit 校验通过；RC4 增加了 checkpoint、Windows 签名、macOS 签名和公证 secret 的统一前置检查，待官方运行验证 |
+| 正式 release workflow 与模型预检 | RC4 官方运行 `29668273546` 已验证 tag/commit 校验通过，并在统一凭据预检中准确列出 9 个未配置 secret；模型下载、质量门禁和双平台构建均按预期跳过 |
 | 正式 release 配置契约 | 通过：`electron-builder.release.cjs` 按目标平台 fail-closed，发布/产物契约测试通过；签名凭据和真实产物仍未执行 |
 | 发布产物校验增强 | 通过：版本读取、app.asar 残留扫描、Git tag/commit 独立校验、旧产物清理和跨平台签名证据归档规则已加入代码与 workflow |
 | 资源页状态迁移契约 | 通过：课堂状态不再出现错误嵌套，Scratch/工作区调用保持位置参数；Renderer 相关契约测试通过 |
@@ -970,6 +970,7 @@ npm run test:student-shell
 | 当前 macOS 最新包产物校验器 | 通过：版本 `2.0.0`、Scratch、backend、checkpoint 和轻量 Python 约束均满足；该包仍未签名 |
 | 当前 macOS App 严格签名校验 | 失败，本机没有 Developer ID 身份，`codesign` 与 `spctl` 均未通过 |
 | Windows/macOS 最终归档 | 未执行；当前没有可确认的本次 release DMG/zip 或 Windows 安装包 |
+| 本机 checkpoint bundle | 已生成 `/tmp/xedu-checkpoint-2.0.0-rc4.tar.gz`，`2,041,269,428` bytes，SHA-256 `610ed7b3ea6773273e3d8453fcd9d131fa5373b4b40d0fc4610a990b75b84754`；待上传到私有、无重定向的 HTTPS 对象存储 |
 
 ### C.2 尚未完成
 
@@ -979,7 +980,7 @@ npm run test:student-shell
 - 没有完成真实 `.sb3` 打开、运行、保存、重开和 XEdu AI 图片推理的 GUI 记录。
 - 没有执行真实 30 机课堂并发测试。
 - 没有完成跨 VLAN、Windows 超时、配置损坏和端口占用的实机故障注入。
-- RC3 官方 release workflow 已执行，但因受保护 secrets 尚未配置，没有生成候选版本的依赖审计原始 JSON、签名输出或 notarization evidence artifact；RC4 的统一 secret 前置检查待官方运行确认，配置完成后应重新运行同一 tag。
+- RC4 官方 release workflow 已执行，但因 9 个受保护 secrets 尚未配置，没有生成候选版本的依赖审计原始 JSON、签名输出或 notarization evidence artifact；配置完成后应重新运行 `v2.0.0-rc.4`。
 - `xedu-python==2.0.0` 的跨平台真实兼容性仍未完成：未修补元数据会使 `pip check` 报告 `onnxruntime<1.16.0`、`Pillow<=9.5.0` 冲突；代码侧已有显式修复和复探针，但不能用本地单测替代 Windows/macOS 实际环境验收。
 - 没有完成教师独立安装和回校授课试点。
 
