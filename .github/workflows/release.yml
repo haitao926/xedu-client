@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing version tag to build (for example v2.0.0-rc.4)'
+        description: 'Existing version tag to build (for example v2.0.0-rc.5)'
         required: true
         type: string
 
@@ -196,7 +196,7 @@ jobs:
         run: |
           node scripts/check_scratch_dependency_gate.mjs \
             --audit release-evidence/dependency-audit/scratch-npm.json \
-            --exceptions docs/release/2.0.0-rc.4/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
+            --exceptions docs/release/2.0.0-rc.5/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
             --build scratch-editor/build \
             --report release-evidence/dependency-audit/scratch-reachability.json
 
@@ -348,3 +348,79 @@ jobs:
             dist-release
             release-evidence
           if-no-files-found: error
+
+  publish-release:
+    runs-on: ubuntu-latest
+    needs:
+      - quality-gate
+      - windows-release
+      - macos-release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.quality-gate.outputs.source_commit }}
+          fetch-depth: 0
+
+      - name: Download platform release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: xedu-client-${{ needs.quality-gate.outputs.release_tag }}-*
+          path: release-upload
+          merge-multiple: true
+
+      - name: Download dependency audit evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: xedu-client-${{ github.run_id }}-dependency-audit
+          path: release-upload/dependency-audit
+
+      - name: Stage public release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+
+          find_one() {
+            local name="$1"
+            mapfile -t matches < <(find release-upload -type f -name "$name" -not -path '*/win-unpacked/*' | sort)
+            if (( ${#matches[@]} != 1 )); then
+              printf 'Expected exactly one %s, found %s:\n' "$name" "${#matches[@]}" >&2
+              printf ' - %s\n' "${matches[@]}" >&2
+              exit 1
+            fi
+            printf '%s\n' "${matches[0]}"
+          }
+
+          cp "$(find_one 'XEdu Client-2.0.0.exe')" 'release-assets/XEdu Client-2.0.0.exe'
+          cp "$(find_one 'XEdu Client-2.0.0.dmg')" 'release-assets/XEdu Client-2.0.0.dmg'
+          cp "$(find_one 'XEdu Client-2.0.0.zip')" 'release-assets/XEdu Client-2.0.0.zip'
+          cp "$(find_one 'windows-manifest.json')" release-assets/windows-manifest.json
+          cp "$(find_one 'macos-manifest.json')" release-assets/macos-manifest.json
+          cp "$(find_one 'windows-artifacts-sha256.json')" release-assets/windows-artifacts-sha256.json
+          cp "$(find_one 'macos-artifacts-sha256.txt')" release-assets/macos-artifacts-sha256.txt
+          find release-assets -maxdepth 1 -type f -print | sort
+
+      - name: Create or update draft GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ needs.quality-gate.outputs.release_tag }}'
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f -print | sort)
+          if (( ${#assets[@]} != 7 )); then
+            echo "Expected 7 public release assets, found ${#assets[@]}" >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
+          else
+            release_args=(--draft --verify-tag --title "XEdu Client $tag" --notes "Draft release for $tag. Formal teacher distribution remains gated by the signed-artifact and classroom acceptance records.")
+            if [[ "$tag" == *-rc.* ]]; then
+              release_args+=(--prerelease)
+            fi
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" "${release_args[@]}" "${assets[@]}"
+          fi

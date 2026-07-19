@@ -9,8 +9,8 @@ Recorded: 2026-07-19
 | Field | Value |
 |---|---|
 | Product version | `2.0.0` |
-| Source commit | `89cdbd95` implementation baseline; this local candidate predates the RC4 identity tag |
-| Exact release tag | Not applicable to this local candidate; release target is `v2.0.0-rc.4` |
+| Source commit | `89cdbd95` implementation baseline; this local candidate predates the RC5 identity tag |
+| Exact release tag | Not applicable to this local candidate; release target is `v2.0.0-rc.5` |
 | Platform | macOS arm64 |
 | Candidate path | `dist-candidate-20260719/mac-arm64/XEdu Client.app` |
 | Candidate type | Unpacked, unsigned local candidate |
@@ -28,7 +28,7 @@ Recorded: 2026-07-19
 - Packaged executable SHA-256: `cf74833a9b0c242e26c177005d7d61819e5bf5ed199acc794fed2eb0cc4f3149`.
 - Scratch entry SHA-256: `03f73b2ac1198da979ba108b42f8c0844aaee4ddd96dabc7910f90a5ecd148ea`.
 - Scratch audit command exit was `1`; the documented gate accepted 21 expiring exceptions and generated a reachability report for the `build/index.html` script entrypoint.
-- The candidate was not rebuilt from `v2.0.0-rc.4`; its checks are content evidence only and must be repeated on the signed artifacts produced by the official workflow.
+- The candidate was not rebuilt from `v2.0.0-rc.5`; its checks are content evidence only and must be repeated on the signed artifacts produced by the official workflow.
 
 ## Required Before Release
 

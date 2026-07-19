@@ -1,4 +1,4 @@
-# Dependency Audit: 2.0.0 RC.4
+# Dependency Audit: 2.0.0 RC.5
 
 Audit date: 2026-07-19
 
@@ -94,5 +94,5 @@ teacher acceptance gates are not closed.
 ## Release Rule
 
 Do not change the overall decision to Go based on the root npm result or the
-fixed Python subset alone. A dependency change invalidates `v2.0.0-rc.4` and
+fixed Python subset alone. A dependency change invalidates `v2.0.0-rc.5` and
 requires a new RC plus the affected Scratch/package acceptance reruns.

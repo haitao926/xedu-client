@@ -123,7 +123,7 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /npm audit --audit-level=high --package-lock-only/);
   assert.match(workflow, /npm audit --prefix scratch-editor --audit-level=high --package-lock-only/);
   assert.match(workflow, /release-evidence\/dependency-audit\/scratch-npm\.json/);
-  assert.match(workflow, /docs\/release\/2\.0\.0-rc\.4\/SCRATCH_DEPENDENCY_EXCEPTIONS\.json/);
+  assert.match(workflow, /docs\/release\/2\.0\.0-rc\.5\/SCRATCH_DEPENDENCY_EXCEPTIONS\.json/);
   assert.match(workflow, /Enforce dependency audit gate/);
   assert.match(workflow, /- name: Enforce dependency audit gate\n\s+if: success\(\)/);
   assert.match(workflow, /shopt -s nullglob/);
@@ -140,6 +140,15 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /runs-on: macos-14/);
   assert.match(workflow, /CSC_LINK: \$\{\{ secrets\.CSC_LINK \}\}/);
   assert.match(workflow, /APPLE_APP_SPECIFIC_PASSWORD: \$\{\{ secrets\.APPLE_APP_SPECIFIC_PASSWORD \}\}/);
+  assert.match(workflow, /publish-release:/);
+  assert.match(workflow, /needs:\s*[\s\S]*quality-gate[\s\S]*windows-release[\s\S]*macos-release/);
+  assert.match(workflow, /contents: write/);
+  assert.match(workflow, /actions\/download-artifact@v4/);
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /--draft/);
+  assert.match(workflow, /--prerelease/);
+  assert.match(workflow, /windows-manifest\.json/);
+  assert.match(workflow, /macos-manifest\.json/);
   assert.equal((workflow.match(/npm run quality-gate/g) ?? []).length, 1);
   assert.equal((workflow.match(/npm run electron:build:release/g) ?? []).length, 2);
   assert.match(workflow, /verify_release_artifact\.mjs/);
