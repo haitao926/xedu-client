@@ -4,11 +4,11 @@
 > 发布对象：参加培训的教师、回校后独立使用软件的教师
 > 教学场景：1 名教师组织 30 名学生进入课程并完成 Jupyter 或 Scratch 实验
 > 审计范围：当前工作区源码、`dist-final/` 现有产物、构建配置、安全边界和课堂运行链路
-> 状态说明：源码整改与本地质量门禁已完成一轮复核；当前工作区仍含未提交修改，且现有 `dist-final-current/` 不是正式交付包。只有进入 release commit/tag、重新构建、签名并完成实机验收的内容才算正式关闭。
+> 状态说明：源码整改与本地质量门禁已完成复核；RC 实现已冻结为 `89cdbd95` 并创建 `v2.0.0-rc.1`，但现有 `dist-*` 仍是本地诊断产物。只有从该 tag 重新构建、签名并完成实机验收的内容才算正式关闭。
 
 > **产品方向：Scratch 是唯一继续维护的图形化编程主线。本次发布前完全移除 Blockly 编辑器、入口、依赖和专属代码，不保留旧课程编辑兼容；旧 Blockly 课程统一显示“该实验类型已不再支持”，并保证应用不崩溃。Scratch 正在使用的 XEduHub 共享设施必须先迁移并验证，不得随 Blockly 专属代码一起删除。**
 
-> **2026-07-19 增量复核**：Scratch 构建依赖已从上游临时嵌套安装改为 `scratch-editor` lockfile 中的显式 devDependencies，clean runner 可通过 `npm ci --prefix scratch-editor` 重现构建；修复 hoisted npm 布局下 Scratch blocks/MediaPipe 静态资源复制路径。`npm run quality-gate` 新鲜执行通过：后端 `135 passed`、Scratch `22 passed`、发布/安全/Renderer 契约、Vite 构建和 bundle guard 全部通过；root npm audit 为 `0` 项漏洞，Scratch lock 当前为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`），`--omit=dev` 仍有 `20` 项，现已由有期限例外与 reachability 门禁管理，仍需安全负责人批准或上游升级。`xedu-python==2.0.0` 可以导入 `XEdu.hub.Workflow` 并返回支持任务；教师设置页现会在所选解释器中探针，并提供精确元数据修复。发布校验器现已读取 app.asar/Info.plist 的真实版本、扫描 app.asar 内部残留并独立验证 release commit/tag；官方 workflow 也会归档完整依赖审计和签名证据。当前仍不把已有 unpacked 产物视为正式交付包；签名、公证、真实 `.sb3` GUI、教师实机和 30 台终端验收继续保持未关闭。
+> **2026-07-19 增量复核**：Scratch 构建依赖已从上游临时嵌套安装改为 `scratch-editor` lockfile 中的显式 devDependencies，clean runner 可通过 `npm ci --prefix scratch-editor` 重现构建；修复 hoisted npm 布局下 Scratch blocks/MediaPipe 静态资源复制路径。`npm run quality-gate` 新鲜执行通过：后端 `136 passed`、Scratch `22 passed`、发布/安全/Renderer 契约、Vite 构建和 bundle guard 全部通过；root npm audit 为 `0` 项漏洞，Scratch lock 当前为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`），`--omit=dev` 仍有 `20` 项，现已由有期限例外与 reachability 门禁管理，仍需安全负责人批准或上游升级。`xedu-python==2.0.0` 可以导入 `XEdu.hub.Workflow` 并返回支持任务；教师设置页现会在所选解释器中探针，并提供精确元数据修复。发布校验器现已读取 app.asar/Info.plist 的真实版本、扫描 app.asar 内部残留并独立验证 release commit/tag；官方 workflow 也会归档完整依赖审计和签名证据。当前仍不把已有 unpacked 产物视为正式交付包；签名、公证、真实 `.sb3` GUI、教师实机和 30 台终端验收继续保持未关闭。
 
 ## 目录
 
@@ -31,12 +31,12 @@
 
 | 发布方式 | 结论 | 条件 |
 |---|---|---|
-| 面向教师正式普发 | **No-Go** | 当前没有来自 release commit/tag 的签名安装包，Windows 和 macOS 安装信任链未闭合，真实教师与课堂矩阵尚未完成 |
+| 面向教师正式普发 | **No-Go** | RC tag 已冻结，但还没有来自该 tag 的签名安装包，Windows 和 macOS 安装信任链未闭合，真实教师与课堂矩阵尚未完成 |
 | 教师回校独立安装和授课 | **No-Go** | 尚未验证跨学校网络、30 机并发、故障自助恢复和应用升级路径 |
 | 受控培训试点 | **Conditional Go** | 课前统一预装、同一网段、课程提前下载、现场配备助教和离线备用包 |
 | 开发与教研内部验证 | **Go** | 使用当前源码运行质量门禁，不把旧安装包当作候选发布包 |
 
-当前工作区已经关闭一部分安全问题，但这些修改尚未全部进入提交，`dist-final/` 中的安装包也早于这些修改。团队必须从同一 release commit/tag 重新构建、签名并验收最终安装包。
+RC 实现已进入提交和 tag，但本地 `dist-*` 安装包不能替代 tag 产物。团队必须从 `v2.0.0-rc.1` 重新构建、签名并验收最终安装包。
 
 ### 1.2 当前最高风险
 
@@ -836,7 +836,7 @@ npm run test:student-shell
 
 **最终通过标准**
 
-- [x] T01 完成后已重新执行 `npm run quality-gate` 并完整退出 `0`：后端 `135 passed`、Electron/发布契约、Renderer 契约、Scratch 构建与 `22 passed`、Vite 构建和 bundle guard 全部通过；发布包和实机门禁仍未关闭。
+- [x] T01 完成后已重新执行 `npm run quality-gate` 并完整退出 `0`：后端 `136 passed`、Electron/发布契约、Renderer 契约、Scratch 构建与 `22 passed`、Vite 构建和 bundle guard 全部通过；发布包和实机门禁仍未关闭。
 - [ ] T01-T12 的任务验收记录齐全，没有未关闭 P0。
 - [ ] 干净机器安装与首开成功率为 100%，不要求教师绕过未知发行者警告。
 - [ ] Jupyter 和 Scratch 各完成一个真实课程实验。
@@ -954,8 +954,8 @@ npm run test:student-shell
 
 | 检查 | 结果 |
 |---|---|
-| `python3 -m pytest backend/tests -q` | 通过：backend `135 passed`；覆盖 XEduHub、Scratch 相关路由、运行时安全、Jupyter、Gitea、课堂接口和教师 Python 探针 |
-| `npm run quality-gate` 本次执行 | 通过：后端 `135 passed`、Electron/发布契约、Renderer 契约、Scratch `22 passed`、Vite 构建和 bundle guard 全部通过 |
+| `python3 -m pytest backend/tests -q` | 通过：backend `136 passed`；覆盖 XEduHub、Scratch 相关路由、运行时安全、Jupyter、Gitea、课堂接口和教师 Python 探针 |
+| `npm run quality-gate` 本次执行 | 通过：后端 `136 passed`、Electron/发布契约、Renderer 契约、Scratch `22 passed`、Vite 构建和 bundle guard 全部通过 |
 | `npm run build:scratch`、`npm run check:scratch-build`、Scratch 单测 | 通过：Scratch standalone 构建、入口检查和 `22 passed`；正式安装包仍需从 release commit/tag 重建 |
 | `npm audit --audit-level=high --json` | 通过：root 项目 `0` 项漏洞；Vite 已升级到 `8.1.5`，lodash 通过 npm override 收口 |
 | `npm audit --prefix scratch-editor --package-lock-only --json` | 原始命令为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`）；`check_scratch_dependency_gate.mjs` 已按 owner、到期日、缓解措施和 `scratch-editor/build` 入口生成例外与 reachability report，安全负责人批准仍未完成 |
@@ -973,7 +973,7 @@ npm run test:student-shell
 
 ### C.2 尚未完成
 
-- 没有从 release commit/tag 重新生成并验收完整 Windows 和 macOS 安装包。
+- 没有从 `v2.0.0-rc.1` 重新生成并验收完整 Windows 和 macOS 签名安装包。
 - 没有在干净 Windows 机器验证 SmartScreen、签名和安装。
 - 没有完成 macOS Developer ID 签名、公证与 Gatekeeper 验证。
 - 没有完成真实 `.sb3` 打开、运行、保存、重开和 XEdu AI 图片推理的 GUI 记录。

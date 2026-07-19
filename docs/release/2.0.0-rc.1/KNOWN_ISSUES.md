@@ -6,7 +6,7 @@ These are release gates, not optional follow-up work.
 
 | Priority | Issue | Required closure |
 |---|---|---|
-| P0 | Current source is not frozen in a release commit/tag | Review the final working tree, create the candidate commit and `v2.0.0-rc.1`; any later code change requires a new RC tag. |
+| P0 | RC source is frozen, but formal artifact trust and teacher acceptance are not closed | Keep all platform builds on `v2.0.0-rc.1`; any later code change requires a new RC tag, and formal distribution remains blocked until the remaining P0/P1 gates close. |
 | P0 | The 2.2GB checkpoint bundle is ignored by Git and release secrets are not configured in this workspace | Configure `XEDU_CHECKPOINT_BUNDLE_URL` and `XEDU_CHECKPOINT_BUNDLE_SHA256` in the protected release environment; `scripts/provision_checkpoint_bundle.mjs` and `scripts/check_release_inputs.mjs` must pass on a clean checkout. |
 | P0 | Windows signing credentials and a signed installer are unavailable locally | Build on the Windows release runner and verify Authenticode and clean installation. |
 | P0 | Developer ID signing, notarization, and Gatekeeper verification are unavailable locally | Build on the macOS release runner, staple the DMG, and pass `codesign`, `spctl`, and `stapler`. |

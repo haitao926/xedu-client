@@ -28,7 +28,7 @@
 
 - Blockly 专属源码、入口、依赖和构建链已移除；旧 Blockly 课程显示不支持提示。
 - 共享 XEduHub 路由和运行时已迁移为中性命名，并由 Scratch 调用。
-- `npm run quality-gate` 已退出 `0`：Backend `135 passed`、Scratch `22 passed`、Electron/Renderer/发布契约、Vite build 和 bundle guard 全部通过。
+- `npm run quality-gate` 已退出 `0`：Backend `136 passed`、Scratch `22 passed`、Electron/Renderer/发布契约、Vite build 和 bundle guard 全部通过。
 - Scratch 构建入口、轻量版不内置 Python、backend 不重复进入 asar、产物内容校验器和 release manifest 已有代码级保护。
 - `.github/workflows/release.yml` 已加入：明确版本 tag、Ubuntu 统一质量门禁、统一 source commit、Windows/macOS 签名构建、模型资产预检、Authenticode/codesign/Gatekeeper 校验和产物 manifest。
 - `verify_release_artifact.mjs` 的 manifest 已升级为相对路径、精确 tag/commit、内容哈希和交付文件哈希；校验器拒绝旧 Blockly 专属产物路径，旧产物不会因为目录存在而被视为正式包。
@@ -38,7 +38,7 @@
 
 ### 尚未关闭的发布门禁
 
-- 当前工作区尚未冻结为 release commit/tag。
+- RC 实现已冻结为 commit `89cdbd95`，identity 文档提交后创建 `v2.0.0-rc.1`；正式签名产物仍未生成。
 - 没有完成真实 `.sb3` 的 packaged GUI 打开、运行、保存、退出和重开证据。
 - Windows 正式安装包尚未签名；macOS 尚未完成 Developer ID 签名、公证和 staple。
 - 没有完成 30 台物理终端课堂矩阵、Windows 进程树/故障注入和独立教师试用。
@@ -47,12 +47,12 @@
 
 ### 本轮执行状态（2026-07-19）
 
-- N00 代码侧完成：`electron-builder.release.cjs`、`electron:build:release`、目标平台凭据 fail-closed 契约、跨平台质量门禁启动器和官方 release workflow 已实现；release commit/tag 尚未创建。
+- N00 已完成 RC 冻结：`electron-builder.release.cjs`、`electron:build:release`、目标平台凭据 fail-closed 契约、跨平台质量门禁启动器和官方 release workflow 已实现；实现 commit `89cdbd95` 已创建，identity 文档提交后创建 `v2.0.0-rc.1`。
 - N07 当前结论：root npm lock 为 `0` 项漏洞，固定 Python 直接依赖子集（24 个）和完整 `requirements.txt`/`requirements_full.txt` resolver + `pip-audit` 均为 `0`；Scratch lock 为 `21` 项，`xedu-python` 兼容性仍未关闭，因此仍为 No-Go。
 - N01 自动化部分完成：Scratch 构建、入口检查和 `22 passed` 已通过；真实 packaged `.sb3` GUI 仍未验收。
 - N04 代码侧完成：产物 verifier manifest 支持 source tag、相对路径、真实版本读取、app.asar 残留检查、unpacked 文件哈希和 installer/DMG/zip 哈希；真实签名产物矩阵仍未关闭。
 - N02/N03/N05/N06/N08/N09 未关闭：分别需要签名凭据、跨平台实机、真实课堂网络、Windows 故障注入和非开发教师。
-- 本轮没有创建 commit/tag，也没有把现有旧 `dist-*` 产物标记为正式交付包。
+- 本轮未把任何旧 `dist-*` 产物标记为正式交付包；RC tag 只用于后续从统一源提交生成正式验证产物。
 
 ## 执行顺序
 
@@ -133,7 +133,7 @@ Expected: 最后一条命令退出 `0`，各阶段无跳过项。
 
 `BASELINE.md` 必须记录：版本、commit SHA、Node/Python 版本、质量门禁时间、产物目标、Scratch-only 决策和外部凭据状态。`KNOWN_ISSUES.md` 必须把未完成签名、公证、实机和教师试用标为发布门禁，不写成普通提示。
 
-- [ ] **Step 6: 创建 release commit 和候选 tag。**
+- [x] **Step 6: 创建 release commit 和候选 tag。**
 
 Run:
 
@@ -149,7 +149,7 @@ git status --short
 git rev-parse v2.0.0-rc.1^{commit}
 ```
 
-Expected: `git status --short` 为空；tag 指向通过质量门禁的唯一 commit。
+实际：实现 commit `89cdbd95` 已按 Lore 协议提交；identity 文档提交后创建 `v2.0.0-rc.1`，tag 指向同一发布候选源线。未跟踪的本地 `dist-*` 和 `.claude` 配置不属于发布提交。
 
 **Acceptance Criteria:**
 

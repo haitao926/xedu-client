@@ -9,8 +9,8 @@ Recorded: 2026-07-19
 | Field | Value |
 |---|---|
 | Product version | `2.0.0` |
-| Source commit | `da2f50de90ee87fd004edf9140356653948b104b` plus current uncommitted working-tree changes |
-| Exact release tag | None; working tree is dirty |
+| Source commit | `89cdbd95` implementation commit; identity documentation commit is the tagged RC source |
+| Exact release tag | `v2.0.0-rc.1` |
 | Platform | macOS arm64 |
 | Candidate path | `dist-candidate-20260719/mac-arm64/XEdu Client.app` |
 | Candidate type | Unpacked, unsigned local candidate |
@@ -20,7 +20,7 @@ Recorded: 2026-07-19
 
 ## Completed Local Checks
 
-- `npm run quality-gate`: passed; backend `135 passed`, Scratch `22 passed`.
+- `npm run quality-gate`: passed; backend `136 passed`, Scratch `22 passed`.
 - `node scripts/verify_release_artifact.mjs "dist-candidate-20260719/mac-arm64/XEdu Client.app" --version 2.0.0 --platform darwin --arch arm64`: passed.
 - Package contains `Contents/Resources/backend`, `Contents/Resources/checkpoint`, and `Contents/Resources/scratch-editor/build/index.html`.
 - Package does not contain `python_env`, `python_env_win`, or the removed Blockly-only artifact paths.
