@@ -112,10 +112,12 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /npm audit --audit-level=high --package-lock-only/);
   assert.match(workflow, /npm audit --prefix scratch-editor --audit-level=high --package-lock-only/);
   assert.match(workflow, /release-evidence\/dependency-audit\/scratch-npm\.json/);
-  assert.match(workflow, /docs\/release\/2\.0\.0-rc\.2\/SCRATCH_DEPENDENCY_EXCEPTIONS\.json/);
+  assert.match(workflow, /docs\/release\/2\.0\.0-rc\.3\/SCRATCH_DEPENDENCY_EXCEPTIONS\.json/);
   assert.match(workflow, /Enforce dependency audit gate/);
+  assert.match(workflow, /- name: Enforce dependency audit gate\n\s+if: success\(\)/);
   assert.match(workflow, /shopt -s nullglob/);
   assert.match(workflow, /Upload dependency audit evidence/);
+  assert.match(workflow, /if: always\(\) && hashFiles\('release-evidence\/dependency-audit\/\*\*'\) != ''/);
   assert.match(workflow, /if-no-files-found: warn/);
   assert.match(workflow, /pip_audit -r backend\/requirements\.txt/);
   assert.match(workflow, /pip_audit -r backend\/requirements_full\.txt/);

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing version tag to build (for example v2.0.0-rc.2)'
+        description: 'Existing version tag to build (for example v2.0.0-rc.3)'
         required: true
         type: string
 
@@ -141,7 +141,7 @@ jobs:
           printf '%s\n' "$?" > release-evidence/dependency-audit/python-full.exit
 
       - name: Enforce dependency audit gate
-        if: always()
+        if: success()
         shell: bash
         run: |
           set -euo pipefail
@@ -173,12 +173,12 @@ jobs:
         run: |
           node scripts/check_scratch_dependency_gate.mjs \
             --audit release-evidence/dependency-audit/scratch-npm.json \
-            --exceptions docs/release/2.0.0-rc.2/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
+            --exceptions docs/release/2.0.0-rc.3/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
             --build scratch-editor/build \
             --report release-evidence/dependency-audit/scratch-reachability.json
 
       - name: Upload dependency audit evidence
-        if: always()
+        if: always() && hashFiles('release-evidence/dependency-audit/**') != ''
         uses: actions/upload-artifact@v4
         with:
           name: xedu-client-${{ github.run_id }}-dependency-audit
