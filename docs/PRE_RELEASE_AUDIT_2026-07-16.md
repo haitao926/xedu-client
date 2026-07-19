@@ -8,7 +8,7 @@
 
 > **产品方向：Scratch 是唯一继续维护的图形化编程主线。本次发布前完全移除 Blockly 编辑器、入口、依赖和专属代码，不保留旧课程编辑兼容；旧 Blockly 课程统一显示“该实验类型已不再支持”，并保证应用不崩溃。Scratch 正在使用的 XEduHub 共享设施必须先迁移并验证，不得随 Blockly 专属代码一起删除。**
 
-> **2026-07-19 增量复核**：Scratch 构建依赖已从上游临时嵌套安装改为 `scratch-editor` lockfile 中的显式 devDependencies，clean runner 可通过 `npm ci --prefix scratch-editor` 重现构建；修复 hoisted npm 布局下 Scratch blocks/MediaPipe 静态资源复制路径。`npm run build:scratch`、Scratch `21 passed`、Scratch 入口检查和发布契约通过；root npm audit 为 `0` 项漏洞，Scratch lock 当前为 `22` 项（`5 critical / 6 high / 11 moderate / 0 low`），完整 Python resolver 未关闭。当前仍不把已有 unpacked 产物视为正式交付包；签名、公证、真实 `.sb3` GUI、教师实机和 30 台终端验收继续保持未关闭。
+> **2026-07-19 增量复核**：Scratch 构建依赖已从上游临时嵌套安装改为 `scratch-editor` lockfile 中的显式 devDependencies，clean runner 可通过 `npm ci --prefix scratch-editor` 重现构建；修复 hoisted npm 布局下 Scratch blocks/MediaPipe 静态资源复制路径。`npm run quality-gate` 新鲜执行通过：后端 `135 passed`、Scratch `22 passed`、发布/安全/Renderer 契约、Vite 构建和 bundle guard 全部通过；root npm audit 为 `0` 项漏洞，Scratch lock 当前为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`），`--omit=dev` 仍有 `20` 项，现已由有期限例外与 reachability 门禁管理，仍需安全负责人批准或上游升级。`xedu-python==2.0.0` 可以导入 `XEdu.hub.Workflow` 并返回支持任务；教师设置页现会在所选解释器中探针，并提供精确元数据修复。发布校验器现已读取 app.asar/Info.plist 的真实版本、扫描 app.asar 内部残留并独立验证 release commit/tag；官方 workflow 也会归档完整依赖审计和签名证据。当前仍不把已有 unpacked 产物视为正式交付包；签名、公证、真实 `.sb3` GUI、教师实机和 30 台终端验收继续保持未关闭。
 
 ## 目录
 
@@ -46,7 +46,7 @@
 | **P0** | Windows 未签名，macOS 未完成 Developer ID 签名和公证 | 系统提示未知发行者或阻止启动，教师停止安装 | Windows 签名状态为 `Valid`；macOS 通过 `codesign` 和 `spctl` 验证 |
 | **P0** | 旧安装包可能保留旧菜单与运行时 | 教师拿到旧包时仍可能触达不应暴露的调试入口 | 从当前 release commit/tag 重建；打包版没有 DevTools 菜单和快捷键，并有回归测试 |
 | **P0** | Blockly 已从源码主线移除，最终安装包和教师实机仍待验收 | 旧包或环境差异可能保留旧资源，或实机上 Scratch XEdu AI 与课程保存行为不同 | 从当前源码重新构建两平台包；旧课程只显示不支持提示，Scratch XEduHub 冒烟和全量质量门禁通过 |
-| **P0** | 依赖审计仍有非 Electron 风险项 | 风险随安装包或构建链进入教师终端 | 保留审计清单，明确运行时与构建时影响；发布前完成 Python 依赖扫描 |
+| **P0** | 依赖审计仍有非 Electron 风险项 | 风险随安装包或构建链进入教师终端 | Scratch 21 项发现必须通过有 owner/到期日/缓解措施的例外门禁或完成上游升级；Python 依赖完成扫描并验证教师实际环境 |
 | **P1** | 课堂发现只有 UDP 广播 | VLAN、无线隔离或防火墙环境中，学生找不到教师 | 增加手动输入教师地址入口，并在隔离网络中完成测试 |
 | **P1** | 课程包按学生请求重复压缩 | 30 人同时进课时，教师机 CPU 升高、学生超时 | 缓存或预生成课程包，完成 30 客户端并发测试 |
 | **P1** | 软件没有应用自动更新和回滚机制 | 教师回校后继续使用旧版本，支持人员难以统一版本 | 明确人工升级、数据备份、版本识别和回滚流程 |
@@ -79,7 +79,7 @@
 
 本轮先交付不内置 `python_env` 的轻量版，不启动新的 DMG、zip 或 Windows 安装包生成。教师端需提前安装 Python 3.10+，首次启动通过文件选择器绑定本机解释器。Windows 使用 `Scripts/python.exe` 或 `python.exe`，macOS 使用 `bin/python3` 或 `bin/python`。
 
-选择路径保存到用户数据目录的配置文件，不写入安装目录；Electron 后端启动、Jupyter 启动、`/api/detect_python` 和 Python 包管理均使用同一配置。未选择时，应用保留主界面和“选择本机 Python”恢复入口，不显示“缺少内置 Python”错误框。
+选择路径保存到用户数据目录的配置文件，不写入安装目录；Electron 后端启动、Jupyter 启动、`/api/detect_python` 和 Python 包管理均使用同一配置。设置页会在所选解释器内执行 XEduHub 探针；精确 `xedu-python==2.0.0` 的旧元数据冲突可通过“修复兼容性”显式处理，修复后必须重新测试。未选择时，应用保留主界面和“选择本机 Python”恢复入口，不显示“缺少内置 Python”错误框。
 
 ---
 
@@ -225,16 +225,16 @@ DMG 只改善安装引导，签名与公证决定教师能否正常打开应用�
 
 ### 3.4 Electron 与依赖风险
 
-当前 `package-lock.json` 锁定 `electron 39.8.10`，`electron-builder 26.15.3`，Vite 已升级到 `8.1.5`，并通过 npm override 收口 lodash。2026-07-19 执行根项目 `npm audit --package-lock-only --json` 得到 `0` 项漏洞；对 `scratch-editor/package-lock.json` 执行 `npm audit --prefix scratch-editor --package-lock-only --json` 得到 `22` 项漏洞（`0 low / 11 moderate / 6 high / 5 critical`），不能直接等同为教师端运行时漏洞，需分别记录运行时与构建链影响。
+当前 `package-lock.json` 锁定 `electron 39.8.10`，`electron-builder 26.15.3`，Vite 已升级到 `8.1.5`，并通过 npm override 收口 lodash。2026-07-19 执行根项目 `npm audit --package-lock-only --json` 得到 `0` 项漏洞；对 `scratch-editor/package-lock.json` 执行 `npm audit --prefix scratch-editor --package-lock-only --json` 得到 `21` 项漏洞（`0 low / 10 moderate / 6 high / 5 critical`），不能直接等同为教师端运行时漏洞，需分别记录运行时与构建链影响。
 
-根项目的旧审计数量不能继续作为当前结果；当前剩余风险集中在 Scratch 上游构建依赖和未固定的 Python SDK/模型依赖。正式发布记录必须分别保存根项目和 Scratch 子项目的审计输出。
+根项目的旧审计数量不能继续作为当前结果；当前剩余风险集中在 Scratch 上游构建依赖。正式发布记录必须分别保存根项目、Scratch 子项目和两套 Python requirements 的审计输出。
 
 **发布门槛**
 
-- Electron 和根项目直接依赖不命中当前 high/critical 公告。
+- Electron 和根项目直接依赖不命中当前 high/critical 公告；Scratch 上游构建/本地化链的剩余发现需有 reachability 证据和到期复核责任人。
 - 团队记录无法立即升级的 Scratch 构建依赖、影响范围和临时缓解措施。
 - Electron 升级后重新运行 preload、安全 API、窗口、Jupyter 和最终包测试。
-- Python 固定直接依赖子集（23 个 exact `==` 条目）已通过 `pip-audit --no-deps`，为 `0` 个已知漏洞；`kimi-agent-sdk`、`rapidocr-onnxruntime`、`onnx` 等未完全固定项的完整 resolver 实际失败为 `resolution-too-deep`，没有有效漏洞数量，不能关闭 Python 依赖门禁。
+- Python 固定直接依赖子集（24 个 exact `==` 条目）已通过 `pip-audit --no-deps`，为 `0` 个已知漏洞；`requirements.txt` 与 `requirements_full.txt` 已移除未使用的 `kimi-agent-sdk` 并固定 OCR/ONNX/Protobuf 版本，resolver 可完成，正式候选仍需保存完整 `pip-audit` 输出。
 
 ### 3.5 课堂公开读取边界
 
@@ -394,12 +394,12 @@ Renderer 已注册全局 `unhandledrejection` 处理器。处理器会阻止默�
 |---|---|---|---|---|---|
 | T00 | P0 | pip 与高权限 API capability 收口 | Backend / Security | 无 | [x] 已完成 |
 | T01 | P0 | 迁移共享 XEduHub 并完全移除 Blockly | Backend / Renderer / Course / QA | 无 | [x] 源码迁移、删除、降级测试和完整质量门禁完成；实机包验收归 T02/T13 |
-| T02 | P0 | 建立 Scratch 构建、打包和真实项目门禁 | Scratch / Release / QA | T01 | [~] Scratch 构建、入口检查和 `21 passed` 已通过，真实 `.sb3` 实机待验收 |
+| T02 | P0 | 建立 Scratch 构建、打包和真实项目门禁 | Scratch / Release / QA | T01 | [~] Scratch 构建、入口检查和 `22 passed` 已通过，真实 `.sb3` 实机待验收 |
 | T03 | P0 | 关闭生产 DevTools | Electron / Security | 无 | [x] 已完成，本地契约通过 |
 | T04 | P0 | 升级 Electron 并设置最小窗口 | Electron / QA | T03 | [x] 已完成，本地契约通过 |
 | T05 | P0 | 清理打包结构并建立不内置 Python 的轻量版产物契约 | Release / Electron | T02 | [~] 源码配置、解析流程和契约已完成，正式跨平台产物待构建 |
 | T06 | P0 | 完成 Windows 签名与 macOS 公证 | Release Owner | T05 | [~] 已加入 macOS hardened runtime 配置，证书/公证待外部凭据 |
-| T07 | P0 | 建立最终安装包内容与版本门禁 | Release / QA | T02-T06 | [~] 校验器与本地契约通过，当前旧产物因含 `python_env` 被拒，正式产物待验收 |
+| T07 | P0 | 建立最终安装包内容与版本门禁 | Release / QA | T02-T06 | [~] 校验器、ASAR/版本/身份检查和本地契约通过；正式签名产物与发布目录仍待验收 |
 | T08 | P1 | 增加课堂手动地址连接 | Renderer / Backend | T01 | [~] 代码与单测完成，跨 VLAN 实机待验收 |
 | T09 | P1 | 缓存课堂课程包并完成 30 客户端压测 | Backend / Performance | 无 | [~] 单机 packaged backend 已完成 30 并发压测；30 台真实终端实测待执行 |
 | T10 | P1 | 限制 Python 输出并终止超时进程树 | Backend / Security | 无 | [~] 代码与 POSIX 测试完成，Windows 实机待验收 |
@@ -647,7 +647,9 @@ xcrun stapler validate "XEdu Client.dmg"
 
 - [x] 为产物校验脚本编写缺文件、错版本和重复 backend 的失败测试。
 - [x] 校验 Scratch、backend、checkpoint 和应用版本，并拒绝包内 `python_env`。
-- [ ] 校验生产菜单、签名结果和发布目录旧文件，待真实平台产物生成后执行。
+- [x] 校验 `.app` 的 `Info.plist`、`app.asar/package.json` 和外置 `package.json` 的真实版本；`--version` 只用于比对，不再作为缺失版本的兜底。
+- [x] 扫描 `app.asar` 内部的 backend/config/scripts/python_env 和 Blockly 专属残留，避免只检查外置 Resources。
+- [x] 发布 workflow 在构建前清理旧产物，严格检查 DMG/zip/Windows 安装器命名，遍历 Windows `.exe/.dll` 签名，并归档签名、公证和依赖审计证据。
 - [x] `verify_release_artifact.mjs --manifest` 已支持生成包含 Git commit、版本、平台、文件大小和 SHA-256 的 manifest；待真实发布流水线执行。
 - [x] 已把产物校验测试接入质量门禁；真实产物参数可选，普通 Linux CI 不依赖平台包。
 
@@ -666,11 +668,11 @@ shasum -a 256 dist-final/*.{exe,dmg,zip}
 - 发布目录只包含当前版本产物及其 manifest、校验值和 blockmap。
 - Win/mac 两个平台的校验命令均返回 0。
 
-**当前验收记录（2026-07-17）**
+**当前验收记录（2026-07-19）**
 
-- `verify_release_artifact.mjs` 已对测试夹具和完整内容夹具通过；对 `dist-final-current/mac-arm64/XEdu Client.app` 返回非零，因为检测到旧 `Resources/python_env`。
-- manifest 已记录版本、平台、架构、Git commit、文件大小和 SHA-256。
-- 该包来自未提交工作区，不能替代 release commit/tag 产物验收。
+- `node --test electron/test/phase0-release-contract.test.mjs electron/test/release-artifact-verifier.test.mjs electron/test/package-layout-contract.test.mjs electron/test/python-runtime.test.mjs` 通过，合计 `29 passed`。
+- `verify_release_artifact.mjs` 对现有 macOS arm64 与 Windows x64 unpacked 包均读取到版本 `2.0.0` 并通过外置资源和 app.asar 内容校验；这些包仍来自历史/未冻结工作区，不能替代 release commit/tag 产物验收。
+- 当前无 exact release tag，无法生成 `requireIdentity=true` 的正式 manifest；身份匹配失败测试已覆盖调用方伪造 `--tag/--commit` 的场景。
 
 ### T08：增加课堂手动地址连接
 
@@ -834,7 +836,7 @@ npm run test:student-shell
 
 **最终通过标准**
 
-- [x] T01 完成后已重新执行 `npm run quality-gate` 并完整退出 `0`：后端 `130 passed`、Electron/发布契约、Renderer 契约、Scratch 构建与 `21 passed`、Vite 构建和 bundle guard 全部通过；发布包和实机门禁仍未关闭。
+- [x] T01 完成后已重新执行 `npm run quality-gate` 并完整退出 `0`：后端 `135 passed`、Electron/发布契约、Renderer 契约、Scratch 构建与 `22 passed`、Vite 构建和 bundle guard 全部通过；发布包和实机门禁仍未关闭。
 - [ ] T01-T12 的任务验收记录齐全，没有未关闭 P0。
 - [ ] 干净机器安装与首开成功率为 100%，不要求教师绕过未知发行者警告。
 - [ ] Jupyter 和 Scratch 各完成一个真实课程实验。
@@ -952,14 +954,15 @@ npm run test:student-shell
 
 | 检查 | 结果 |
 |---|---|
-| `python3 -m pytest backend/tests -q` | 通过：backend `130 passed`；覆盖 XEduHub、Scratch 相关路由、运行时安全、Jupyter、Gitea 和课堂接口 |
-| `npm run quality-gate` 本次执行 | 通过：后端 `130 passed`、Electron/发布契约、Renderer 契约、Scratch `21 passed`、Vite 构建和 bundle guard 全部通过 |
-| `npm run build:scratch`、`npm run check:scratch-build`、Scratch 单测 | 通过：Scratch standalone 构建、入口检查和 `21 passed`；正式安装包仍需从 release commit/tag 重建 |
+| `python3 -m pytest backend/tests -q` | 通过：backend `135 passed`；覆盖 XEduHub、Scratch 相关路由、运行时安全、Jupyter、Gitea、课堂接口和教师 Python 探针 |
+| `npm run quality-gate` 本次执行 | 通过：后端 `135 passed`、Electron/发布契约、Renderer 契约、Scratch `22 passed`、Vite 构建和 bundle guard 全部通过 |
+| `npm run build:scratch`、`npm run check:scratch-build`、Scratch 单测 | 通过：Scratch standalone 构建、入口检查和 `22 passed`；正式安装包仍需从 release commit/tag 重建 |
 | `npm audit --audit-level=high --json` | 通过：root 项目 `0` 项漏洞；Vite 已升级到 `8.1.5`，lodash 通过 npm override 收口 |
-| `npm audit --prefix scratch-editor --package-lock-only --json` | 未通过：Scratch lock `22` 项（`5 critical / 6 high / 11 moderate / 0 low`），已按构建/本地化链与运行时链分类，仍需关闭或批准例外 |
-| Python 固定直接依赖审计 | 通过：23 个 exact `==` 直接依赖为 `0` 个已知漏洞；完整未固定 SDK/模型依赖实际因 resolver `resolution-too-deep` 未关闭 |
+| `npm audit --prefix scratch-editor --package-lock-only --json` | 原始命令为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`）；`check_scratch_dependency_gate.mjs` 已按 owner、到期日、缓解措施和 `scratch-editor/build` 入口生成例外与 reachability report，安全负责人批准仍未完成 |
+| Python requirements 审计 | 固定直接依赖 24 个、`requirements.txt` 和 `requirements_full.txt` 审计结果为 `0` 个已知漏洞；教师设置页已加入所选解释器探针和精确 `xedu-python==2.0.0` 元数据修复，跨平台实际 `pip check` 与推理验收仍待完成 |
 | 正式 release workflow 与模型预检 | 已加入：只接受明确版本 tag、Ubuntu 质量门禁、双平台统一 commit、签名构建、产物校验；干净 checkout 缺少被 Git 忽略的 checkpoint bundle 时快速失败 |
-| 正式 release 配置契约 | 通过：`electron-builder.release.cjs` 按目标平台 fail-closed，Electron 契约测试 `9 passed`；签名凭据和真实产物仍未执行 |
+| 正式 release 配置契约 | 通过：`electron-builder.release.cjs` 按目标平台 fail-closed，发布/产物契约测试通过；签名凭据和真实产物仍未执行 |
+| 发布产物校验增强 | 通过：版本读取、app.asar 残留扫描、Git tag/commit 独立校验、旧产物清理和跨平台签名证据归档规则已加入代码与 workflow |
 | 资源页状态迁移契约 | 通过：课堂状态不再出现错误嵌套，Scratch/工作区调用保持位置参数；Renderer 相关契约测试通过 |
 | `git diff --check` | 通过：当前工作区无 whitespace error |
 | 当前 macOS 最新 unpacked 包内容 | `dist-final-20260718-mac/mac-arm64`：找到 Scratch、backend、checkpoint；`verify_release_artifact.mjs` 通过，包内 backend `/api/health` 返回 200 |
@@ -976,7 +979,8 @@ npm run test:student-shell
 - 没有完成真实 `.sb3` 打开、运行、保存、重开和 XEdu AI 图片推理的 GUI 记录。
 - 没有执行真实 30 机课堂并发测试。
 - 没有完成跨 VLAN、Windows 超时、配置损坏和端口占用的实机故障注入。
-- 没有完成未固定 Python SDK/模型依赖的完整漏洞扫描；固定直接依赖子集已经通过。
+- 当前工作区未执行官方 release workflow，因此还没有候选版本的依赖审计原始 JSON、签名输出和 notarization evidence artifact；workflow 已改为保存 Scratch 例外/reachability、Python 和平台签名证据后统一判门。
+- `xedu-python==2.0.0` 的跨平台真实兼容性仍未完成：未修补元数据会使 `pip check` 报告 `onnxruntime<1.16.0`、`Pillow<=9.5.0` 冲突；代码侧已有显式修复和复探针，但不能用本地单测替代 Windows/macOS 实际环境验收。
 - 没有完成教师独立安装和回校授课试点。
 
 在这些项目完成前，正式分发结论保持 **No-Go**。

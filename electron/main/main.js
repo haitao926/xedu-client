@@ -123,7 +123,7 @@ const DIAGNOSTIC_BODY_LABELS = ['request_body', 'request-body', 'request body', 
 
 const API_REQUEST_ALLOWLIST = Object.freeze([
     { method: 'GET', pattern: /^\/api\/(?:health|status|detect_python|load_config|documents(?:\/|$)|classroom\/(?:status|discover|index|course\/|file\/|package\/)|resources\/(?:default-sample|index|local-file\/|scan|inspect-course|scan-folder)|projects\/templates)(?:\?.*)?$/ },
-    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|projects\/create|ai\/(?:ask|test_config|save_config)|quickform\/(?:test|tasks(?:\/create)?$)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|inspect-course|publish|pull|ensure-repo|save-course|import-package-local|quickform\/inject|scratch-workspace))(?:\?.*)?$/ },
+    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|repair_xedu|projects\/create|ai\/(?:ask|test_config|save_config)|quickform\/(?:test|tasks(?:\/create)?$)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|inspect-course|publish|pull|ensure-repo|save-course|import-package-local|quickform\/inject|scratch-workspace))(?:\?.*)?$/ },
 ]);
 
 const DEV_RENDERER_CANDIDATES = [

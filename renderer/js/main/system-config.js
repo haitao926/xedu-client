@@ -1,4 +1,4 @@
-import apiClient from '../api.js';
+import apiClient, { API_ENDPOINTS } from '../api.js';
 import { saveAIConfig } from '../ai.js';
 import { log, showToast, showModal, hideModal } from '../ui.js';
 
@@ -83,13 +83,38 @@ export async function selectPythonEnvironment() {
         if (!detected?.success) {
             throw new Error(detected?.message || 'Python 环境检测失败');
         }
-        log(`已选择 Python 环境: ${pythonPath}`, 'success');
-        showToast('Python 环境可用，请点击“保存设置”完成绑定', 'success');
+        const runtimeReady = detected.info?.xedu_version_ok && detected.info?.xedu_runtime_ok;
+        log(`已选择 Python 环境: ${pythonPath}`, runtimeReady ? 'success' : 'warning');
+        showToast(
+            runtimeReady
+                ? 'Python 环境可用，请点击“保存设置”完成绑定'
+                : 'Python 可执行，但 XEduHub 尚未通过测试；请先安装依赖或修复兼容性',
+            runtimeReady ? 'success' : 'warning',
+        );
         return pythonPath;
     } catch (error) {
         console.error('选择 Python 环境失败:', error);
         log(`选择 Python 环境失败: ${error.message}`, 'error');
         showToast(`Python 环境不可用: ${error.message}`, 'error');
+        return null;
+    }
+}
+
+export async function repairXeduEnvironment() {
+    const pythonPath = document.getElementById('python-path-input')?.value.trim() || '';
+    if (!pythonPath) {
+        showToast('请先选择本机 Python。', 'warning');
+        return null;
+    }
+    try {
+        const result = await apiClient.post(API_ENDPOINTS.PYTHON_REPAIR_XEDU, { python_executable: pythonPath });
+        if (!result?.success) throw new Error(result?.message || 'XEdu 兼容性修复失败');
+        log(result.message || 'XEdu 兼容性修复完成', 'success');
+        showToast('XEdu 兼容性修复完成，请重新测试环境', 'success');
+        return result;
+    } catch (error) {
+        log(`XEdu 兼容性修复失败: ${error.message}`, 'error');
+        showToast(`XEdu 兼容性修复失败: ${error.message}`, 'error');
         return null;
     }
 }

@@ -83,29 +83,86 @@ jobs:
       - name: Install backend test dependencies and smoke model builder
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements_ci.txt numpy==1.26.4 onnx==1.20.1
+          python -m pip install -r backend/requirements_ci.txt numpy==1.26.4 onnx==1.22.0
           python scripts/seed_xedu_smoke_models.py
           python scripts/seed_xedu_smoke_assets.py
 
       - name: Run complete quality gate
         run: npm run quality-gate
 
+      - name: Prepare dependency audit evidence
+        shell: bash
+        run: mkdir -p release-evidence/dependency-audit
+
       - name: Audit root npm lockfile
-        run: npm audit --audit-level=high --package-lock-only
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm audit --audit-level=high --package-lock-only --json > release-evidence/dependency-audit/root-npm.json 2>&1
+          printf '%s\n' "$?" > release-evidence/dependency-audit/root-npm.exit
 
       - name: Audit Scratch npm lockfile
-        run: npm audit --prefix scratch-editor --audit-level=high --package-lock-only
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm audit --prefix scratch-editor --audit-level=high --package-lock-only --json > release-evidence/dependency-audit/scratch-npm.json 2>&1
+          printf '%s\n' "$?" > release-evidence/dependency-audit/scratch-npm.exit
 
       - name: Audit fixed Python direct dependencies
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          python -m pip install pip-audit
+          awk 'NF && $1 !~ /^#/ && $1 ~ /^[A-Za-z0-9_.-]+==[^;[:space:]]+$/' backend/requirements.txt > /tmp/xedu-pinned-requirements.txt
+          python -m pip_audit -r /tmp/xedu-pinned-requirements.txt --no-deps --format json > release-evidence/dependency-audit/python-fixed.json 2>&1
+          printf '%s\n' "$?" > release-evidence/dependency-audit/python-fixed.exit
+
+      - name: Resolve and audit complete Python requirements
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          python -m pip_audit -r backend/requirements.txt --format json > release-evidence/dependency-audit/python-minimal.json 2>&1
+          printf '%s\n' "$?" > release-evidence/dependency-audit/python-minimal.exit
+          python -m pip_audit -r backend/requirements_full.txt --format json > release-evidence/dependency-audit/python-full.json 2>&1
+          printf '%s\n' "$?" > release-evidence/dependency-audit/python-full.exit
+
+      - name: Enforce dependency audit gate
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install pip-audit
-          awk 'NF && $1 !~ /^#/ && $1 ~ /^[A-Za-z0-9_.-]+==[^;[:space:]]+$/' backend/requirements.txt > /tmp/xedu-pinned-requirements.txt
-          python -m pip_audit -r /tmp/xedu-pinned-requirements.txt --no-deps
+          status=0
+          for file in release-evidence/dependency-audit/*.exit; do
+            if [[ "$file" == *scratch-npm.exit ]]; then
+              continue
+            fi
+            code="$(cat "$file")"
+            if [[ "$code" != "0" ]]; then
+              echo "Dependency audit failed: $file (exit $code)"
+              status=1
+            fi
+          done
+          exit "$status"
 
-      - name: Resolve and audit complete Python requirements
-        run: python -m pip_audit -r backend/requirements.txt
+      - name: Enforce Scratch dependency exception and reachability gate
+        run: |
+          node scripts/check_scratch_dependency_gate.mjs \
+            --audit release-evidence/dependency-audit/scratch-npm.json \
+            --exceptions docs/release/2.0.0-rc.1/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
+            --build scratch-editor/build \
+            --report release-evidence/dependency-audit/scratch-reachability.json
+
+      - name: Upload dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xedu-client-${{ github.run_id }}-dependency-audit
+          path: release-evidence/dependency-audit
+          if-no-files-found: error
 
   windows-release:
     runs-on: windows-2022
@@ -138,6 +195,10 @@ jobs:
       - name: Check release model assets
         run: node scripts/check_release_inputs.mjs
 
+      - name: Clean release output
+        shell: pwsh
+        run: Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist-release, release-evidence
+
       - name: Build signed Windows release
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
@@ -150,12 +211,18 @@ jobs:
           New-Item -ItemType Directory -Force -Path release-evidence | Out-Null
           $installer = (Get-ChildItem -Path dist-release -Filter *.exe -File | Select-Object -First 1).FullName
           if (-not $installer) { throw 'Windows installer was not produced.' }
+          if ((Split-Path $installer -Leaf) -ne 'XEdu Client-2.0.0.exe') { throw "Unexpected installer name: $installer" }
           $signedFiles = @($installer, (Join-Path (Resolve-Path dist-release/win-unpacked) 'XEdu Client.exe'))
           $uninstaller = Get-ChildItem -Path dist-release/win-unpacked -Filter 'Uninstall*.exe' -File | Select-Object -First 1
           if ($uninstaller) { $signedFiles += $uninstaller.FullName }
+          $signedFiles += @(Get-ChildItem -Path dist-release/win-unpacked -Recurse -File -Include *.dll,*.exe | ForEach-Object FullName)
+          $signedFiles = @($signedFiles | Sort-Object -Unique)
           foreach ($file in $signedFiles) {
             if (-not (Test-Path $file)) { throw "Signed file is missing: $file" }
-            signtool verify /pa /v $file
+            $signature = Get-AuthenticodeSignature $file
+            if ($signature.Status -ne 'Valid') { throw "Authenticode status is $($signature.Status): $file" }
+            $signature | Format-List | Out-File -FilePath release-evidence/windows-signature.txt -Append -Encoding utf8
+            signtool verify /pa /v $file | Tee-Object -FilePath release-evidence/windows-signtool.txt -Append
             if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed: $file" }
           }
           node scripts/verify_release_artifact.mjs dist-release/win-unpacked --version 2.0.0 --tag "${{ needs.quality-gate.outputs.release_tag }}" --commit "${{ needs.quality-gate.outputs.source_commit }}" --artifact $installer --manifest release-evidence/windows-manifest.json --platform win32 --arch x64
@@ -201,6 +268,9 @@ jobs:
       - name: Check release model assets
         run: node scripts/check_release_inputs.mjs
 
+      - name: Clean release output
+        run: rm -rf dist-release release-evidence
+
       - name: Build signed and notarized macOS release
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -217,10 +287,13 @@ jobs:
           dmg="$(find dist-release -maxdepth 1 -name '*.dmg' -print -quit)"
           zip="$(find dist-release -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$dmg" && test -n "$zip"
+          test "$(basename "$dmg")" = 'XEdu Client-2.0.0.dmg'
+          test "$(basename "$zip")" = 'XEdu Client-2.0.0.zip'
           node scripts/verify_release_artifact.mjs "dist-release/mac-arm64/XEdu Client.app" --version 2.0.0 --tag "${{ needs.quality-gate.outputs.release_tag }}" --commit "${{ needs.quality-gate.outputs.source_commit }}" --artifact "$dmg" --artifact "$zip" --manifest release-evidence/macos-manifest.json --platform darwin --arch arm64
-          codesign --verify --deep --strict --verbose=2 "dist-release/mac-arm64/XEdu Client.app"
-          spctl --assess --type execute -vv "dist-release/mac-arm64/XEdu Client.app"
-          xcrun stapler validate "$dmg"
+          codesign --verify --deep --strict --verbose=2 "dist-release/mac-arm64/XEdu Client.app" 2>&1 | tee release-evidence/macos-codesign.txt
+          spctl --assess --type execute -vv "dist-release/mac-arm64/XEdu Client.app" 2>&1 | tee release-evidence/macos-spctl.txt
+          xcrun stapler validate "$dmg" 2>&1 | tee release-evidence/macos-stapler.txt
+          codesign --display --verbose=4 "dist-release/mac-arm64/XEdu Client.app" 2>&1 | tee release-evidence/macos-signing-identity.txt
           find dist-release -maxdepth 1 -type f -print0 | xargs -0 shasum -a 256 > release-evidence/macos-artifacts-sha256.txt
 
       - name: Upload macOS release evidence

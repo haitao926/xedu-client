@@ -11,7 +11,7 @@ working tree or any existing `dist-*` directory a distributable artifact.
 | Field | Value |
 |---|---|
 | Product version | `2.0.0` |
-| Current source commit | `f9e43ca9e7eb6506a4ecacdcbeef67d2c1deb7a9` |
+| Current source commit | `da2f50de90ee87fd004edf9140356653948b104b` (working tree has additional uncommitted verifier, workflow, dependency and documentation changes) |
 | Exact release tag | None |
 | Working tree | Dirty; contains reviewed and uncommitted project changes |
 | Product direction | Scratch-only; Blockly is unsupported and removed from the maintained path |
@@ -32,14 +32,15 @@ working tree or any existing `dist-*` directory a distributable artifact.
 
 Recorded on 2026-07-19:
 
-- `npm run quality-gate`: passed after the dependency-lock and build-path changes, including backend `130 passed`, Scratch `21 passed`, renderer/Electron contracts, Vite build, and bundle guard.
+- `npm run quality-gate`: passed after the dependency-lock, build-path, and teacher-environment changes, including backend `135 passed`, Scratch `22 passed`, renderer/Electron contracts, Vite build, and bundle guard.
 - `npm run check:python-syntax`: passed through the cross-platform Node launcher.
 - `git diff --check`: passed.
 - `node scripts/check_release_inputs.mjs`: passed locally for 30 checkpoint files, `2,407,323,676` bytes.
 - `npm audit --audit-level=high --json`: root lockfile reports zero vulnerabilities.
-- Fixed Python direct-dependency subset: 23 dependencies, zero known vulnerabilities with `pip-audit --no-deps`.
-- Scratch lockfile audit: 22 findings (`5 critical / 6 high / 11 moderate / 0 low`); runtime/build reachability is not closed.
-- Full `backend/requirements.txt` audit: executed and failed with `resolution-too-deep`; no complete Python vulnerability count is claimed.
+- Fixed Python direct-dependency subset: 24 dependencies, zero known vulnerabilities with `pip-audit --no-deps`.
+- Scratch lockfile audit: 21 findings (`5 critical / 6 high / 10 moderate / 0 low`) after the `react-tooltip` UUID override; the local exception gate accepts all 21 only until `2026-08-31`, pending security-owner approval.
+- `backend/requirements.txt` and `backend/requirements_full.txt` both resolve and pass `pip-audit` with zero known vulnerabilities. The teacher settings page now probes the selected `xedu-python` interpreter and can apply the recorded exact-2.0.0 metadata repair; cross-platform `pip check` evidence is still required.
+- Release artifact contracts: 29 focused Electron/package tests passed; the verifier now reads real app.asar/Info.plist versions, scans app.asar for forbidden runtime paths, and independently checks the source tag/commit before writing an identity-bound manifest.
 
 ## Release Targets
 
@@ -58,5 +59,6 @@ Recorded on 2026-07-19:
 - No Developer ID signed, notarized, and stapled macOS artifact has been verified.
 - No packaged GUI `.sb3` open/run/save/reopen record exists.
 - No 30-physical-terminal classroom record or independent teacher trial exists.
-- The Scratch dependency audit and complete Python requirements audit remain
-  unresolved and keep the candidate at No-Go.
+- The Scratch dependency audit, `xedu-python` runtime compatibility, signing,
+  packaged GUI, classroom, and teacher trial gates remain unresolved and keep
+  the candidate at No-Go.

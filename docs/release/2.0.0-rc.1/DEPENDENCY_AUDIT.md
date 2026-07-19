@@ -2,9 +2,10 @@
 
 Audit date: 2026-07-19
 
-Overall decision: **No-Go**. The root application lock is clean, but the
-Scratch build/runtime dependency scope and complete Python environment are not
-closed.
+Overall decision: **No-Go**. The root application lock and Python requirement
+profiles are now auditable. The Scratch findings have a local, fail-closed,
+time-bounded exception gate, but security-owner approval and all platform/
+teacher acceptance gates are not closed.
 
 ## Root npm Lockfile
 
@@ -16,8 +17,9 @@ closed.
 ## Scratch npm Lockfile
 
 - Command: `npm audit --prefix scratch-editor --package-lock-only --json`
-- Result: exit `1`; 22 findings: 5 critical, 6 high, 11 moderate, 0 low.
-- Current lockfile SHA-256: `9c14392f39489e5f9590895b84ed61c5b53191d27724d929778a3195cddaf44c`
+- Result: exit `1`; 21 findings: 5 critical, 6 high, 10 moderate, 0 low.
+- `npm audit --prefix scratch-editor --omit=dev --package-lock-only --json` still reports 20 findings, because the upstream Scratch GUI declares build/localization packages in its production dependency graph. This is evidence that npm's prod/dev classification cannot close reachability by itself.
+- Current lockfile SHA-256: `ddc4b580db037a165f9f230e2cf50372356f1b70be02d0735c31b4ede5873e41`
 - Direct/upstream exposure includes Scratch GUI/VM and their rendering/build
   chain. npm audit alone does not prove whether every finding is reachable in
   the final browser bundle.
@@ -28,19 +30,33 @@ closed.
 
 ### Scratch Finding Classification
 
-- Runtime or shared upstream chain: `@scratch/scratch-gui`, `react-tooltip`,
-  `scratch-l10n`, `uuid`, and the Scratch GUI/VM dependency graph. These require
-  final bundle reachability review and packaged GUI regression testing.
+- Runtime or shared upstream chain: `@scratch/scratch-gui`, `scratch-l10n`,
+  `uuid`, and the Scratch GUI/VM dependency graph. `react-tooltip` now uses the
+  locked `uuid==11.1.1` override. These require final bundle reachability
+  review and packaged GUI regression testing.
 - Build/localization/test chain: `request`, `transifex`, `mocha`, `form-data`,
   `minimist`, `mkdirp`, `cacache`, `copy-webpack-plugin`, `diff`,
   `serialize-javascript`, `tar`, and related PostCSS tooling. These are not
   loaded by the standalone browser entry unless the build graph proves
   otherwise, but they remain present in the lockfile and cannot be ignored.
 - Current mitigation: `hull.js` is replaced by the local security-compatible
-  implementation; `cookie` and `uuid` overrides are locked. This does not
-  close the remaining Scratch audit gate.
-- Required next action: classify runtime reachability and decide upgrades or a
-  time-bounded exception before release authorization.
+  implementation; `cookie`, Scratch VM `uuid`, and `react-tooltip` `uuid`
+  overrides are locked. This does not close the remaining Scratch audit gate.
+- Current bundle evidence: the generated report follows the `build/index.html`
+  script entrypoint and records exact package-name literals found in that
+  runtime script. The current report has no literal for the deprecated
+  `request`/`transifex` chain and records only a few upstream metadata literals;
+  this is reachability evidence for the current build only, not proof that the
+  lockfile advisories are fixed or permission to ignore future upgrades.
+- Exception gate: `scripts/check_scratch_dependency_gate.mjs` validates all 21
+  current findings against `SCRATCH_DEPENDENCY_EXCEPTIONS.json`, including an
+  owner, review date, mitigation, scope, and `scratch-editor/build` entrypoint
+  evidence. The current local result is 21 accepted exceptions expiring
+  `2026-08-31`; this is not a claim that the advisories are fixed.
+- Required next action: obtain security owner approval for the documented
+  time-bounded exception or perform a coordinated Scratch toolchain upgrade
+  before release authorization. Any new finding or Scratch upgrade fails the
+  gate until its evidence is updated.
 
 ## Python Requirements
 
@@ -48,23 +64,32 @@ closed.
 
 - Input: `backend/requirements.txt`, filtered to exact `==` entries only.
 - Command: `pip-audit -r <fixed-subset> --no-deps --format json`
-- Result: 23 dependencies, 0 known vulnerabilities.
+- Result: 24 dependencies, 0 known vulnerabilities.
 - This is a direct pinned subset audit, not a complete environment audit.
 
 ### Complete requirements
 
 - Inputs: `backend/requirements.txt` and `backend/requirements_full.txt`.
-- `pip-audit` attempted dependency resolution and failed with
-  `resolution-too-deep` while resolving the unpinned/complex SDK and model
-  dependency graph. The audit therefore has no valid vulnerability count.
-- This failure was reproduced on 2026-07-19 with `python3 -m pip_audit -r
-  backend/requirements.txt --format json`; it is a resolver failure, not a
-  clean vulnerability result.
-- Unresolved scope includes `kimi-agent-sdk`, `rapidocr-onnxruntime`, and the
-  lower-bounded `onnx`/`onnxruntime` entries in the full requirements.
-- `xedu-python` is installed separately with `--no-deps`; its actual portable
-  environment still needs `pip check`, freeze capture, and a vulnerability
-  audit.
+- The previously unbounded OCR/ONNX entries are now fixed to
+  `rapidocr-onnxruntime==1.4.4`, `onnx==1.22.0`, and
+  `onnxruntime==1.27.0`; the full stack uses `protobuf==6.33.5` to satisfy the
+  ONNX Runtime constraint.
+- `kimi-agent-sdk` was removed from the teacher requirements because no
+  shipped backend module imports it and its resolver chain required conflicting
+  exact Pillow and PyYAML versions. This avoids installing an unused CLI/SDK
+  stack in teacher environments.
+- Dependency resolution and `pip-audit` now complete for both requirement
+  profiles with zero known vulnerabilities in the resolved graphs. The
+  resulting JSON and command output must be attached to the candidate evidence.
+- `xedu-python` is installed separately with `--no-deps`; the teacher settings
+  page now runs the XEduHub probe inside the selected interpreter and exposes a
+  narrow compatibility repair for the exact `2.0.0` wheel. The repair records
+  the original metadata constraints and updates `RECORD`.
+- A fresh Python 3.12 probe imports `XEdu.hub.Workflow` and returns the runtime
+  task list. An unpatched installation still reports the upstream
+  `onnxruntime<1.16.0` and `Pillow<=9.5.0` metadata conflict in `pip check`;
+  local code tests cover the explicit metadata repair, but the repaired
+  environment must still be verified on both target platforms before release.
 
 ## Release Rule
 

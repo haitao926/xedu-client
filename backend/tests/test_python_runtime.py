@@ -10,7 +10,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from utils.python_runtime import inspect_python_executable  # noqa: E402
+from utils.python_runtime import inspect_python_environment, inspect_python_executable, repair_xedu_python_environment  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
 
 
@@ -39,6 +39,40 @@ class PythonRuntimeTestCase(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertIn("至少需要 Python 3.10.0", result["message"])
+
+    def test_environment_probe_runs_in_selected_interpreter(self):
+        version_result = type("Completed", (), {"returncode": 0, "stdout": "Python 3.12.8", "stderr": ""})()
+        probe_result = type(
+            "Completed",
+            (),
+            {
+                "returncode": 0,
+                "stdout": '__XEDU_ENVIRONMENT__={"python_version":"3.12.8","python_executable":"/tmp/selected-python","site_packages":"/tmp/site-packages","xedu_version":"2.0.0","jupyterlab_version":"4.4.0","jupyter_notebook_version":null,"xedu_runtime_ok":true,"xedu_runtime_message":"XEduHub 支持 3 项任务。"}\n',
+                "stderr": "",
+            },
+        )()
+        with patch("utils.python_runtime.Path.is_file", return_value=True), patch(
+            "utils.python_runtime.os.access", return_value=True
+        ), patch("utils.python_runtime.subprocess.run", side_effect=[version_result, probe_result]) as run_mock:
+            result = inspect_python_environment("/tmp/selected-python")
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["xedu_version_ok"])
+        self.assertTrue(result["xedu_runtime_ok"])
+        self.assertEqual(run_mock.call_args_list[1].args[0][0], str(Path("/tmp/selected-python").resolve()))
+        self.assertIn("_XEDU_ENVIRONMENT_", run_mock.call_args_list[1].args[0][2])
+
+    def test_repair_requires_a_passing_xeduhub_probe_after_metadata_change(self):
+        before = {"success": True, "xedu_version": "2.0.0", "site_packages": "/tmp/site-packages", "xedu_runtime_ok": False}
+        after = {"success": True, "xedu_version": "2.0.0", "site_packages": "/tmp/site-packages", "xedu_runtime_ok": True}
+        with patch("utils.python_runtime.inspect_python_environment", side_effect=[before, after]), patch(
+            "utils.python_runtime.patch_xedu_metadata",
+            return_value={"success": True, "changed": True, "message": "patched"},
+        ):
+            result = repair_xedu_python_environment("/tmp/selected-python")
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["runtime"]["xedu_runtime_ok"])
 
     def test_selected_interpreter_is_persisted_when_existing_config_is_empty(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.dict(

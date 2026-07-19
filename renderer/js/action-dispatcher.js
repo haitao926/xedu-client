@@ -30,6 +30,7 @@ const ACTIONS = Object.freeze({
     'system.uninstallPackage': (app) => app.system?.uninstallPackage?.(),
     'system.resetSystemConfig': (app) => app.system?.resetSystemConfig?.(),
     'system.selectPythonEnvironment': (app) => app.system?.selectPythonEnvironment?.(),
+    'system.repairXeduEnvironment': (app) => app.system?.repairXeduEnvironment?.(),
     'system.saveSystemConfig': (app) => app.system?.saveSystemConfig?.(),
     'projectWizard.close': (app) => app.projectWizard?.close?.(),
     'projectWizard.browsePath': (app) => app.projectWizard?.browsePath?.(),

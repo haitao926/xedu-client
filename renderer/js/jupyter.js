@@ -780,7 +780,7 @@ export async function testPythonEnvironment() {
         const info = response.info;
         const xeduVersion = info.xedu_version || '未安装';
         const xeduExpected = info.xedu_expected_version || '2.0.0';
-        const xeduStatus = info.xedu_version_ok ? '通过' : '异常';
+        const xeduStatus = info.xedu_version_ok && info.xedu_runtime_ok ? '通过' : '异常';
         const jupyterlab = info.jupyterlab_version || '未安装';
         const notebook = info.jupyter_notebook_version || '未安装';
         const message = [
@@ -789,13 +789,14 @@ export async function testPythonEnvironment() {
             `JupyterLab: ${jupyterlab}`,
             `Notebook: ${notebook}`,
             info.xedu_runtime_message || '',
+            info.xedu_repair_available ? '可在设置中执行兼容性修复' : '',
         ].filter(Boolean).join(' | ');
 
         if (resultEl) {
             resultEl.textContent = message;
-            resultEl.style.color = info.xedu_version_ok ? 'var(--success-color)' : 'var(--warning-color)';
+            resultEl.style.color = info.xedu_version_ok && info.xedu_runtime_ok ? 'var(--success-color)' : 'var(--warning-color)';
         }
-        log(message, info.xedu_version_ok ? 'success' : 'warning');
+        log(message, info.xedu_version_ok && info.xedu_runtime_ok ? 'success' : 'warning');
     } catch (error) {
         const message = `Python 环境检测失败: ${error.message}`;
         if (resultEl) {

@@ -7,39 +7,37 @@ psutil==5.9.8
 markdown==3.8.1
 Pygments==2.20.0
 PyYAML==6.0.1
-jupyterlab==4.5.0
+jupyterlab==4.5.9
 jupyterlab-language-pack-zh-CN==4.5.post1
-notebook==7.5.0
+notebook==7.5.6
 ipykernel==6.29.3
-jupyter_server==2.14.1
-jupyter_core==5.7.2
-nbconvert==7.14.2
+jupyter_server==2.20.0
+jupyter_core==5.9.1
+nbconvert==7.17.1
 
 # Data/ML basics
 numpy==1.26.4
 pandas==2.2.2
-scikit-learn==1.4.2
+scikit-learn==1.5.2
 scipy==1.12.0
 
 # Deep learning (CPU wheels; swap to CUDA-specific wheels if needed)
-torch==2.2.2
-torchvision==0.17.2
-torchaudio==2.2.2
+torch==2.13.0
+torchvision==0.28.0
 
 # LLM ecosystem
-transformers==4.38.1
+transformers==5.5.0
 sentencepiece==0.2.1
 accelerate==0.27.2
-protobuf==4.25.3
+protobuf==6.33.5
 openai==1.23.6
 tiktoken==0.6.0
-kimi-agent-sdk
 
 # Project-specific
 # xedu-python is installed separately via scripts/setup_portable_python.py with --no-deps.
 pinpong==0.6.2
 
 # Deployment
-onnx>=1.15.0
-onnxruntime>=1.17.0
-rapidocr-onnxruntime
+onnx==1.22.0
+onnxruntime==1.27.0
+rapidocr-onnxruntime==1.4.4

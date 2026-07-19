@@ -79,11 +79,19 @@ class SystemApiTestCase(unittest.TestCase):
         self.assertIn("无法解析", data["message"])
 
     def test_detect_python_returns_xedu_runtime_status(self):
-        with patch("api.app_support._resolve_site_packages") as mock_site_packages, patch(
-            "api.app_support._read_xedu_version_from_site_packages"
-        ) as mock_xedu_version:
-            mock_site_packages.return_value = Path(self.temp_dir.name)
-            mock_xedu_version.return_value = "2.0.0"
+        with patch("api.app_support.inspect_python_environment") as environment_probe:
+            environment_probe.return_value = {
+                "success": True,
+                "python_version": "3.12.8",
+                "python_executable": sys.executable,
+                "xedu_version": "2.0.0",
+                "xedu_version_ok": True,
+                "xedu_runtime_ok": True,
+                "xedu_runtime_message": "XEduHub 支持 3 项任务。",
+                "jupyterlab_version": "4.4.0",
+                "jupyter_notebook_version": None,
+                "xedu_repair_available": False,
+            }
             response = self.client.get(f"/api/detect_python?python_executable={sys.executable}")
 
         self.assertEqual(response.status_code, 200)
@@ -91,6 +99,7 @@ class SystemApiTestCase(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["info"]["xedu_version"], "2.0.0")
         self.assertTrue(data["info"]["xedu_version_ok"])
+        self.assertTrue(data["info"]["xedu_runtime_ok"])
 
     def test_detect_python_rejects_missing_executable(self):
         response = self.client.get("/api/detect_python?python_executable=/tmp/not-a-python-executable")
@@ -98,6 +107,23 @@ class SystemApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.get_json()["success"])
         self.assertIn("不存在", response.get_json()["message"])
+
+    def test_repair_xedu_requires_an_explicit_python_path(self):
+        response = self.client.post("/api/repair_xedu", json={})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("选择 Python", response.get_json()["message"])
+
+    def test_repair_xedu_returns_the_target_runtime_result(self):
+        with patch(
+            "api.routes.jupyter.repair_xedu_python_environment",
+            return_value={"success": True, "changed": True, "message": "已修复", "runtime": {"xedu_runtime_ok": True}},
+        ):
+            response = self.client.post("/api/repair_xedu", json={"python_executable": sys.executable})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+        self.assertTrue(response.get_json()["runtime"]["xedu_runtime_ok"])
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@
 > **v1 勘误**: ① XEduHub 运行时是 Scratch/Blockly 共享基础设施，不可删除；② `markdown_document_service.py`、`teacher_intent_detection.py` 均为在用代码，非死代码；③ backend 双重打包、打包过滤、requirements 统一均已完成；④ "零测试"表述不准确，应为"覆盖不足"。
 
 > **2026-07-18 执行记录**：修正 `resourcesState` 全量迁移产生的课堂状态嵌套、工作区位置参数和资源页调用表达式问题，并将关键契约加入测试。`npm run quality-gate` 已完整退出 `0`：后端 `130 passed`、Electron 安全/发布契约、Renderer 契约、Scratch 构建与 `19 passed`、Vite 8 构建和 bundle guard 全部通过。Gitea 课程扫描已拆至 `gitea_course_scanner.py`，Jupyter 配置/命令/环境选择已拆至 `jupyter_environment.py`，资源页主状态已集中到 `resources-state.js`。跨平台正式安装包、签名、公证和教师实机验收仍未完成。
-> **2026-07-19 执行记录**：将 Scratch 构建工具锁入 `scratch-editor` devDependencies，移除构建期间对上游完整 devDependencies 的临时安装，并修复 hoisted npm 布局下静态资源复制路径。`npm run quality-gate` 已重新通过：后端 `130 passed`、Scratch `21 passed`、发布/Renderer/Electron 契约、Vite 构建和 bundle guard 全部通过；Scratch lock audit 当前为 `22` 项（`5 critical / 6 high / 11 moderate / 0 low`），root lock 仍为 `0` 项，固定 Python 直接依赖为 0 漏洞，完整 requirements resolver 仍为 `resolution-too-deep`。跨平台正式安装包、签名、公证和教师实机验收仍未完成。
+> **2026-07-19 执行记录**：将 Scratch 构建工具锁入 `scratch-editor` devDependencies，移除构建期间对上游完整 devDependencies 的临时安装，并修复 hoisted npm 布局下静态资源复制路径。`npm run quality-gate` 已重新通过：后端 `136 passed`、Scratch `22 passed`、发布/Renderer/Electron 契约、Vite 构建和 bundle guard 全部通过；Scratch lock audit 当前为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`），root lock 仍为 `0` 项，Python 两套 requirements 的完整 resolver + `pip-audit` 均为 0 漏洞。发布产物校验器已补上真实 app.asar/Info.plist 版本读取、app.asar 残留扫描和独立 Git tag/commit 校验，官方 workflow 会归档依赖、签名与公证证据。跨平台正式安装包、签名、公证、`xedu-python` 实际环境兼容性和教师实机验收仍未完成。
 
 > **2026-07-18 发布收口执行**：新增 `electron-builder.release.cjs` 和 `electron:build:release`，正式构建按目标平台强制签名，缺少凭据时 fail-closed；Vite 升级到 `8.1.5`，root npm audit 当前为 `0 high / 0 critical`；Flask、Requests、python-dotenv、Pillow、Markdown、Pygments 的三套 Python requirements 已升级到通过固定版本子集审计的版本。完整 quality gate 再次通过；Scratch 上游构建依赖仍有独立漏洞清单，未固定 Python SDK/模型依赖的完整 resolver 审计仍待完成。
 
@@ -215,5 +215,10 @@ Step 5: 验证
 | `README.md` / `docs/teacher/*` | ✅ 已改为 Scratch 唯一主线和旧课程不支持提示 |
 
 ---
+
+## 2026-07-19 执行补充
+
+- 教师设置页现在在所选解释器内执行 Python/Jupyter/XEduHub 探针；对精确 `xedu-python==2.0.0` 仅提供显式、可审计的两条旧元数据上限修复，并更新 `RECORD`，修复后必须重新探针通过。
+- Scratch 依赖审计新增 `check_scratch_dependency_gate.mjs` 和限期例外清单，当前 21 项结果可生成 reachability report；安全负责人批准、跨平台安装包与教师实机验收仍未完成。
 
 *修订版依据：Scratch 扩展源码、后端路由实现、package.json 当前状态的逐项核实。*

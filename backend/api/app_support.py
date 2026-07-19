@@ -12,7 +12,7 @@ from typing import Any, Dict
 from flask import request
 
 from models.config import AppConfig, SystemInfo
-from utils.python_runtime import inspect_python_executable
+from utils.python_runtime import inspect_python_environment, inspect_python_executable
 from services.ai_service import AIService
 from services.config_service import ConfigService
 from services.quickform_service import QuickFormService, QuickFormServiceError
@@ -120,7 +120,7 @@ def collect_system_info(python_executable: str | None = None) -> SystemInfo:
     python_check = inspect_python_executable(executable)
     info = SystemInfo(
         python_version=python_check.get("version") or platform.python_version(),
-        python_executable=executable,
+        python_executable=python_check.get("executable") or executable,
         platform=platform.platform(),
         xedu_expected_version=EXPECTED_XEDU_VERSION,
     )
@@ -130,41 +130,24 @@ def collect_system_info(python_executable: str | None = None) -> SystemInfo:
         info.xedu_runtime_message = python_check["message"]
         return info
 
-    try:
-        import jupyterlab  # type: ignore
-
-        info.jupyterlab_installed = True
-        info.jupyterlab_version = getattr(jupyterlab, "__version__", None)
-    except Exception:
-        info.jupyterlab_installed = False
-
-    try:
-        import notebook  # type: ignore
-
-        info.jupyter_notebook_version = getattr(notebook, "__version__", None)
-    except Exception:
-        info.jupyter_notebook_version = None
-
-    try:
-        site_packages = _resolve_site_packages(info.python_executable)
-        if site_packages is None:
-            info.xedu_runtime_message = "未找到 site-packages，无法检查 XEdu 运行时。"
-        else:
-            version = _read_xedu_version_from_site_packages(site_packages)
-            info.xedu_version = version
-            info.xedu_version_ok = version == EXPECTED_XEDU_VERSION
-            if version:
-                info.xedu_runtime_message = (
-                    f"已检测到 xedu-python {version}。"
-                    if info.xedu_version_ok
-                    else f"检测到 xedu-python {version}，预期应为 {EXPECTED_XEDU_VERSION}。"
-                )
-            else:
-                info.xedu_runtime_message = "当前 Python 环境未检测到 xedu-python / XEduHub 运行时。"
-                info.xedu_version_ok = False
-    except Exception as exc:
-        info.xedu_runtime_message = f"检查 XEdu 运行时失败: {exc}"
+    environment = inspect_python_environment(info.python_executable)
+    if environment.get("success"):
+        info.python_version = environment.get("python_version") or info.python_version
+        info.python_executable = environment.get("python_executable") or info.python_executable
+        info.jupyterlab_version = environment.get("jupyterlab_version")
+        info.jupyterlab_installed = bool(info.jupyterlab_version)
+        info.jupyter_notebook_version = environment.get("jupyter_notebook_version")
+        info.xedu_version = environment.get("xedu_version")
+        info.xedu_version_ok = bool(environment.get("xedu_version_ok"))
+        info.xedu_runtime_ok = bool(environment.get("xedu_runtime_ok"))
+        info.xedu_repair_available = bool(environment.get("xedu_repair_available"))
+        info.xedu_runtime_message = environment.get("xedu_runtime_message") or ""
+        if info.xedu_version and not info.xedu_version_ok:
+            info.xedu_runtime_message = f"检测到 xedu-python {info.xedu_version}，预期应为 {EXPECTED_XEDU_VERSION}。"
+    else:
         info.xedu_version_ok = False
+        info.xedu_runtime_ok = False
+        info.xedu_runtime_message = environment.get("message") or "无法检查所选 Python 环境。"
 
     return info
 

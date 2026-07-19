@@ -36,6 +36,7 @@ test('generic API IPC uses an explicit route allowlist and pip uses a dedicated 
   const source = await readFile(mainProcessPath, 'utf8');
 
   assert.match(source, /API_REQUEST_ALLOWLIST/);
+  assert.match(source, /repair_xedu/);
   assert.match(source, /!isAllowedApiRequest\(method, relativePath\)/);
   assert.match(source, /ipcMain\.handle\('api:pip-stream'/);
   assert.match(source, /ipcMain\.handle\('api:scratch-request'/);

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { createPackage } from '@electron/asar';
 import {
   validateReleaseTarget,
   verifyReleaseArtifact,
@@ -16,6 +17,7 @@ async function createArtifactFixture() {
   await mkdir(path.join(resources, 'backend'), { recursive: true });
   await mkdir(path.join(resources, 'checkpoint'), { recursive: true });
   await writeFile(path.join(resources, 'scratch-editor', 'build', 'index.html'), '<!doctype html>');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ version: '2.0.0' }));
   return root;
 }
 
@@ -69,6 +71,18 @@ test('release artifact verifier rejects a version mismatch and duplicate backend
   }
 });
 
+test('release artifact verifier does not use expectedVersion as a package version fallback', async () => {
+  const root = await createArtifactFixture();
+  try {
+    await rm(path.join(root, 'package.json'));
+    const result = await verifyReleaseArtifact(root, { expectedVersion: '2.0.0' });
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('\n'), /application version not found/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('release artifact verifier rejects removed Blockly-only paths', async () => {
   const root = await createArtifactFixture();
   try {
@@ -77,6 +91,26 @@ test('release artifact verifier rejects removed Blockly-only paths', async () =>
     const result = await verifyReleaseArtifact(root, { expectedVersion: '2.0.0' });
     assert.equal(result.ok, false);
     assert.match(result.errors.join('\n'), /removed Blockly artifact/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('release artifact verifier scans app.asar for removed and duplicated runtime paths', async () => {
+  const root = await createArtifactFixture();
+  const asarSource = path.join(root, 'asar-source');
+  const asarPath = path.join(root, 'resources', 'app.asar');
+  try {
+    await mkdir(path.join(asarSource, 'renderer', 'js'), { recursive: true });
+    await mkdir(path.join(asarSource, 'backend'), { recursive: true });
+    await writeFile(path.join(asarSource, 'renderer', 'js', 'blockly-workspace.js'), 'legacy');
+    await writeFile(path.join(asarSource, 'package.json'), JSON.stringify({ version: '2.0.0' }));
+    await createPackage(asarSource, asarPath);
+    const result = await verifyReleaseArtifact(root, { expectedVersion: '2.0.0' });
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('\n'), /forbidden app\.asar content/);
+    assert.match(result.errors.join('\n'), /backend/);
+    assert.match(result.errors.join('\n'), /blockly-workspace/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -138,6 +172,26 @@ test('release artifact verifier can write a hash manifest for a valid package', 
     assert.equal(manifest.artifactRoot, undefined);
     assert.equal(manifest.files.some((file) => file.path.startsWith('/')), false);
     assert.ok(manifest.files.some((file) => file.path.endsWith('scratch-editor/build/index.html')));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('release manifest identity cannot be satisfied by echoing caller-supplied values', async () => {
+  const root = await createArtifactFixture();
+  const result = await verifyReleaseArtifact(root, { expectedVersion: '2.0.0' });
+  try {
+    await assert.rejects(
+      () => writeReleaseManifest(root, result, {
+        output: path.join(root, 'release', 'manifest.json'),
+        platform: 'darwin',
+        arch: 'arm64',
+        tag: 'v0.0.0-not-real',
+        commit: 'deadbeef',
+        requireIdentity: true,
+      }),
+      /source commit mismatch|source tag mismatch|exact tag/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

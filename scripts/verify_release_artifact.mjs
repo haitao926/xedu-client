@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { extractFile, listPackage } from '@electron/asar';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -17,6 +18,13 @@ const FORBIDDEN_ARTIFACT_PATHS = [
   /(^|\/)blockly_runtime\.py$/i,
   /(^|\/)blockly_xeduhub_support\.py$/i,
   /(^|\/)blockly-colors\.json$/i,
+];
+const FORBIDDEN_ASAR_PATHS = [
+  /^\/?backend(?:\/|$)/i,
+  /^\/?config(?:\/|$)/i,
+  /^\/?scripts(?:\/|$)/i,
+  /^\/?python_env(?:_win)?(?:\/|$)/i,
+  ...FORBIDDEN_ARTIFACT_PATHS.map((pattern) => new RegExp(pattern.source.replace(/^\(\^\|\/\)/, '^\\/?'))),
 ];
 const execFileAsync = promisify(execFile);
 
@@ -40,6 +48,14 @@ async function isDirectory(target) {
 async function readJson(target) {
   try {
     return JSON.parse(await readFile(target, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function readAsarJson(asarPath, relativePath) {
+  try {
+    return JSON.parse(extractFile(asarPath, relativePath).toString('utf8'));
   } catch {
     return null;
   }
@@ -84,7 +100,39 @@ async function findVersion(root, resourcesPath) {
       return packageJson.version.trim();
     }
   }
+  const asarPath = path.join(resourcesPath, 'app.asar');
+  const asarPackageJson = await readAsarJson(asarPath, 'package.json');
+  if (typeof asarPackageJson?.version === 'string' && asarPackageJson.version.trim()) {
+    return asarPackageJson.version.trim();
+  }
+
+  const plistPath = path.join(root, 'Contents', 'Info.plist');
+  if (await exists(plistPath, constants.R_OK)) {
+    try {
+      const { stdout } = await execFileAsync('plutil', ['-convert', 'json', '-o', '-', plistPath]);
+      const plist = JSON.parse(stdout);
+      const version = plist.CFBundleShortVersionString ?? plist.CFBundleVersion;
+      if (typeof version === 'string' && version.trim()) return version.trim();
+    } catch {
+      // A non-macOS verifier cannot parse Apple's binary plist without plutil.
+    }
+  }
   return null;
+}
+
+async function findForbiddenAsarPaths(resourcesPath) {
+  const asarPath = path.join(resourcesPath, 'app.asar');
+  if (!await exists(asarPath, constants.R_OK)) return [];
+  let entries;
+  try {
+    entries = listPackage(asarPath);
+  } catch {
+    return [`${path.relative(resourcesPath, asarPath).split(path.sep).join('/')}: unreadable ASAR`];
+  }
+  return entries
+    .map((entry) => entry.replace(/^\//, ''))
+    .filter((entry) => FORBIDDEN_ASAR_PATHS.some((pattern) => pattern.test(entry)))
+    .map((entry) => `app.asar/${entry}`);
 }
 
 /**
@@ -107,9 +155,9 @@ export async function verifyReleaseArtifact(root, { expectedVersion } = {}) {
     };
   }
 
-  const version = await findVersion(artifactRoot, resourcesPath) ?? expectedVersion ?? null;
+  const version = await findVersion(artifactRoot, resourcesPath);
   if (!version) {
-    errors.push('application version not found; pass expectedVersion or include package.json');
+    errors.push('application version not found; include package.json, app.asar/package.json, or macOS Info.plist');
   }
   if (expectedVersion && version && version !== expectedVersion) {
     errors.push(`version mismatch: expected ${expectedVersion}, found ${version}`);
@@ -138,6 +186,9 @@ export async function verifyReleaseArtifact(root, { expectedVersion } = {}) {
 
   for (const relativePath of await findForbiddenArtifactPaths(resourcesPath)) {
     errors.push(`removed Blockly artifact must not be packaged: ${relativePath}`);
+  }
+  for (const relativePath of await findForbiddenAsarPaths(resourcesPath)) {
+    errors.push(`forbidden app.asar content must not be packaged: ${relativePath}`);
   }
 
   return { ok: errors.length === 0, errors, version, resourcesPath };
@@ -172,7 +223,6 @@ async function resolveGitCommit() {
 }
 
 async function resolveGitTag() {
-  if (process.env.GIT_TAG) return process.env.GIT_TAG;
   try {
     const { stdout } = await execFileAsync('git', ['describe', '--tags', '--exact-match', 'HEAD']);
     return stdout.trim() || null;
@@ -225,16 +275,18 @@ export async function writeReleaseManifest(
   if (!output) throw new Error('manifest output path is required');
   const artifactRoot = path.resolve(root);
   const resourcesPath = path.relative(artifactRoot, result.resourcesPath).split(path.sep).join('/') || '.';
-  const gitCommit = commit ?? await resolveGitCommit();
-  const gitTag = tag ?? await resolveGitTag();
+  const actualCommit = await resolveGitCommit();
+  const actualTag = await resolveGitTag();
+  const gitCommit = commit ?? actualCommit;
+  const gitTag = tag ?? actualTag;
   if (requireIdentity) {
-    if (!gitCommit) throw new Error('release manifest requires a resolvable source commit');
-    if (!gitTag) throw new Error('release manifest requires an exact tag on the source commit');
-    if (commit && gitCommit !== commit) {
-      throw new Error(`source commit mismatch: expected ${commit}, found ${gitCommit}`);
+    if (!actualCommit) throw new Error('release manifest requires a resolvable source commit');
+    if (!actualTag) throw new Error('release manifest requires an exact tag on the source commit');
+    if (commit && actualCommit !== commit) {
+      throw new Error(`source commit mismatch: expected ${commit}, found ${actualCommit}`);
     }
-    if (tag && gitTag !== tag) {
-      throw new Error(`source tag mismatch: expected ${tag}, found ${gitTag}`);
+    if (tag && actualTag !== tag) {
+      throw new Error(`source tag mismatch: expected ${tag}, found ${actualTag}`);
     }
   }
   const manifest = {

@@ -6,7 +6,7 @@ import { registerNamespace } from './app-context.js';
 import { ProjectWizard } from './project-wizard.js';
 import { createWorkspaceController } from './main/workspace-context.js';
 import { createDashboardController } from './main/dashboard.js';
-import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, selectPythonEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
+import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, selectPythonEnvironment, repairXeduEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
 import { getExperienceMode, getPageCopy } from './experience-config.js';
 import { installUnhandledRejectionHandler } from './main/error-boundary.js';
 import { isTeacherModeUnlocked, readTeacherModeState } from './main/teacher-mode-state.js';
@@ -339,6 +339,7 @@ registerNamespace('system', {
     saveSystemConfig,
     resetSystemConfig,
     selectPythonEnvironment,
+    repairXeduEnvironment,
     installPackage,
     uninstallPackage,
     updatePackage,

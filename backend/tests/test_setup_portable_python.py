@@ -44,6 +44,42 @@ class SetupPortablePythonTestCase(unittest.TestCase):
 
             setup_portable_python.validate_windows_xedu_runtime(env_dir)
 
+    def test_patch_xedu_metadata_removes_only_stale_modern_profile_bounds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_dir = Path(temp_dir)
+            site_packages = env_dir / "Lib" / "site-packages"
+            dist_info = site_packages / "xedu_python-2.0.0.dist-info"
+            dist_info.mkdir(parents=True, exist_ok=True)
+            (site_packages / "XEdu").mkdir(parents=True, exist_ok=True)
+            metadata = "\n".join([
+                "Name: xedu-python",
+                "Version: 2.0.0",
+                "Requires-Dist: onnxruntime <1.16.0",
+                "Requires-Dist: pillow <=9.5.0",
+                "Requires-Dist: requests",
+                "",
+            ])
+            (dist_info / "METADATA").write_text(metadata, encoding="utf-8")
+            (dist_info / "RECORD").write_text(
+                "xedu_python-2.0.0.dist-info/METADATA,,\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(setup_portable_python.patch_xedu_python_metadata(env_dir, "windows-x64"))
+            patched = (dist_info / "METADATA").read_text(encoding="utf-8")
+            self.assertNotIn("\nRequires-Dist: onnxruntime <1.16.0\n", patched)
+            self.assertNotIn("\nRequires-Dist: pillow <=9.5.0\n", patched)
+            self.assertIn("Requires-Dist: requests", patched)
+            self.assertIn(setup_portable_python.XEDU_METADATA_MARKER, patched)
+            record = (dist_info / "RECORD").read_text(encoding="utf-8")
+            self.assertIn("sha256=", record)
+            self.assertIn(str(len(patched.encode("utf-8"))), record)
+
+    def test_patch_xedu_metadata_rejects_missing_runtime(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(RuntimeError):
+                setup_portable_python.patch_xedu_python_metadata(Path(temp_dir), "windows-x64")
+
     def test_download_windows_wheels_refreshes_wheelhouse_before_fetching(self):
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:
             req_path = Path(handle.name)

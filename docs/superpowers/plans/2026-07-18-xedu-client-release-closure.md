@@ -28,10 +28,11 @@
 
 - Blockly 专属源码、入口、依赖和构建链已移除；旧 Blockly 课程显示不支持提示。
 - 共享 XEduHub 路由和运行时已迁移为中性命名，并由 Scratch 调用。
-- `npm run quality-gate` 已退出 `0`：Backend `130 passed`、Scratch `21 passed`、Electron/Renderer/发布契约、Vite build 和 bundle guard 全部通过。
+- `npm run quality-gate` 已退出 `0`：Backend `135 passed`、Scratch `22 passed`、Electron/Renderer/发布契约、Vite build 和 bundle guard 全部通过。
 - Scratch 构建入口、轻量版不内置 Python、backend 不重复进入 asar、产物内容校验器和 release manifest 已有代码级保护。
 - `.github/workflows/release.yml` 已加入：明确版本 tag、Ubuntu 统一质量门禁、统一 source commit、Windows/macOS 签名构建、模型资产预检、Authenticode/codesign/Gatekeeper 校验和产物 manifest。
 - `verify_release_artifact.mjs` 的 manifest 已升级为相对路径、精确 tag/commit、内容哈希和交付文件哈希；校验器拒绝旧 Blockly 专属产物路径，旧产物不会因为目录存在而被视为正式包。
+- T07 发布校验已补强：版本必须来自外置 package.json、app.asar/package.json 或 macOS Info.plist；app.asar 内部路径会参与残留检查；`requireIdentity` 会独立读取当前 Git tag/commit；官方 workflow 会清理旧输出、检查产物命名并归档依赖/签名证据。
 - 课堂课程包缓存和单机 packaged backend 30 路压测已完成：`30/30`、失败 `0`、P95 `312.27 ms`、CPU 峰值 `247.70%`、RSS 峰值 `67.45 MiB`。
 - `resourcesState`、Gitea 客户端/课程扫描和 Jupyter 环境选择已完成第一轮拆分。
 
@@ -41,15 +42,15 @@
 - 没有完成真实 `.sb3` 的 packaged GUI 打开、运行、保存、退出和重开证据。
 - Windows 正式安装包尚未签名；macOS 尚未完成 Developer ID 签名、公证和 staple。
 - 没有完成 30 台物理终端课堂矩阵、Windows 进程树/故障注入和独立教师试用。
-- Scratch lock 当前有 `22` 项审计发现（`5 critical / 6 high / 11 moderate / 0 low`）；完整 Python requirements resolver 实际失败为 `resolution-too-deep`，依赖门禁未关闭。
+- Scratch lock 当前有 `21` 项审计发现（`5 critical / 6 high / 10 moderate / 0 low`）；两套 Python requirements 已固定并通过完整审计，但 `xedu-python` 实际环境兼容性仍需实机验证，Scratch 依赖门禁仍未关闭。
 - 干净 checkout 不包含被 Git 忽略的约 `2.4 GB` checkpoint bundle；release workflow 已接入 `XEDU_CHECKPOINT_BUNDLE_URL` 与 `XEDU_CHECKPOINT_BUNDLE_SHA256` 的下载、路径安全和哈希校验，但 protected release environment 尚未配置这两个 secret。
 
 ### 本轮执行状态（2026-07-19）
 
 - N00 代码侧完成：`electron-builder.release.cjs`、`electron:build:release`、目标平台凭据 fail-closed 契约、跨平台质量门禁启动器和官方 release workflow 已实现；release commit/tag 尚未创建。
-- N07 当前结论：root npm lock 为 `0` 项漏洞，固定 Python 直接依赖子集（23 个）为 `0` 项漏洞；Scratch lock 为 `22` 项，完整 Python resolver 为 `resolution-too-deep`，因此仍为 No-Go。
-- N01 自动化部分完成：Scratch 构建、入口检查和 `21 passed` 已通过；真实 packaged `.sb3` GUI 仍未验收。
-- N04 代码侧完成：产物 verifier manifest 支持 source tag、相对路径、unpacked 文件哈希和 installer/DMG/zip 哈希；真实签名产物矩阵仍未关闭。
+- N07 当前结论：root npm lock 为 `0` 项漏洞，固定 Python 直接依赖子集（24 个）和完整 `requirements.txt`/`requirements_full.txt` resolver + `pip-audit` 均为 `0`；Scratch lock 为 `21` 项，`xedu-python` 兼容性仍未关闭，因此仍为 No-Go。
+- N01 自动化部分完成：Scratch 构建、入口检查和 `22 passed` 已通过；真实 packaged `.sb3` GUI 仍未验收。
+- N04 代码侧完成：产物 verifier manifest 支持 source tag、相对路径、真实版本读取、app.asar 残留检查、unpacked 文件哈希和 installer/DMG/zip 哈希；真实签名产物矩阵仍未关闭。
 - N02/N03/N05/N06/N08/N09 未关闭：分别需要签名凭据、跨平台实机、真实课堂网络、Windows 故障注入和非开发教师。
 - 本轮没有创建 commit/tag，也没有把现有旧 `dist-*` 产物标记为正式交付包。
 
@@ -190,7 +191,7 @@ npm run test:scratch
 node --test electron/test/scratch-release-contract.test.mjs
 ```
 
-Expected: Scratch `21 passed`，构建入口与发布契约全部通过。
+Expected: Scratch `22 passed`，构建入口与发布契约全部通过。
 
 - [ ] **Step 2: 在 packaged app 中验证打开和运行。**
 
@@ -512,7 +513,7 @@ Expected: 操作结束后只保留预期进程；超时任务及其子进程全�
 - Consumes: 锁文件和三套用途明确的 Python requirements。
 - Produces: 运行时/构建时分级审计、升级结果和有到期日的例外。
 
-- [~] **Step 1: 生成机器可读审计结果。** Root/Scratch/fixed Python subset 已生成；完整 Python requirements resolver 以 `resolution-too-deep` 失败。
+- [x] **Step 1: 生成机器可读审计结果。** Root/Scratch/fixed Python subset 和两套完整 Python requirements 的 resolver + `pip-audit` 结果已生成；正式候选仍需把原始 JSON 归档到 release evidence。
 
 Run:
 
@@ -529,7 +530,9 @@ Expected: 命令完成并保存原始 JSON/表格摘要；`pip-audit` 只作为�
 
 每项必须标注：直接/传递、运行时/构建时、教师终端是否加载、可利用前提、修复版本、升级回归范围、临时缓解和例外到期日。
 
-- [ ] **Step 3: 对可安全升级项执行 TDD 升级。**
+- [x] **Step 3: 对可安全升级项执行 TDD 升级。**
+
+已移除未被代码使用且会造成冲突回溯的 `kimi-agent-sdk`，升级 Jupyter/ML/ONNX/Protobuf 版本并固定 OCR/ONNX Runtime；完整 resolver 和 `pip-audit` 均已通过。`xedu-python` 的 `--no-deps` 安装兼容性仍需真实环境验证。
 
 先用现有契约锁定 Electron、Vite、Scratch build 和 Backend 行为，再更新一个依赖组，运行 `npm run quality-gate`。不得用 `npm audit fix --force` 做无审查大版本跃迁。
 
@@ -538,7 +541,7 @@ Expected: 命令完成并保存原始 JSON/表格摘要；`pip-audit` 只作为�
 - Electron 不存在 direct high/critical；Python 直接运行依赖均有扫描结果。
 - 未关闭项都有 owner、影响判断、缓解措施和不晚于 `2026-08-31` 的复核日期。
 - 依赖升级后 `npm run quality-gate` 退出 `0`，并重跑 N01/N04 中受影响的 packaged 验收。
-- 若审计导致任何源码或锁文件修改，`v2.0.0-rc.1` 立即作废；创建 `v2.0.0-rc.2`，并让 N01-N06 全部基于新 tag 重跑。
+- 若审计导致任何源码或锁文件修改，候选 tag 必须重新创建，并让 N01-N06 全部基于新 tag 重跑。
 
 **Commit guidance:** 每个依赖组独立提交；`Rejected:` 记录被否决的强制大版本升级及原因。
 

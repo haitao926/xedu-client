@@ -42,15 +42,20 @@ TARGETS = {
 }
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT / "backend") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "backend"))
+
+from utils.xedu_compat import XEDU_METADATA_MARKER, XEDU_PYTHON_VERSION, patch_xedu_metadata  # noqa: E402
+
 REQ_FULL = PROJECT_ROOT / "backend" / "requirements_full.txt"
 REQ_MINIMAL = PROJECT_ROOT / "backend" / "requirements.txt"
 WINDOWS_SOURCE_WHEEL_FALLBACKS = {"pinpong"}
 NO_DEPS_REQUIREMENTS = {"xedu-python"}
-XEDU_PYTHON_VERSION = "2.0.0"
 XEDU_PYTHON_SPEC = f"xedu-python=={XEDU_PYTHON_VERSION}"
-# Keep xedu-python out of normal requirements resolution. The runtime must use
-# the exact XEduHub package, but its dependency metadata is too broad for the
-# portable Python 3.12 stack, so dependencies are supplied explicitly above.
+# Keep xedu-python out of normal requirements resolution. Version 2.0.0
+# advertises Pillow/ONNX Runtime upper bounds that are incompatible with the
+# audited Python 3.12 profile, so the installer applies a narrow, recorded
+# metadata compatibility patch after installing the exact wheel.
 NO_DEPS_REQUIREMENT_SPECS = (XEDU_PYTHON_SPEC,)
 
 
@@ -193,6 +198,8 @@ def install_native_requirements(env_dir: Path, target: str, requirements_file: P
         if primary_specs or fallback_specs:
             run([str(python_exe), "-m", "pip", "install", "-r", str(temp_requirements)])
         install_native_packages(python_exe, no_deps_specs, no_deps=True)
+        patch_xedu_python_metadata(env_dir, target)
+        validate_native_xedu_runtime(env_dir, target)
     finally:
         temp_requirements.unlink(missing_ok=True)
 
@@ -321,7 +328,45 @@ def install_windows_requirements_offline(env_dir: Path, requirements_file: Path,
         print(f"Extracting {wheel.name}")
         extract_wheel_to_windows_env(wheel, env_dir)
     patch_windows_pth(env_dir)
+    patch_xedu_python_metadata(env_dir, "windows-x64")
     validate_windows_xedu_runtime(env_dir)
+
+
+def _xedu_site_packages(env_dir: Path, target: str) -> Path:
+    if target == "windows-x64":
+        return env_dir / "Lib" / "site-packages"
+    python_exe = resolve_python_executable(env_dir, target)
+    return (python_exe.parent.parent / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages").resolve()
+
+
+def patch_xedu_python_metadata(env_dir: Path, target: str) -> bool:
+    """Remove only stale upstream bounds and record the compatibility profile.
+
+    xedu-python 2.0.0 imports and runs with the modern pinned Pillow and ONNX
+    Runtime versions, but its wheel metadata prevents pip from representing
+    that supported combination. The patch is intentionally narrow and leaves
+    every other dependency declaration untouched.
+    """
+    site_packages = _xedu_site_packages(env_dir, target)
+    result = patch_xedu_metadata(site_packages)
+    if not result["success"]:
+        raise RuntimeError(result["message"])
+    if result["changed"]:
+        print(f"Patched xedu-python metadata for modern profile: {result.get('metadata_path', site_packages)}")
+    return bool(result["changed"])
+
+
+def validate_native_xedu_runtime(env_dir: Path, target: str):
+    python_exe = resolve_python_executable(env_dir, target)
+    probe = (
+        "from XEdu.hub import Workflow as wf\n"
+        "tasks = wf.support_task()\n"
+        "assert isinstance(tasks, (list, tuple)) and tasks\n"
+        "print('XEduHub runtime probe passed:', len(tasks), 'tasks')\n"
+    )
+    completed = subprocess.run([str(python_exe), "-c", probe], check=False, text=True)
+    if completed.returncode != 0:
+        raise RuntimeError("native xedu-python runtime probe failed")
 
 
 def validate_windows_xedu_runtime(env_dir: Path, expected_version: str = XEDU_PYTHON_VERSION):

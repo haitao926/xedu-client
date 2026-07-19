@@ -44,6 +44,7 @@ class SecurityApiTestCase(unittest.TestCase):
             ("post", "/api/ai/ask", {"json": {}}),
             ("get", "/api/debug/env", {}),
             ("get", "/api/detect_python?python_executable=/tmp/attacker-python", {}),
+            ("post", "/api/repair_xedu", {"json": {}}),
             ("post", "/api/system/import-image-file", {}),
         )
 

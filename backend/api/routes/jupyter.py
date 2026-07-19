@@ -5,7 +5,7 @@ Jupyter 管理路由模块
 
 from flask import jsonify, request
 from api.security import require_capability
-from utils.python_runtime import inspect_python_executable
+from utils.python_runtime import inspect_python_executable, repair_xedu_python_environment
 
 
 def register_jupyter_routes(app, services: dict):
@@ -66,3 +66,16 @@ def register_jupyter_routes(app, services: dict):
                 "info": info.to_dict(),
             }
         )
+
+    @app.route("/api/repair_xedu", methods=["POST"])
+    @require_capability("python:run")
+    def repair_xedu():
+        payload = request.get_json(silent=True) or {}
+        requested_python = str(payload.get("python_executable") or "").strip()
+        if not requested_python:
+            return jsonify({"success": False, "message": "请先选择 Python 解释器。"}), 400
+        validation = inspect_python_executable(requested_python)
+        if not validation["success"]:
+            return jsonify({"success": False, "message": validation["message"]}), 400
+        result = repair_xedu_python_environment(validation["executable"])
+        return jsonify(result), (200 if result.get("success") else 400)

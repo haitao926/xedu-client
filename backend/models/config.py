@@ -408,6 +408,8 @@ class SystemInfo:
     xedu_version: Optional[str] = None
     xedu_expected_version: Optional[str] = None
     xedu_version_ok: Optional[bool] = None
+    xedu_runtime_ok: bool = False
+    xedu_repair_available: bool = False
     xedu_runtime_message: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:

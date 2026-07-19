@@ -9,24 +9,25 @@ Recorded: 2026-07-19
 | Field | Value |
 |---|---|
 | Product version | `2.0.0` |
-| Source commit | `f9e43ca9e7eb6506a4ecacdcbeef67d2c1deb7a9` |
+| Source commit | `da2f50de90ee87fd004edf9140356653948b104b` plus current uncommitted working-tree changes |
 | Exact release tag | None; working tree is dirty |
 | Platform | macOS arm64 |
-| Candidate path | `dist-final/mac-arm64/XEdu Client.app` |
+| Candidate path | `dist-candidate-20260719/mac-arm64/XEdu Client.app` |
 | Candidate type | Unpacked, unsigned local candidate |
 | Approximate size | `2.9 GB` |
-| Local manifest | `LOCAL_UNSIGNED_MACOS_MANIFEST.json` (`c9237afc493f9029793c8cbb1a89cef23b77afa7cbc2267503c514c8855f64c1`) |
-| Manifest scope | `2,533` files, `2,970,897,306` bytes |
+| Local manifest | Not generated; identity-bound manifests require an exact release tag |
+| Manifest scope | Verifier passed contents; no release identity asserted |
 
 ## Completed Local Checks
 
-- `npm run quality-gate`: passed; backend `130 passed`, Scratch `21 passed`.
-- `node scripts/verify_release_artifact.mjs "dist-final/mac-arm64/XEdu Client.app" --version 2.0.0 --platform darwin --arch arm64`: passed.
+- `npm run quality-gate`: passed; backend `135 passed`, Scratch `22 passed`.
+- `node scripts/verify_release_artifact.mjs "dist-candidate-20260719/mac-arm64/XEdu Client.app" --version 2.0.0 --platform darwin --arch arm64`: passed.
 - Package contains `Contents/Resources/backend`, `Contents/Resources/checkpoint`, and `Contents/Resources/scratch-editor/build/index.html`.
 - Package does not contain `python_env`, `python_env_win`, or the removed Blockly-only artifact paths.
-- The packaged executable remained alive for a 10-second startup probe and was then terminated by the test harness; no stdout/stderr startup error was emitted.
+- The local unpacked candidate was built after the current quality gate; electron-builder reported signing skipped because no valid Developer ID identity is available.
 - Packaged executable SHA-256: `cf74833a9b0c242e26c177005d7d61819e5bf5ed199acc794fed2eb0cc4f3149`.
 - Scratch entry SHA-256: `03f73b2ac1198da979ba108b42f8c0844aaee4ddd96dabc7910f90a5ecd148ea`.
+- Scratch audit command exit was `1`; the documented gate accepted 21 expiring exceptions and generated a reachability report for the `build/index.html` script entrypoint.
 
 ## Required Before Release
 
@@ -34,6 +35,7 @@ Recorded: 2026-07-19
 - Run the project and execute the XEdu AI/XEduHub path.
 - Edit, save, fully exit, reopen, and compare project state.
 - Repeat on the signed Windows and macOS release artifacts.
+- Perform the actual `.sb3` GUI open/run/save/reopen and XEdu AI inference steps; this local content check does not replace them.
 - Record package SHA-256, OS build, tester, screenshots/logs, and result for every step.
 
 This record must not be used as evidence of signing, notarization, Gatekeeper

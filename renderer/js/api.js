@@ -120,6 +120,7 @@ export const API_ENDPOINTS = Object.freeze({
     QUICKFORM_TASKS: '/api/quickform/tasks',
     QUICKFORM_CREATE_TASK: '/api/quickform/tasks/create',
     PYTHON_DETECT: '/api/detect_python',
+    PYTHON_REPAIR_XEDU: '/api/repair_xedu',
     AI_ASK: '/api/ai/ask',
     AI_TEST_CONFIG: '/api/ai/test_config',
     AI_SAVE_CONFIG: '/api/ai/save_config',

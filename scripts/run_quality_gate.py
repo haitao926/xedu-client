@@ -18,6 +18,7 @@ COMMANDS = (
     ("release contract tests", ["node", "--test", "electron/test/phase0-release-contract.test.mjs"]),
     ("checkpoint provisioner contract tests", ["node", "--test", "electron/test/checkpoint-provisioner-contract.test.mjs"]),
     ("Scratch release contract tests", ["node", "--test", "electron/test/scratch-release-contract.test.mjs"]),
+    ("Scratch dependency gate contract tests", ["node", "--test", "electron/test/scratch-dependency-gate.test.mjs"]),
     ("package layout and Python runtime contract tests", ["node", "--test", "electron/test/package-layout-contract.test.mjs", "electron/test/python-runtime.test.mjs"]),
     ("release artifact verifier tests", ["node", "--test", "electron/test/release-artifact-verifier.test.mjs"]),
     ("student shell tests", ["npm", "run", "test:student-shell"]),

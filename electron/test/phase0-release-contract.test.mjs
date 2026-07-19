@@ -105,7 +105,11 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /check_release_inputs\.mjs/);
   assert.match(workflow, /npm audit --audit-level=high --package-lock-only/);
   assert.match(workflow, /npm audit --prefix scratch-editor --audit-level=high --package-lock-only/);
+  assert.match(workflow, /release-evidence\/dependency-audit\/scratch-npm\.json/);
+  assert.match(workflow, /Enforce dependency audit gate/);
+  assert.match(workflow, /Upload dependency audit evidence/);
   assert.match(workflow, /pip_audit -r backend\/requirements\.txt/);
+  assert.match(workflow, /pip_audit -r backend\/requirements_full\.txt/);
   assert.match(workflow, /windows-release:/);
   assert.match(workflow, /runs-on: windows-2022/);
   assert.match(workflow, /WIN_CSC_LINK: \$\{\{ secrets\.WIN_CSC_LINK \}\}/);
@@ -119,9 +123,15 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /verify_release_artifact\.mjs/);
   assert.match(workflow, /--commit "\$\{\{ needs\.quality-gate\.outputs\.source_commit \}\}"/);
   assert.match(workflow, /signtool verify \/pa \/v/);
+  assert.match(workflow, /Get-AuthenticodeSignature/);
+  assert.match(workflow, /Include \*\.dll,\*\.exe/);
+  assert.match(workflow, /Clean release output/);
+  assert.match(workflow, /XEdu Client-2\.0\.0\.dmg/);
+  assert.match(workflow, /XEdu Client-2\.0\.0\.zip/);
   assert.match(workflow, /codesign --verify --deep --strict/);
   assert.match(workflow, /spctl --assess --type execute/);
   assert.match(workflow, /xcrun stapler validate/);
+  assert.match(workflow, /macos-signing-identity\.txt/);
 });
 
 test('quality gate and Python syntax checks use cross-platform Node launchers', async () => {
@@ -175,6 +185,26 @@ test('backend requirement files share pinned direct dependencies without Flask-C
     assert.doesNotMatch(content, /Flask-CORS/i);
     for (const pin of sharedPins) assert.match(content, new RegExp(`^${pin}$`, 'm'));
   }
+});
+
+test('teacher Python profiles stay resolver-safe and pin the model runtime', async () => {
+  const [minimal, full] = await Promise.all([
+    readRepoFile('backend/requirements.txt'),
+    readRepoFile('backend/requirements_full.txt'),
+  ]);
+
+  for (const content of [minimal, full]) {
+    assert.doesNotMatch(content, /^kimi-agent-sdk(?:[<>=!~].*)?$/m);
+    assert.match(content, /^rapidocr-onnxruntime==1\.4\.4$/m);
+  }
+
+  assert.match(full, /^protobuf==6\.33\.5$/m);
+  assert.match(full, /^onnx==1\.22\.0$/m);
+  assert.match(full, /^onnxruntime==1\.27\.0$/m);
+  assert.match(full, /^jupyterlab==4\.5\.9$/m);
+  assert.match(full, /^jupyter_server==2\.20\.0$/m);
+  assert.match(full, /^transformers==5\.5\.0$/m);
+  assert.doesNotMatch(full, /^torchaudio==/m);
 });
 
 test('packaged Electron app does not expose DevTools in the application menu', async () => {
