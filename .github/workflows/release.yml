@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing version tag to build (for example v2.0.0-rc.1)'
+        description: 'Existing version tag to build (for example v2.0.0-rc.2)'
         required: true
         type: string
 
@@ -50,7 +50,8 @@ jobs:
             exit 1
           }
           version="$(node -p "require('./package.json').version")"
-          test "$version" = "${tag#v}" -o "$tag" = "v${version}-rc.1" || {
+          version_pattern="${version//./\\.}"
+          [[ "$tag" =~ ^v${version_pattern}(-rc\.[0-9]+)?$ ]] || {
             echo "Tag $tag does not match package version $version" >&2
             exit 1
           }
@@ -172,7 +173,7 @@ jobs:
         run: |
           node scripts/check_scratch_dependency_gate.mjs \
             --audit release-evidence/dependency-audit/scratch-npm.json \
-            --exceptions docs/release/2.0.0-rc.1/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
+            --exceptions docs/release/2.0.0-rc.2/SCRATCH_DEPENDENCY_EXCEPTIONS.json \
             --build scratch-editor/build \
             --report release-evidence/dependency-audit/scratch-reachability.json
 

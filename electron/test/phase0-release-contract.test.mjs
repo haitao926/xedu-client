@@ -102,6 +102,9 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /quality-gate:/);
   assert.match(workflow, /source_commit:/);
   assert.match(workflow, /ref: \$\{\{ needs\.quality-gate\.outputs\.source_commit \}\}/);
+  assert.match(workflow, /version_pattern=/);
+  assert.match(workflow, /-rc\\\.\[0-9\]\+/);
+  assert.doesNotMatch(workflow, /v\$\{version\}-rc\.1/);
   assert.match(workflow, /check_release_inputs\.mjs/);
   assert.match(workflow, /Validate checkpoint bundle credentials/);
   assert.match(workflow, /XEDU_CHECKPOINT_BUNDLE_URL/);
@@ -109,6 +112,7 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /npm audit --audit-level=high --package-lock-only/);
   assert.match(workflow, /npm audit --prefix scratch-editor --audit-level=high --package-lock-only/);
   assert.match(workflow, /release-evidence\/dependency-audit\/scratch-npm\.json/);
+  assert.match(workflow, /docs\/release\/2\.0\.0-rc\.2\/SCRATCH_DEPENDENCY_EXCEPTIONS\.json/);
   assert.match(workflow, /Enforce dependency audit gate/);
   assert.match(workflow, /shopt -s nullglob/);
   assert.match(workflow, /Upload dependency audit evidence/);

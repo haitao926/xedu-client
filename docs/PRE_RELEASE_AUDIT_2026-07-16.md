@@ -4,11 +4,11 @@
 > 发布对象：参加培训的教师、回校后独立使用软件的教师
 > 教学场景：1 名教师组织 30 名学生进入课程并完成 Jupyter 或 Scratch 实验
 > 审计范围：当前工作区源码、`dist-final/` 现有产物、构建配置、安全边界和课堂运行链路
-> 状态说明：源码整改与本地质量门禁已完成复核；RC 实现已冻结为 `89cdbd95` 并创建 `v2.0.0-rc.1`，但现有 `dist-*` 仍是本地诊断产物。只有从该 tag 重新构建、签名并完成实机验收的内容才算正式关闭。
+> 状态说明：源码整改与本地质量门禁已完成复核；RC2 发布候选已由 `v2.0.0-rc.2` 标识，基线实现为 `89cdbd95`，但现有 `dist-*` 仍是本地诊断产物。只有从该 tag 重新构建、签名并完成实机验收的内容才算正式关闭。
 
 > **产品方向：Scratch 是唯一继续维护的图形化编程主线。本次发布前完全移除 Blockly 编辑器、入口、依赖和专属代码，不保留旧课程编辑兼容；旧 Blockly 课程统一显示“该实验类型已不再支持”，并保证应用不崩溃。Scratch 正在使用的 XEduHub 共享设施必须先迁移并验证，不得随 Blockly 专属代码一起删除。**
 
-> **2026-07-19 增量复核**：Scratch 构建依赖已从上游临时嵌套安装改为 `scratch-editor` lockfile 中的显式 devDependencies，clean runner 可通过 `npm ci --prefix scratch-editor` 重现构建；修复 hoisted npm 布局下 Scratch blocks/MediaPipe 静态资源复制路径。`npm run quality-gate` 新鲜执行通过：后端 `136 passed`、Scratch `22 passed`、发布/安全/Renderer 契约、Vite 构建和 bundle guard 全部通过；root npm audit 为 `0` 项漏洞，Scratch lock 当前为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`），`--omit=dev` 仍有 `20` 项，现已由有期限例外与 reachability 门禁管理，仍需安全负责人批准或上游升级。`xedu-python==2.0.0` 可以导入 `XEdu.hub.Workflow` 并返回支持任务；教师设置页现会在所选解释器中探针，并提供精确元数据修复。发布校验器现已读取 app.asar/Info.plist 的真实版本、扫描 app.asar 内部残留并独立验证 release commit/tag；官方 workflow 也会归档完整依赖审计和签名证据。当前仍不把已有 unpacked 产物视为正式交付包；签名、公证、真实 `.sb3` GUI、教师实机和 30 台终端验收继续保持未关闭。
+> **2026-07-19 增量复核**：Scratch 构建依赖已从上游临时嵌套安装改为 `scratch-editor` lockfile 中的显式 devDependencies，clean runner 可通过 `npm ci --prefix scratch-editor` 重现构建；修复 hoisted npm 布局下 Scratch blocks/MediaPipe 静态资源复制路径。`npm run quality-gate` 新鲜执行通过：后端 `136 passed`、Scratch `22 passed`、发布/安全/Renderer 契约、Vite 构建和 bundle guard 全部通过；root npm audit 为 `0` 项漏洞，Scratch lock 当前为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`），`--omit=dev` 仍有 `20` 项，现已由有期限例外与 reachability 门禁管理，仍需安全负责人批准或上游升级。`xedu-python==2.0.0` 可以导入 `XEdu.hub.Workflow` 并返回支持任务；教师设置页现会在所选解释器中探针，并提供精确元数据修复。发布校验器现已读取 app.asar/Info.plist 真实版本、扫描 app.asar 内部残留并独立验证 release commit/tag；官方 workflow 已加入 checkpoint 凭据前置检查，并归档完整依赖审计和签名证据。当前仍不把已有 unpacked 产物视为正式交付包；签名、公证、真实 `.sb3` GUI、教师实机和 30 台终端验收继续保持未关闭。
 
 ## 目录
 
@@ -36,7 +36,7 @@
 | 受控培训试点 | **Conditional Go** | 课前统一预装、同一网段、课程提前下载、现场配备助教和离线备用包 |
 | 开发与教研内部验证 | **Go** | 使用当前源码运行质量门禁，不把旧安装包当作候选发布包 |
 
-RC 实现已进入提交和 tag，但本地 `dist-*` 安装包不能替代 tag 产物。团队必须从 `v2.0.0-rc.1` 重新构建、签名并验收最终安装包。
+RC2 已进入提交和 tag，但本地 `dist-*` 安装包不能替代 tag 产物。团队必须从 `v2.0.0-rc.2` 重新构建、签名并验收最终安装包。
 
 ### 1.2 当前最高风险
 
@@ -973,7 +973,7 @@ npm run test:student-shell
 
 ### C.2 尚未完成
 
-- 没有从 `v2.0.0-rc.1` 重新生成并验收完整 Windows 和 macOS 签名安装包。
+- 没有从 `v2.0.0-rc.2` 重新生成并验收完整 Windows 和 macOS 签名安装包。
 - 没有在干净 Windows 机器验证 SmartScreen、签名和安装。
 - 没有完成 macOS Developer ID 签名、公证与 Gatekeeper 验证。
 - 没有完成真实 `.sb3` 打开、运行、保存、重开和 XEdu AI 图片推理的 GUI 记录。
