@@ -960,7 +960,7 @@ npm run test:student-shell
 | `npm audit --audit-level=high --json` | 通过：root 项目 `0` 项漏洞；Vite 已升级到 `8.1.5`，lodash 通过 npm override 收口 |
 | `npm audit --prefix scratch-editor --package-lock-only --json` | 原始命令为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`）；`check_scratch_dependency_gate.mjs` 已按 owner、到期日、缓解措施和 `scratch-editor/build` 入口生成例外与 reachability report，安全负责人批准仍未完成 |
 | Python requirements 审计 | 固定直接依赖 24 个、`requirements.txt` 和 `requirements_full.txt` 审计结果为 `0` 个已知漏洞；教师设置页已加入所选解释器探针和精确 `xedu-python==2.0.0` 元数据修复，跨平台实际 `pip check` 与推理验收仍待完成 |
-| 正式 release workflow 与模型预检 | 已加入：只接受明确版本 tag、Ubuntu 质量门禁、双平台统一 commit、签名构建、产物校验；干净 checkout 缺少被 Git 忽略的 checkpoint bundle 时快速失败 |
+| 正式 release workflow 与模型预检 | RC3 官方运行 `29668051557` 已验证 tag/commit 校验通过；随后因缺少 `XEDU_CHECKPOINT_BUNDLE_URL` 和 `XEDU_CHECKPOINT_BUNDLE_SHA256` 在 checkpoint 前置检查处唯一失败，审计门禁和平台构建均按预期跳过 |
 | 正式 release 配置契约 | 通过：`electron-builder.release.cjs` 按目标平台 fail-closed，发布/产物契约测试通过；签名凭据和真实产物仍未执行 |
 | 发布产物校验增强 | 通过：版本读取、app.asar 残留扫描、Git tag/commit 独立校验、旧产物清理和跨平台签名证据归档规则已加入代码与 workflow |
 | 资源页状态迁移契约 | 通过：课堂状态不再出现错误嵌套，Scratch/工作区调用保持位置参数；Renderer 相关契约测试通过 |
@@ -979,7 +979,7 @@ npm run test:student-shell
 - 没有完成真实 `.sb3` 打开、运行、保存、重开和 XEdu AI 图片推理的 GUI 记录。
 - 没有执行真实 30 机课堂并发测试。
 - 没有完成跨 VLAN、Windows 超时、配置损坏和端口占用的实机故障注入。
-- 当前工作区未执行官方 release workflow，因此还没有候选版本的依赖审计原始 JSON、签名输出和 notarization evidence artifact；workflow 已改为保存 Scratch 例外/reachability、Python 和平台签名证据后统一判门。
+- RC3 官方 release workflow 已执行，但因受保护 checkpoint secrets 尚未配置，没有生成候选版本的依赖审计原始 JSON、签名输出或 notarization evidence artifact；前置失败不会再触发二次审计错误，待 secrets 配置后重新运行同一 tag。
 - `xedu-python==2.0.0` 的跨平台真实兼容性仍未完成：未修补元数据会使 `pip check` 报告 `onnxruntime<1.16.0`、`Pillow<=9.5.0` 冲突；代码侧已有显式修复和复探针，但不能用本地单测替代 Windows/macOS 实际环境验收。
 - 没有完成教师独立安装和回校授课试点。
 
