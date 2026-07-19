@@ -103,11 +103,16 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /source_commit:/);
   assert.match(workflow, /ref: \$\{\{ needs\.quality-gate\.outputs\.source_commit \}\}/);
   assert.match(workflow, /check_release_inputs\.mjs/);
+  assert.match(workflow, /Validate checkpoint bundle credentials/);
+  assert.match(workflow, /XEDU_CHECKPOINT_BUNDLE_URL/);
+  assert.match(workflow, /XEDU_CHECKPOINT_BUNDLE_SHA256/);
   assert.match(workflow, /npm audit --audit-level=high --package-lock-only/);
   assert.match(workflow, /npm audit --prefix scratch-editor --audit-level=high --package-lock-only/);
   assert.match(workflow, /release-evidence\/dependency-audit\/scratch-npm\.json/);
   assert.match(workflow, /Enforce dependency audit gate/);
+  assert.match(workflow, /shopt -s nullglob/);
   assert.match(workflow, /Upload dependency audit evidence/);
+  assert.match(workflow, /if-no-files-found: warn/);
   assert.match(workflow, /pip_audit -r backend\/requirements\.txt/);
   assert.match(workflow, /pip_audit -r backend\/requirements_full\.txt/);
   assert.match(workflow, /windows-release:/);

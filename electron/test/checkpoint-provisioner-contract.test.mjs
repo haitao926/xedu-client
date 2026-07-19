@@ -18,6 +18,6 @@ test('checkpoint provisioner requires a verified archive hash and rejects unsafe
 test('release workflow provisions the same checkpoint contract on every runner', async () => {
   const workflow = await readRepoFile('.github/workflows/release.yml');
   assert.equal((workflow.match(/provision_checkpoint_bundle\.mjs/g) ?? []).length, 3);
-  assert.equal((workflow.match(/XEDU_CHECKPOINT_BUNDLE_URL:/g) ?? []).length, 3);
-  assert.equal((workflow.match(/XEDU_CHECKPOINT_BUNDLE_SHA256:/g) ?? []).length, 3);
+  assert.equal((workflow.match(/XEDU_CHECKPOINT_BUNDLE_URL:/g) ?? []).length, 4);
+  assert.equal((workflow.match(/XEDU_CHECKPOINT_BUNDLE_SHA256:/g) ?? []).length, 4);
 });

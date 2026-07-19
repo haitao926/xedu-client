@@ -74,6 +74,15 @@ jobs:
       - name: Install Scratch dependencies
         run: npm ci --prefix scratch-editor
 
+      - name: Validate checkpoint bundle credentials
+        env:
+          XEDU_CHECKPOINT_BUNDLE_URL: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_URL }}
+          XEDU_CHECKPOINT_BUNDLE_SHA256: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$XEDU_CHECKPOINT_BUNDLE_URL" || { echo 'Missing XEDU_CHECKPOINT_BUNDLE_URL release secret.' >&2; exit 1; }
+          test -n "$XEDU_CHECKPOINT_BUNDLE_SHA256" || { echo 'Missing XEDU_CHECKPOINT_BUNDLE_SHA256 release secret.' >&2; exit 1; }
+
       - name: Provision checkpoint bundle
         env:
           XEDU_CHECKPOINT_BUNDLE_URL: ${{ secrets.XEDU_CHECKPOINT_BUNDLE_URL }}
@@ -136,7 +145,18 @@ jobs:
         run: |
           set -euo pipefail
           status=0
-          for file in release-evidence/dependency-audit/*.exit; do
+          evidence_dir='release-evidence/dependency-audit'
+          if [[ ! -d "$evidence_dir" ]]; then
+            echo 'Dependency audit evidence directory is missing because an earlier release prerequisite failed.' >&2
+            exit 1
+          fi
+          shopt -s nullglob
+          files=("$evidence_dir"/*.exit)
+          if (( ${#files[@]} == 0 )); then
+            echo 'No dependency audit exit files were produced.' >&2
+            exit 1
+          fi
+          for file in "${files[@]}"; do
             if [[ "$file" == *scratch-npm.exit ]]; then
               continue
             fi
@@ -162,7 +182,7 @@ jobs:
         with:
           name: xedu-client-${{ github.run_id }}-dependency-audit
           path: release-evidence/dependency-audit
-          if-no-files-found: error
+          if-no-files-found: warn
 
   windows-release:
     runs-on: windows-2022
