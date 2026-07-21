@@ -15,10 +15,8 @@ from models.config import AppConfig, SystemInfo
 from utils.python_runtime import inspect_python_environment, inspect_python_executable
 from services.ai_service import AIService
 from services.config_service import ConfigService
-from services.quickform_service import QuickFormService, QuickFormServiceError
 from services.xeduhub_support import execute_xeduhub_runtime
 from .config_utils import build_ai_service, merge_jupyter_payload, normalize_config_payload
-from .quickform_runtime import merge_quickform_config
 from .resource_runtime import (
     build_single_course_source_entry,
     collect_resource_sources,
@@ -143,7 +141,7 @@ def collect_system_info(python_executable: str | None = None) -> SystemInfo:
         info.xedu_repair_available = bool(environment.get("xedu_repair_available"))
         info.xedu_runtime_message = environment.get("xedu_runtime_message") or ""
         if info.xedu_version and not info.xedu_version_ok:
-            info.xedu_runtime_message = f"检测到 xedu-python {info.xedu_version}，预期应为 {EXPECTED_XEDU_VERSION}。"
+            info.xedu_runtime_message = f"检测到 xedu-python {info.xedu_version}，最低要求为 {EXPECTED_XEDU_VERSION}。"
     else:
         info.xedu_version_ok = False
         info.xedu_runtime_ok = False
@@ -166,7 +164,7 @@ def get_teacher_code_from_request(req) -> str:
 def validate_teacher_code(req, app_config: AppConfig) -> bool:
     required = (app_config.ui.classroom_teacher_code or "").strip()
     if not required:
-        return True
+        return False
     provided = get_teacher_code_from_request(req)
     return (provided or "").strip() == required
 
@@ -181,22 +179,11 @@ def resolve_api_port_from_request() -> int:
     return int(os.environ.get("XEDU_API_PORT") or os.environ.get("XEDU_BACKEND_PORT") or "5123")
 
 
-def build_quickform_service(app_config: AppConfig, overrides: Dict[str, Any] | None = None) -> QuickFormService:
-    cfg = merge_quickform_config(app_config.ui, parse_bool, overrides)
-    if not cfg.get("enabled"):
-        raise QuickFormServiceError("请先在设置中启用 QuickForm")
-    return QuickFormService(
-        base_url=cfg["base_url"],
-        username=cfg["username"],
-        password=cfg["password"],
-    )
-
-
 def register_app_routes(app, services: dict, app_config: AppConfig) -> None:
     from .routes import register_all_routes
 
     register_all_routes(app, services)
-    app.config["ALLOW_NETWORK_ACCESS"] = bool(getattr(app_config.ui, "allow_network_access", False))
+    app.config["ALLOW_NETWORK_ACCESS"] = bool(getattr(app_config.ui, "allow_network_access", True))
 
 
 def get_scratch_editor_build_dir() -> Path:
@@ -224,7 +211,6 @@ def build_route_services(
     serialize_status,
     get_app_config,
     looks_like_confirmation,
-    looks_like_quickform_request,
     looks_like_xedu_pack_request,
 ) -> dict:
     def _merge_jupyter_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -256,11 +242,8 @@ def build_route_services(
         "collect_system_info": collect_system_info,
         "resolve_api_port": resolve_api_port_from_request,
         "validate_teacher_code": lambda req: validate_teacher_code(req, get_app_config()),
-        "build_quickform_service": lambda overrides=None: build_quickform_service(get_app_config(), overrides),
-        "merge_quickform_config": lambda overrides=None: merge_quickform_config(get_app_config().ui, parse_bool, overrides),
         "build_ai_service": _build_ai_service,
         "looks_like_confirmation": looks_like_confirmation,
-        "looks_like_quickform_request": looks_like_quickform_request,
         "looks_like_xedu_pack_request": looks_like_xedu_pack_request,
         "parse_bool": parse_bool,
         "resolve_resources_token": resolve_resources_token,

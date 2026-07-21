@@ -1,5 +1,5 @@
 // AI 助手逻辑
-import apiClient from './api.js';
+import apiClient, { getApiErrorMessage } from './api.js';
 import { EXPERIENCE_MODES, getExperienceConfig, getExperienceMode } from './experience-config.js';
 import { sanitizeHtml } from './html-sanitizer.js';
 import { escapeHtml } from './utils/html.js';
@@ -7,6 +7,23 @@ import { escapeHtml } from './utils/html.js';
 let conversationHistory = [];
 let aiUiInitialized = false;
 let chatStatusResetTimer = null;
+
+export function normalizeAiApiMode(baseUrl, apiMode = 'auto') {
+    try {
+        const hostname = new URL(baseUrl).hostname.toLowerCase();
+        if (
+            hostname === 'api.moonshot.cn'
+            || hostname === 'api.deepseek.com'
+            || hostname.endsWith('.moonshot.cn')
+            || hostname.endsWith('.deepseek.com')
+        ) {
+            return 'auto';
+        }
+    } catch (_) {
+        // Preserve the selected mode until a complete URL is available.
+    }
+    return apiMode || 'auto';
+}
 
 function getAssistantConfig() {
     return getExperienceConfig(EXPERIENCE_MODES.STUDENT).ai;
@@ -294,9 +311,9 @@ export async function askAI() {
         console.error('AI请求失败:', error);
         // 移除错误历史
         conversationHistory.pop();
-        updateChatStatus('error', '网络异常');
+        updateChatStatus('error', '请求失败');
 
-        const errorText = `网络错误: ${error.message}`;
+        const errorText = `请求失败：${getApiErrorMessage(error, '未知错误')}`;
         if (loadingBubble) {
             applyAssistantMessageContent(loadingBubble, errorText, { messageStatus: 'error' });
             loadingBubble.classList.remove('message-loading');
@@ -507,14 +524,20 @@ export async function saveAIConfig() {
     try {
         // 获取配置表单数据 - 使用HTML中的实际ID
         const apiKey = document.getElementById('api-key-input')?.value || '';
-        const baseURL = document.getElementById('ai-base-url')?.value.trim() || 'https://api.moonshot.cn/v1';
-        const model = document.getElementById('ai-model-input')?.value.trim() || 'moonshot-v1-8k-vision-preview';
+        const selectedApiMode = document.getElementById('ai-api-mode')?.value || 'auto';
+        const rawBaseURL = document.getElementById('ai-base-url')?.value.trim() || '';
+        const apiMode = normalizeAiApiMode(rawBaseURL, selectedApiMode);
+        const defaultBaseURL = apiMode === 'responses' ? 'https://api.openai.com/v1' : 'https://api.moonshot.cn/v1';
+        const defaultModel = apiMode === 'responses' ? 'gpt-4.1-mini' : 'moonshot-v1-8k-vision-preview';
+        const baseURL = rawBaseURL || defaultBaseURL;
+        const model = document.getElementById('ai-model-input')?.value.trim() || defaultModel;
         const timeout = 30;
         const maxHistory = 50;
 
         const config = {
             base_url: baseURL,
             model: model,
+            api_mode: apiMode,
             timeout: timeout,
             max_history: maxHistory
         };
@@ -544,14 +567,20 @@ export async function testAIConfig() {
     try {
         // 获取配置表单数据 - 使用HTML中的实际ID
         const apiKey = document.getElementById('api-key-input')?.value || '';
-        const baseURL = document.getElementById('ai-base-url')?.value.trim() || 'https://api.moonshot.cn/v1';
-        const model = document.getElementById('ai-model-input')?.value.trim() || 'moonshot-v1-8k-vision-preview';
+        const selectedApiMode = document.getElementById('ai-api-mode')?.value || 'auto';
+        const rawBaseURL = document.getElementById('ai-base-url')?.value.trim() || '';
+        const apiMode = normalizeAiApiMode(rawBaseURL, selectedApiMode);
+        const defaultBaseURL = apiMode === 'responses' ? 'https://api.openai.com/v1' : 'https://api.moonshot.cn/v1';
+        const defaultModel = apiMode === 'responses' ? 'gpt-4.1-mini' : 'moonshot-v1-8k-vision-preview';
+        const baseURL = rawBaseURL || defaultBaseURL;
+        const model = document.getElementById('ai-model-input')?.value.trim() || defaultModel;
         const timeout = 30;
 
         const config = {
             api_key: apiKey,
             base_url: baseURL,
             model: model,
+            api_mode: apiMode,
             timeout: timeout
         };
 
@@ -565,7 +594,7 @@ export async function testAIConfig() {
         }
     } catch (error) {
         console.error('测试AI配置失败:', error);
-        alert(`测试失败: ${error.message || '网络错误'}`);
+        alert(`测试失败：${getApiErrorMessage(error, '网络错误')}`);
     }
 }
 
@@ -586,10 +615,12 @@ function buildAiOverrideConfig() {
     const apiKey = document.getElementById('api-key-input')?.value.trim();
     const baseURL = document.getElementById('ai-base-url')?.value.trim();
     const model = document.getElementById('ai-model-input')?.value.trim();
+    const apiMode = normalizeAiApiMode(baseURL, document.getElementById('ai-api-mode')?.value);
     const override = {};
     if (apiKey) override.api_key = apiKey;
     if (baseURL) override.base_url = baseURL;
     if (model) override.model = model;
+    if (apiMode) override.api_mode = apiMode;
     return override;
 }
 
@@ -647,6 +678,7 @@ function initAIUI() {
     const questionInput = document.getElementById('ai-question');
     const baseUrlInput = document.getElementById('ai-base-url');
     const modelInput = document.getElementById('ai-model-input');
+    const apiModeInput = document.getElementById('ai-api-mode');
     const chatHistory = document.getElementById('chat-history');
 
     if (attachmentHint && fileInput) {
@@ -733,6 +765,9 @@ function initAIUI() {
     }
     if (modelInput) {
         modelInput.addEventListener('input', syncModelBadge);
+    }
+    if (apiModeInput) {
+        apiModeInput.addEventListener('change', syncModelBadge);
     }
 
     syncModelBadge();

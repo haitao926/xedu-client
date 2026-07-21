@@ -2,6 +2,7 @@ const courseSyncFingerprintIgnoredKeys = new Set([
   'sync',
   'origin',
   'local_path',
+  'resource_handle',
   'updated_at',
   'created_at',
   'last_pull_at',
@@ -10,6 +11,43 @@ const courseSyncFingerprintIgnoredKeys = new Set([
   'last_pr_url',
   'last_local_fingerprint',
 ]);
+
+const removedIntegrationCourseKey = 'quickform_defaults';
+const removedIntegrationExperimentKey = 'quickform';
+
+export function stripRemovedIntegrationMetadata(course = {}) {
+  if (!course || typeof course !== 'object') return course;
+  const nextCourse = { ...course };
+  delete nextCourse[removedIntegrationCourseKey];
+
+  const cleanExperiment = (experiment) => {
+    if (!experiment || typeof experiment !== 'object') return experiment;
+    const nextExperiment = { ...experiment };
+    delete nextExperiment[removedIntegrationExperimentKey];
+    return nextExperiment;
+  };
+  const cleanSection = (section) => {
+    if (!section || typeof section !== 'object') return section;
+    const nextSection = { ...section };
+    if (Array.isArray(nextSection.experiments)) {
+      nextSection.experiments = nextSection.experiments.map(cleanExperiment);
+    }
+    if (Array.isArray(nextSection.items)) {
+      nextSection.items = nextSection.items.map(cleanExperiment);
+    }
+    return nextSection;
+  };
+
+  for (const key of ['sections', 'lessons', 'modules']) {
+    if (Array.isArray(nextCourse[key])) {
+      nextCourse[key] = nextCourse[key].map(cleanSection);
+    }
+  }
+  if (Array.isArray(nextCourse.experiments)) {
+    nextCourse.experiments = nextCourse.experiments.map(cleanExperiment);
+  }
+  return nextCourse;
+}
 
 function normalizeCourseValueForFingerprint(value, key = '') {
   if (key && (courseSyncFingerprintIgnoredKeys.has(key) || key.startsWith('_source_'))) {
@@ -166,7 +204,7 @@ export function resolveResourceUrl(url, resource = null, context = {}) {
 }
 
 export function persistLocalCourses(localCourses, saveLocalCourses, scheduleClassroomSync) {
-  saveLocalCourses(localCourses);
+  saveLocalCourses((localCourses || []).map(stripRemovedIntegrationMetadata));
   scheduleClassroomSync();
 }
 
@@ -175,9 +213,10 @@ export async function persistCourseToDisk(resource, apiClient) {
   const localPath = (resource.local_path || '').trim();
   if (!localPath) return null;
   try {
+    const cleanResource = stripRemovedIntegrationMetadata(resource);
     const response = await apiClient.post('/api/resources/save-course', {
       local_path: localPath,
-      course: resource,
+      course: cleanResource,
     });
     if (response?.success && response.course) {
       return {

@@ -108,6 +108,22 @@ class SystemApiTestCase(unittest.TestCase):
         self.assertFalse(response.get_json()["success"])
         self.assertIn("不存在", response.get_json()["message"])
 
+    def test_save_config_persists_selected_python_interpreter(self):
+        response = self.client.post(
+            "/api/save_config",
+            json={"jupyter": {"python_executable": sys.executable}},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+
+        loaded = self.client.get("/api/load_config")
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(
+            loaded.get_json()["config"]["jupyter"]["python_executable"],
+            sys.executable,
+        )
+
     def test_repair_xedu_requires_an_explicit_python_path(self):
         response = self.client.post("/api/repair_xedu", json={})
 

@@ -14,7 +14,16 @@ from pathlib import Path
 COMMANDS = (
     ("python syntax", ["npm", "run", "check:python-syntax"]),
     ("backend tests", [sys.executable, "-m", "pytest", "backend/tests", "-q"]),
-    ("electron security tests", ["node", "--test", "electron/test/preload-security.test.mjs"]),
+    (
+        "electron security tests",
+        [
+            "node",
+            "--test",
+            "electron/test/preload-security.test.mjs",
+            "electron/test/teacher-credential-store.test.mjs",
+        ],
+    ),
+    ("electron backend network tests", ["node", "--test", "electron/test/backend-network-config.test.mjs"]),
     ("release contract tests", ["node", "--test", "electron/test/phase0-release-contract.test.mjs"]),
     ("checkpoint provisioner contract tests", ["node", "--test", "electron/test/checkpoint-provisioner-contract.test.mjs"]),
     ("Scratch release contract tests", ["node", "--test", "electron/test/scratch-release-contract.test.mjs"]),
@@ -25,8 +34,17 @@ COMMANDS = (
     ("manual classroom connection tests", ["node", "--test", "renderer/js/resources/classroom-connect.test.mjs"]),
     ("APIClient and HTML utility tests", ["node", "--test", "renderer/js/api.test.mjs", "renderer/js/utils/html.test.js"]),
     ("renderer error boundary tests", ["node", "--test", "renderer/js/main/error-boundary.test.mjs"]),
-    ("teacher mode state tests", ["node", "--test", "renderer/js/main/teacher-mode-state.test.mjs"]),
+    (
+        "teacher access tests",
+        [
+            "node",
+            "--test",
+            "renderer/js/main/teacher-mode-state.test.mjs",
+            "renderer/js/main/teacher-login.contract.test.mjs",
+        ],
+    ),
     ("backend startup support tests", ["node", "--test", "renderer/js/main/backend-startup-support.test.mjs"]),
+    ("Python selection flow tests", ["node", "--test", "renderer/js/main/python-selection.contract.test.mjs"]),
     ("renderer shell UI tests", ["node", "--test", "renderer/js/main/shell-ui.test.mjs"]),
     ("Scratch workspace resilience tests", ["node", "--test", "renderer/js/main/workspace-context.test.mjs"]),
     ("resource async error boundary tests", ["node", "--test", "renderer/js/resources/async-error-boundary.contract.test.mjs"]),
@@ -49,6 +67,12 @@ def main() -> int:
         "--release-artifact",
         help="optionally verify an unpacked Windows directory or macOS .app bundle",
     )
+    parser.add_argument(
+        "--release-profile",
+        choices=("release", "minimal", "external-python"),
+        default="release",
+        help="content profile used when verifying --release-artifact",
+    )
     args = parser.parse_args()
 
     commands = list(COMMANDS)
@@ -56,7 +80,15 @@ def main() -> int:
         package = json.loads((Path(__file__).resolve().parents[1] / "package.json").read_text())
         commands.append((
             "release artifact contents",
-            ["node", "scripts/verify_release_artifact.mjs", args.release_artifact, "--version", package["version"]],
+            [
+                "node",
+                "scripts/verify_release_artifact.mjs",
+                args.release_artifact,
+                "--version",
+                package["version"],
+                "--profile",
+                args.release_profile,
+            ],
         ))
 
     for label, command in commands:

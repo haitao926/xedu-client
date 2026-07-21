@@ -1,3 +1,10 @@
+import {
+  hasDesktopBridgeMethod,
+  selectCoursePackageWithDesktopBridge,
+  selectFolderWithDesktopBridge,
+} from './desktop-bridge.js';
+import { runCourseTransferFlow } from './course-transfer.js';
+
 export function fillCreateFormFromCourseFlow(course, deps = {}) {
   if (!course) return;
   const {
@@ -58,8 +65,10 @@ export async function importLocalCourseFromPathFlow(path, deps = {}) {
     updateCreateFormState,
     renderCreateGuide,
     alertUser = alert,
+    setImportStatus = () => {},
   } = deps;
   try {
+    setImportStatus('writing', '正在读取本地课程...');
     const title = deriveTitleFromPath(path);
     const response = await apiClient.post('/api/resources/scan', {
       local_path: path,
@@ -85,6 +94,7 @@ export async function importLocalCourseFromPathFlow(path, deps = {}) {
   } catch (error) {
     setScanError(error?.message || '读取本地课程失败');
     renderCreateGuide();
+    setImportStatus('error', error?.message || '读取本地课程失败');
     alertUser(error?.message || '读取本地课程失败');
     return false;
   }
@@ -102,6 +112,7 @@ export async function pickLocalCourseFlow(deps = {}) {
     setScannedCourse,
     setScanSummary,
     setScanError,
+    setDraftSections,
     draftSections,
     buildDefaultSections,
     fillCreateFormFromCourse,
@@ -112,50 +123,61 @@ export async function pickLocalCourseFlow(deps = {}) {
     renderCoursePreview,
     updateCreateFormState,
     alertUser = alert,
+    setImportStatus = () => {},
   } = deps;
-  if (electronAPI && typeof electronAPI.invoke === 'function') {
+  if (hasDesktopBridgeMethod(electronAPI, 'selectFolder')) {
     try {
-      const path = await electronAPI.invoke('select-folder');
-      if (path) {
-        const input = documentRef.getElementById('resources-create-local-path');
-        if (input) input.value = path;
-        renderLocalPathSummary();
-        if (createEntryMode === 'new') {
-          const meta = getCreateMetaFromForm();
-          const title = meta.title || deriveTitleFromPath(path);
-          const response = await apiClient.post('/api/resources/scan', {
-            local_path: path,
-            init_if_missing: true,
-            auto_build: false,
-            meta: {
-              ...meta,
-              title,
-            },
-          });
-          if (!response?.success || !response.course) {
-            throw new Error(response?.message || '初始化课程失败');
-          }
-          setScannedCourse(response.course);
-          setScanSummary(response.summary || null);
-          setScanError('');
-          if (!draftSections().length) {
-            setDraftSections(buildDefaultSections(1, 1));
-          }
-          fillCreateFormFromCourse(response.course, true);
-          renderSectionEditor();
-          renderMaterialList();
-          renderScanStatus();
-          renderStructurePreview();
-          renderCoursePreview();
-        }
-        updateCreateFormState();
+      setImportStatus('selecting', '正在选择课程目录...');
+      const path = await selectFolderWithDesktopBridge(electronAPI);
+      if (!path) {
+        setImportStatus('cancelled', '已取消选择');
+        return false;
       }
+      const input = documentRef.getElementById('resources-create-local-path');
+      if (input) input.value = path;
+      renderLocalPathSummary();
+      if (createEntryMode === 'new') {
+        setImportStatus('writing', '正在读取课程目录...');
+        const meta = getCreateMetaFromForm();
+        const title = meta.title || deriveTitleFromPath(path);
+        const response = await apiClient.post('/api/resources/scan', {
+          local_path: path,
+          init_if_missing: true,
+          auto_build: false,
+          meta: {
+            ...meta,
+            title,
+          },
+        });
+        if (!response?.success || !response.course) {
+          throw new Error(response?.message || '初始化课程失败');
+        }
+        setScannedCourse(response.course);
+        setScanSummary(response.summary || null);
+        setScanError('');
+        if (!draftSections().length) {
+          setDraftSections(buildDefaultSections(1, 1));
+        }
+        fillCreateFormFromCourse(response.course, true);
+        renderSectionEditor();
+        renderMaterialList();
+        renderScanStatus();
+        renderStructurePreview();
+        renderCoursePreview();
+      }
+      updateCreateFormState();
+      setImportStatus('success', '课程目录已读取');
+      return true;
     } catch (error) {
       console.error('选择本地课程失败:', error);
+      setImportStatus('error', error?.message || '选择本地课程失败');
       alertUser(error?.message || '选择本地课程失败');
+      return false;
     }
   } else {
+    setImportStatus('error', '当前环境不支持本地目录选择');
     alertUser('请在桌面应用中使用本地上传功能');
+    return false;
   }
 }
 
@@ -176,7 +198,11 @@ export async function importLocalPackageToPathFlow(deps = {}) {
     renderLocalPathSummary,
     updateCreateFormState,
     renderCreateGuide,
+    addCourse,
+    onImported = async () => {},
+    pollIntervalMs = 500,
     alertUser = alert,
+    setImportStatus = () => {},
   } = deps;
 
   const packagePath = documentRef.getElementById('resources-create-package-path')?.value.trim() || '';
@@ -187,10 +213,17 @@ export async function importLocalPackageToPathFlow(deps = {}) {
   }
 
   try {
-    const response = await apiClient.post('/api/resources/import-package-local', {
-      package_path: packagePath,
-      target_path: targetPath,
-      replace_existing: true,
+    setImportStatus('writing', '正在导入课程包...');
+    const response = await runCourseTransferFlow({
+      apiClient,
+      endpoint: '/api/resources/import-package-local',
+      payload: {
+        package_path: packagePath,
+        target_path: targetPath,
+        replace_existing: true,
+      },
+      setImportStatus,
+      pollIntervalMs,
     });
     if (!response?.success || !response.course) {
       throw new Error(response?.message || '导入课程包失败');
@@ -198,6 +231,7 @@ export async function importLocalPackageToPathFlow(deps = {}) {
     const course = {
       ...response.course,
       local_path: response.local_path || targetPath,
+      source: 'local',
     };
     const localPathInput = documentRef.getElementById('resources-create-local-path');
     if (localPathInput) localPathInput.value = course.local_path || '';
@@ -215,11 +249,17 @@ export async function importLocalPackageToPathFlow(deps = {}) {
     renderStructurePreview();
     renderCoursePreview();
     updateCreateFormState();
+    if (typeof addCourse === 'function') {
+      addCourse(course, { silent: true });
+    }
+    await onImported(course, response);
+    setImportStatus('success', '课程包已导入');
     return true;
   } catch (error) {
     setScanError(error?.message || '导入课程包失败');
     renderCreateGuide();
     updateCreateFormState();
+    setImportStatus('error', error?.message || '导入课程包失败');
     alertUser(error?.message || '导入课程包失败');
     return false;
   }
@@ -232,13 +272,11 @@ export async function pickLocalPackageFlow(deps = {}) {
     renderPackagePathSummary,
     updateCreateFormState,
     alertUser = alert,
+    setImportStatus = () => {},
   } = deps;
-  if (electronAPI && typeof electronAPI.invoke === 'function') {
+  if (hasDesktopBridgeMethod(electronAPI, 'selectCoursePackage')) {
     try {
-      const path =
-        (typeof electronAPI.selectCoursePackage === 'function'
-          ? await electronAPI.selectCoursePackage()
-          : await electronAPI.invoke('select-course-package'));
+      const path = await selectCoursePackageWithDesktopBridge(electronAPI);
       if (path) {
         const input = documentRef.getElementById('resources-create-package-path');
         if (input) input.value = path;
@@ -258,7 +296,6 @@ export async function fetchCloudCourseFlow(deps = {}) {
   const {
     documentRef = document,
     cloudCourseOptions,
-    electronAPI = window.electronAPI,
     renderLocalPathSummary,
     normalizeOrigin,
     cloudTempSource,
@@ -277,7 +314,9 @@ export async function fetchCloudCourseFlow(deps = {}) {
     renderStructurePreview,
     renderCoursePreview,
     updateCreateFormState,
+    pollIntervalMs = 500,
     alertUser = alert,
+    setImportStatus = () => {},
   } = deps;
 
   const selectedValue = documentRef.getElementById('resources-cloud-course-select')?.value || '';
@@ -303,7 +342,7 @@ export async function fetchCloudCourseFlow(deps = {}) {
           branch: cloudTempSource.branch || 'main',
           index_path: cloudTempSource.index_path || 'index.json',
           publish_path: cloudTempSource.publish_path || 'courses',
-          single_course_repo: Boolean(cloudTempSource.single_course_repo),
+          single_course_repo: Boolean(selectedCourse.single_course_repo),
         })
       : buildSourceOverrideFromCourseMeta(selectedCourse);
     if (selectedSourceOverride) {
@@ -316,11 +355,19 @@ export async function fetchCloudCourseFlow(deps = {}) {
       }
     }
 
-    const response = await apiClient.post('/api/resources/pull', pullPayload);
+    const response = await runCourseTransferFlow({
+      apiClient,
+      endpoint: '/api/resources/pull',
+      payload: pullPayload,
+      setImportStatus,
+      pollIntervalMs,
+      initialStatus: ['downloading', '正在下载云端课程...'],
+    });
     if (!response?.success || !response.course) {
       throw new Error(response?.message || '云端导入失败');
     }
 
+    setImportStatus('writing', '正在写入本地课程...');
     const course = {
       ...(response.course || {}),
       origin: normalizeOrigin(response.origin || buildSourceOverrideFromCourseMeta(selectedCourse)),
@@ -359,6 +406,7 @@ export async function fetchCloudCourseFlow(deps = {}) {
       coverInput.value = cover;
     }
     updateCreateCoverPreview();
+    return true;
   } catch (error) {
     console.warn('拉取云端课程失败:', error);
     let message = error?.message || '拉取失败，请检查资源库配置';
@@ -372,8 +420,10 @@ export async function fetchCloudCourseFlow(deps = {}) {
         // keep default
       }
     }
+    setImportStatus('error', message);
     alertUser(message);
     setScanError(error?.message || '云端拉取失败');
+    return false;
   } finally {
     renderSectionEditor();
     renderMaterialList();
@@ -384,9 +434,22 @@ export async function fetchCloudCourseFlow(deps = {}) {
   }
 }
 
-export async function importCloudCourseAndSaveFlow(fetchCloudCourse, saveLocalCourse) {
-  await fetchCloudCourse();
-  await saveLocalCourse();
+export async function importCloudCourseAndSaveFlow(fetchCloudCourse, saveLocalCourse, setImportStatus = () => {}) {
+  const imported = await fetchCloudCourse();
+  if (!imported) return false;
+  setImportStatus('writing', '正在保存课程信息...');
+  try {
+    const saved = await saveLocalCourse();
+    if (saved === false) {
+      setImportStatus('error', '保存课程信息失败');
+      return false;
+    }
+  } catch (error) {
+    setImportStatus('error', error?.message || '保存课程信息失败');
+    throw error;
+  }
+  setImportStatus('success', '云端课程已导入');
+  return true;
 }
 
 export async function quickAddLocalCourseFlow(deps = {}) {
@@ -398,9 +461,9 @@ export async function quickAddLocalCourseFlow(deps = {}) {
     buildQuickCourse,
     alertUser = alert,
   } = deps;
-  if (electronAPI && typeof electronAPI.invoke === 'function') {
+  if (hasDesktopBridgeMethod(electronAPI, 'selectFolder')) {
     try {
-      const path = await electronAPI.invoke('select-folder');
+      const path = await selectFolderWithDesktopBridge(electronAPI);
       if (!path) return null;
       const title = deriveTitleFromPath(path);
       try {
@@ -474,14 +537,11 @@ export function buildQuickCourseFlow({ title, localPath = '', cloudUrl = '', tem
     templateData,
     normalizeTagsInput: deps.normalizeTagsInput,
     isPackageUrl: deps.isPackageUrl,
-    normalizeCourseQuickFormDefaults: deps.normalizeCourseQuickFormDefaults,
   });
 }
 
 export function buildCourseFromFormFlow(baseCourse = null, deps = {}) {
   const documentRef = deps.documentRef || document;
-  const quickFormEnabledInput = documentRef.getElementById('resources-create-quickform-enabled');
-  const quickFormHtmlPathInput = documentRef.getElementById('resources-create-quickform-html-path');
 
   return deps.buildCourseFromFormPayload({
     formValues: {
@@ -495,13 +555,10 @@ export function buildCourseFromFormFlow(baseCourse = null, deps = {}) {
       tags: deps.parseTags(documentRef.getElementById('resources-create-tags')?.value || ''),
       cover: documentRef.getElementById('resources-create-cover')?.value.trim() || '',
       localPath: documentRef.getElementById('resources-create-local-path')?.value.trim() || '',
-      ...(quickFormEnabledInput ? { quickFormEnabled: quickFormEnabledInput.checked } : {}),
-      ...(quickFormHtmlPathInput ? { quickFormHtmlPath: quickFormHtmlPathInput.value.trim() } : {}),
     },
     baseCourse,
     scannedCourse: deps.scannedCourse,
     normalizeOrigin: deps.normalizeOrigin,
-    normalizeCourseQuickFormDefaults: deps.normalizeCourseQuickFormDefaults,
   });
 }
 
@@ -547,12 +604,12 @@ export function addCourseFlow(course, options = {}, deps = {}) {
 export async function saveLocalCourseFlow(deps = {}) {
   if (deps.createEntryMode === 'pack-import' && !deps.scannedCourse()) {
     alert('请先导入 Skill 课程包。');
-    return;
+    return false;
   }
   if (!deps.isCreateInfoComplete()) {
     alert('请先填写课程名称。');
     deps.updateCreateFormState();
-    return;
+    return false;
   }
   if (!deps.scannedCourse()) {
     if (deps.createSource === 'local') {
@@ -565,7 +622,7 @@ export async function saveLocalCourseFlow(deps = {}) {
   }
   if (!deps.scannedCourse()) {
     alert('保存课程结构失败，请先检查本地课程目录。');
-    return;
+    return false;
   }
   const baseCourse =
     deps.editingCourseId && deps.localCourses.length
@@ -578,7 +635,7 @@ export async function saveLocalCourseFlow(deps = {}) {
   if (!resolvedLocalPath) {
     alert('请先选择本地课程目录。');
     deps.updateCreateFormState();
-    return;
+    return false;
   }
   if (!localPath && localPathInput && fallbackPath) {
     localPathInput.value = fallbackPath;
@@ -601,6 +658,7 @@ export async function saveLocalCourseFlow(deps = {}) {
   } else {
     deps.addCourse(finalCourse);
   }
+  return true;
 }
 
 export function updateCourseFlow(course, deps = {}) {

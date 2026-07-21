@@ -116,9 +116,6 @@ export const API_ENDPOINTS = Object.freeze({
     CONFIG_SAVE: '/api/save_config',
     CONFIG_LOAD: '/api/load_config',
     CONFIG_RESET: '/api/reset_config',
-    QUICKFORM_TEST: '/api/quickform/test',
-    QUICKFORM_TASKS: '/api/quickform/tasks',
-    QUICKFORM_CREATE_TASK: '/api/quickform/tasks/create',
     PYTHON_DETECT: '/api/detect_python',
     PYTHON_REPAIR_XEDU: '/api/repair_xedu',
     AI_ASK: '/api/ai/ask',
@@ -251,6 +248,21 @@ class APIError extends Error {
     }
 }
 
+function getApiErrorMessage(error, fallback = '') {
+    if (typeof error?.details === 'string' && error.details) {
+        try {
+            const payload = JSON.parse(error.details);
+            const message = payload?.message || payload?.error;
+            if (typeof message === 'string' && message.trim()) {
+                return message.trim();
+            }
+        } catch (_) {
+            // An unstructured response must not replace the safer HTTP error.
+        }
+    }
+    return error?.message || fallback;
+}
+
 /**
  * Jupyter API 接口
  */
@@ -294,18 +306,6 @@ class JupyterAPI extends APIClient {
         return this.post(API_ENDPOINTS.CONFIG_RESET, {});
     }
 
-    async testQuickForm(config = {}) {
-        return this.post(API_ENDPOINTS.QUICKFORM_TEST, { config });
-    }
-
-    async listQuickFormTasks(config = {}) {
-        return this.post(API_ENDPOINTS.QUICKFORM_TASKS, { config });
-    }
-
-    async createQuickFormTask(payload = {}) {
-        return this.post(API_ENDPOINTS.QUICKFORM_CREATE_TASK, payload);
-    }
-
     // 环境检测
     async detectPython() {
         return this.get(API_ENDPOINTS.PYTHON_DETECT);
@@ -346,5 +346,5 @@ class JupyterAPI extends APIClient {
 const apiClient = new JupyterAPI();
 
 // 导出
-export { APIClient, APIError, JupyterAPI };
+export { APIClient, APIError, JupyterAPI, getApiErrorMessage };
 export default apiClient;

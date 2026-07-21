@@ -34,29 +34,17 @@ import {
     buildCourseDirectoryCard,
 } from "./resources/detail-renderer.js";
 import {
-    buildLocalQuickFormPreviewUrl,
-    buildQuickFormTaskConfig,
-    encodePathToken,
-    getApiBaseUrl,
-    getCourseQuickFormDefaults,
-    getEffectiveExperimentQuickForm,
-    getExperimentHtmlOptions,
-    getMutableExperiment,
-    isExperimentQuickFormEnabled,
-    normalizeCourseQuickFormDefaults,
-    normalizeQuickFormConfig,
-    normalizeQuickFormSettings,
-} from "./resources/quickform-utils.js";
-import {
     isCreateInfoCompleteFlow,
     updateCreateFormStateFlow,
 } from "./resources/course-edit-state.js";
 import {
     buildInspectCoursePayload,
+    inspectCloudCourseOptionFlow,
     inspectCourseResourceFlow,
     mergeInspectionCourse,
     renderCourseInspectionCardFlow,
-    shouldAutoInspectRemoteCourse as shouldAutoInspectRemoteCourseAction,
+    shouldAutoInspectCourse as shouldAutoInspectCourseAction,
+    shouldShowCourseInspectionCard,
 } from "./resources/course-inspection-actions.js";
 import {
     applyResourcesIndexFlow,
@@ -97,6 +85,7 @@ import {
     getStudentWorkspaceTabTitle,
     normalizeStudentWorkspaceTabId,
     pickFirstExperimentWithFiles,
+    selectStudentCurrentCourse,
     shouldHideJupyterForStudentTab,
 } from "./resources/student-workspace-utils.js";
 import {
@@ -108,6 +97,7 @@ import {
     persistCourseToDisk,
     persistLocalCourses,
     resolveResourceUrl,
+    stripRemovedIntegrationMetadata,
     withCourseSyncFingerprint,
 } from "./resources/course-storage.js";
 import {
@@ -146,8 +136,14 @@ import {
     resolveClassroomPullTargetPath,
 } from "./resources/classroom-utils.js";
 import { getExperienceMode, getTeacherToggleLabel } from "./experience-config.js";
-import { TEACHER_MODE_KEY, TEACHER_MODE_CODE_KEY } from "./main/teacher-mode-state.js";
 import {
+    clearTeacherModeSession,
+    isTeacherCodeConfigured,
+    readTeacherModeState,
+    writeTeacherModeState,
+} from "./main/teacher-mode-state.js";
+import {
+    buildLocalCourseFileUrl,
     getEntryKindForFile,
     isBlocklyFile,
     isDirectory,
@@ -156,24 +152,32 @@ import {
     isPythonScriptFile,
     isScratchFile,
     normalizeFile,
+    resolveJupyterWorkspaceTarget,
     sortFiles,
 } from "./resources/file-utils.js";
 import { getExperimentFileOverview } from "./resources/experiment-overview.js";
 import { createResourcesState } from "./resources/resources-state.js";
+import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
 
 const resourcesState = createResourcesState();
+window.addEventListener("xedu:teacher-credential-updated", () => {
+    const state = readTeacherModeState();
+    if (!state.unlocked) return;
+    resourcesState.teacherMode = state;
+    resourcesState.classroomConfig.teacherCodeConfigured = true;
+    updateTeacherModeUI();
+});
+window.addEventListener("xedu:teacher-credential-cleared", () => {
+    resourcesState.teacherMode = { unlocked: false, code: "" };
+    resourcesState.classroomConfig.teacherCodeConfigured = false;
+    updateTeacherModeUI();
+});
 const courseInspectionState = {
     courseId: "",
     loading: false,
     error: "",
     summary: null,
     inspection: null,
-};
-const QUICKFORM_DEFAULT_SETTINGS = {
-    enabled: false,
-    base_url: "https://quickform.cn",
-    username: "",
-    password: "",
 };
 const pageState = {
     current: 1,
@@ -211,6 +215,15 @@ const localCoursesKey = "xedu_local_courses";
 const classroomSelectionKey = "xedu_classroom_selection";
 const classroomManualAddressKey = "xedu_classroom_manual_address";
 const clearDemoCourseBindingMigrationKey = "xedu_clear_demo_course_binding_v1";
+
+function notifyUser(message, level = "info") {
+    const text = String(message || "");
+    if (typeof window.app?.ui?.showToast === "function") {
+        window.app.ui.showToast(text, level);
+        return;
+    }
+    window.alert(text);
+}
 
 const filterState = {
     query: "",
@@ -489,35 +502,19 @@ function readFileAsDataUrl(file) {
     });
 }
 
-function toLocalFileUrl(targetPath = "") {
-    const text = (targetPath || "").toString().trim();
-    if (!text) return "";
-    if (text.startsWith("file://")) return text;
-    const normalized = text.replace(/\\/g, "/");
-    if (/^[a-zA-Z]:\//.test(normalized)) {
-        return `file:///${encodeURI(normalized)}`;
-    }
-    if (normalized.startsWith("/")) {
-        return `file://${encodeURI(normalized)}`;
-    }
-    return normalized;
-}
-
-function resolveCreateCoverPreviewUrl(coverValue = "", localPath = "") {
+function resolveCreateCoverPreviewUrl(coverValue = "", resource = {}) {
     const cover = (coverValue || "").toString().trim();
     if (!cover) return "";
     if (
         cover.startsWith("http://") ||
         cover.startsWith("https://") ||
         cover.startsWith("data:") ||
-        cover.startsWith("blob:") ||
-        cover.startsWith("file://")
+        cover.startsWith("blob:")
     ) {
         return cover;
     }
-    const base = (localPath || "").toString().trim();
-    if (!base) return cover;
-    return toLocalFileUrl(resolveLocalPath(base, cover));
+    if (cover.startsWith("file://")) return "";
+    return buildLocalCourseFileUrl(resource, cover, apiClient);
 }
 
 function updateCreateCoverPreview() {
@@ -526,7 +523,13 @@ function updateCreateCoverPreview() {
     const coverPreview = document.getElementById("resources-cover-preview");
     const coverPreviewImg = document.getElementById("resources-cover-preview-img");
     if (!coverPreview || !coverPreviewImg) return;
-    const previewUrl = resolveCreateCoverPreviewUrl(coverInput?.value || "", localPathInput?.value || "");
+    const course = resourcesState.scannedCourse
+        || resourcesState.localCourses.find((item) => item?.id === resourcesState.editingCourseId)
+        || {};
+    const previewUrl = resolveCreateCoverPreviewUrl(coverInput?.value || "", {
+        ...course,
+        local_path: localPathInput?.value || course.local_path || "",
+    });
     if (previewUrl) {
         coverPreviewImg.src = previewUrl;
         coverPreview.style.display = "flex";
@@ -928,17 +931,52 @@ function renderLocalPathSummary() {
 function renderPackagePathSummary() {
     const summary = document.getElementById("resources-package-path-summary");
     const input = document.getElementById("resources-create-package-path");
+    const droppedFile = document.getElementById("resources-package-drop-file");
     if (!summary || !input) return;
 
     const packagePath = (input.value || "").trim();
     if (!packagePath) {
         summary.innerHTML = "未选择课程包。";
+        if (droppedFile) droppedFile.textContent = "尚未选择文件";
         return;
     }
 
     const parts = packagePath.split(/[\\/]/).filter(Boolean);
     const name = parts[parts.length - 1] || packagePath;
     summary.innerHTML = `当前课程包：<strong>${escapeAttr(name)}</strong>。`;
+    if (droppedFile) droppedFile.textContent = name;
+}
+
+async function handlePackageDrop(event) {
+    const files = Array.from(event?.dataTransfer?.files || []);
+    if (files.length !== 1) {
+        setCreateImportStatus("error", "请一次拖入一个 ZIP 课程包");
+        return false;
+    }
+
+    const [file] = files;
+    if (!/\.zip$/i.test(file?.name || "")) {
+        setCreateImportStatus("error", "仅支持完整的 ZIP 课程包");
+        return false;
+    }
+
+    let packagePath = "";
+    try {
+        packagePath = await getPathForFileWithDesktopBridge(file, window.electronAPI);
+    } catch (_) {
+        packagePath = "";
+    }
+    if (!packagePath) {
+        setCreateImportStatus("error", "无法读取该文件路径，请使用“选择 ZIP”导入");
+        return false;
+    }
+
+    const packagePathInput = document.getElementById("resources-create-package-path");
+    if (!packagePathInput) return false;
+    packagePathInput.value = packagePath;
+    renderPackagePathSummary();
+    updateCreateFormState();
+    return importLocalPackageToPath();
 }
 
 async function useDefaultSampleCourse() {
@@ -1013,7 +1051,7 @@ function updateLocalPathVisibility() {
     const localGroup = document.getElementById("resources-local-group");
     if (!localGroup) return;
     if (resourcesState.createEntryMode === "pack-import") {
-        localGroup.style.display = "block";
+        localGroup.style.display = "none";
         return;
     }
     if (resourcesState.createSource !== "cloud") {
@@ -1096,7 +1134,7 @@ function parseRepoAddressInput(address) {
             repo: `${parts[0]}/${parts[1].replace(/\.git$/i, "")}`,
             branch,
             index_path: "index.json",
-            single_course_repo: true,
+            single_course_repo: false,
         });
     } catch (_) {
         return null;
@@ -1169,7 +1207,7 @@ function renderCloudCoursePreview() {
 
     const selectedValue = select.value || "";
     const selectedCourse = resourcesState.cloudCourseOptions.find((item) => (item.id || item.package_url || item.course_url) === selectedValue) || null;
-    const isSingleRepoCourse = Boolean(resourcesState.cloudTempSource?.single_course_repo) && resourcesState.cloudCourseOptions.length === 1;
+    const isSingleRepoCourse = Boolean(selectedCourse?.single_course_repo) && resourcesState.cloudCourseOptions.length === 1;
 
     label.textContent = isSingleRepoCourse ? "当前仓库课程" : "云端课程";
 
@@ -1199,6 +1237,49 @@ function renderCloudCoursePreview() {
     label.style.display = shouldHideSelector ? "none" : "";
     select.style.display = shouldHideSelector ? "none" : "";
     updateLocalPathVisibility();
+}
+
+async function loadSelectedCloudCourseDetails() {
+    const select = document.getElementById("resources-cloud-course-select");
+    const selectedValue = select?.value || "";
+    const selectedCourse = resourcesState.cloudCourseOptions.find(
+        (item) => (item.id || item.package_url || item.course_url) === selectedValue
+    );
+    if (!selectedCourse || selectedCourse._detailsLoaded || selectedCourse._detailsLoading) {
+        return selectedCourse || null;
+    }
+
+    selectedCourse._detailsLoading = true;
+    setCloudStatus("正在读取课程结构...");
+    try {
+        const result = await inspectCloudCourseOptionFlow(selectedCourse, {
+            apiClient,
+            buildInspectCoursePayload: (target) =>
+                buildInspectCoursePayload(target, {
+                    getCourseOrigin,
+                    buildSourceOverrideFromCourseMeta,
+                    cloudTempToken: resourcesState.cloudTempToken,
+                }),
+            mergeInspectionCourse,
+        });
+        const optionIndex = resourcesState.cloudCourseOptions.indexOf(selectedCourse);
+        if (optionIndex < 0) return null;
+
+        resourcesState.cloudCourseOptions[optionIndex] = {
+            ...result.course,
+            _detailsLoaded: true,
+            _detailsLoading: false,
+        };
+        if (select?.value === selectedValue) {
+            renderCloudCoursePreview();
+        }
+        setCloudStatus("已读取课程结构。");
+        return resourcesState.cloudCourseOptions[optionIndex];
+    } catch (error) {
+        selectedCourse._detailsLoading = false;
+        setCloudStatus(extractApiErrorMessage(error, "读取课程结构失败"), true);
+        return false;
+    }
 }
 
 function getCloudCourseStats(course = {}) {
@@ -1331,6 +1412,8 @@ async function loadCloudCourseOptions() {
         if (!resourcesState.cloudCourseOptions.length) {
             setCloudStatus("仓库中未找到可导入课程，请检查 course.json 或 index.json。", true);
         } else {
+            const detailResult = await loadSelectedCloudCourseDetails();
+            if (detailResult === false) return;
             if (resourcesState.cloudTempSource) {
                 setCloudStatus(resourcesState.cloudCourseOptions.length === 1 ? "已读取课程结构。" : `已读取 ${resourcesState.cloudCourseOptions.length} 门课程。`);
             } else {
@@ -1667,7 +1750,13 @@ function renderCoursePreview() {
     const meta = getCreateMetaFromForm();
     const tags = meta.tags || [];
     const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
-    const cover = resolveCreateCoverPreviewUrl(meta.coverDataUrl, localPath);
+    const course = resourcesState.scannedCourse
+        || resourcesState.localCourses.find((item) => item?.id === resourcesState.editingCourseId)
+        || {};
+    const cover = resolveCreateCoverPreviewUrl(meta.coverDataUrl, {
+        ...course,
+        local_path: localPath || course.local_path || "",
+    });
     preview.innerHTML = `
         <div class="resources-preview-cover">
             ${cover ? `<img src="${cover}" alt="cover">` : "课程封面"}
@@ -2672,7 +2761,7 @@ function loadLocalCourses() {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return [];
         return parsed.map((item) => {
-            const course = { ...(item || {}), source: "local" };
+            const course = stripRemovedIntegrationMetadata({ ...(item || {}), source: "local" });
             const origin = normalizeOrigin(course.origin || {});
             if (origin) course.origin = origin;
             return course;
@@ -2695,14 +2784,14 @@ async function refreshLocalCoursesFromDisk(courses = []) {
                 auto_build: false,
             });
             if (response?.success && response.course) {
-                return {
+                return stripRemovedIntegrationMetadata({
                     ...course,
                     ...response.course,
                     local_path: localPath,
                     source: "local",
                     origin: course.origin || response.course.origin,
                     sync: course.sync || response.course.sync,
-                };
+                });
             }
         } catch (error) {
             console.warn("刷新本地课程失败，继续使用缓存:", localPath, error);
@@ -2788,15 +2877,35 @@ function parseBool(value, fallback = false) {
 async function loadClassroomConfig() {
     try {
         const response = await apiClient.loadConfig();
-        if (!response?.success) return;
+        if (!response?.success) return false;
         const uiConfig = response.config?.ui || {};
         resourcesState.classroomConfig = {
             autoDiscover: uiConfig.classroom_auto_discover !== false,
             name: uiConfig.classroom_name || "",
-            teacherCode: uiConfig.classroom_teacher_code || ""
+            teacherCodeConfigured: isTeacherCodeConfigured(response),
         };
+        return true;
     } catch (error) {
         console.warn("加载课堂配置失败:", error);
+        return false;
+    }
+}
+
+function openPythonSetup() {
+    window.app?.system?.updateSettingsVisibility?.(false, { allowPythonSetup: true });
+    window.app?.ui?.showTab?.("settings", document.getElementById("nav-settings-item"));
+    window.app?.system?.showSettingsTab?.("python");
+}
+
+async function isBackendReady() {
+    const getBackendStartupState = window.electronAPI?.getBackendStartupState;
+    if (typeof getBackendStartupState !== "function") return true;
+    try {
+        const result = await getBackendStartupState();
+        if (!result?.state) return true;
+        return result.state.status === "ready";
+    } catch (_) {
+        return true;
     }
 }
 
@@ -2839,7 +2948,9 @@ function updateTeacherModeUI() {
         if (window.app && window.app.system && typeof window.app.system.updateSettingsVisibility === "function") {
             if (!resourcesState.openingStudentLessonTab) {
                 resourcesState.pendingTeacherModeShellSync = false;
-                window.app.system.updateSettingsVisibility(Boolean(resourcesState.teacherMode.unlocked));
+                window.app.system.updateSettingsVisibility(Boolean(resourcesState.teacherMode.unlocked), {
+                    allowPythonSetup: !resourcesState.teacherMode.unlocked && !resourcesState.teacherModeReady,
+                });
             } else {
                 resourcesState.pendingTeacherModeShellSync = true;
             }
@@ -2849,101 +2960,96 @@ function updateTeacherModeUI() {
     }
 }
 
-function saveTeacherModeState() {
-    try {
-        if (resourcesState.teacherMode.unlocked) {
-            sessionStorage.setItem(TEACHER_MODE_KEY, "true");
-            sessionStorage.setItem(TEACHER_MODE_CODE_KEY, resourcesState.teacherMode.code || "");
-        } else {
-            sessionStorage.removeItem(TEACHER_MODE_KEY);
-            sessionStorage.removeItem(TEACHER_MODE_CODE_KEY);
-        }
-    } catch (error) {
-        console.warn("保存教师模式状态失败:", error);
-    }
+function exitTeacherMode() {
+    resourcesState.teacherMode = clearTeacherModeSession();
+    updateTeacherModeUI();
 }
 
-function resetTeacherMode() {
-    resourcesState.teacherMode = { unlocked: false, code: "" };
-    saveTeacherModeState();
-    updateTeacherModeUI();
+async function requestTeacherCodeVerification(code) {
+    const response = await apiClient.post("/api/classroom/verify-teacher", { teacher_code: code || "" });
+    return Boolean(response?.success);
 }
 
 async function verifyTeacherCode(code) {
     try {
-        const response = await apiClient.post("/api/classroom/verify-teacher", { teacher_code: code || "" });
-        return Boolean(response?.success);
-    } catch (error) {
+        return await requestTeacherCodeVerification(code);
+    } catch (_) {
         return false;
     }
 }
 
-async function loadTeacherModeState() {
-    let storedUnlocked = false;
-    let storedCode = "";
-    try {
-        storedUnlocked = sessionStorage.getItem(TEACHER_MODE_KEY) === "true";
-        storedCode = sessionStorage.getItem(TEACHER_MODE_CODE_KEY) || "";
-    } catch (error) {
-        storedUnlocked = false;
-        storedCode = "";
-    }
-    if (storedUnlocked) {
-        const ok = await verifyTeacherCode(storedCode);
-        if (ok) {
-            resourcesState.teacherMode.unlocked = true;
-            resourcesState.teacherMode.code = storedCode;
-        } else {
-            resourcesState.teacherMode.unlocked = false;
-            resourcesState.teacherMode.code = "";
-            saveTeacherModeState();
-        }
-    }
+function loadTeacherModeState() {
+    const restored = readTeacherModeState();
+    resourcesState.teacherMode = {
+        unlocked: Boolean(restored.unlocked),
+        code: restored.code || "",
+    };
     updateTeacherModeUI();
 }
 
 async function ensureTeacherModeReady(force = false) {
-    if (!force && resourcesState.teacherModeReady) {
+    if (!force && resourcesState.teacherModeReady && resourcesState.classroomConfig.teacherCodeConfigured) {
         updateTeacherModeUI();
-        return;
+        return true;
     }
-    await loadClassroomConfig();
-    await loadTeacherModeState();
+    if (!await isBackendReady()) {
+        resourcesState.teacherModeReady = false;
+        return false;
+    }
+    const loaded = await loadClassroomConfig();
+    if (!loaded) {
+        resourcesState.teacherModeReady = false;
+        return false;
+    }
+    loadTeacherModeState();
     resourcesState.teacherModeReady = true;
+    return true;
 }
 
 async function unlockTeacherMode() {
     if (resourcesState.teacherMode.unlocked) return true;
-    if (!resourcesState.classroomConfig.teacherCode) {
-        resourcesState.teacherMode.unlocked = true;
-        resourcesState.teacherMode.code = "";
-        saveTeacherModeState();
+    const ready = await ensureTeacherModeReady();
+    if (!ready) {
+        openPythonSetup();
+        notifyUser("请先在设置中选择并确认本机 Python，后端就绪后再设置教师口令。", "warning");
+        return false;
+    }
+    if (!resourcesState.classroomConfig.teacherCodeConfigured) {
+        const updated = await window.app?.system?.ensureTeacherCodeInitialized?.({ prompt: true });
+        resourcesState.classroomConfig.teacherCodeConfigured = isTeacherCodeConfigured(updated);
+        if (!resourcesState.classroomConfig.teacherCodeConfigured) {
+            openPythonSetup();
+            notifyUser("请先在设置中选择并确认本机 Python，后端就绪后再设置教师口令。", "warning");
+            return false;
+        }
+        if (resourcesState.teacherMode.unlocked) {
+            updateTeacherModeUI();
+            return true;
+        }
+    }
+    while (true) {
+        const input = await openResourcesInput({
+            title: "输入教师验证码",
+            message: "请输入首次设置的教师验证码",
+            label: "教师验证码",
+            placeholder: "请输入教师验证码",
+            secret: true,
+            required: true,
+            confirmText: "进入教师模式",
+            cancelText: "取消",
+        });
+        if (!input) return false;
+        await window.app?.jupyter?.setVisibility?.(false);
+        const code = input.trim();
+        const ok = await verifyTeacherCode(code);
+        if (!ok) {
+            alert("教师验证码错误，请重新输入");
+            continue;
+        }
+        resourcesState.teacherMode = writeTeacherModeState(code);
         updateTeacherModeUI();
         return true;
     }
-    const input = await openResourcesInput({
-        title: "解锁教师模式",
-        message: "请输入教师口令以继续操作",
-        label: "教师口令",
-        placeholder: "请输入教师口令",
-        secret: true,
-        required: true,
-        confirmText: "解锁",
-        cancelText: "取消",
-    });
-    if (!input) return false;
-    await window.app?.jupyter?.setVisibility?.(false);
-    const code = input.trim();
-    const ok = await verifyTeacherCode(code);
-    if (!ok) {
-        alert("教师口令错误");
-        return false;
-    }
-    resourcesState.teacherMode.unlocked = true;
-    resourcesState.teacherMode.code = code;
-    saveTeacherModeState();
-    updateTeacherModeUI();
-    return true;
 }
 
 async function ensureTeacherModeForEdit(actionLabel = "编辑") {
@@ -2963,7 +3069,11 @@ async function ensureTeacherModeForEdit(actionLabel = "编辑") {
 
 async function handleTeacherModeToggle() {
     await window.app?.jupyter?.setVisibility?.(false);
-    await ensureTeacherModeReady();
+    if (!await ensureTeacherModeReady()) {
+        openPythonSetup();
+        notifyUser("请先在设置中选择并确认本机 Python，后端就绪后再设置教师口令。", "warning");
+        return false;
+    }
     if (resourcesState.teacherMode.unlocked) {
         const ok = await openResourcesConfirm({
             title: "退出教师模式",
@@ -2972,7 +3082,7 @@ async function handleTeacherModeToggle() {
             cancelText: "取消",
         });
         if (!ok) return false;
-        resetTeacherMode();
+        exitTeacherMode();
         if (resourcesState.currentResource) {
             renderResourceDetail(resourcesState.currentResource);
         } else {
@@ -3112,6 +3222,7 @@ async function startClassroomForResource(resource, forcedSectionIndex = null) {
     const sectionTitle = sections[sectionIndex]?.title || "";
 
     try {
+        if (!await ensureClassroomNetworkAccess()) return;
         await syncClassroomCourses([localResource]);
         const response = await apiClient.post("/api/classroom/start", {
             name: resourcesState.classroomConfig.name,
@@ -3132,13 +3243,13 @@ async function startClassroomForResource(resource, forcedSectionIndex = null) {
                 ? Number(response.status.active_section_index)
                 : sectionIndex;
         resourcesState.classroomState.activeSectionTitle = response.status?.active_section_title || sectionTitle || "";
-        if (resourcesState.classroomConfig.teacherCode) {
-            alert(`课堂已开启，课堂码：${resourcesState.classroomConfig.teacherCode}`);
+        if (resourcesState.teacherMode.code) {
+            alert(`课堂已开启，课堂码：${resourcesState.teacherMode.code}`);
         }
         await loadResourcesIndex();
     } catch (error) {
         if (error?.status === 401) {
-            resetTeacherMode();
+            exitTeacherMode();
         }
         let message = error?.message || "开启课堂失败";
         if (error?.details) {
@@ -3175,7 +3286,7 @@ async function stopClassroomWithPrompt() {
         await loadResourcesIndex();
     } catch (error) {
         if (error?.status === 401) {
-            resetTeacherMode();
+            exitTeacherMode();
         }
         let message = error?.message || "关闭课堂失败";
         if (error?.details) {
@@ -3254,6 +3365,33 @@ async function ensureTeacherCode() {
     const unlocked = await unlockTeacherMode();
     if (!unlocked) return null;
     return resourcesState.teacherMode.code || "";
+}
+
+async function ensureClassroomNetworkAccess() {
+    const configResponse = await apiClient.loadConfig();
+    if (!configResponse?.success) {
+        throw new Error(configResponse?.message || "无法读取课堂网络设置");
+    }
+    const networkAccessEnabled = parseBool(configResponse.config?.ui?.allow_network_access, true);
+    if (networkAccessEnabled) return true;
+
+    const saveResponse = await apiClient.saveConfig({ ui: { allow_network_access: true } });
+    if (!saveResponse?.success) {
+        throw new Error(saveResponse?.message || "课堂网络设置保存失败");
+    }
+
+    const networkCheckbox = document.getElementById("allow-network-access");
+    if (networkCheckbox) networkCheckbox.checked = true;
+
+    const restartBackend = window.electronAPI?.restartBackend;
+    if (typeof restartBackend !== "function") {
+        throw new Error("课堂网络设置已保存，请重启 XEdu Client 后再开启课堂");
+    }
+    const restartResult = await restartBackend();
+    if (!restartResult?.success) {
+        throw new Error(restartResult?.error || "课堂网络设置应用失败，请重启 XEdu Client 后重试");
+    }
+    return true;
 }
 
 async function discoverClassrooms() {
@@ -3363,11 +3501,12 @@ function getCoverUrl(resource) {
         "";
     if (!cover) return "";
     if (resource.source === "local") {
-        const localPath = (resource.local_path || "").trim();
         const localCover = cover.toString().trim();
-        if (localPath && localCover && !/^https?:\/\//.test(localCover) && !/^data:|^blob:|^file:\/\//.test(localCover)) {
-            return toLocalFileUrl(resolveLocalPath(localPath, localCover));
+        if (/^https?:\/\//.test(localCover) || /^data:|^blob:/.test(localCover)) {
+            return localCover;
         }
+        if (localCover.startsWith("file://")) return "";
+        return buildLocalCourseFileUrl(resource, localCover, apiClient);
     }
     return resolveResourceUrl(cover, resource);
 }
@@ -3467,12 +3606,12 @@ function getVisibleLessonContexts(resource, sections = normalizeSections(resourc
 }
 
 function pickStudentCurrentCourse() {
-    const active = getActiveLocalCourse();
-    if (active) return active;
-    if (resourcesState.currentResource) return resourcesState.currentResource;
-    if (resourcesState.localCourses.length) return resourcesState.localCourses[0];
-    if (resourcesState.resourcesCache.length) return resourcesState.resourcesCache.find((course) => course?.source === "local") || resourcesState.resourcesCache[0];
-    return null;
+    return selectStudentCurrentCourse({
+        classroomState: resourcesState.classroomState,
+        remoteSource: resourcesState.remoteSource,
+        localCourses: resourcesState.localCourses,
+        resourcesCache: resourcesState.resourcesCache,
+    });
 }
 
 function syncStudentLessonNav(tabId = resourcesState.activeCourseWorkspaceTab) {
@@ -3742,39 +3881,58 @@ function buildStudentRouteEntryCard(tabId, context, options = {}) {
     return card;
 }
 
-function appendStudentRouteEntryCards(parent, context) {
+function getStudentRouteEntries(context) {
     const html = context.overview.htmlFiles[0] || null;
     const scratch = context.overview.scratchFiles?.[0] || null;
-    const blockly = context.overview.blocklyFiles[0] || null;
-    const visual = scratch || blockly;
     const python = context.overview.notebookFiles[0] || context.overview.pythonFiles[0] || null;
+
+    return [
+        {
+            tabId: "experience",
+            file: html,
+            icon: "▶",
+            title: "互动体验",
+            desc: "先看现象，理解本实验要观察什么。",
+            action: "打开体验",
+            meta: html ? getBaseName(html.path || html.name || "") : "",
+        },
+        {
+            tabId: "visual",
+            file: scratch,
+            icon: "▦",
+            title: "图形编程",
+            desc: "进入 Scratch，使用积木完成任务流程。",
+            action: "打开 Scratch",
+            meta: scratch ? getBaseName(scratch.path || scratch.name || "") : "",
+        },
+        {
+            tabId: "python",
+            file: python,
+            icon: "</>",
+            title: "Python 实验",
+            desc: "打开 Notebook / Python，继续代码实践。",
+            action: "进入代码",
+            meta: python ? getBaseName(python.path || python.name || "") : "",
+        },
+    ].filter((entry) => entry.file);
+}
+
+function hasStudentRouteEntries(context) {
+    return getStudentRouteEntries(context).length > 0;
+}
+
+function appendStudentRouteEntryCards(parent, context) {
+    const entries = getStudentRouteEntries(context);
+    if (!entries.length) return;
+
     const grid = document.createElement("div");
     grid.className = "resources-course-entry-grid";
-    grid.appendChild(buildStudentRouteEntryCard("experience", context, {
-        file: html,
-        icon: "▶",
-        title: "互动体验",
-        desc: "先看现象，理解本实验要观察什么。",
-        action: "打开体验",
-        meta: html ? getBaseName(html.path || html.name || "") : "",
-    }));
-    grid.appendChild(buildStudentRouteEntryCard("visual", context, {
-        file: visual,
-        icon: "▦",
-        title: "图形编程",
-        desc: scratch ? "进入 Scratch，使用积木完成任务流程。" : blockly ? "该实验类型已不再支持。" : "当前实验没有配置 Scratch 资源。",
-        action: scratch ? "打开 Scratch" : blockly ? "查看提示" : "暂无",
-        meta: visual ? getBaseName(visual.path || visual.name || "") : "",
-        primary: Boolean(visual),
-    }));
-    grid.appendChild(buildStudentRouteEntryCard("python", context, {
-        file: python,
-        icon: "</>",
-        title: "Python 实验",
-        desc: "打开 Notebook / Python，继续代码实践。",
-        action: "进入代码",
-        meta: python ? getBaseName(python.path || python.name || "") : "",
-    }));
+    entries.forEach((entry, index) => {
+        grid.appendChild(buildStudentRouteEntryCard(entry.tabId, context, {
+            ...entry,
+            primary: index === 0,
+        }));
+    });
     parent.appendChild(grid);
 }
 
@@ -3868,17 +4026,6 @@ function buildStudentExperimentEntryCard(context, tabId = resourcesState.activeC
     return card;
 }
 
-function buildLocalCourseFileUrl(resource, filePath = "") {
-    const basePath = (resource?.local_path || "").trim();
-    const relPath = String(filePath || "").trim().replace(/^\/+/, "");
-    if (!basePath || !relPath || isRemotePath(relPath)) return "";
-    const encodedRelPath = relPath
-        .split("/")
-        .map((segment) => encodeURIComponent(segment))
-        .join("/");
-    return `${getApiBaseUrl(apiClient)}/api/resources/local-file/${encodePathToken(basePath)}/${encodedRelPath}`;
-}
-
 function buildStudentHtmlExperienceView(context) {
     const htmlFiles = Array.isArray(context?.overview?.htmlFiles) ? context.overview.htmlFiles : [];
     const primaryHtml = htmlFiles[0] || null;
@@ -3928,7 +4075,7 @@ function buildStudentHtmlExperienceView(context) {
     }
 
     const frameUrl =
-        buildLocalCourseFileUrl(context.resource, primaryHtml.path || "") ||
+        buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient) ||
         resolveResourceUrl(primaryHtml.path || "", context.resource, {
             repoUrl: resourcesState.repoUrl,
             rawBaseUrl: resourcesState.rawBaseUrl,
@@ -3948,6 +4095,7 @@ function buildStudentHtmlExperienceView(context) {
     const frame = document.createElement("iframe");
     frame.className = "resources-student-html-frame";
     frame.title = primaryHtml.name || primaryHtml.path || "互动体验";
+    frame.allow = "camera";
     frame.src = frameUrl;
     frame.loading = "eager";
     frameWrap.appendChild(frame);
@@ -3985,11 +4133,16 @@ async function openStudentPythonWorkspace(course, context = null) {
         : `${lessonTitle} / 本节未配置 Python 文件`;
     const file = target?.file || null;
     const fileKind = getEntryKindForFile(file);
+    const workspaceTarget = resolveJupyterWorkspaceTarget({
+        coursePath: resource.local_path || "",
+        experimentPath: target?.exp?.path || "",
+        filePath: fileKind === "notebook" || fileKind === "python" ? (file?.path || "") : "",
+    });
     const openWorkspace = window.app?.workspace?.openJupyterWorkspace;
     if (openWorkspace) {
         await openWorkspace({
-            projectDir: resource.local_path || "",
-            filePath: fileKind === "notebook" || fileKind === "python" ? (file?.path || "") : "",
+            projectDir: workspaceTarget.projectDir,
+            filePath: workspaceTarget.filePath,
             sourceLabel,
             sourcePage: "student-python",
         }, { force: true });
@@ -4248,41 +4401,13 @@ function pickExperimentIndexForWorkspaceTab(experiments = [], tabId = resourcesS
 function renderCourseWorkspace(resource, sections, mainPane) {
     const visibleSectionContexts = getVisibleLessonContexts(resource, sections);
     mainPane.classList.add(getWorkspaceTabPageClass(resourcesState.activeCourseWorkspaceTab));
-    const summary = buildCourseWorkspaceSummary(resource, visibleSectionContexts);
 
     if (isStudentLessonMode() && resourcesState.activeCourseWorkspaceTab === "route") {
-        const shell = document.createElement("div");
-        shell.className = "resources-route-workbench-shell";
-
-        const guide = document.createElement("aside");
-        guide.className = "resources-route-guide";
-        guide.appendChild(summary);
-        shell.appendChild(guide);
-
-        const stage = document.createElement("section");
-        stage.className = "resources-route-stage";
-        const stageHead = document.createElement("div");
-        stageHead.className = "resources-route-stage-head";
-        const stageEyebrow = document.createElement("div");
-        stageEyebrow.className = "resources-route-stage-eyebrow";
-        stageEyebrow.textContent = "本节实践入口";
-        stageHead.appendChild(stageEyebrow);
-        const stageTitle = document.createElement("div");
-        stageTitle.className = "resources-route-stage-title";
-        stageTitle.textContent = "选择下一步要进入的学习空间";
-        stageHead.appendChild(stageTitle);
-        const stageDesc = document.createElement("div");
-        stageDesc.className = "resources-route-stage-desc";
-        stageDesc.textContent = "建议按课堂顺序：先观察现象，再搭建图形程序，最后进入 Python / Notebook 做代码实验。";
-        stageHead.appendChild(stageDesc);
-        stage.appendChild(stageHead);
-        renderLearningRouteWorkspace(stage, resource, visibleSectionContexts);
-        shell.appendChild(stage);
-
-        mainPane.appendChild(shell);
+        renderLearningRouteWorkspace(mainPane, resource, visibleSectionContexts);
         return;
     }
 
+    const summary = buildCourseWorkspaceSummary(resource, visibleSectionContexts);
     mainPane.appendChild(summary);
     renderLearningRouteWorkspace(mainPane, resource, visibleSectionContexts);
 }
@@ -4294,13 +4419,18 @@ function renderLearningRouteWorkspace(mainPane, resource, sectionEntries) {
         route.classList.add("is-student-lesson");
     }
 
+    let hasVisibleExperiments = false;
     normalizeSectionContexts(sectionEntries).forEach(({ section, sectionIndex }) => {
         const experiments = Array.isArray(section?.experiments) ? section.experiments : [];
         if (!experiments.length) {
+            if (isStudentLessonMode()) {
+                return;
+            }
             const empty = document.createElement("div");
             empty.className = "resources-course-empty";
             empty.textContent = "本课还没有配置实验。";
             route.appendChild(empty);
+            hasVisibleExperiments = true;
         }
 
         if (section.description && !isStudentLessonMode()) {
@@ -4315,9 +4445,20 @@ function renderLearningRouteWorkspace(mainPane, resource, sectionEntries) {
 
         experiments.forEach((exp, expIndex) => {
             const context = buildExperimentResourceContext(resource, section, sectionIndex, exp, expIndex);
+            if (isStudentLessonMode() && !hasStudentRouteEntries(context)) {
+                return;
+            }
             route.appendChild(buildRouteExperimentCard(context));
+            hasVisibleExperiments = true;
         });
     });
+
+    if (isStudentLessonMode() && !hasVisibleExperiments) {
+        const empty = document.createElement("div");
+        empty.className = "resources-course-empty";
+        empty.textContent = "本节暂无实验内容。";
+        route.appendChild(empty);
+    }
 
     mainPane.appendChild(route);
 }
@@ -4327,6 +4468,23 @@ function buildRouteExperimentCard(context) {
     card.className = "resources-route-exp";
 
     if (isStudentLessonMode()) {
+        const head = document.createElement("div");
+        head.className = "resources-route-exp-head";
+        const title = document.createElement("div");
+        title.className = "resources-route-exp-title";
+        title.textContent = context.exp.title || `实验 ${context.expIndex + 1}`;
+        head.appendChild(title);
+
+        card.appendChild(head);
+
+        if (context.exp.description) {
+            const desc = document.createElement("div");
+            desc.className = "resources-route-exp-desc";
+            desc.textContent = context.exp.description;
+            card.appendChild(desc);
+        }
+
+        appendExperimentTaskList(card, getExperimentStudentTasks(context.exp));
         appendStudentRouteEntryCards(card, context);
         return card;
     }
@@ -4417,229 +4575,6 @@ function getMutableExperiments(section) {
         return { list: section.items, key: "items" };
     }
     return null;
-}
-
-async function loadQuickFormSettings() {
-    try {
-        const response = await apiClient.loadConfig();
-        resourcesState.quickFormSettings = normalizeQuickFormSettings(
-            response?.config?.ui?.quickform || {},
-            QUICKFORM_DEFAULT_SETTINGS.base_url,
-        );
-    } catch (error) {
-        console.warn("读取 QuickForm 设置失败:", error);
-        resourcesState.quickFormSettings = { ...QUICKFORM_DEFAULT_SETTINGS };
-    }
-    return resourcesState.quickFormSettings;
-}
-
-async function ensureQuickFormAvailable() {
-    const cfg = await loadQuickFormSettings();
-    if (!cfg.enabled) {
-        throw new Error("请先在设置中启用 QuickForm");
-    }
-    if (!cfg.username || !cfg.password) {
-        throw new Error("请先在设置中填写 QuickForm 用户名和密码");
-    }
-    return cfg;
-}
-
-async function bindQuickFormToExperiment(resource, sectionIndex, expIndex) {
-    if (!(await ensureTeacherModeForEdit("绑定 QuickForm"))) return false;
-    if (!canEditResource(resource)) {
-        alert("仅支持为本地课程实验绑定 QuickForm");
-        return false;
-    }
-    const { experiment } = getMutableExperiment(resource, sectionIndex, expIndex);
-    if (!experiment) {
-        alert("未找到实验");
-        return false;
-    }
-    const htmlOptions = getExperimentHtmlOptions(experiment, getExperimentFileOverview);
-    const defaults = getCourseQuickFormDefaults(resource);
-    const currentQuickForm = getEffectiveExperimentQuickForm(resource, sectionIndex, expIndex, experiment, {
-        quickFormSettings: resourcesState.quickFormSettings,
-        normalizeConfig: normalizeQuickFormConfig,
-    });
-    const defaultHtmlPath = currentQuickForm.html_path || defaults.html_path || htmlOptions[0] || "";
-    if (!htmlOptions.length && !defaultHtmlPath) {
-        alert("当前实验没有可绑定的 HTML 文件");
-        return false;
-    }
-
-    try {
-        await ensureQuickFormAvailable();
-        const modeResult = await openResourcesForm({
-            title: "绑定 QuickForm",
-            message: "可新建一个任务，或从当前账号中选择已有任务。",
-            confirmText: "下一步",
-            cancelText: "取消",
-            fields: [
-                {
-                    name: "mode",
-                    label: "绑定方式",
-                    type: "select",
-                    value: currentQuickForm.apiid ? "pick" : "create",
-                    options: [
-                        { value: "create", label: "新建任务" },
-                        { value: "pick", label: "选择已有任务" },
-                    ],
-                },
-            ],
-        });
-        if (!modeResult?.confirmed) return false;
-
-        if ((modeResult.values.mode || "create") === "create") {
-            const createResult = await openResourcesForm({
-                title: "新建 QuickForm 任务",
-                message: "创建后会自动写回当前实验。",
-                confirmText: "创建并绑定",
-                cancelText: "取消",
-                fields: [
-                    {
-                        name: "task_name",
-                        label: "任务名称",
-                        value: currentQuickForm.task_name || `${resource.title || "课程"} - ${experiment.title || "实验"}`,
-                        placeholder: "例如：课堂签到表",
-                        required: true,
-                    },
-                    {
-                        name: "task_intro",
-                        label: "任务说明",
-                        type: "textarea",
-                        value: currentQuickForm.task_intro || experiment.description || "",
-                        placeholder: "可选",
-                        rows: 3,
-                    },
-                    htmlOptions.length
-                        ? {
-                            name: "html_path",
-                            label: "目标 HTML 文件",
-                            type: "select",
-                            value: defaultHtmlPath || htmlOptions[0],
-                            options: htmlOptions.map((path) => ({ value: path, label: path })),
-                        }
-                        : {
-                            name: "html_path",
-                            label: "目标 HTML 文件",
-                            value: defaultHtmlPath,
-                            placeholder: "请输入 HTML 相对路径",
-                            required: true,
-                        },
-                ],
-            });
-            if (!createResult?.confirmed) return false;
-            const response = await apiClient.createQuickFormTask({
-                task_name: createResult.values.task_name,
-                task_intro: createResult.values.task_intro,
-            });
-            if (!response?.success || !response.task) {
-                throw new Error(response?.message || "创建 QuickForm 任务失败");
-            }
-            experiment.quickform = buildQuickFormTaskConfig(
-                response.task,
-                createResult.values.html_path || defaultHtmlPath,
-                resourcesState.quickFormSettings.base_url || QUICKFORM_DEFAULT_SETTINGS.base_url,
-            );
-        } else {
-            const listResponse = await apiClient.listQuickFormTasks();
-            const tasks = Array.isArray(listResponse?.tasks) ? listResponse.tasks : [];
-            if (!tasks.length) {
-                throw new Error("当前账号下没有可绑定的任务，请先创建");
-            }
-            const pickResult = await openResourcesForm({
-                title: "选择 QuickForm 任务",
-                message: "选中后会把提交地址绑定到当前实验。",
-                confirmText: "绑定",
-                cancelText: "取消",
-                fields: [
-                    {
-                        name: "apiid",
-                        label: "现有任务",
-                        type: "select",
-                        value: currentQuickForm.apiid || tasks[0].apiid,
-                        options: tasks.map((task) => ({
-                            value: task.apiid,
-                            label: `${task.task_name || task.name || task.apiid} (${task.apiid})`,
-                        })),
-                    },
-                    htmlOptions.length
-                        ? {
-                            name: "html_path",
-                            label: "目标 HTML 文件",
-                            type: "select",
-                            value: defaultHtmlPath || htmlOptions[0],
-                            options: htmlOptions.map((path) => ({ value: path, label: path })),
-                        }
-                        : {
-                            name: "html_path",
-                            label: "目标 HTML 文件",
-                            value: defaultHtmlPath,
-                            placeholder: "请输入 HTML 相对路径",
-                            required: true,
-                        },
-                ],
-            });
-            if (!pickResult?.confirmed) return false;
-            const selectedTask = tasks.find((task) => task.apiid === pickResult.values.apiid) || tasks[0];
-            experiment.quickform = buildQuickFormTaskConfig(
-                selectedTask,
-                pickResult.values.html_path || defaultHtmlPath,
-                resourcesState.quickFormSettings.base_url || QUICKFORM_DEFAULT_SETTINGS.base_url,
-            );
-        }
-
-        resource.updated_at = new Date().toISOString().slice(0, 10);
-        await persistCourseToDisk(resource, apiClient);
-        persistLocalCoursesState();
-        renderResourceDetail(resource);
-        alert("QuickForm 已绑定到当前实验。");
-        return true;
-    } catch (error) {
-        alert(extractApiErrorMessage(error, "绑定 QuickForm 失败"));
-        return false;
-    }
-}
-
-async function injectQuickFormIntoExperiment(resource, sectionIndex, expIndex) {
-    if (!(await ensureTeacherModeForEdit("注入 QuickForm"))) return false;
-    if (!canEditResource(resource)) {
-        alert("仅支持为本地课程实验注入 QuickForm");
-        return false;
-    }
-    const { experiment } = getMutableExperiment(resource, sectionIndex, expIndex);
-    if (!experiment) {
-        alert("未找到实验");
-        return false;
-    }
-    const quickform = getEffectiveExperimentQuickForm(resource, sectionIndex, expIndex, experiment, {
-        quickFormSettings: resourcesState.quickFormSettings,
-        normalizeConfig: normalizeQuickFormConfig,
-    });
-    if (!quickform.submit_url) {
-        alert("请先为该实验绑定 QuickForm 任务");
-        return false;
-    }
-    if (!quickform.html_path) {
-        alert("请先选择要注入的 HTML 文件");
-        return false;
-    }
-    try {
-        const response = await apiClient.injectQuickForm({
-            local_path: resource.local_path,
-            html_path: quickform.html_path,
-            quickform,
-            create_backup: true,
-        });
-        if (!response?.success) {
-            throw new Error(response?.message || "注入失败");
-        }
-        alert(response.message || "QuickForm 注入成功");
-        return true;
-    } catch (error) {
-        alert(extractApiErrorMessage(error, "注入 QuickForm 失败"));
-        return false;
-    }
 }
 
 function persistLocalCoursesState() {
@@ -4826,7 +4761,7 @@ function renderResources(list = []) {
     resourcesState.displayedResources = [];
 
     if (isStudentLessonMode()) {
-        const course = pickStudentCurrentCourse() || (Array.isArray(list) && list.length ? list[0] : null);
+        const course = pickStudentCurrentCourse();
         if (course) {
             resourcesState.activeSectionIndex = getCurrentLessonIndex(course);
             showDetailView(course, { tabId: resourcesState.activeCourseWorkspaceTab, preserveExperiment: true });
@@ -5051,6 +4986,17 @@ function renderLearningSpaceEmpty(empty) {
     empty.appendChild(wrap);
 }
 
+async function requestStudentClassroomCode() {
+    return openResourcesInput({
+        title: "加入课堂",
+        label: "课堂码",
+        placeholder: "留空自动发现",
+        required: false,
+        confirmText: "加入课堂",
+        cancelText: "取消",
+    });
+}
+
 function renderStudentLessonEmpty(tabId = resourcesState.activeCourseWorkspaceTab) {
     const listView = document.getElementById("resources-list-view");
     const detailView = document.getElementById("resources-detail-view");
@@ -5118,6 +5064,115 @@ function setActionButtonLabel(button, label) {
     button.innerHTML = "";
     button.appendChild(icon);
     button.appendChild(document.createTextNode(label));
+}
+
+function formatTransferBytes(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) return "";
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
+    if (value < 1024 ** 3) return `${(value / (1024 ** 2)).toFixed(1)} MB`;
+    return `${(value / (1024 ** 3)).toFixed(1)} GB`;
+}
+
+function renderTransferStatus(statusEl, state, message, progress) {
+    if (!statusEl) return;
+    const busy = ["selecting", "downloading", "writing"].includes(state);
+    const messageEl = statusEl.querySelector(".resources-transfer-status-message");
+    const panel = statusEl.querySelector(".resources-transfer-progress-panel");
+    const progressEl = statusEl.querySelector(".resources-transfer-progress");
+    const phaseEl = statusEl.querySelector(".resources-transfer-progress-phase");
+    const percentEl = statusEl.querySelector(".resources-transfer-progress-percent");
+    const detailEl = statusEl.querySelector(".resources-transfer-progress-detail");
+
+    if (messageEl) {
+        messageEl.textContent = message;
+    } else {
+        statusEl.textContent = message;
+    }
+    statusEl.dataset.state = state || "";
+    statusEl.classList.toggle("is-visible", Boolean(message) || busy);
+
+    if (!panel || !progressEl) return;
+    panel.hidden = !busy;
+    if (!busy) return;
+
+    const rawPercent = progress?.percent;
+    const hasPercent = Number.isFinite(rawPercent);
+    const percent = hasPercent ? Math.max(0, Math.min(100, Math.round(rawPercent))) : null;
+    if (percent === null) {
+        progressEl.removeAttribute("value");
+    } else {
+        progressEl.value = percent;
+    }
+    if (percentEl) percentEl.textContent = percent === null ? "处理中" : `${percent}%`;
+
+    const phaseLabels = {
+        preparing: "准备课程",
+        downloading: "下载课程",
+        extracting: "解压课程包",
+        validating: "校验课程",
+        backing_up: "备份原课程",
+        writing: "写入本地",
+    };
+    if (phaseEl) phaseEl.textContent = phaseLabels[progress?.phase] || (state === "writing" ? "写入本地" : "正在处理");
+
+    const details = [];
+    if (progress?.current_file) details.push(progress.current_file);
+    if (progress?.total_files) details.push(`${progress.completed_files || 0}/${progress.total_files} 个文件`);
+    if (progress?.total_bytes) {
+        details.push(`${formatTransferBytes(progress.completed_bytes)} / ${formatTransferBytes(progress.total_bytes)}`);
+    }
+    if (detailEl) {
+        detailEl.textContent = details.filter(Boolean).join(" · ");
+        detailEl.hidden = details.length === 0;
+    }
+}
+
+function setRemoteImportStatus(state, message = "", progress = null) {
+    const statusEl = document.getElementById("resources-detail-import-status");
+    const pullBtn = document.getElementById("resources-detail-pull");
+    const busy = ["selecting", "downloading", "writing"].includes(state);
+    renderTransferStatus(statusEl, state, message, progress);
+    if (pullBtn) {
+        pullBtn.disabled = busy;
+        pullBtn.setAttribute("aria-busy", busy ? "true" : "false");
+        if (busy && message) {
+            setActionButtonLabel(pullBtn, message.replace(/\.\.\.$/, ""));
+        } else {
+            setActionButtonLabel(pullBtn, resourcesState.currentResource?.source === "local" ? "拉取更新" : "导入到本地");
+        }
+    }
+}
+
+function setCreateImportStatus(state, message = "", progress = null) {
+    const statusEl = document.getElementById("resources-create-import-status");
+    const busy = ["selecting", "downloading", "writing"].includes(state);
+    renderTransferStatus(statusEl, state, message, progress);
+    const packageDropZone = document.getElementById("resources-package-drop-zone");
+    if (packageDropZone) {
+        packageDropZone.classList.toggle("is-busy", busy);
+        packageDropZone.setAttribute("aria-disabled", busy ? "true" : "false");
+    }
+    [
+        document.getElementById("resources-pick-package-btn"),
+        document.getElementById("resources-use-default-sample-btn"),
+        document.getElementById("resources-pick-local-btn"),
+        document.getElementById("resources-package-import-btn"),
+        document.getElementById("resources-cloud-import-btn"),
+        document.getElementById("resources-cloud-detail-import-btn"),
+    ].filter(Boolean).forEach((button) => {
+        if (busy) {
+            if (!("importPreviousDisabled" in button.dataset)) {
+                button.dataset.importPreviousDisabled = button.disabled ? "true" : "false";
+            }
+            button.disabled = true;
+        } else if ("importPreviousDisabled" in button.dataset) {
+            button.disabled = button.dataset.importPreviousDisabled === "true";
+            delete button.dataset.importPreviousDisabled;
+        }
+        button.setAttribute("aria-busy", busy ? "true" : "false");
+    });
 }
 
 function showListView() {
@@ -5196,7 +5251,7 @@ function showDetailView(resource, options = {}) {
 function renderResourceDetailSplitContent(resource, contentEl) {
     contentEl.innerHTML = "";
     ensureCourseInspectionIdentity(resource);
-    if (resourcesState.teacherMode.unlocked) {
+    if (resourcesState.teacherMode.unlocked && shouldShowCourseInspectionCard(courseInspectionState)) {
         contentEl.appendChild(renderCourseInspectionCard(resource));
     }
     const sections = normalizeSections(resource);
@@ -5228,19 +5283,20 @@ function renderResourceDetailSplitContent(resource, contentEl) {
     const selectedExperiment = experiments[resourcesState.activeExperimentIndex] || null;
     const canManageCourse = canEditResource(resource) && resourcesState.teacherMode.unlocked;
     const mutableSections = getMutableSections(resource) || [];
+    const directStudentExperience = isStudentLessonMode() && resourcesState.activeCourseWorkspaceTab === "experience";
 
     const split = document.createElement("div");
     split.className = "resources-outline-layout";
     if (isStudentLessonMode() && resourcesState.activeCourseWorkspaceTab === "route") {
         split.classList.add("is-student-workspace");
     }
-    if (isStudentLessonMode() && resourcesState.activeCourseWorkspaceTab === "experience") {
-        split.classList.add("is-experience-workbench");
+    if (directStudentExperience) {
+        split.classList.add("is-direct-file-workspace");
     }
 
     let outlineList = null;
     let outlinePane = null;
-    if (!isStudentLessonMode() || resourcesState.activeCourseWorkspaceTab !== "route") {
+    if (!directStudentExperience && (!isStudentLessonMode() || resourcesState.activeCourseWorkspaceTab !== "route")) {
         outlinePane = document.createElement("aside");
         outlinePane.className = "resources-outline-pane";
         const outlineTitle = document.createElement("div");
@@ -5435,13 +5491,6 @@ function renderResourceDetailSplitContent(resource, contentEl) {
         ? getWorkspaceTabTitle(resourcesState.activeCourseWorkspaceTab)
         : `${overview.allFiles.length} 个文件`;
     expHeader.appendChild(expBadge);
-    const quickFormConfig = getEffectiveExperimentQuickForm(resource, resourcesState.activeSectionIndex, resourcesState.activeExperimentIndex);
-    if (quickFormConfig.submit_url && !isStudentLessonMode()) {
-        const qfBadge = document.createElement("div");
-        qfBadge.className = "resource-card-badge";
-        qfBadge.textContent = "QuickForm";
-        expHeader.appendChild(qfBadge);
-    }
     expCard.appendChild(expHeader);
 
     if (selectedExperiment.description) {
@@ -5514,6 +5563,7 @@ function renderResourceDetail(resource) {
     const editBtn = document.getElementById("resources-detail-edit");
     const deleteBtn = document.getElementById("resources-detail-delete");
     const repoBtn = document.getElementById("resources-detail-repo");
+    const inspectBtn = document.getElementById("resources-detail-inspect");
     const uploadBtn = document.getElementById("resources-detail-upload");
     const pullBtn = document.getElementById("resources-detail-pull");
     const openBtn = document.getElementById("resources-detail-open");
@@ -5562,6 +5612,10 @@ function renderResourceDetail(resource) {
 
     if (backBtn) {
         backBtn.style.display = isStudentLessonMode() ? "none" : "inline-flex";
+    }
+
+    if (inspectBtn) {
+        inspectBtn.style.display = resourcesState.teacherMode.unlocked && !isStudentLessonMode() ? "inline-flex" : "none";
     }
 
     if (coverWrap && coverImg) {
@@ -5696,8 +5750,8 @@ function renderResourceDetail(resource) {
     if (classroomCodeEl) {
         const active = resourcesState.teacherMode.unlocked && resourcesState.classroomState.active && isActiveCourse(resource);
         classroomCodeEl.style.display = active && !isStudentLessonMode() ? "inline-flex" : "none";
-        classroomCodeEl.textContent = active && resourcesState.classroomConfig.teacherCode
-            ? `课堂码：${resourcesState.classroomConfig.teacherCode}`
+        classroomCodeEl.textContent = active && resourcesState.teacherMode.code
+            ? `课堂码：${resourcesState.teacherMode.code}`
             : "";
     }
 
@@ -5716,7 +5770,7 @@ function renderResourceDetail(resource) {
 
     if (!contentEl) return;
     renderResourceDetailSplitContent(resource, contentEl);
-    if (shouldAutoInspectRemoteCourse(resource)) {
+    if (shouldAutoInspectCourse(resource)) {
         window.setTimeout(() => {
             if (resourcesState.currentResource === resource) {
                 inspectCourseResource(resource, { silent: true });
@@ -5735,7 +5789,7 @@ async function editExperiment(resource, mutableSections, sectionIndex, expIndex)
         apiClient,
         persistLocalCoursesState,
         renderResourceDetail,
-        alertUser: alert,
+        alertUser: notifyUser,
     });
 }
 
@@ -5749,7 +5803,7 @@ async function deleteExperiment(resource, mutableSections, sectionIndex, expInde
         apiClient,
         persistLocalCoursesState,
         renderResourceDetail,
-        alertUser: alert,
+        alertUser: notifyUser,
     });
 }
 
@@ -5763,7 +5817,7 @@ async function addSection(resource, mutableSections) {
         persistLocalCoursesState,
         setActiveSectionIndex: (value) => { resourcesState.activeSectionIndex = value; },
         renderResourceDetail,
-        alertUser: alert,
+        alertUser: notifyUser,
     });
 }
 
@@ -5776,7 +5830,7 @@ async function renameSection(resource, mutableSections, sectionIndex) {
         apiClient,
         persistLocalCoursesState,
         renderResourceDetail,
-        alertUser: alert,
+        alertUser: notifyUser,
     });
 }
 
@@ -5791,7 +5845,7 @@ async function deleteSection(resource, mutableSections, sectionIndex) {
         activeSectionIndex: () => resourcesState.activeSectionIndex,
         setActiveSectionIndex: (value) => { resourcesState.activeSectionIndex = value; },
         renderResourceDetail,
-        alertUser: alert,
+        alertUser: notifyUser,
     });
 }
 
@@ -5811,7 +5865,7 @@ async function addExperimentToSection(resource, mutableSections, sectionIndex) {
         persistLocalCoursesState,
         setActiveSectionIndex: (value) => { resourcesState.activeSectionIndex = value; },
         renderResourceDetail,
-        alertUser: alert,
+        alertUser: notifyUser,
     });
 }
 
@@ -5899,15 +5953,16 @@ function normalizeSection(section, index) {
 function normalizeExperiment(exp, index) {
     const title = exp.title || exp.name || `实验 ${index + 1}`;
     const description = exp.description || exp.desc || "";
+    const path = exp.path || exp.dir || "";
     const rawFiles = exp.files || exp.items || exp.resources || [];
     const files = Array.isArray(rawFiles) ? rawFiles.map((file) => normalizeFile(file)) : [];
 
     return {
         title,
         description,
+        path,
         student_tasks: getExperimentStudentTasks(exp),
         files,
-        quickform: normalizeQuickFormConfig(exp.quickform || {})
     };
 }
 
@@ -6013,21 +6068,14 @@ async function openExperimentEntry(file, kind = "file", context = null) {
         alert("Scratch 编辑器当前仅支持本地课程项目。");
         return;
     }
-    if (!isStudentLessonMode() && kind === "html" && context?.resource && !isRemotePath(file?.path || "")) {
-        const quickform = getEffectiveExperimentQuickForm(
-            context.resource,
-            context.sectionIndex || 0,
-            context.expIndex || 0
-        );
-        if (quickform.submit_url) {
-            const previewUrl = buildLocalQuickFormPreviewUrl(context.resource, file.path || quickform.html_path || "");
-            if (previewUrl) {
-                await openExternal(previewUrl);
-                if (resourcesState.currentResource) {
-                    renderResourceDetail(resourcesState.currentResource);
-                }
-                return;
+    if (kind === "html" && context?.resource && !isRemotePath(file?.path || "")) {
+        const previewUrl = buildLocalCourseFileUrl(context.resource, file.path || "", apiClient);
+        if (previewUrl) {
+            await openExternal(previewUrl);
+            if (resourcesState.currentResource) {
+                renderResourceDetail(resourcesState.currentResource);
             }
+            return;
         }
     }
     const { localTargetPath, targetUrl } = resolveFileTargets(file);
@@ -6083,14 +6131,22 @@ function resolveFileTargets(file) {
 
 async function openNotebookInConsole(filePath) {
     if (!filePath || isRemotePath(filePath)) return false;
-    const projectPath = resourcesState.currentResource?.local_path || "";
-    if (!projectPath) return false;
+    const resource = resourcesState.currentResource;
+    if (!resource?.local_path) return false;
+    const experiment = normalizeSections(resource)[resourcesState.activeSectionIndex]
+        ?.experiments?.[resourcesState.activeExperimentIndex];
+    const workspaceTarget = resolveJupyterWorkspaceTarget({
+        coursePath: resource.local_path,
+        experimentPath: experiment?.path || "",
+        filePath,
+    });
+    if (!workspaceTarget.projectDir) return false;
 
     if (window.app?.workspace?.openJupyterWorkspace) {
         await window.app.workspace.openJupyterWorkspace({
-            projectDir: projectPath,
-            filePath,
-            sourceLabel: `${resourcesState.currentResource?.title || "课程"} / ${getBaseName(filePath)}`,
+            projectDir: workspaceTarget.projectDir,
+            filePath: workspaceTarget.filePath,
+            sourceLabel: `${resource.title || "课程"} / ${getBaseName(filePath)}`,
             sourcePage: resourcesState.teacherMode.unlocked ? "resources" : "main",
         });
         return true;
@@ -6173,6 +6229,14 @@ function renderFileItem(file, depth = 0) {
                 });
                 return;
             }
+            if (isHtml && !isRemotePath(filePath)) {
+                await openExperimentEntry(file, "html", {
+                    resource: resourcesState.currentResource,
+                    sectionIndex: resourcesState.activeSectionIndex,
+                    expIndex: resourcesState.activeExperimentIndex,
+                });
+                return;
+            }
             if (isNotebook && !isRemotePath(filePath)) {
                 const opened = await openNotebookInConsole(filePath);
                 if (opened) return;
@@ -6236,7 +6300,7 @@ function setCreateSource(source) {
     const packImportMode = effectiveEntryMode === "pack-import";
 
     if (packageGroup) packageGroup.style.display = source === "local" && packImportMode ? "block" : "none";
-    if (localGroup) localGroup.style.display = "block";
+    if (localGroup) localGroup.style.display = packImportMode ? "none" : "block";
     if (cloudGroup) cloudGroup.style.display = source === "cloud" ? "block" : "none";
     if (switchRow) switchRow.style.display = "flex";
     if (step2ModeHint) {
@@ -6524,7 +6588,6 @@ function prepareTemplate() {
 function fillCreateFormFromCourse(course, fillEmptyOnly = true) {
     return fillCreateFormFromCourseFlow(course, {
         documentRef: document,
-        getCourseQuickFormDefaults,
         updateCreateCoverPreview,
         fillEmptyOnly,
     });
@@ -6546,6 +6609,7 @@ async function importLocalCourseFromPath(path) {
         renderCoursePreview,
         updateCreateFormState,
         renderCreateGuide,
+        setImportStatus: setCreateImportStatus,
     });
 }
 
@@ -6566,6 +6630,9 @@ async function importLocalPackageToPath() {
         renderLocalPathSummary,
         updateCreateFormState,
         renderCreateGuide,
+        addCourse,
+        onImported: async () => { await loadResourcesIndex(); },
+        setImportStatus: setCreateImportStatus,
     });
 }
 
@@ -6591,6 +6658,7 @@ async function pickLocalCourse() {
         renderStructurePreview,
         renderCoursePreview,
         updateCreateFormState,
+        setImportStatus: setCreateImportStatus,
     });
 }
 
@@ -6626,6 +6694,7 @@ async function fetchCloudCourse() {
         renderStructurePreview,
         renderCoursePreview,
         updateCreateFormState,
+        setImportStatus: setCreateImportStatus,
     });
 }
 
@@ -6634,7 +6703,7 @@ async function importCloudCourseAndSave() {
         if (resourcesState.cloudImported && resourcesState.scannedCourse) {
             await saveLocalCourse();
         }
-    });
+    }, setCreateImportStatus);
 }
 
 async function quickAddLocalCourse() {
@@ -6657,27 +6726,25 @@ async function quickAddCloudCourse() {
 }
 
 function buildQuickCourse({ title, localPath = "", cloudUrl = "", templateData = null }) {
-    return buildQuickCourseFlow({ title, localPath, cloudUrl, templateData }, {
+    return stripRemovedIntegrationMetadata(buildQuickCourseFlow({ title, localPath, cloudUrl, templateData }, {
         buildQuickCoursePayload,
         normalizeTagsInput,
         isPackageUrl,
-        normalizeCourseQuickFormDefaults,
-    });
+    }));
 }
 
 function buildCourseFromForm(baseCourse = null) {
-    return buildCourseFromFormFlow(baseCourse, {
+    return stripRemovedIntegrationMetadata(buildCourseFromFormFlow(baseCourse, {
         documentRef: document,
         buildCourseFromFormPayload,
         parseTags,
         scannedCourse: resourcesState.scannedCourse,
         normalizeOrigin,
-        normalizeCourseQuickFormDefaults,
-    });
+    }));
 }
 
 function addCourse(course, options = {}) {
-    return addCourseFlow(course, options, {
+    return addCourseFlow(stripRemovedIntegrationMetadata(course), options, {
         normalizeOrigin,
         localCourses: resourcesState.localCourses,
         setLocalCourses: (value) => { resourcesState.localCourses = value; },
@@ -6763,8 +6830,8 @@ async function inspectCourseResource(resource, { silent = false } = {}) {
     });
 }
 
-function shouldAutoInspectRemoteCourse(resource) {
-    return shouldAutoInspectRemoteCourseAction(resource, courseInspectionState, resourcesState.teacherMode);
+function shouldAutoInspectCourse(resource) {
+    return shouldAutoInspectCourseAction(resource, courseInspectionState, resourcesState.teacherMode);
 }
 
 function renderCourseInspectionCard(resource) {
@@ -6797,7 +6864,7 @@ async function testCurrentExperiment(resource = resourcesState.currentResource) 
 async function importRemoteCourseForTesting(resource) {
     return importRemoteCourseForTestingFlow(resource, {
         importRemoteCourse,
-        alertUser: alert,
+        alertUser: notifyUser,
         extractApiErrorMessage,
         mapRemoteExperimentToLocalCourse,
         activeSectionIndex: () => resourcesState.activeSectionIndex,
@@ -6823,7 +6890,7 @@ async function deleteCourse(course) {
         applyFilters,
         showListView,
         openResourcesConfirm,
-        alertUser: alert,
+        alertUser: notifyUser,
     });
 }
 
@@ -6917,6 +6984,7 @@ async function pullLatestForLocalCourse(resource) {
             upsertLocalCourseRecord(course, { ...options, addCourse, showDetailView }),
         loadResourcesIndex,
         showDetailView,
+        setImportStatus: setRemoteImportStatus,
     });
 }
 
@@ -6930,6 +6998,7 @@ async function importRemoteCourse(resource, options = {}) {
         extractApiErrorMessage,
         cloudTempToken: resourcesState.cloudTempToken,
         electronAPI: window.electronAPI,
+        setImportStatus: setRemoteImportStatus,
     });
 }
 
@@ -7025,7 +7094,9 @@ async function handleLearningSpaceAction(action) {
         return;
     }
     if (action === "connect-classroom") {
-        const result = await connectStudentClassroomByCode("", { showResourcesView: true });
+        const classroomCode = await requestStudentClassroomCode();
+        if (classroomCode === null) return;
+        const result = await connectStudentClassroomByCode(classroomCode, { showResourcesView: true });
         if (!result?.success && result?.message) {
             alert(result.message);
         }
@@ -7106,9 +7177,12 @@ function bindEvents() {
         filteredResources: () => resourcesState.filteredResources,
         showListView,
         ensureTeacherModeForEdit,
+        pullLatestForLocalCourse,
+        importRemoteCourse,
         openCreateView,
         deleteCourse,
         currentResource: () => resourcesState.currentResource,
+        inspectCourseResource,
         toggleDetailMoreMenu,
         bindDetailMoreMenu,
         startClassroomForResource,
@@ -7125,6 +7199,7 @@ function bindEvents() {
         renderLocalPathSummary,
         renderPackagePathSummary,
         renderCloudCoursePreview,
+        loadSelectedCloudCourseDetails,
         createSource: () => resourcesState.createSource,
         draftSections: () => resourcesState.draftSections,
         setDraftSections: (value) => { resourcesState.draftSections = value; },
@@ -7145,6 +7220,7 @@ function bindEvents() {
         pickLocalPackage,
         useDefaultSampleCourse,
         importLocalPackageToPath,
+        handlePackageDrop,
         pickLocalCourse,
         loadCloudCourseOptions,
         importCloudCourseAndSave,
@@ -7179,7 +7255,6 @@ export async function initResourcesPage() {
         return;
     }
     resourcesState.resourcesPageInitPromise = (async () => {
-        await loadQuickFormSettings();
         await initClassroom();
         await loadResourcesIndex();
         if (!isStudentLessonMode()) {
@@ -7228,6 +7303,9 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
 
         await initResourcesPage();
         const currentCourse = pickStudentCurrentCourse();
+        if (!currentCourse && (resourcesState.activeCourseWorkspaceTab === "python" || resourcesState.activeCourseWorkspaceTab === "visual")) {
+            return openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
+        }
         if (!currentCourse) {
             renderStudentLessonEmpty(resourcesState.activeCourseWorkspaceTab);
             return null;
@@ -7254,7 +7332,6 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
 }
 
 export async function refreshResources() {
-    await loadQuickFormSettings();
     resourcesState.resourcesPageReady = true;
     await loadResourcesIndex();
 }

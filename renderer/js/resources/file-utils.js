@@ -57,6 +57,59 @@ export function getEntryKindForFile(file) {
     return 'file';
 }
 
+export function getApiBaseUrl(apiClient) {
+    return (apiClient?.baseURL || 'http://127.0.0.1:5123').replace(/\/$/, '');
+}
+
+export function buildLocalCourseFileUrl(resource, filePath = '', apiClient = null) {
+    const localPath = String(resource?.local_path || '').trim();
+    const resourceHandle = String(resource?.resource_handle || '').trim();
+    const relPath = String(filePath || '').trim().replace(/^\/+/, '');
+    if (!localPath || !resourceHandle || !relPath || /^https?:\/\//i.test(relPath)) return '';
+    const encodedRelPath = relPath
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/');
+    return `${getApiBaseUrl(apiClient)}/api/resources/local-file/${encodeURIComponent(resourceHandle)}/${encodedRelPath}`;
+}
+
+function normalizeRelativePath(value = '') {
+    return String(value).trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+}
+
+function getRelativeDirectory(filePath = '') {
+    const segments = normalizeRelativePath(filePath).split('/').filter(Boolean);
+    segments.pop();
+    return segments.join('/');
+}
+
+function joinLocalPath(basePath = '', relativePath = '') {
+    const base = String(basePath).trim().replace(/[\\/]+$/, '');
+    const relative = normalizeRelativePath(relativePath);
+    if (!base) return '';
+    if (!relative) return base;
+    const separator = base.includes('\\') && !base.includes('/') ? '\\' : '/';
+    return `${base}${separator}${relative.split('/').join(separator)}`;
+}
+
+export function resolveJupyterWorkspaceTarget({ coursePath = '', experimentPath = '', filePath = '' } = {}) {
+    const normalizedFilePath = normalizeRelativePath(filePath);
+    const normalizedExperimentPath = normalizeRelativePath(experimentPath);
+    const fileDirectory = getRelativeDirectory(normalizedFilePath);
+    const workspaceDirectory = normalizedExperimentPath || fileDirectory;
+    const fileInsideWorkspace = workspaceDirectory && (
+        normalizedFilePath === workspaceDirectory ||
+        normalizedFilePath.startsWith(`${workspaceDirectory}/`)
+    );
+
+    return {
+        projectDir: joinLocalPath(coursePath, workspaceDirectory),
+        filePath: fileInsideWorkspace
+            ? normalizedFilePath.slice(workspaceDirectory.length).replace(/^\/+/, '')
+            : normalizedFilePath,
+    };
+}
+
 function filePriority(file) {
     if (isHtmlFile(file)) return 0;
     if (isScratchFile(file)) return 1;

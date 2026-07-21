@@ -303,6 +303,26 @@ test('APIClient call surfaces HTTP errors and invalid JSON as APIError', async (
     }
 });
 
+test('getApiErrorMessage uses a structured backend error message', async () => {
+    const { APIError, getApiErrorMessage, cleanup } = await loadApiModule();
+
+    try {
+        const error = new APIError(
+            'HTTP 500: Internal Server Error',
+            500,
+            JSON.stringify({ success: false, error: 'AI API 调用失败: 400 - invalid temperature' }),
+        );
+
+        assert.equal(
+            getApiErrorMessage(error, '请求失败'),
+            'AI API 调用失败: 400 - invalid temperature',
+        );
+        assert.equal(getApiErrorMessage(new Error('连接失败'), '请求失败'), '连接失败');
+    } finally {
+        cleanup();
+    }
+});
+
 test('APIClient error logs omit response details', async () => {
     const errorCalls = [];
     const originalError = console.error;

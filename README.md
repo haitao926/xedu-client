@@ -58,18 +58,19 @@ XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Ju
 - 发布课程到 Gitea
 - 从远端课程源拉取更新
 - 确保课程发布仓库存在
-- 为 HTML 课程页面注入 QuickForm 表单
 
 对应后端接口：
 - `GET|POST /api/resources/index`
 - `POST /api/resources/scan`
+- `POST /api/resources/local-handle`
+- `GET /api/resources/local-file/<handle>/<path>`
+- `POST /api/resources/import-package-local`
 - `POST /api/resources/inspect-course`
 - `POST /api/resources/save-course`
 - `POST /api/resources/scan-folder`
 - `POST /api/resources/publish`
 - `POST /api/resources/pull`
 - `POST /api/resources/ensure-repo`
-- `POST /api/resources/quickform/inject`
 
 ### 4. 进入课堂模式
 
@@ -93,7 +94,6 @@ XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Ju
 ### 5. 使用教师辅助与业务代理
 
 - 默认 AI 问答
-- QuickForm 相关代理能力
 - XEdu Pack 相关代理能力
 - 按教师/学生模式限制部分写操作型代理
 
@@ -101,9 +101,6 @@ XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Ju
 - `POST /api/ai/ask`
 - `POST /api/ai/test_config`
 - `POST /api/ai/save_config`
-- `POST /api/quickform/test`
-- `POST /api/quickform/tasks`
-- `POST /api/quickform/tasks/create`
 
 ### 6. 做项目初始化和运行环境维护
 

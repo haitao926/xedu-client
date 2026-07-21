@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu Jupyter Lab"
+  short_description: "Create runnable XEdu Python and Notebook experiments"
+  default_prompt: "Use $xedu-jupyter-lab to create or repair a runnable XEdu Jupyter programming experiment."

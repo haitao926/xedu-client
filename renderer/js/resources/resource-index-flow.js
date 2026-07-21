@@ -66,9 +66,14 @@ export async function loadResourcesIndexFlow(deps = {}) {
 
     if (deps.classroomState.source && deps.classroomState.connected) {
       const baseUrl = deps.classroomState.source.base_url || deps.buildClassroomBaseUrl(deps.classroomState.source);
-      const response = await deps.apiClient.post('/api/classroom/fetch-index', {
-        base_url: baseUrl,
-      });
+      let response = null;
+      try {
+        response = await deps.apiClient.post('/api/classroom/fetch-index', {
+          base_url: baseUrl,
+        });
+      } catch (error) {
+        console.warn('课堂连接已失效，继续加载课程资源库:', error);
+      }
       if (response?.success) {
         deps.applyResourcesIndex(response.index || {}, {
           repoUrl: response.repo_url || baseUrl,

@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu Course Builder"
+  short_description: "Plan pedagogy-first XEdu courses and experiments"
+  default_prompt: "Use $xedu-course-builder to align learning goals, evidence, activities, and the necessary HTML, Scratch, or Jupyter experiments."

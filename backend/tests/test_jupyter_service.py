@@ -206,6 +206,31 @@ class JupyterEnvironmentHelpersTestCase(unittest.TestCase):
         self.assertIn(f"Python executable not found: {missing_python}", result.errors)
         self.assertIn(f"Project directory not found: {missing_project_dir}", result.errors)
 
+    def test_evaluate_environment_validation_reports_missing_jupyterlab(self):
+        config = JupyterConfig(
+            port=18888,
+            auto_restart=False,
+            python_executable=sys.executable,
+        )
+
+        with patch(
+            "services.jupyter_environment.inspect_jupyter_module",
+            return_value={"success": False, "message": "缺少 JupyterLab，请在“Python”设置中点击“修复”。"},
+        ):
+            result = evaluate_environment_validation(
+                config,
+                current_time=100.0,
+                cached_python_executable=None,
+                cached_venv_valid=None,
+                cached_project_dir_valid=None,
+                last_check=0.0,
+                cache_duration=300.0,
+                backend_python_executable=sys.executable,
+            )
+
+        self.assertFalse(result.is_valid)
+        self.assertTrue(any("缺少 JupyterLab" in error for error in result.errors))
+
     def test_build_jupyter_command_uses_relative_python_and_local_auth_bypass(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_root = Path(tmp_dir)
@@ -238,7 +263,7 @@ class JupyterEnvironmentHelpersTestCase(unittest.TestCase):
         self.assertIn("--Example.flag=1", command)
         self.assertEqual(command[-1], "--debug")
 
-    def test_build_jupyter_command_remote_access_keeps_auth_enabled(self):
+    def test_build_jupyter_command_ignores_remote_access_and_stays_local_only(self):
         config = JupyterConfig(
             port=18888,
             auto_restart=False,
@@ -255,8 +280,8 @@ class JupyterEnvironmentHelpersTestCase(unittest.TestCase):
 
         self.assertEqual(command[0], "/usr/bin/python3")
         self.assertEqual(command[1:3], ["-m", "notebook"])
-        self.assertIn("--ServerApp.ip=0.0.0.0", command)
-        self.assertNotIn("--ServerApp.token=", command)
+        self.assertIn("--ServerApp.ip=127.0.0.1", command)
+        self.assertIn("--ServerApp.token=", command)
         self.assertFalse(any(part.startswith("--ServerApp.root_dir=") for part in command))
 
 

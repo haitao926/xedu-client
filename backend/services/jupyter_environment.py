@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from models.config import JupyterConfig
+from utils.python_runtime import inspect_jupyter_module
 
 _BOOL_OVERRIDE_FIELDS = {"use_notebook", "auto_start", "auto_restart", "debug"}
 _INT_OVERRIDE_FIELDS = {"port", "check_interval", "max_restarts"}
@@ -57,7 +58,7 @@ def evaluate_environment_validation(
     if (
         current_time - last_check < cache_duration
         and cached_python_executable == config.python_executable
-        and cached_venv_valid is not None
+        and cached_venv_valid is True
     ):
         return EnvironmentValidationResult(
             is_valid=bool(cached_venv_valid),
@@ -74,8 +75,7 @@ def evaluate_environment_validation(
     python_executable = config.python_executable
 
     if not python_executable:
-        if not cached_python_executable:
-            python_executable = backend_python_executable
+        python_executable = cached_python_executable or backend_python_executable
     else:
         python_path = Path(python_executable)
         if not python_path.exists():
@@ -83,6 +83,13 @@ def evaluate_environment_validation(
             python_valid = False
         else:
             python_executable = str(python_path.resolve())
+
+    if python_valid and python_executable:
+        module_name = "notebook" if config.use_notebook else "jupyterlab"
+        module_check = inspect_jupyter_module(python_executable, module_name)
+        if not module_check["success"]:
+            errors.append(module_check["message"])
+            python_valid = False
 
     project_dir_valid = True
     if config.project_dir:
@@ -118,7 +125,8 @@ def build_jupyter_command(
     module_name = "notebook" if config.use_notebook else "jupyterlab"
     work_dir = _resolve_work_dir(config.project_dir)
 
-    remote_access_enabled = bool(getattr(config, "allow_remote_access", False))
+    # Keep Jupyter local-only even if older configs still carry the legacy flag.
+    remote_access_enabled = False
     bind_ip = "0.0.0.0" if remote_access_enabled else "127.0.0.1"
 
     cmd = [

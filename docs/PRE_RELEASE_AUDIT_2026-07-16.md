@@ -8,7 +8,7 @@
 
 > **产品方向：Scratch 是唯一继续维护的图形化编程主线。本次发布前完全移除 Blockly 编辑器、入口、依赖和专属代码，不保留旧课程编辑兼容；旧 Blockly 课程统一显示“该实验类型已不再支持”，并保证应用不崩溃。Scratch 正在使用的 XEduHub 共享设施必须先迁移并验证，不得随 Blockly 专属代码一起删除。**
 
-> **2026-07-19 增量复核**：Scratch 构建依赖已从上游临时嵌套安装改为 `scratch-editor` lockfile 中的显式 devDependencies，clean runner 可通过 `npm ci --prefix scratch-editor` 重现构建；修复 hoisted npm 布局下 Scratch blocks/MediaPipe 静态资源复制路径。`npm run quality-gate` 新鲜执行通过：后端 `136 passed`、Scratch `22 passed`、发布/安全/Renderer 契约、Vite 构建和 bundle guard 全部通过；root npm audit 为 `0` 项漏洞，Scratch lock 当前为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`），`--omit=dev` 仍有 `20` 项，现已由有期限例外与 reachability 门禁管理，仍需安全负责人批准或上游升级。`xedu-python==2.0.0` 可以导入 `XEdu.hub.Workflow` 并返回支持任务；教师设置页现会在所选解释器中探针，并提供精确元数据修复。发布校验器现已读取 app.asar/Info.plist 真实版本、扫描 app.asar 内部残留并独立验证 release commit/tag；官方 workflow 已加入 checkpoint 凭据前置检查，并归档完整依赖审计和签名证据。当前仍不把已有 unpacked 产物视为正式交付包；签名、公证、真实 `.sb3` GUI、教师实机和 30 台终端验收继续保持未关闭。
+> **2026-07-19 增量复核**：Scratch 构建依赖已从上游临时嵌套安装改为 `scratch-editor` lockfile 中的显式 devDependencies，clean runner 可通过 `npm ci --prefix scratch-editor` 重现构建；修复 hoisted npm 布局下 Scratch blocks/MediaPipe 静态资源复制路径。`npm run quality-gate` 新鲜执行通过：后端 `136 passed`、Scratch `22 passed`、发布/安全/Renderer 契约、Vite 构建和 bundle guard 全部通过；root npm audit 为 `0` 项漏洞，Scratch lock 当前为 `21` 项（`5 critical / 6 high / 10 moderate / 0 low`），`--omit=dev` 仍有 `20` 项，现已由有期限例外与 reachability 门禁管理，仍需安全负责人批准或上游升级。`xedu-python>=2.0.0` 只要 XEduHub 探针通过即可使用；教师设置页现会在所选解释器中探针，并提供适用于最低版本以上环境的元数据修复。发布校验器现已读取 app.asar/Info.plist 真实版本、扫描 app.asar 内部残留并独立验证 release commit/tag；官方 workflow 已加入 checkpoint 凭据前置检查，并归档完整依赖审计和签名证据。当前仍不把已有 unpacked 产物视为正式交付包；签名、公证、真实 `.sb3` GUI、教师实机和 30 台终端验收继续保持未关闭。
 
 ## 目录
 
@@ -79,7 +79,7 @@ RC5 已进入提交和 tag，但本地 `dist-*` 安装包不能替代 tag 产物
 
 本轮先交付不内置 `python_env` 的轻量版，不启动新的 DMG、zip 或 Windows 安装包生成。教师端需提前安装 Python 3.10+，首次启动通过文件选择器绑定本机解释器。Windows 使用 `Scripts/python.exe` 或 `python.exe`，macOS 使用 `bin/python3` 或 `bin/python`。
 
-选择路径保存到用户数据目录的配置文件，不写入安装目录；Electron 后端启动、Jupyter 启动、`/api/detect_python` 和 Python 包管理均使用同一配置。设置页会在所选解释器内执行 XEduHub 探针；精确 `xedu-python==2.0.0` 的旧元数据冲突可通过“修复兼容性”显式处理，修复后必须重新测试。未选择时，应用保留主界面和“选择本机 Python”恢复入口，不显示“缺少内置 Python”错误框。
+选择路径保存到用户数据目录的配置文件，不写入安装目录；Electron 后端启动、Jupyter 启动、`/api/detect_python` 和 Python 包管理均使用同一配置。设置页会在所选解释器内执行 XEduHub 探针；`xedu-python>=2.0.0` 的旧元数据冲突可通过“修复兼容性”显式处理，修复后必须重新测试。未选择时，应用保留主界面和“选择本机 Python”恢复入口，不显示“缺少内置 Python”错误框。
 
 ---
 

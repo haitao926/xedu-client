@@ -38,9 +38,6 @@ class SecurityApiTestCase(unittest.TestCase):
             ("post", "/api/python/pip", {"json": {"action": "invalid"}}),
             ("post", "/api/reset_config", {"json": {}}),
             ("post", "/api/projects/create", {"json": {}}),
-            ("post", "/api/quickform/test", {"json": {}}),
-            ("post", "/api/quickform/tasks", {"json": {}}),
-            ("post", "/api/quickform/tasks/create", {"json": {}}),
             ("post", "/api/ai/ask", {"json": {}}),
             ("get", "/api/debug/env", {}),
             ("get", "/api/detect_python?python_executable=/tmp/attacker-python", {}),
@@ -120,6 +117,15 @@ class SecurityApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
 
+    def test_local_handle_issuance_requires_a_process_capability(self):
+        response = self.client.post(
+            "/api/resources/local-handle",
+            json={"local_path": self.temp_dir.name},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
+
     def test_untrusted_origin_does_not_receive_cors_access(self):
         response = self.client.open(
             "/api/python/run",
@@ -166,8 +172,8 @@ class SecurityApiTestCase(unittest.TestCase):
 
         response = self.client.get(f"/api/resources/local-file/{token}/{private_file.name}")
 
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.get_json(), {"success": False, "message": "资源句柄已过期"})
 
     def test_authorized_legacy_base64_path_token_is_expired(self):
         private_file = Path(self.temp_dir.name) / "private.txt"
@@ -201,14 +207,12 @@ class SecurityApiTestCase(unittest.TestCase):
             "api_key": "security-test-api-key",
             "resources_publish_token": "security-test-publish-token",
             "classroom_teacher_code": "security-test-teacher-code",
-            "password": "security-test-quickform-password",
         }
         payload = {
             "ai": {"api_key": secrets["api_key"]},
             "ui": {
                 "resources_publish_token": secrets["resources_publish_token"],
                 "classroom_teacher_code": secrets["classroom_teacher_code"],
-                "quickform": {"password": secrets["password"]},
             },
         }
 

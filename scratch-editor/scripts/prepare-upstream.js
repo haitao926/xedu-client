@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const {isDebugBuild} = require('./build-environment');
 
 const root = path.resolve(__dirname, '..');
 const guiRoot = path.join(root, 'node_modules', '@scratch', 'scratch-gui');
@@ -7,6 +8,7 @@ const webpackConfigPath = path.join(guiRoot, 'webpack.config.js');
 const tsconfigPath = path.join(guiRoot, 'tsconfig.json');
 const microbitStaticDir = path.join(guiRoot, 'static', 'microbit');
 const microbitStaticPath = path.join(microbitStaticDir, 'scratch-microbit-1.2.0.hex');
+const debugBuild = isDebugBuild(process.env.DEBUG);
 
 const webpackConfig = `const fs = require('fs');
 const path = require('path');
@@ -67,7 +69,7 @@ const baseConfig = new ScratchWebpackConfigBuilder({
         type: 'asset'
     })
     .addPlugin(new webpack.DefinePlugin({
-        'process.env.DEBUG': Boolean(process.env.DEBUG),
+        'process.env.DEBUG': ${debugBuild},
         'process.env.GA_ID': JSON.stringify(process.env.GA_ID || 'UA-000000-01'),
         'process.env.GTM_ENV_AUTH': JSON.stringify(process.env.GTM_ENV_AUTH || ''),
         'process.env.GTM_ID': process.env.GTM_ID ? JSON.stringify(process.env.GTM_ID) : null

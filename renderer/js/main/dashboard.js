@@ -1,31 +1,6 @@
-import { escapeHtml } from '../utils/html.js';
+export function createDashboardController({ showSettingsTab }) {
 
-export function createDashboardController({ showTab, showSettingsTab }) {
-    function setDashboardQuickTab(tabName = "project") {
-        const normalized = tabName === "classroom" ? "classroom" : "project";
-        const tabs = document.querySelectorAll("[data-quick-tab]");
-        const panes = document.querySelectorAll(".dashboard-quick-pane");
-        tabs.forEach((tab) => {
-            const isActive = tab.dataset.quickTab === normalized;
-            tab.classList.toggle("is-active", isActive);
-            tab.setAttribute("aria-selected", isActive ? "true" : "false");
-        });
-        panes.forEach((pane) => {
-            const paneTab = pane.id?.replace("dashboard-quick-pane-", "") || "";
-            pane.classList.toggle("is-active", paneTab === normalized);
-        });
-    }
-
-    function buildClassroomBaseUrl(classroom) {
-        const direct = (classroom?.base_url || "").trim();
-        if (direct) return direct.replace(/\/$/, "");
-        const host = (classroom?.host || "").trim();
-        const port = classroom?.port;
-        if (!host || !port) return "";
-        return `http://${host}:${port}`;
-    }
-
-    function updateSettingsVisibility(isTeacher) {
+    function updateSettingsVisibility(isTeacher, { allowPythonSetup = false } = {}) {
         const modeAlreadyApplied = isTeacher
             ? document.body.classList.contains("teacher-mode") && document.body.classList.contains("student-mode")
             : document.body.classList.contains("student-mode") && !document.body.classList.contains("teacher-mode");
@@ -42,14 +17,11 @@ export function createDashboardController({ showTab, showSettingsTab }) {
         const settingsPage = document.getElementById("settings");
         const teacherTabs = document.querySelectorAll('.settings-tab[data-teacher-only="true"]');
         const teacherContents = document.querySelectorAll('.settings-content[data-teacher-only="true"]');
-        const aboutTab = document.querySelector('.settings-tab[data-tab="about"]');
-        const aboutContent = document.querySelector('.settings-content[data-settings-tab="about"]');
         const resourcesNavLabel = resourcesNavItem?.querySelector("span");
 
         if (isTeacher) {
             document.body.classList.add("student-mode");
             document.body.classList.add("teacher-mode");
-            setDashboardQuickTab("classroom");
             if (mainNavItem) {
                 mainNavItem.style.display = "none";
                 mainNavItem.classList.remove("active");
@@ -103,15 +75,14 @@ export function createDashboardController({ showTab, showSettingsTab }) {
             }
             const activeTab = document.querySelector(".settings-tab.active");
             if (!activeTab) {
-                const aiTab = document.querySelector('.settings-tab[data-tab="ai"]');
-                if (aiTab) {
-                    showSettingsTab("ai");
+                const pythonTab = document.querySelector('.settings-tab[data-tab="python"]');
+                if (pythonTab) {
+                    showSettingsTab("python");
                 }
             }
         } else {
             document.body.classList.add("student-mode");
             document.body.classList.remove("teacher-mode");
-            setDashboardQuickTab("classroom");
             if (mainNavItem) {
                 mainNavItem.style.display = "none";
                 mainNavItem.classList.remove("active");
@@ -133,7 +104,7 @@ export function createDashboardController({ showTab, showSettingsTab }) {
                 resourcesGroupTitle.style.display = "none";
             }
             if (systemGroupTitle) {
-                systemGroupTitle.style.display = "none";
+                systemGroupTitle.style.display = allowPythonSetup ? "" : "none";
             }
             if (resourcesNavItem) {
                 resourcesNavItem.style.display = "none";
@@ -143,11 +114,11 @@ export function createDashboardController({ showTab, showSettingsTab }) {
                 resourcesNavLabel.textContent = "课程资源";
             }
             if (settingsNavItem) {
-                settingsNavItem.style.display = "none";
-                settingsNavItem.classList.remove("active");
+                settingsNavItem.style.display = allowPythonSetup ? "flex" : "none";
+                if (!allowPythonSetup) settingsNavItem.classList.remove("active");
             }
             if (settingsPage) {
-                settingsPage.style.display = "none";
+                settingsPage.style.display = allowPythonSetup ? "" : "none";
             }
             const activePage = document.querySelector(".page-section.active");
             const activePageId = activePage?.id || "";
@@ -167,21 +138,15 @@ export function createDashboardController({ showTab, showSettingsTab }) {
                 });
             }
             teacherTabs.forEach((btn) => {
-                btn.style.display = "none";
-                btn.classList.remove("active");
+                const isPythonTab = btn.dataset.tab === "python";
+                btn.style.display = allowPythonSetup && isPythonTab ? "inline-flex" : "none";
+                if (!allowPythonSetup || !isPythonTab) btn.classList.remove("active");
             });
             teacherContents.forEach((section) => {
-                section.style.display = "none";
-                section.classList.remove("active");
+                const isPythonSection = section.dataset.settingsTab === "python";
+                section.style.display = allowPythonSetup && isPythonSection ? "" : "none";
+                if (!allowPythonSetup || !isPythonSection) section.classList.remove("active");
             });
-            if (aboutTab) {
-                aboutTab.style.display = "inline-flex";
-                aboutTab.classList.add("active");
-            }
-            if (aboutContent) {
-                aboutContent.style.display = "";
-                aboutContent.classList.add("active");
-            }
         }
         if (!modeAlreadyApplied) {
             window.dispatchEvent(new CustomEvent("xedu:teacher-mode-changed", {
@@ -190,49 +155,7 @@ export function createDashboardController({ showTab, showSettingsTab }) {
         }
     }
 
-    function renderStudentClassroomList(classrooms = [], onEnter) {
-        const listEl = document.getElementById("student-classroom-list");
-        const emptyEl = document.getElementById("student-classroom-empty");
-        if (!listEl || !emptyEl) return;
-
-        listEl.innerHTML = "";
-        if (!Array.isArray(classrooms) || classrooms.length === 0) {
-            emptyEl.style.display = "block";
-            emptyEl.textContent = "当前未发现课堂";
-            return;
-        }
-
-        emptyEl.style.display = "none";
-        classrooms.forEach((classroom) => {
-            const card = document.createElement("button");
-            card.type = "button";
-            card.className = "dashboard-classroom-card";
-            const count = Number(classroom?.course_count || 0);
-            const activeTitle = (classroom?.active_course_title || "").trim();
-            const meta = [];
-            meta.push("<span>直接进入</span>");
-            if (count > 0) meta.push(`<span>${count} 门课程</span>`);
-            if (activeTitle) meta.push(`<span>${escapeHtml(activeTitle)}</span>`);
-
-            card.innerHTML = `
-                <div class="dashboard-classroom-card-head">
-                    <div class="dashboard-classroom-card-title">${escapeHtml(classroom?.name || "课堂")}</div>
-                    <span class="dashboard-classroom-card-badge">可进入</span>
-                </div>
-                <div class="dashboard-classroom-card-meta">${meta.join("")}</div>
-                <div class="dashboard-classroom-card-action">
-                    <span class="btn btn-primary btn-sm">进入课堂</span>
-                </div>
-            `;
-            card.addEventListener("click", () => onEnter?.(classroom, card));
-            listEl.appendChild(card);
-        });
-    }
-
     return {
-        setDashboardQuickTab,
-        buildClassroomBaseUrl,
         updateSettingsVisibility,
-        renderStudentClassroomList,
     };
 }

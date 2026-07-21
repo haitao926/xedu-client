@@ -8,13 +8,30 @@ import hashlib
 import re
 from pathlib import Path
 
-XEDU_PYTHON_VERSION = "2.0.0"
+XEDU_PYTHON_MIN_VERSION = "2.0.0"
+# Keep the historical name for the reproducible portable-runtime pin.
+XEDU_PYTHON_VERSION = XEDU_PYTHON_MIN_VERSION
 XEDU_METADATA_MARKER = "XEdu-Client-Compatibility: modern-python-profile"
 _STALE_REQUIREMENT_PATTERNS = (
     re.compile(r"^Requires-Dist:\s*onnxruntime\s*<1\.16\.0\s*$", re.IGNORECASE),
     re.compile(r"^Requires-Dist:\s*pillow\s*<=9\.5\.0\s*$", re.IGNORECASE),
 )
 _ORIGINAL_REQUIREMENTS = "onnxruntime <1.16.0; Pillow <=9.5.0"
+
+
+def _version_tuple(version: str | None) -> tuple[int, int, int] | None:
+    if not version:
+        return None
+    match = re.match(r"^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?", str(version))
+    if not match:
+        return None
+    return tuple(int(part or 0) for part in match.groups())
+
+
+def is_supported_xedu_version(version: str | None) -> bool:
+    parsed = _version_tuple(version)
+    minimum = _version_tuple(XEDU_PYTHON_MIN_VERSION)
+    return parsed is not None and minimum is not None and parsed >= minimum
 
 
 def _metadata_files(site_packages: Path):
@@ -62,11 +79,11 @@ def patch_xedu_metadata(site_packages: Path) -> dict:
         }
 
     metadata_path, text, version = matches[0]
-    if version != XEDU_PYTHON_VERSION:
+    if not is_supported_xedu_version(version):
         return {
             "success": False,
             "changed": False,
-            "message": f"只允许修复 xedu-python=={XEDU_PYTHON_VERSION}，当前为 {version or '未知版本'}。",
+            "message": f"只允许修复 xedu-python>={XEDU_PYTHON_MIN_VERSION}，当前为 {version or '未知版本'}。",
         }
 
     if XEDU_METADATA_MARKER in text:

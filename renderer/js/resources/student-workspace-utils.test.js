@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import * as studentWorkspaceUtils from "./student-workspace-utils.js";
+
 import {
   getStudentVisibleLessonContexts,
   getStudentWorkspaceEmptyText,
@@ -11,6 +13,55 @@ import {
   pickFirstExperimentWithFiles,
   shouldHideJupyterForStudentTab,
 } from "./student-workspace-utils.js";
+
+test("student task center stays empty when no classroom course is active", () => {
+  const selectStudentCurrentCourse = studentWorkspaceUtils.selectStudentCurrentCourse;
+  assert.equal(typeof selectStudentCurrentCourse, "function");
+
+  const staleLocalCourse = { id: "history-course", source: "local" };
+  const staleClassroomCourse = { id: "old-classroom-course", source: "classroom" };
+
+  assert.equal(selectStudentCurrentCourse({
+    classroomState: { active: false, connected: false },
+    remoteSource: "remote",
+    localCourses: [staleLocalCourse],
+    resourcesCache: [staleLocalCourse, staleClassroomCourse],
+  }), null);
+
+  assert.equal(selectStudentCurrentCourse({
+    classroomState: { active: false, connected: false },
+    remoteSource: "classroom",
+    localCourses: [staleLocalCourse],
+    resourcesCache: [staleClassroomCourse],
+  }), null);
+});
+
+test("student task center selects only the course published by an active classroom", () => {
+  const selectStudentCurrentCourse = studentWorkspaceUtils.selectStudentCurrentCourse;
+  assert.equal(typeof selectStudentCurrentCourse, "function");
+
+  const unrelatedLocalCourse = { id: "local-history", source: "local" };
+  const activeLocalCourse = { id: "active-origin", source: "local" };
+  assert.equal(selectStudentCurrentCourse({
+    classroomState: {
+      active: true,
+      connected: false,
+      activeCourseId: "active-share-id",
+      activeCourseOriginId: "active-origin",
+    },
+    remoteSource: "remote",
+    localCourses: [unrelatedLocalCourse, activeLocalCourse],
+    resourcesCache: [],
+  }), activeLocalCourse);
+
+  const activeRemoteCourse = { id: "remote-active", source: "classroom" };
+  assert.equal(selectStudentCurrentCourse({
+    classroomState: { active: false, connected: true },
+    remoteSource: "classroom",
+    localCourses: [unrelatedLocalCourse],
+    resourcesCache: [activeRemoteCourse],
+  }), activeRemoteCourse);
+});
 
 test("student workspace exposes the five classroom-facing entry semantics", () => {
   assert.equal(getStudentWorkspaceTabTitle("route", true), "课程任务中心");

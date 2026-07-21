@@ -14,8 +14,11 @@ export function bindResourcesUI(deps = {}) {
     filteredResources,
     showListView,
     ensureTeacherModeForEdit,
+    pullLatestForLocalCourse,
+    importRemoteCourse,
     deleteCourse,
     currentResource,
+    inspectCourseResource,
     toggleDetailMoreMenu,
     bindDetailMoreMenu,
     startClassroomForResource,
@@ -31,6 +34,7 @@ export function bindResourcesUI(deps = {}) {
     renderPackagePathSummary,
     renderLocalPathSummary,
     renderCloudCoursePreview,
+    loadSelectedCloudCourseDetails,
     createSource,
     setCreateSource,
     setCreateStep,
@@ -38,6 +42,7 @@ export function bindResourcesUI(deps = {}) {
     pickLocalPackage,
     useDefaultSampleCourse,
     importLocalPackageToPath,
+    handlePackageDrop,
     pickLocalCourse,
     loadCloudCourseOptions,
     importCloudCourseAndSave,
@@ -60,8 +65,10 @@ export function bindResourcesUI(deps = {}) {
   const empty = documentRef.getElementById('resources-empty');
   const backBtn = documentRef.getElementById('resources-back-btn');
   const detailDownloadBtn = documentRef.getElementById('resources-detail-download');
+  const detailPullBtn = documentRef.getElementById('resources-detail-pull');
   const detailDeleteBtn = documentRef.getElementById('resources-detail-delete');
   const detailRepoBtn = documentRef.getElementById('resources-detail-repo');
+  const detailInspectBtn = documentRef.getElementById('resources-detail-inspect');
   const detailOpenBtn = documentRef.getElementById('resources-detail-open');
   const classroomRefreshBtn = documentRef.getElementById('resources-classroom-refresh');
   const detailClassroomStartBtn = documentRef.getElementById('resources-detail-classroom-start');
@@ -78,6 +85,7 @@ export function bindResourcesUI(deps = {}) {
   const pickPackageBtn = documentRef.getElementById('resources-pick-package-btn');
   const useDefaultSampleBtn = documentRef.getElementById('resources-use-default-sample-btn');
   const packageImportBtn = documentRef.getElementById('resources-package-import-btn');
+  const packageDropZone = documentRef.getElementById('resources-package-drop-zone');
   const pickLocalBtn = documentRef.getElementById('resources-pick-local-btn');
   const cloudRefreshBtn = documentRef.getElementById('resources-cloud-refresh-btn');
   const cloudImportBtn = documentRef.getElementById('resources-cloud-import-btn');
@@ -153,6 +161,18 @@ export function bindResourcesUI(deps = {}) {
     const targetUrl = event.currentTarget.dataset.url;
     if (targetUrl) openExternal(targetUrl);
   });
+  if (detailPullBtn) detailPullBtn.addEventListener('click', async () => {
+    const resource = typeof currentResource === 'function' ? currentResource() : currentResource;
+    if (!resource) return;
+    const actionLabel = resource.source === 'local' ? '更新课程' : '导入课程到本地';
+    const ok = await ensureTeacherModeForEdit(actionLabel);
+    if (!ok) return;
+    if (resource.source === 'local') {
+      await pullLatestForLocalCourse?.(resource);
+      return;
+    }
+    await importRemoteCourse?.(resource);
+  });
   if (detailDeleteBtn) detailDeleteBtn.addEventListener('click', async () => {
     if (currentResource()) {
       const ok = await ensureTeacherModeForEdit('移除本地课程');
@@ -184,6 +204,10 @@ export function bindResourcesUI(deps = {}) {
     detailMoreMenu.addEventListener('click', () => { detailMoreMenu.classList.remove('is-open'); });
     bindDetailMoreMenu();
   }
+  if (detailInspectBtn) detailInspectBtn.addEventListener('click', () => {
+    const resource = typeof currentResource === 'function' ? currentResource() : currentResource;
+    if (resource) inspectCourseResource(resource);
+  });
 
   if (detailClassroomStartBtn) {
     detailClassroomStartBtn.addEventListener('click', async () => {
@@ -226,6 +250,33 @@ export function bindResourcesUI(deps = {}) {
   if (pickPackageBtn) pickPackageBtn.addEventListener('click', pickLocalPackage);
   if (useDefaultSampleBtn) useDefaultSampleBtn.addEventListener('click', useDefaultSampleCourse);
   if (packageImportBtn) packageImportBtn.addEventListener('click', importLocalPackageToPath);
+  if (packageDropZone) {
+    packageDropZone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      if (packageDropZone.getAttribute('aria-disabled') === 'true') return;
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      packageDropZone.classList.add('is-dragging');
+    });
+    packageDropZone.addEventListener('dragleave', (event) => {
+      if (!event.relatedTarget || !packageDropZone.contains(event.relatedTarget)) {
+        packageDropZone.classList.remove('is-dragging');
+      }
+    });
+    packageDropZone.addEventListener('drop', async (event) => {
+      event.preventDefault();
+      packageDropZone.classList.remove('is-dragging');
+      if (packageDropZone.getAttribute('aria-disabled') === 'true') return;
+      await handlePackageDrop?.(event);
+    });
+    packageDropZone.addEventListener('click', () => {
+      if (packageDropZone.getAttribute('aria-disabled') !== 'true') pickLocalPackage?.();
+    });
+    packageDropZone.addEventListener('keydown', (event) => {
+      if (!['Enter', ' '].includes(event.key) || packageDropZone.getAttribute('aria-disabled') === 'true') return;
+      event.preventDefault();
+      pickLocalPackage?.();
+    });
+  }
   if (pickLocalBtn) pickLocalBtn.addEventListener('click', pickLocalCourse);
   if (cloudRefreshBtn) cloudRefreshBtn.addEventListener('click', loadCloudCourseOptions);
   if (cloudImportBtn) cloudImportBtn.addEventListener('click', importCloudCourseAndSave);
@@ -233,6 +284,7 @@ export function bindResourcesUI(deps = {}) {
   if (cloudCourseSelect) cloudCourseSelect.addEventListener('change', () => {
     renderCloudCoursePreview();
     updateCreateFormState();
+    loadSelectedCloudCourseDetails();
   });
   if (cloudTempLoadBtn) cloudTempLoadBtn.addEventListener('click', loadCloudCoursesFromTempSource);
   if (cloudTempClearBtn) cloudTempClearBtn.addEventListener('click', clearCloudTempSourceAndReload);

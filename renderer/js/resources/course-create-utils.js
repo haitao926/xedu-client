@@ -20,7 +20,6 @@ export function buildQuickCoursePayload({
     templateData = null,
     normalizeTagsInput,
     isPackageUrl,
-    normalizeCourseQuickFormDefaults,
 }) {
     const finalTitle = title || "未命名课程";
     const payload = templateData && typeof templateData === "object" ? templateData : {};
@@ -47,7 +46,6 @@ export function buildQuickCoursePayload({
         updated_at: new Date().toISOString().slice(0, 10),
         source: cloudUrl ? "cloud" : "local",
         sections,
-        quickform_defaults: normalizeCourseQuickFormDefaults(payload.quickform_defaults || {}),
     };
 }
 
@@ -56,7 +54,6 @@ export function buildCourseFromFormPayload({
     baseCourse = null,
     scannedCourse = null,
     normalizeOrigin,
-    normalizeCourseQuickFormDefaults,
 }) {
     const base = baseCourse || {};
     const sections =
@@ -70,10 +67,6 @@ export function buildCourseFromFormPayload({
         base.origin ||
         {}
     );
-
-    const baseQuickFormDefaults = normalizeCourseQuickFormDefaults(base.quickform_defaults || {});
-    const hasQuickFormEnabledInput = typeof formValues.quickFormEnabled === "boolean";
-    const hasQuickFormHtmlPathInput = typeof formValues.quickFormHtmlPath === "string";
 
     return {
         id: formValues.courseId || base.id || `local-${Date.now()}`,
@@ -91,11 +84,6 @@ export function buildCourseFromFormPayload({
         updated_at: new Date().toISOString().slice(0, 10),
         source: "local",
         sections,
-        quickform_defaults: {
-            ...baseQuickFormDefaults,
-            ...(hasQuickFormEnabledInput ? { enabled: formValues.quickFormEnabled } : {}),
-            ...(hasQuickFormHtmlPathInput ? { html_path: formValues.quickFormHtmlPath } : {}),
-        },
         origin: origin || base.origin || undefined,
         sync: base.sync || undefined,
     };

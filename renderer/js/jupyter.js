@@ -14,6 +14,18 @@ let lastProjectDir = loadLastProjectDir();
 let lastStatusErrorKey = '';
 let lastStatusErrorAt = 0;
 
+function getApiErrorMessage(error, fallback = '操作失败') {
+    if (error?.details) {
+        try {
+            const parsed = JSON.parse(error.details);
+            if (parsed?.message) return parsed.message;
+        } catch (_) {
+            return String(error.details);
+        }
+    }
+    return error?.message || fallback;
+}
+
 function loadLastProjectDir() {
     try {
         return localStorage.getItem(LAST_PROJECT_KEY) || '';
@@ -149,6 +161,16 @@ function getPlaceholderBounds() {
     };
 }
 
+export function isUsableJupyterViewBounds(bounds) {
+    return Boolean(
+        bounds &&
+        Number.isFinite(bounds.width) &&
+        Number.isFinite(bounds.height) &&
+        bounds.width > 0 &&
+        bounds.height > 0
+    );
+}
+
 function startViewSync() {
     const placeholder = document.getElementById('jupyter-view-placeholder');
     if (!placeholder || resizeObserver) return;
@@ -160,16 +182,7 @@ function startViewSync() {
             // 调试日志：查看实际获取的坐标
             // console.log('[Jupyter Bounds Debug]', bounds);
 
-            if (bounds && bounds.width > 0 && bounds.height > 0) {
-                // 关键修复：防止非全屏状态下遮挡左侧栏
-                const isFullscreen = document.getElementById('jupyter-card')?.classList.contains('fullscreen');
-                
-                // 如果不是全屏模式，且 x 坐标小于 300（说明可能布局计算错误或被挤压），则拒绝更新
-                if (!isFullscreen && bounds.x < 300) {
-                    // console.warn('忽略异常布局坐标:', bounds);
-                    return;
-                }
-
+            if (isUsableJupyterViewBounds(bounds)) {
                 window.electronAPI.jupyterUpdateBounds(bounds);
             }
         }
@@ -209,11 +222,7 @@ async function attachJupyterView(url, options = {}) {
 
         const bounds = getPlaceholderBounds();
         
-        // 安全检查：如果 x 坐标太小，说明布局可能还没准备好（或者被挤压了）
-        // 左侧栏宽度约为 380px，所以 x 应该至少大于 300
-        if (bounds && bounds.x < 300) {
-            // console.warn('Jupyter 视图布局异常 (x < 300)，跳过本次挂载');
-            isAttaching = false; 
+        if (!isUsableJupyterViewBounds(bounds)) {
             return;
         }
 
@@ -300,9 +309,15 @@ export function refreshView() {
 export async function openExternal(url) {
     const target = url || currentJupyterUrl;
     if (target) {
-        await window.electronAPI.jupyterOpenExternal(target);
+        const result = await window.electronAPI?.jupyterOpenExternal?.(target);
+        if (!result?.success) {
+            log(`无法在浏览器中打开 Jupyter：${result?.error || '浏览器桥接不可用'}`, 'error');
+            return false;
+        }
+        return true;
     } else {
         log('Jupyter 尚未启动', 'warning');
+        return false;
     }
 }
 
@@ -767,9 +782,10 @@ export async function testPythonEnvironment() {
     const resultEl = document.getElementById('python-env-check-result');
     log(`测试 Python 环境: ${pythonPath || '(当前后端解释器)'}`, 'info');
     if (resultEl) {
-        resultEl.textContent = '正在检测 Python / XEdu 运行时...';
+        resultEl.hidden = false;
+        resultEl.dataset.state = 'pending';
+        resultEl.textContent = '正在检测…';
     }
-
     try {
         const query = pythonPath ? `?python_executable=${encodeURIComponent(pythonPath)}` : '';
         const response = await apiClient.get(`/api/detect_python${query}`);
@@ -778,30 +794,25 @@ export async function testPythonEnvironment() {
         }
 
         const info = response.info;
-        const xeduVersion = info.xedu_version || '未安装';
-        const xeduExpected = info.xedu_expected_version || '2.0.0';
-        const xeduStatus = info.xedu_version_ok && info.xedu_runtime_ok ? '通过' : '异常';
-        const jupyterlab = info.jupyterlab_version || '未安装';
-        const notebook = info.jupyter_notebook_version || '未安装';
+        const jupyterReady = Boolean(info.jupyterlab_version);
+        const xeduReady = Boolean(info.xedu_version_ok && info.xedu_runtime_ok);
         const message = [
-            `Python ${info.python_version || '未知'} (${info.python_executable || '未知路径'})`,
-            `xedu-python: ${xeduVersion}，预期 ${xeduExpected}，检查结果：${xeduStatus}`,
-            `JupyterLab: ${jupyterlab}`,
-            `Notebook: ${notebook}`,
-            info.xedu_runtime_message || '',
-            info.xedu_repair_available ? '可在设置中执行兼容性修复' : '',
+            `Python ${info.python_version || '未知'}`,
+            `JupyterLab ${info.jupyterlab_version || '未安装'}`,
+            `XEdu ${xeduReady ? '就绪' : '需检查'}`,
+            !jupyterReady ? '点击修复安装 JupyterLab' : '',
         ].filter(Boolean).join(' | ');
 
         if (resultEl) {
             resultEl.textContent = message;
-            resultEl.style.color = info.xedu_version_ok && info.xedu_runtime_ok ? 'var(--success-color)' : 'var(--warning-color)';
+            resultEl.dataset.state = jupyterReady && xeduReady ? 'success' : 'warning';
         }
-        log(message, info.xedu_version_ok && info.xedu_runtime_ok ? 'success' : 'warning');
+        log(message, jupyterReady && xeduReady ? 'success' : 'warning');
     } catch (error) {
-        const message = `Python 环境检测失败: ${error.message}`;
+        const message = `Python 环境检测失败: ${getApiErrorMessage(error)}`;
         if (resultEl) {
             resultEl.textContent = message;
-            resultEl.style.color = 'var(--danger-color)';
+            resultEl.dataset.state = 'error';
         }
         log(message, 'error');
     }

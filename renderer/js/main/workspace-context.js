@@ -64,6 +64,11 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
     let scratchLoadTimer = null;
     let scratchBridgeBound = false;
     let scratchHandleIssuedAt = 0;
+    let scratchBridgeReady = false;
+    let scratchBridgeState = {};
+    let scratchHostRequestId = 0;
+    const scratchHostRequests = new Map();
+    const scratchBridgeToken = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 
     function getScratchHostMenuElements() {
         return {
@@ -73,13 +78,123 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         };
     }
 
-    function getScratchBridge() {
-        const frame = document.getElementById('scratch-workspace-frame');
-        const bridge = frame?.contentWindow?.__xeduScratchBridge__;
-        if (!bridge || typeof bridge !== 'object') {
-            return null;
+    function sliceArrayBufferView(view) {
+        return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+    }
+
+    function normalizeScratchProjectBuffer(buffer) {
+        if (buffer instanceof ArrayBuffer) {
+            return buffer;
         }
-        return bridge;
+        if (ArrayBuffer.isView(buffer)) {
+            return sliceArrayBufferView(buffer);
+        }
+        return null;
+    }
+
+    async function pickScratchProjectFileFromHost() {
+        if (typeof window.electronAPI?.selectScratchProjectFile === 'function') {
+            const result = await window.electronAPI.selectScratchProjectFile();
+            if (!result || result.canceled) {
+                return null;
+            }
+            const buffer = normalizeScratchProjectBuffer(result.buffer);
+            if (!buffer) {
+                throw new Error('Scratch 项目文件读取失败。');
+            }
+            return {
+                fileName: String(result.fileName || result.name || 'Scratch作品.sb3'),
+                buffer,
+            };
+        }
+        return new Promise((resolve, reject) => {
+            const input = document.createElement('input');
+            let settled = false;
+            input.type = 'file';
+            input.accept = '.sb,.sb2,.sb3';
+            input.style.display = 'none';
+            document.body.appendChild(input);
+            const cleanup = () => {
+                settled = true;
+                window.removeEventListener('focus', handleWindowFocus);
+                input.value = '';
+                if (input.parentNode) {
+                    input.parentNode.removeChild(input);
+                }
+            };
+            const resolveOnce = (value) => {
+                if (settled) return;
+                cleanup();
+                resolve(value);
+            };
+            const rejectOnce = (error) => {
+                if (settled) return;
+                cleanup();
+                reject(error);
+            };
+            const handleWindowFocus = () => {
+                window.setTimeout(() => {
+                    if (!settled && !(input.files && input.files.length > 0)) {
+                        resolveOnce(null);
+                    }
+                }, 250);
+            };
+            input.addEventListener('cancel', () => resolveOnce(null), { once: true });
+            input.addEventListener('change', async () => {
+                const file = input.files?.[0];
+                if (!file) {
+                    resolveOnce(null);
+                    return;
+                }
+                try {
+                    resolveOnce({
+                        fileName: file.name,
+                        buffer: await file.arrayBuffer(),
+                    });
+                } catch (error) {
+                    rejectOnce(error);
+                }
+            }, { once: true });
+            window.addEventListener('focus', handleWindowFocus, { once: true });
+            input.click();
+        });
+    }
+
+    function postToScratchFrame(message, transfer = []) {
+        const frame = document.getElementById('scratch-workspace-frame');
+        const childWindow = frame?.contentWindow;
+        if (!childWindow || typeof childWindow.postMessage !== 'function') {
+            return false;
+        }
+        let backendOrigin = '';
+        try {
+            backendOrigin = new URL(getApiBaseUrl()).origin;
+        } catch (_) {
+            return false;
+        }
+        try {
+            childWindow.postMessage({ ...message, bridgeToken: scratchBridgeToken }, backendOrigin, transfer);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function requestScratchBridgeState() {
+        postToScratchFrame({ type: 'xedu:scratch-host-state-request' });
+    }
+
+    function releaseScratchMedia() {
+        postToScratchFrame({ type: 'xedu:scratch-host-lifecycle', active: false });
+    }
+
+    function syncScratchMenuInteractivity() {
+        const { menu } = getScratchHostMenuElements();
+        const frame = document.getElementById('scratch-workspace-frame');
+        if (!frame) {
+            return;
+        }
+        frame.style.pointerEvents = menu?.open ? 'none' : 'auto';
     }
 
     function updateScratchHostMenuState(visible) {
@@ -94,19 +209,43 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         if (!visible) {
             menu.open = false;
         }
-        const bridge = visible ? getScratchBridge() : null;
-        const bridgeState = bridge?.getState?.() || {};
+        syncScratchMenuInteractivity();
         items.forEach((item) => {
             const action = item.getAttribute('data-scratch-host-action');
-            if (!visible || !bridge) {
+            if (!visible || !scratchBridgeReady) {
                 item.disabled = true;
                 return;
             }
             if (action === 'save') {
-                item.disabled = bridgeState.canSave === false;
+                item.disabled = scratchBridgeState.canSave === false;
                 return;
             }
             item.disabled = false;
+        });
+    }
+
+    async function dispatchScratchHostRequest(request, options = {}) {
+        const requestId = `scratch-host-${++scratchHostRequestId}`;
+        return await new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                scratchHostRequests.delete(requestId);
+                reject(new Error('Scratch 文件操作超时'));
+            }, 15000);
+            scratchHostRequests.set(requestId, {
+                resolve: (value) => {
+                    clearTimeout(timeoutId);
+                    resolve(value);
+                },
+                reject: (error) => {
+                    clearTimeout(timeoutId);
+                    reject(error);
+                },
+            });
+            if (!postToScratchFrame({ ...request, requestId }, options.transfer || [])) {
+                scratchHostRequests.delete(requestId);
+                clearTimeout(timeoutId);
+                reject(new Error('Scratch 页面尚未连接'));
+            }
         });
     }
 
@@ -115,26 +254,38 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         if (menu) {
             menu.open = false;
         }
-        const bridge = getScratchBridge();
-        if (!bridge) {
+        if (!scratchBridgeReady) {
             window.app?.ui?.showToast?.('Scratch 正在加载，请稍后再试。', 'warning');
+            requestScratchBridgeState();
             updateScratchHostMenuState(true);
             return false;
         }
-        const actionMap = {
-            new: 'newProject',
-            save: 'saveProject',
-            upload: 'uploadProject',
-            download: 'downloadProject',
-        };
-        const handlerName = actionMap[action];
-        if (!handlerName || typeof bridge[handlerName] !== 'function') {
+        if (!['new', 'save', 'upload', 'download'].includes(action)) {
             window.app?.ui?.showToast?.('当前 Scratch 页面暂不支持这个操作。', 'warning');
             updateScratchHostMenuState(true);
             return false;
         }
         try {
-            await bridge[handlerName]();
+            if (action === 'upload') {
+                const uploadPayload = await pickScratchProjectFileFromHost();
+                if (!uploadPayload) {
+                    updateScratchHostMenuState(true);
+                    return false;
+                }
+                await dispatchScratchHostRequest({
+                    type: 'xedu:scratch-host-upload-project',
+                    fileName: uploadPayload.fileName,
+                    buffer: uploadPayload.buffer,
+                }, {
+                    transfer: [uploadPayload.buffer],
+                });
+            } else {
+                await dispatchScratchHostRequest({
+                    type: 'xedu:scratch-host-action',
+                    action,
+                });
+            }
+            requestScratchBridgeState();
             updateScratchHostMenuState(true);
             return true;
         } catch (error) {
@@ -156,6 +307,9 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
                 runScratchHostAction(item.getAttribute('data-scratch-host-action'));
             });
         });
+        menu.addEventListener('toggle', () => {
+            syncScratchMenuInteractivity();
+        });
         document.addEventListener('click', (event) => {
             if (!menu.open) {
                 return;
@@ -164,6 +318,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
                 return;
             }
             menu.open = false;
+            syncScratchMenuInteractivity();
         });
     }
 
@@ -206,6 +361,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         const projectPath = String(payload?.projectPath || '').trim().replace(/^\/+/, '');
         const projectHandle = String(payload?.projectHandle || '').trim();
         params.set('apiBase', apiBase);
+        params.set('bridgeToken', scratchBridgeToken);
         if (revision > 0) params.set('_rev', String(revision));
         if (projectHandle) params.set('rootToken', projectHandle);
         if (projectPath) params.set('project', projectPath);
@@ -240,14 +396,41 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         scratchBridgeBound = true;
         window.addEventListener('message', async (event) => {
             const request = event.data;
-            if (request?.type !== 'xedu:scratch-api-request' || event.source !== frame.contentWindow) return;
+            if (event.source !== frame.contentWindow) return;
             let backendOrigin = '';
             try {
                 backendOrigin = new URL(getApiBaseUrl()).origin;
             } catch (_) {
                 return;
             }
-            if (event.origin !== backendOrigin || typeof window.electronAPI?.scratchApiRequest !== 'function') return;
+            if (event.origin !== backendOrigin) return;
+            if (request?.type === 'xedu:scratch-host-state') {
+                if (request.bridgeToken !== scratchBridgeToken) return;
+                scratchBridgeReady = true;
+                scratchBridgeState = request.state && typeof request.state === 'object' ? request.state : {};
+                updateScratchHostMenuState(true);
+                return;
+            }
+            if (request?.type === 'xedu:scratch-host-action-result') {
+                if (request.bridgeToken !== scratchBridgeToken) return;
+                const pending = scratchHostRequests.get(request.requestId);
+                if (!pending) return;
+                scratchHostRequests.delete(request.requestId);
+                if (request.error) pending.reject(new Error(request.error));
+                else pending.resolve(request.result);
+                return;
+            }
+            if (request?.type === 'xedu:scratch-project-access-expired') {
+                if (request.bridgeToken !== scratchBridgeToken || !lastOpenedScratchWorkspace?.projectPath) return;
+                // Scratch turns a 410 from its project loader into a fatal ErrorBoundary.
+                // Drop the expired, opaque handle and let the host issue a replacement first.
+                lastOpenedScratchWorkspace.projectHandle = '';
+                scratchHandleIssuedAt = 0;
+                frame.dataset.loadedScratchUrl = '';
+                renderScratchWorkspaceContext();
+                return;
+            }
+            if (request?.type !== 'xedu:scratch-api-request' || typeof window.electronAPI?.scratchApiRequest !== 'function') return;
             try {
                 const response = await window.electronAPI.scratchApiRequest({
                     path: request.path,
@@ -329,8 +512,17 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
             <div class="placeholder-desc">${escapeHtml(desc)}</div>
             <button class="btn btn-primary mt-3" type="button" data-scratch-placeholder-action${buttonDisabled}>${escapeHtml(buttonText)}</button>
         `;
-        emptyEl.querySelector('[data-scratch-placeholder-action]')?.addEventListener('click', () => {
+        emptyEl.querySelector('[data-scratch-placeholder-action]')?.addEventListener('click', async () => {
             if (state.buttonDisabled) return;
+            if (typeof state.onAction === 'function') {
+                try {
+                    await state.onAction();
+                } catch (error) {
+                    console.warn('执行 Scratch 占位操作失败:', error);
+                    window.app?.ui?.showToast?.(error?.message || 'Scratch 恢复失败', 'error');
+                }
+                return;
+            }
             if (tone === 'error') {
                 renderScratchWorkspaceContext();
             } else {
@@ -339,7 +531,42 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         });
     }
 
-    async function waitForScratchBackend(frame, emptyEl, frameUrl, requestId) {
+    async function getScratchBackendRecoveryState() {
+        const electronApi = window.electronAPI;
+        if (typeof electronApi?.getBackendStartupState !== 'function') {
+            return null;
+        }
+        try {
+            const result = await electronApi.getBackendStartupState();
+            const state = result?.state;
+            if (!state || typeof state !== 'object') {
+                return null;
+            }
+            return {
+                status: String(state.status || '').trim().toLowerCase(),
+                message: String(state.message || '').trim(),
+                canRetry: state.canRetry !== false,
+            };
+        } catch (error) {
+            console.warn('获取后端启动状态失败:', error);
+            return null;
+        }
+    }
+
+    async function retryScratchManagedBackend() {
+        const electronApi = window.electronAPI;
+        if (typeof electronApi?.retryBackendStartup !== 'function') {
+            throw new Error('当前环境不支持自动重试后端启动。');
+        }
+        const result = await electronApi.retryBackendStartup();
+        if (!result?.success) {
+            throw new Error(result?.error || result?.state?.message || '重试启动后端失败');
+        }
+        window.app?.ui?.showToast?.('已重新触发 XEdu API 服务启动', 'success');
+        await renderScratchWorkspaceContext();
+    }
+
+    async function waitForScratchBackend(frame, emptyEl, frameUrl, requestId, onFrameLoad) {
         try {
             const response = await apiClient.request('/api/health', {
                 method: 'GET',
@@ -350,6 +577,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             clearScratchRetryTimer();
             if (frame.dataset.loadedScratchUrl !== frameUrl) {
+                frame.addEventListener('load', onFrameLoad, { once: true });
                 frame.dataset.loadedScratchUrl = frameUrl;
                 frame.setAttribute('src', frameUrl);
             }
@@ -363,11 +591,25 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
             frame.dataset.loadedScratchUrl = '';
             frame.classList.remove('is-loading');
             frame.style.display = 'none';
+            const recoveryState = await getScratchBackendRecoveryState();
+            const backendStarting = recoveryState?.status === 'starting';
+            const canManagedRetry = Boolean(
+                recoveryState
+                && recoveryState.status !== 'ready'
+                && recoveryState.canRetry
+                && typeof window.electronAPI?.retryBackendStartup === 'function'
+            );
             renderScratchPlaceholder(emptyEl, {
                 tone: 'error',
                 title: 'Scratch 后端未连接',
-                desc: '请先启动 XEdu API 服务；后端恢复后这里会自动重试。',
-                buttonText: '立即重试',
+                desc: recoveryState?.message || (backendStarting
+                    ? 'XEdu API 服务仍在启动中；服务恢复后这里会自动重试。'
+                    : '请先启动 XEdu API 服务；后端恢复后这里会自动重试。'),
+                buttonText: backendStarting
+                    ? '后端启动中...'
+                    : (canManagedRetry ? '重试启动后端' : '立即重试'),
+                buttonDisabled: backendStarting,
+                onAction: canManagedRetry ? retryScratchManagedBackend : undefined,
             });
             emptyEl.style.display = 'flex';
             scheduleScratchRetry();
@@ -482,6 +724,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         const frame = document.getElementById('scratch-workspace-frame');
         const emptyEl = document.getElementById('scratch-workspace-empty');
         if (!frame || !emptyEl) return;
+        frame.setAttribute('allow', 'camera *');
         clearScratchRetryTimer();
         clearScratchLoadTimer();
         const payload = lastOpenedScratchWorkspace;
@@ -491,6 +734,12 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
             : '';
         const scratchSectionActive = Boolean(document.getElementById('scratch-workspace')?.classList.contains('active'));
         updateScratchHostMenuState(scratchSectionActive);
+        if (!scratchSectionActive) {
+            clearScratchRetryTimer();
+            clearScratchLoadTimer();
+            releaseScratchMedia();
+            return;
+        }
         if (scratchSectionActive) {
             const titleEl = document.getElementById('page-title');
             const subtitleEl = document.getElementById('page-subtitle');
@@ -555,15 +804,16 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         emptyEl.style.display = preserveLoadedFrame ? 'none' : 'flex';
         if (!preserveLoadedFrame) frame.style.display = 'none';
         frame.classList.add('is-loading');
-        frame.addEventListener('load', () => {
+        const onFrameLoad = () => {
             if (scratchFrameRequestId !== nextRequestId || frame.dataset.loadedScratchUrl !== frameUrl) return;
             clearScratchLoadTimer();
             frame.classList.remove('is-loading');
             frame.style.display = 'block';
             emptyEl.style.display = 'none';
+            requestScratchBridgeState();
             updateScratchHostMenuState(true);
-        }, { once: true });
-        waitForScratchBackend(frame, emptyEl, frameUrl, nextRequestId);
+        };
+        waitForScratchBackend(frame, emptyEl, frameUrl, nextRequestId, onFrameLoad);
     }
 
     function renderWorkspacePages() {

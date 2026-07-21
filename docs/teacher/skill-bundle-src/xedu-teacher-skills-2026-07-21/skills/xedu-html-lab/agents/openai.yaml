@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu HTML Lab"
+  short_description: "Create focused XEdu interactive HTML experiments"
+  default_prompt: "Use $xedu-html-lab to create or repair an interactive XEdu experiment page with parameter-linked Python code."

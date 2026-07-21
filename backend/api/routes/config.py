@@ -43,8 +43,9 @@ def register_config_routes(app, services: dict):
         if config_service.save_config(app_config):
             set_app_config(app_config)
             jupyter_manager.config = app_config.jupyter
+            jupyter_manager.clear_env_cache()
             ai_service.config = app_config.ai
-            app.config["ALLOW_NETWORK_ACCESS"] = bool(getattr(app_config.ui, "allow_network_access", False))
+            app.config["ALLOW_NETWORK_ACCESS"] = bool(getattr(app_config.ui, "allow_network_access", True))
             return jsonify(
                 {
                     "success": True,
@@ -75,8 +76,9 @@ def register_config_routes(app, services: dict):
         app_config = config_service.load_config()
         set_app_config(app_config)
         jupyter_manager.config = app_config.jupyter
+        jupyter_manager.clear_env_cache()
         ai_service.config = app_config.ai
-        app.config["ALLOW_NETWORK_ACCESS"] = bool(getattr(app_config.ui, "allow_network_access", False))
+        app.config["ALLOW_NETWORK_ACCESS"] = bool(getattr(app_config.ui, "allow_network_access", True))
         return jsonify({
             "success": True,
             "message": "已恢复默认配置，原配置已保存在备份目录",

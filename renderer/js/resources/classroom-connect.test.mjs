@@ -59,3 +59,45 @@ test('student connection falls back to the teacher address when UDP discovery is
     ['remember', 'http://teacher.local:5123'],
   ]);
 });
+
+test('student connection uses the supplied classroom code to select a discovered classroom', async () => {
+  const classroomState = { source: null, connected: false };
+  const calls = [];
+  const result = await connectStudentClassroomByCodeFlow('room-b', {}, {
+    initialized: () => true,
+    bindEvents() {},
+    setInitialized() {},
+    setLocalCourses() {},
+    loadLocalCourses: () => [],
+    loadClassroomConfig: async () => {},
+    ensureTeacherModeReady: async () => {},
+    classroomState,
+    buildClassroomBaseUrl: (entry) => `http://${entry.host}:${entry.port}`,
+    apiClient: {
+      get: async () => ({
+        success: true,
+        classrooms: [
+          { name: '课堂 A', code: 'room-a', host: 'teacher-a.local', port: 5123 },
+          { name: '课堂 B', code: 'room-b', host: 'teacher-b.local', port: 5123 },
+        ],
+      }),
+      post: async (url, payload) => {
+        calls.push([url, payload]);
+        return { success: true, index: { resources: [] } };
+      },
+    },
+    requestManualClassroomAddress: async () => null,
+    rememberClassroomSource() {},
+    applyResourcesIndex() {},
+    updateClassroomBanner() {},
+    showListView() {},
+    showDetailView() {},
+    resourcesCache: () => [],
+  });
+
+  assert.equal(result.success, true, result.message);
+  assert.equal(classroomState.source.name, '课堂 B');
+  assert.deepEqual(calls, [
+    ['/api/classroom/fetch-index', { base_url: 'http://teacher-b.local:5123' }],
+  ]);
+});

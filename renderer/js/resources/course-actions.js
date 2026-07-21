@@ -1,3 +1,5 @@
+import { openPathWithDesktopBridge } from './desktop-bridge.js';
+
 export async function importRemoteCourseForTestingFlow(resource, deps = {}) {
   let imported = null;
   try {
@@ -57,8 +59,8 @@ export function resolveLocalPathFlow(basePath, targetPath) {
 export async function openLocalPathFlow(targetPath, electronAPI = window.electronAPI) {
   if (!targetPath) return;
   try {
-    if (electronAPI && typeof electronAPI.invoke === 'function') {
-      await electronAPI.invoke('open-path', targetPath);
+    if (electronAPI) {
+      await openPathWithDesktopBridge(targetPath, electronAPI);
       return;
     }
   } catch (error) {
@@ -134,7 +136,9 @@ export function applyResourcesIndexFlow(indexData, options = {}, deps = {}) {
   const normalizedRemote = remoteList.map((item) => ({ ...item, source: options.remoteSource || 'remote' }));
   const normalizedLocal = deps.localCourses.map((item) => ({ ...item, source: 'local' }));
   const localIds = new Set(normalizedLocal.map((item) => item.id));
-  const merged = [...normalizedLocal, ...normalizedRemote.filter((item) => !localIds.has(item.id))];
+  const merged = options.remoteSource === 'classroom'
+    ? normalizedRemote
+    : [...normalizedLocal, ...normalizedRemote.filter((item) => !localIds.has(item.id))];
   deps.setResourcesCache(merged);
 
   deps.buildFilterOptions();

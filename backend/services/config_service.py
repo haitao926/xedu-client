@@ -253,6 +253,7 @@ class ConfigService:
                 'api_key': '',
                 'base_url': 'https://api.moonshot.cn/v1',
                 'model': 'moonshot-v1-8k-vision-preview',
+                'api_mode': 'auto',
                 'max_history': 50,
                 'timeout': 30
             }

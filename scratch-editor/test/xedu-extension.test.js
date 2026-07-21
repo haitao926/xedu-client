@@ -184,14 +184,75 @@ test('Scratch course projects use available task extensions', () => {
   }
 });
 
-test('high contrast mode preserves XEdu colors while official extensions use the shared palette', () => {
+test('Scratch editor uses the original default color mode', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const guiRoot = path.join(__dirname, '../node_modules/@scratch/scratch-gui/src');
-  const blocksSource = fs.readFileSync(path.join(guiRoot, 'containers/blocks.jsx'), 'utf8');
-  const helpersSource = fs.readFileSync(path.join(guiRoot, 'lib/settings/color-mode/blockHelpers.js'), 'utf8');
-  assert.ok(blocksSource.includes("!String(categoryInfo.id).startsWith('xedu')"));
-  assert.ok(helpersSource.includes("if (String(extension.id).startsWith('xedu')) return extension;"));
+  const persistenceSource = fs.readFileSync(path.join(guiRoot, 'lib/settings/color-mode/persistence.js'), 'utf8');
+  const patchSource = fs.readFileSync(path.join(__dirname, '../scripts/patch-scratch.js'), 'utf8');
+  assert.ok(persistenceSource.includes('const detectColorMode = () => DEFAULT_MODE;'));
+  assert.ok(patchSource.includes('const detectColorMode = () => DEFAULT_MODE;'));
+});
+
+test('embedded Scratch host controls use a token-bound message bridge', () => {
+  const patchSource = fs.readFileSync(path.join(__dirname, '../scripts/patch-scratch.js'), 'utf8');
+  assert.ok(patchSource.includes("request?.bridgeToken !== bridgeToken"));
+  assert.ok(patchSource.includes("type: 'xedu:scratch-host-action-result'"));
+  assert.ok(patchSource.includes("type === 'xedu:scratch-host-upload-project'"));
+  assert.ok(patchSource.includes('bindXEduScratchHostBridge(state, xeduScratchBridge);'));
+});
+
+test('standalone Scratch bootstrap exposes the host file-operation bridge', () => {
+  const copyBuildSource = fs.readFileSync(path.join(__dirname, '../scripts/copy-build.js'), 'utf8');
+  assert.ok(copyBuildSource.includes('xedu:scratch-host-state-request'));
+  assert.ok(copyBuildSource.includes('xedu:scratch-host-state'));
+  assert.ok(copyBuildSource.includes('xedu:scratch-host-action-result'));
+  assert.ok(copyBuildSource.includes('xedu:scratch-host-upload-project'));
+  assert.ok(copyBuildSource.includes('GUI.requestNewProject(false)'));
+});
+
+test('embedded Scratch intercepts expired project handles before the GUI error boundary', () => {
+  const copyBuildSource = fs.readFileSync(path.join(__dirname, '../scripts/copy-build.js'), 'utf8');
+  assert.ok(copyBuildSource.includes("method: 'HEAD'"));
+  assert.ok(copyBuildSource.includes('xedu:scratch-project-access-expired'));
+  assert.ok(copyBuildSource.includes('response.status === 410'));
+});
+
+test('embedded Scratch routes library assets through the local proxy', () => {
+  const patchSource = fs.readFileSync(path.join(__dirname, '../scripts/patch-scratch.js'), 'utf8');
+  const copyBuildSource = fs.readFileSync(path.join(__dirname, '../scripts/copy-build.js'), 'utf8');
+  const standaloneSource = fs.readFileSync(
+    path.join(__dirname, '../node_modules/@scratch/scratch-gui/src/playground/render-gui-standalone.jsx'),
+    'utf8'
+  );
+  const librarySource = fs.readFileSync(
+    path.join(__dirname, '../node_modules/@scratch/scratch-gui/src/components/library/library.jsx'),
+    'utf8'
+  );
+
+  assert.ok(patchSource.includes('getXEduScratchAssetHost'));
+  assert.ok(standaloneSource.includes('window.__XEDU_SCRATCH_ASSET_HOST__ = getXEduScratchAssetHost();'));
+  assert.ok(standaloneSource.includes('assetHost: getXEduScratchAssetHost(),'));
+  assert.ok(librarySource.includes('getScratchAssetServiceBase'));
+  assert.equal(librarySource.includes('https://cdn.assets.scratch.mit.edu/internalapi/asset/${item.assetId}.${item.dataFormat}/get/'), false);
+  assert.equal(librarySource.includes('https://cdn.assets.scratch.mit.edu/internalapi/asset/${md5ext}/get/'), false);
+  assert.ok(librarySource.includes('assetServiceUri: `${getScratchAssetServiceBase()}/${item.assetId}.${item.dataFormat}/get/`'));
+  assert.ok(librarySource.includes('assetServiceUri: `${getScratchAssetServiceBase()}/${md5ext}/get/`'));
+  assert.ok(copyBuildSource.includes("const getScratchAssetHost = () => getApiBase() + '/api/scratch-assets';"));
+  assert.ok(copyBuildSource.includes('window.__XEDU_SCRATCH_ASSET_HOST__ = getScratchAssetHost();'));
+  assert.ok(copyBuildSource.includes('assetHost: getScratchAssetHost(),'));
+});
+
+test('XEdu toolbox refresh removes stale Blockly definitions before redefining blocks', () => {
+  const blocksSource = fs.readFileSync(
+    path.join(__dirname, '../node_modules/@scratch/scratch-gui/src/containers/blocks.jsx'),
+    'utf8'
+  );
+  const patchSource = fs.readFileSync(path.join(__dirname, '../scripts/patch-scratch.js'), 'utf8');
+  for (const source of [blocksSource, patchSource]) {
+    assert.ok(source.includes("String(categoryInfo.id).startsWith('xedu')"));
+    assert.ok(source.includes('delete this.ScratchBlocks.Blocks[blockInfo.json.type]'));
+  }
 });
 
 test('Scratch task blocks produce the shared XEduHub execution spec', () => {
@@ -260,6 +321,148 @@ test('stage sensing shares camera frames and never overlaps requests for one tas
   assert.deepEqual(session.result('pose_hand21').result.output.keypoints, [[12, 34]]);
 });
 
+test('Scratch stop button disables stage video and stops direct camera streams', async () => {
+  const Scratch3XEduAI = require('../node_modules/@scratch/scratch-vm/src/extensions/scratch3_xedu_ai/index.js');
+  const videoCalls = [];
+  const trackStops = [];
+  const originalNavigator = global.navigator;
+  Object.defineProperty(global, 'navigator', {
+    configurable: true,
+    writable: true,
+    value: {
+    mediaDevices: {
+      async getUserMedia () {
+        return {
+          getTracks () {
+            return [{
+              stop () {
+                trackStops.push('stop');
+              },
+            }];
+          },
+        };
+      },
+    },
+    },
+  });
+
+  const runtimeEvents = {};
+  const runtime = {
+    on (event, handler) {
+      runtimeEvents[event] = handler;
+    },
+    ioDevices: {
+      video: {
+        disableVideo () {
+          videoCalls.push('disable');
+        },
+      },
+    },
+  };
+
+  try {
+    const extension = new Scratch3XEduAI(runtime, 'camera');
+    await extension._openCamera('0');
+    runtimeEvents.PROJECT_STOP_ALL();
+
+    assert.deepEqual(videoCalls, ['disable']);
+    assert.deepEqual(trackStops, ['stop']);
+    assert.equal(extension._cameraStreams.size, 0);
+  } finally {
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      writable: true,
+      value: originalNavigator,
+    });
+  }
+});
+
+test('stage sensing draws pose keypoints on a dedicated overlay layer', async () => {
+  const {StageSensingSession} = require('../src/extensions/scratch3_xedu_ai/stage-sensing');
+  const originalDocument = global.document;
+  const arcs = [];
+  const visibleCalls = [];
+  const bitmapUpdates = [];
+  let redraws = 0;
+  global.document = {
+    createElement (tagName) {
+      assert.equal(tagName, 'canvas');
+      return {
+        width: 0,
+        height: 0,
+        getContext () {
+          return {
+            putImageData () {},
+            clearRect () {},
+            beginPath () {},
+            arc (x, y, radius) { arcs.push([x, y, radius]); },
+            fill () {},
+            stroke () {},
+            set fillStyle (_) {},
+            set lineWidth (_) {},
+            set strokeStyle (_) {},
+          };
+        },
+        toDataURL () {
+          return 'data:image/png;base64,frame';
+        },
+      };
+    },
+  };
+
+  const runtime = {
+    ioDevices: {video: {enableVideo () {}}},
+    renderer: {
+      createBitmapSkin (bitmap, resolution) {
+        bitmapUpdates.push({bitmap, resolution});
+        return 11;
+      },
+      createDrawable (group) {
+        assert.equal(group, 'video');
+        return 12;
+      },
+      updateDrawableSkinId () {},
+      setDrawableOrder (drawableId, order, group) {
+        assert.equal(drawableId, 12);
+        assert.equal(group, 'video');
+        assert.equal(order, Infinity);
+      },
+      updateBitmapSkin (skinId, bitmap, resolution) {
+        assert.equal(skinId, 11);
+        bitmapUpdates.push({bitmap, resolution});
+      },
+      updateDrawableVisible (drawableId, visible) {
+        assert.equal(drawableId, 12);
+        visibleCalls.push(visible);
+      },
+    },
+    requestRedraw () {
+      redraws += 1;
+    },
+  };
+
+  try {
+    const session = new StageSensingSession(runtime, {
+      autoRefresh: false,
+      getFrame: async () => ({data: new Uint8ClampedArray(100 * 50 * 4), width: 100, height: 50}),
+      request: async () => ({success: true, result: {output: {keypoints: [[25, 10], [75, 20]]}}}),
+    });
+
+    await session.enable('pose_body17');
+    await session.showKeypoints('pose_body17');
+    assert.ok(arcs.some(([x, y, radius]) => Math.abs(x - 120) < 0.01 && Math.abs(y - 72) < 0.01 && radius === 5));
+    assert.ok(arcs.some(([x, y]) => Math.abs(x - 360) < 0.01 && Math.abs(y - 144) < 0.01));
+    assert.equal(visibleCalls.includes(true), true);
+    assert.ok(bitmapUpdates.some(call => call.bitmap.width === 480 && call.bitmap.height === 360 && call.resolution === 1));
+
+    session.hideKeypoints('pose_body17');
+    assert.equal(visibleCalls.at(-1), false);
+    assert.ok(redraws > 0);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
 test('student sensing blocks enable a stage sensor without image path inputs', () => {
   const extensions = createXEduSensingInfos();
   for (const extension of extensions) {
@@ -271,6 +474,15 @@ test('student sensing blocks enable a stage sensor without image path inputs', (
   const hand = extensions.find(extension => extension.id === 'xeduHandSensing');
   const handPoint = hand.blocks.find(block => block.opcode === 'handPointAxis');
   assert.equal(handPoint.arguments.POINT.menu, 'handPoints');
+  for (const [id, showOpcode, hideOpcode] of [
+    ['xeduFaceSensing', 'showFaceKeypoints', 'hideFaceKeypoints'],
+    ['xeduBodySensing', 'showBodyKeypoints', 'hideBodyKeypoints'],
+    ['xeduHandSensing', 'showHandKeypoints', 'hideHandKeypoints'],
+  ]) {
+    const extension = extensions.find(item => item.id === id);
+    assert.ok(extension.blocks.some(block => block.opcode === showOpcode), `${id} is missing ${showOpcode}`);
+    assert.ok(extension.blocks.some(block => block.opcode === hideOpcode), `${id} is missing ${hideOpcode}`);
+  }
 });
 
 test('Scratch VM loads every teaching-oriented sensing extension', () => {

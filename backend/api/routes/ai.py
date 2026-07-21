@@ -18,18 +18,12 @@ def register_ai_routes(app, services: dict):
 
     build_ai_service = services["build_ai_service"]
     looks_like_confirmation = services["looks_like_confirmation"]
-    looks_like_quickform_request = services["looks_like_quickform_request"]
     looks_like_xedu_pack_request = services["looks_like_xedu_pack_request"]
     get_app_config = services["get_app_config"]
     config_service = services["config_service"]
 
     def _student_boundary_answer(question: str) -> str:
         lowered = (question or "").lower()
-        if "quickform" in lowered or "表单" in question:
-            return (
-                "这个聊天助手现在聚焦学生实验答疑，不负责 QuickForm 接入或数据统计。"
-                "如果你正在做实验，我可以帮你理解任务、分析报错、解释 Scratch 或 Python 步骤。"
-            )
         if "pack" in lowered or "打包" in question or "发布" in question:
             return (
                 "这个聊天助手现在聚焦学生实验答疑，不负责课程打包或发布。"
@@ -66,9 +60,8 @@ def register_ai_routes(app, services: dict):
             "today": datetime.now().strftime("%Y-%m-%d"),
             "experience_mode": str(agent_context.get("experience_mode") or "").strip().lower(),
         }
-        quickform_request = looks_like_quickform_request(question, history)
         xedu_pack_request = looks_like_xedu_pack_request(question, history)
-        matched_teacher_agent = quickform_request or xedu_pack_request
+        matched_teacher_agent = xedu_pack_request
 
         if matched_teacher_agent:
             response = {

@@ -18,7 +18,9 @@ def register_classroom_routes(app, services: dict):
 
     classroom_service = services["classroom_service"]
     logger = services["logger"]
+    parse_bool = services["parse_bool"]
     validate_teacher_code = services["validate_teacher_code"]
+    transfer_jobs = app.extensions["xedu_course_transfer_jobs"]
 
     @app.route("/api/classroom/sync-courses", methods=["POST"])
     @require_capability("resource:write")
@@ -92,7 +94,12 @@ def register_classroom_routes(app, services: dict):
         status = classroom_service.status()
         if not status.get("active"):
             return jsonify({"success": False, "message": "课堂未开启"}), 404
-        base_url = f"http://127.0.0.1:{services['resolve_api_port']()}"
+        local_hosts = {"localhost", "127.0.0.1", "[::1]", "::1"}
+        request_host = request.host.rsplit(":", 1)[0] if ":" in request.host and not request.host.startswith("[") else request.host
+        if request_host in local_hosts:
+            base_url = f"http://127.0.0.1:{services['resolve_api_port']()}"
+        else:
+            base_url = request.host_url.rstrip("/")
         index_data = classroom_service.build_index(base_url)
         return jsonify({
             "success": True,
@@ -163,9 +170,27 @@ def register_classroom_routes(app, services: dict):
         payload = request.get_json(silent=True) or {}
         package_url = payload.get("package_url", "")
         target_path = payload.get("target_path", "")
+
+        def run_pull(progress_callback=None):
+            result = ClassroomService.pull_package(
+                package_url,
+                target_path,
+                progress_callback=progress_callback,
+            )
+            return {"success": True, **result}
+
+        if parse_bool(payload.get("async"), False):
+            operation_id = transfer_jobs.start(
+                lambda progress: run_pull(progress),
+                metadata={
+                    "kind": "classroom-pull",
+                    "course_id": str(payload.get("course_id") or "").strip(),
+                },
+            )
+            return jsonify({"success": True, "operation_id": operation_id})
+
         try:
-            result = ClassroomService.pull_package(package_url, target_path)
-            return jsonify({"success": True, **result})
+            return jsonify(run_pull())
         except ClassroomServiceError as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:

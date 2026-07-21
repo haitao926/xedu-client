@@ -7,8 +7,32 @@ import { extractFile, listPackage } from '@electron/asar';
 import path from 'node:path';
 import process from 'node:process';
 
-const REQUIRED_DIRECTORIES = ['backend', 'checkpoint'];
-const FORBIDDEN_DIRECTORIES = ['python_env', 'python_env_win'];
+const ARTIFACT_PROFILES = {
+  release: {
+    requiredDirectories: ['backend', 'checkpoint'],
+    forbiddenDirectories: [
+      ['python_env', 'bundled Python environment must not be included'],
+      ['python_env_win', 'bundled Python environment must not be included'],
+    ],
+  },
+  minimal: {
+    requiredDirectories: ['backend', 'python_env'],
+    forbiddenDirectories: [
+      ['python_env_win', 'bundled Python environment must use the canonical python_env path'],
+      ['checkpoint', 'model directory must not be included'],
+    ],
+    forbidModelFiles: true,
+  },
+  'external-python': {
+    requiredDirectories: ['backend'],
+    forbiddenDirectories: [
+      ['python_env', 'bundled Python environment must not be included'],
+      ['python_env_win', 'bundled Python environment must not be included'],
+      ['checkpoint', 'model directory must not be included'],
+    ],
+    forbidModelFiles: true,
+  },
+};
 const REQUIRED_FILES = ['scratch-editor/build/index.html'];
 const FORBIDDEN_ARTIFACT_PATHS = [
   /(^|\/)renderer\/js\/blockly(?:\/|$)/i,
@@ -71,6 +95,22 @@ async function findForbiddenArtifactPaths(current, relative = '', result = []) {
       continue;
     }
     if (entry.isFile() && FORBIDDEN_ARTIFACT_PATHS.some((pattern) => pattern.test(childRelative))) {
+      result.push(childRelative);
+    }
+  }
+  return result;
+}
+
+async function findForbiddenModelPaths(current, relative = '', result = []) {
+  const entries = await readdir(current, { withFileTypes: true });
+  for (const entry of entries) {
+    const target = path.join(current, entry.name);
+    const childRelative = path.posix.join(relative, entry.name);
+    if (entry.isDirectory()) {
+      await findForbiddenModelPaths(target, childRelative, result);
+      continue;
+    }
+    if (entry.isFile() && /\.(?:onnx|pt|pth|safetensors)$/i.test(entry.name)) {
       result.push(childRelative);
     }
   }
@@ -141,9 +181,18 @@ async function findForbiddenAsarPaths(resourcesPath) {
  * The function intentionally checks only files required at runtime. Signing,
  * notarization, and archive naming are platform-specific release checks.
  */
-export async function verifyReleaseArtifact(root, { expectedVersion } = {}) {
+export async function verifyReleaseArtifact(root, { expectedVersion, profile = 'release' } = {}) {
   const artifactRoot = path.resolve(root);
   const errors = [];
+  const profileRules = ARTIFACT_PROFILES[profile];
+  if (!profileRules) {
+    return {
+      ok: false,
+      errors: [`unknown artifact profile: ${profile}`],
+      version: null,
+      resourcesPath: null,
+    };
+  }
   const resourcesPath = await findResourcesPath(artifactRoot);
 
   if (!resourcesPath) {
@@ -168,14 +217,14 @@ export async function verifyReleaseArtifact(root, { expectedVersion } = {}) {
       errors.push(`required file missing: ${relativePath}`);
     }
   }
-  for (const relativePath of REQUIRED_DIRECTORIES) {
+  for (const relativePath of profileRules.requiredDirectories) {
     if (!await isDirectory(path.join(resourcesPath, relativePath))) {
       errors.push(`required directory missing: ${relativePath}`);
     }
   }
-  for (const relativePath of FORBIDDEN_DIRECTORIES) {
+  for (const [relativePath, message] of profileRules.forbiddenDirectories) {
     if (await isDirectory(path.join(resourcesPath, relativePath))) {
-      errors.push(`bundled Python environment must not be included: ${relativePath}`);
+      errors.push(`${message}: ${relativePath}`);
     }
   }
 
@@ -186,6 +235,11 @@ export async function verifyReleaseArtifact(root, { expectedVersion } = {}) {
 
   for (const relativePath of await findForbiddenArtifactPaths(resourcesPath)) {
     errors.push(`removed Blockly artifact must not be packaged: ${relativePath}`);
+  }
+  if (profileRules.forbidModelFiles) {
+    for (const relativePath of await findForbiddenModelPaths(resourcesPath)) {
+      errors.push(`model file must not be included: ${relativePath}`);
+    }
   }
   for (const relativePath of await findForbiddenAsarPaths(resourcesPath)) {
     errors.push(`forbidden app.asar content must not be packaged: ${relativePath}`);
@@ -314,6 +368,7 @@ function parseArgs(argv) {
   let arch;
   let tag;
   let commit;
+  let profile = 'release';
   const artifacts = [];
   for (let index = 0; index < rest.length; index += 1) {
     if (rest[index] === '--version') expectedVersion = rest[++index];
@@ -322,21 +377,22 @@ function parseArgs(argv) {
     if (rest[index] === '--arch') arch = rest[++index];
     if (rest[index] === '--tag') tag = rest[++index];
     if (rest[index] === '--commit') commit = rest[++index];
+    if (rest[index] === '--profile') profile = rest[++index];
     if (rest[index] === '--artifact') artifacts.push(rest[++index]);
   }
-  return { root, expectedVersion, manifest, platform, arch, tag, commit, artifacts };
+  return { root, expectedVersion, manifest, platform, arch, tag, commit, profile, artifacts };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { root, expectedVersion, manifest, platform, arch, tag, commit, artifacts } = parseArgs(process.argv.slice(2));
+  const { root, expectedVersion, manifest, platform, arch, tag, commit, profile, artifacts } = parseArgs(process.argv.slice(2));
   if (!root) {
-    console.error('Usage: node scripts/verify_release_artifact.mjs <unpacked-artifact> [--version <version>] [--manifest <path>] [--platform <platform>] [--arch <arch>] [--tag <tag>] [--commit <sha>] [--artifact <file>]...');
+    console.error('Usage: node scripts/verify_release_artifact.mjs <unpacked-artifact> [--version <version>] [--profile <release|minimal|external-python>] [--manifest <path>] [--platform <platform>] [--arch <arch>] [--tag <tag>] [--commit <sha>] [--artifact <file>]...');
     process.exitCode = 2;
   } else {
     try {
       const targetErrors = validateReleaseTarget({ platform, arch });
       if (targetErrors.length > 0) throw new Error(targetErrors.join('\n'));
-      const result = await verifyReleaseArtifact(root, { expectedVersion });
+      const result = await verifyReleaseArtifact(root, { expectedVersion, profile });
       if (!result.ok) {
         throw new Error(result.errors.join('\n'));
       }

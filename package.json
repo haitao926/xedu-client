@@ -26,6 +26,16 @@
     "electron:dev": "concurrently -k -n renderer,electron -c green,magenta \"npm run dev:renderer\" \"electron .\"",
     "electron:build": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder",
     "electron:build:release": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.release.cjs",
+    "electron:build:bundled-python-no-models": "npm run electron:build:portable:mac",
+    "electron:build:portable:mac": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.bundled-python-no-models.cjs --mac",
+    "electron:build:portable:win": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.bundled-python-no-models.win.cjs --win",
+    "electron:build:minimal": "npm run electron:build:minimal:mac",
+    "electron:build:minimal:mac": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.minimal.cjs --mac",
+    "electron:build:minimal:win": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.minimal.win.cjs --win",
+    "electron:build:external-python": "npm run electron:build:external-python:mac",
+    "electron:build:external-python:mac": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.external-python.cjs --mac",
+    "electron:build:external-python:win": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.external-python.cjs --win",
+    "electron:build:external-python:win32": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.external-python.win32.cjs --win",
     "electron:pack": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --dir"
   },
   "dependencies": {
@@ -48,7 +58,7 @@
     },
     "files": [
       "build/**/*",
-      "electron/main/main.js",
+      "electron/main/**/*.js",
       "electron/preload/**/*"
     ],
     "extraResources": [

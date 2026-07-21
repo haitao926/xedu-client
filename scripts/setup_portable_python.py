@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -50,6 +51,9 @@ from utils.xedu_compat import XEDU_METADATA_MARKER, XEDU_PYTHON_VERSION, patch_x
 REQ_FULL = PROJECT_ROOT / "backend" / "requirements_full.txt"
 REQ_MINIMAL = PROJECT_ROOT / "backend" / "requirements.txt"
 WINDOWS_SOURCE_WHEEL_FALLBACKS = {"pinpong"}
+WINDOWS_FALLBACK_DEPENDENCIES = {
+    "pinpong": ("pyserial==3.5", "freetype-py==2.1.0", "modbus-tk==1.1.2"),
+}
 NO_DEPS_REQUIREMENTS = {"xedu-python"}
 XEDU_PYTHON_SPEC = f"xedu-python=={XEDU_PYTHON_VERSION}"
 # Keep xedu-python out of normal requirements resolution. Version 2.0.0
@@ -57,6 +61,9 @@ XEDU_PYTHON_SPEC = f"xedu-python=={XEDU_PYTHON_VERSION}"
 # audited Python 3.12 profile, so the installer applies a narrow, recorded
 # metadata compatibility patch after installing the exact wheel.
 NO_DEPS_REQUIREMENT_SPECS = (XEDU_PYTHON_SPEC,)
+MODEL_SUFFIXES = {".onnx", ".pt", ".pth", ".safetensors"}
+CACHE_DIRECTORY_NAMES = {"__pycache__", ".pytest_cache"}
+RUNTIME_METADATA_FILE = ".portable_runtime.json"
 
 
 def detect_default_target() -> str:
@@ -224,6 +231,12 @@ def download_windows_wheels(requirements_file: Path, wheelhouse: Path):
     wheelhouse.mkdir(parents=True, exist_ok=True)
     target_cfg = TARGETS["windows-x64"]["pip_download"]
     primary_specs, fallback_specs, no_deps_specs = split_windows_requirements(requirements_file)
+    fallback_dependency_specs = []
+    for spec in fallback_specs:
+        fallback_dependency_specs.extend(
+            WINDOWS_FALLBACK_DEPENDENCIES.get(requirement_name(spec), ())
+        )
+    primary_specs = primary_specs + fallback_dependency_specs
 
     if primary_specs:
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as handle:
@@ -260,6 +273,7 @@ def download_windows_wheels(requirements_file: Path, wheelhouse: Path):
             "-m",
             "pip",
             "wheel",
+            "--no-deps",
             spec,
             "-w",
             str(wheelhouse),
@@ -324,6 +338,15 @@ def install_windows_requirements_offline(env_dir: Path, requirements_file: Path,
     wheels = sorted(wheelhouse.glob("*.whl"))
     if not wheels:
         raise RuntimeError("No wheels downloaded for Windows runtime")
+    incompatible_wheels = [
+        wheel.name
+        for wheel in wheels
+        if any(marker in wheel.name.lower() for marker in ("macosx", "darwin", "linux", "manylinux"))
+    ]
+    if incompatible_wheels:
+        raise RuntimeError(
+            "Windows wheelhouse contains non-Windows wheels: " + ", ".join(incompatible_wheels)
+        )
     for wheel in wheels:
         print(f"Extracting {wheel.name}")
         extract_wheel_to_windows_env(wheel, env_dir)
@@ -399,18 +422,115 @@ def validate_windows_xedu_runtime(env_dir: Path, expected_version: str = XEDU_PY
         raise RuntimeError(f"Windows runtime must install xedu-python=={expected_version}")
 
 
-def create_marker(env_dir: Path):
+def _path_size(target: Path) -> int:
+    if target.is_file():
+        return target.stat().st_size
+    return sum(path.stat().st_size for path in target.rglob("*") if path.is_file())
+
+
+def _remove_path(target: Path, stats: dict):
+    if not target.exists():
+        return
+    stats["bytes"] += _path_size(target)
+    if target.is_dir():
+        shutil.rmtree(target)
+        stats["directories"] += 1
+    else:
+        target.unlink()
+        stats["files"] += 1
+
+
+def _is_python_path_config(file_path: Path, site_packages: Path) -> bool:
+    return file_path.suffix.lower() == ".pth" and file_path.parent == site_packages
+
+
+def prune_portable_runtime(env_dir: Path, target: str) -> dict:
+    if not env_dir.is_dir():
+        raise FileNotFoundError(f"Portable runtime not found: {env_dir}")
+
+    stats = {"bytes": 0, "directories": 0, "files": 0}
+    site_packages = _xedu_site_packages(env_dir, target)
+
+    for relative_path in (
+        Path("include"),
+        Path("share/man"),
+        Path("share/icons"),
+        Path("share/applications"),
+    ):
+        _remove_path(env_dir / relative_path, stats)
+
+    if site_packages.is_dir():
+        test_directories = [path for path in site_packages.rglob("tests") if path.is_dir()]
+        test_directories.extend(
+            site_packages / relative_path
+            for relative_path in (
+                Path("onnx/test"),
+                Path("onnx/backend/test"),
+                Path("onnxruntime/datasets"),
+                Path("rapidocr_onnxruntime/models"),
+                Path("tornado/test"),
+            )
+        )
+        for directory in sorted(set(test_directories), key=lambda path: len(path.parts), reverse=True):
+            _remove_path(directory, stats)
+
+    cache_directories = [
+        path for path in env_dir.rglob("*")
+        if path.is_dir() and path.name in CACHE_DIRECTORY_NAMES
+    ]
+    for directory in sorted(cache_directories, key=lambda path: len(path.parts), reverse=True):
+        _remove_path(directory, stats)
+
+    for file_path in list(env_dir.rglob("*")):
+        if not file_path.is_file():
+            continue
+        suffix = file_path.suffix.lower()
+        if suffix == ".pyc":
+            _remove_path(file_path, stats)
+            continue
+        if suffix in MODEL_SUFFIXES and not _is_python_path_config(file_path, site_packages):
+            _remove_path(file_path, stats)
+
+    empty_model_directories = [
+        path for path in env_dir.rglob("*")
+        if path.is_dir() and path.name.lower() in {"checkpoint", "checkpoints", "model", "models"}
+    ]
+    for directory in sorted(empty_model_directories, key=lambda path: len(path.parts), reverse=True):
+        if not any(directory.iterdir()):
+            directory.rmdir()
+            stats["directories"] += 1
+
+    removed_mb = stats["bytes"] / (1024 * 1024)
+    print(
+        "Pruned portable runtime: "
+        f"{stats['directories']} directories, {stats['files']} files, {removed_mb:.1f} MiB"
+    )
+    return stats
+
+
+def create_marker(env_dir: Path, target: str, requirements_kind: str):
     (env_dir / ".portable_ready").write_text("", encoding="utf-8")
+    metadata = {
+        "python_version": PYTHON_VERSION,
+        "target": target,
+        "requirements": requirements_kind,
+        "models_bundled": False,
+    }
+    (env_dir / RUNTIME_METADATA_FILE).write_text(
+        json.dumps(metadata, ensure_ascii=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Prepare portable Python runtime for XEdu Client")
     parser.add_argument("--target", default=detect_default_target(), choices=sorted(TARGETS.keys()))
     parser.add_argument("--output", default=None, help="Output directory name, default follows target")
-    parser.add_argument("--requirements", choices=["full", "minimal"], default="full")
+    parser.add_argument("--requirements", choices=["full", "minimal"], default="minimal")
     parser.add_argument("--force-download", action="store_true")
     parser.add_argument("--keep-archive", action="store_true")
     parser.add_argument("--keep-wheelhouse", action="store_true")
+    parser.add_argument("--prune-only", action="store_true")
     return parser.parse_args()
 
 
@@ -420,6 +540,12 @@ def main():
     output_name = args.output or ("python_env_win" if target == "windows-x64" else "python_env")
     env_dir = PROJECT_ROOT / output_name
     requirements_file = pick_requirements(args.requirements)
+
+    if args.prune_only:
+        prune_portable_runtime(env_dir, target)
+        create_marker(env_dir, target, args.requirements)
+        print(f"Portable runtime ready: {env_dir}")
+        return
 
     archive = resolve_archive_path(target)
     if args.force_download and archive.exists():
@@ -442,7 +568,8 @@ def main():
     else:
         install_native_requirements(env_dir, target, requirements_file)
 
-    create_marker(env_dir)
+    prune_portable_runtime(env_dir, target)
+    create_marker(env_dir, target, args.requirements)
 
     if not args.keep_archive and archive.exists():
         archive.unlink()

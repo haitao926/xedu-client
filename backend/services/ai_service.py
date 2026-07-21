@@ -13,6 +13,7 @@ import io
 from typing import Dict, Any, Optional, List
 from PIL import Image
 import re
+from urllib.parse import urlparse
 
 from models.config import AIConfig
 from utils.logger import get_logger
@@ -109,7 +110,7 @@ class AIService:
             "回答必须面向学生，语言清晰、具体、鼓励式。"
             "优先结合当前学习上下文解释学生正在做什么，再给下一步。"
             "遇到报错时，先判断是否有足够的错误信息；缺少信息时请学生补充完整报错、代码或截图。"
-            "不要执行教师管理、QuickForm 接入、课程打包或发布等操作。"
+            "不要执行教师管理、课程打包或发布等操作。"
             "不要声称你已经修改、运行或发布了任何资源。"
         )
 
@@ -266,18 +267,20 @@ class AIService:
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json"
             }
-
-            # 根据不同的AI提供商准备不同的payload
-            if "moonshot" in self.config.base_url:
-                payload = self._prepare_moonshot_payload(messages)
-            else:
-                payload = self._prepare_openai_payload(messages)
+            api_mode = self._resolve_api_mode()
+            endpoint_path = "/responses" if api_mode == "responses" else "/chat/completions"
+            payload = (
+                self._prepare_responses_payload(messages)
+                if api_mode == "responses"
+                else self._prepare_chat_completions_payload(messages)
+            )
 
             logger.info(f"调用AI API: {self.config.base_url}")
             logger.info(f"使用模型: {self.config.model}")
+            logger.info(f"AI 接口类型: {api_mode}")
 
             response = self.session.post(
-                f"{self.config.base_url.rstrip('/')}/chat/completions",
+                f"{self.config.base_url.rstrip('/')}{endpoint_path}",
                 headers=headers,
                 json=payload,
                 timeout=self.config.timeout
@@ -285,7 +288,10 @@ class AIService:
 
             if response.status_code == 200:
                 result = response.json()
-                content = result["choices"][0]["message"]["content"]
+                if api_mode == "responses":
+                    content = self._extract_responses_text(result)
+                else:
+                    content = result["choices"][0]["message"]["content"]
 
                 return {
                     'success': True,
@@ -296,9 +302,17 @@ class AIService:
                 error_msg = f"AI API 调用失败: {response.status_code}"
                 try:
                     error_detail = response.json()
-                    if 'error' in error_detail:
-                        error_msg += f" - {error_detail['error'].get('message', '未知错误')}"
-                except (ValueError, KeyError):
+                    if isinstance(error_detail, dict):
+                        provider_error = error_detail.get("error")
+                        if isinstance(provider_error, dict):
+                            provider_message = provider_error.get("message")
+                        elif isinstance(provider_error, str):
+                            provider_message = provider_error
+                        else:
+                            provider_message = error_detail.get("message")
+                        if provider_message:
+                            error_msg += f" - {provider_message}"
+                except ValueError:
                     error_msg += f" - {response.text}"
 
                 logger.error(error_msg)
@@ -329,25 +343,102 @@ class AIService:
                 'error': error_msg
             }
 
-    def _prepare_moonshot_payload(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """准备Moonshot API的payload"""
+    def _resolve_api_mode(self) -> str:
+        configured = str(getattr(self.config, "api_mode", "auto") or "auto").strip().lower()
+        base_url = str(getattr(self.config, "base_url", "") or "").strip()
+        hostname = (urlparse(base_url).hostname or "").lower()
+
+        # These providers expose their native models through Chat Completions.
+        if (
+            hostname in {"api.moonshot.cn", "api.deepseek.com"}
+            or hostname.endswith(".moonshot.cn")
+            or hostname.endswith(".deepseek.com")
+        ):
+            return "chat_completions"
+
+        if configured in {"responses", "chat_completions"}:
+            return configured
+
+        if hostname == "api.openai.com" or hostname.endswith(".openai.com"):
+            return "responses"
+        return "chat_completions"
+
+    def _prepare_chat_completions_payload(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """准备 Chat Completions payload"""
         return {
             "model": self.config.model,
             "messages": messages,
-            "max_tokens": 2000,
-            "temperature": 0.7,
-            "stream": False
         }
 
-    def _prepare_openai_payload(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """准备OpenAI兼容API的payload"""
+    def _prepare_responses_payload(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """准备 OpenAI Responses API payload"""
         return {
             "model": self.config.model,
-            "messages": messages,
-            "max_tokens": 2000,
-            "temperature": 0.7,
-            "stream": False
+            "input": [self._convert_message_to_responses_input(message) for message in messages],
         }
+
+    def _convert_message_to_responses_input(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        role = str(message.get("role") or "user").strip().lower()
+        if role not in {"user", "assistant", "system", "developer"}:
+            role = "user"
+
+        content = message.get("content", "")
+        content_items: List[Dict[str, Any]] = []
+        if isinstance(content, str):
+            content_items.append({"type": "input_text", "text": content})
+        elif isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                item_type = item.get("type")
+                if item_type == "text" and item.get("text"):
+                    content_items.append({"type": "input_text", "text": item["text"]})
+                elif item_type == "input_text" and item.get("text"):
+                    content_items.append({"type": "input_text", "text": item["text"]})
+                elif item_type in {"image_url", "input_image"}:
+                    raw_image = item.get("image_url")
+                    image_url = raw_image.get("url") if isinstance(raw_image, dict) else raw_image
+                    if image_url:
+                        content_items.append({
+                            "type": "input_image",
+                            "image_url": image_url,
+                            "detail": "auto",
+                        })
+
+        if not content_items:
+            content_items.append({"type": "input_text", "text": str(content or "")})
+
+        return {
+            "type": "message",
+            "role": role,
+            "content": content_items,
+        }
+
+    def _extract_responses_text(self, result: Dict[str, Any]) -> str:
+        texts: List[str] = []
+        output = result.get("output")
+        if isinstance(output, list):
+            for item in output:
+                if not isinstance(item, dict) or item.get("type") != "message":
+                    continue
+                content_items = item.get("content")
+                if not isinstance(content_items, list):
+                    continue
+                for content_item in content_items:
+                    if not isinstance(content_item, dict):
+                        continue
+                    if content_item.get("type") == "output_text" and content_item.get("text"):
+                        texts.append(str(content_item["text"]))
+                    elif content_item.get("type") == "refusal" and content_item.get("refusal"):
+                        texts.append(str(content_item["refusal"]))
+
+        if texts:
+            return "\n".join(part for part in texts if part).strip()
+
+        if isinstance(result.get("output_text"), str) and result.get("output_text").strip():
+            return result["output_text"].strip()
+
+        raise ValueError("Responses API 未返回可解析的文本内容")
 
     def test_connection(self) -> Dict[str, Any]:
         """测试AI连接"""
@@ -398,6 +489,7 @@ class AIService:
             'api_key_configured': bool(self.config.api_key),
             'base_url': self.config.base_url,
             'model': self.config.model,
+            'api_mode': getattr(self.config, "api_mode", "auto"),
             'timeout': self.config.timeout,
             'max_history': self.config.max_history,
             'is_valid': self.config.validate()[0]

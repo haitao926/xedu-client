@@ -36,11 +36,10 @@ class AIRoutingAPITestCase(unittest.TestCase):
         self.app = Flask(__name__)
         self.app.testing = True
 
-        def _build_services(looks_quickform):
+        def _build_services():
             return {
                 "build_ai_service": lambda overrides=None: _FakeAIService(),
                 "looks_like_confirmation": lambda text: False,
-                "looks_like_quickform_request": looks_quickform,
                 "looks_like_xedu_pack_request": lambda text, history=None: False,
                 "get_app_config": lambda: SimpleNamespace(ai=None),
                 "config_service": SimpleNamespace(save_config=lambda _: True),
@@ -49,36 +48,22 @@ class AIRoutingAPITestCase(unittest.TestCase):
 
         self._build_services = _build_services
 
-    def _build_client(self, looks_quickform):
+    def _build_client(self):
         app = Flask(__name__)
         app.testing = True
         configure_security(app, capability="ai-routing-test-capability")
-        register_ai_routes(app, self._build_services(looks_quickform))
+        register_ai_routes(app, self._build_services())
         return authorized_test_client(app)
 
-    def test_quickform_phrase_returns_student_boundary_without_agent_route(self):
-        client = self._build_client(
-            looks_quickform=lambda text, history=None: True,
-        )
-        response = client.post("/api/ai/ask", json={"question": "帮我绑定 quickform"})
-        self.assertEqual(response.status_code, 200)
-        data = response.get_json()
-        self.assertNotIn("route", data)
-        self.assertIn("学生实验答疑", data["answer"])
-
     def test_fallback_to_default_ai_for_learning_question(self):
-        client = self._build_client(
-            looks_quickform=lambda text, history=None: False,
-        )
+        client = self._build_client()
         response = client.post("/api/ai/ask", json={"question": "你好"})
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data["route"], "default")
 
     def test_experiment_context_is_passed_to_default_ai_service(self):
-        client = self._build_client(
-            looks_quickform=lambda text, history=None: False,
-        )
+        client = self._build_client()
         context = {
             "experience_mode": "student",
             "course": {"id": "demo", "title": "图像识别"},

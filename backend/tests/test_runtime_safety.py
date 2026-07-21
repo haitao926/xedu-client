@@ -31,8 +31,8 @@ class RuntimeSafetyTestCase(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def test_network_access_switch_defaults_local_only(self):
-        self.assertFalse(self.app.config.get("ALLOW_NETWORK_ACCESS"))
+    def test_network_access_switch_defaults_to_lan_access(self):
+        self.assertTrue(self.app.config.get("ALLOW_NETWORK_ACCESS"))
 
     def test_network_access_switch_can_be_enabled_via_config(self):
         response = self.client.post(
@@ -51,15 +51,15 @@ class RuntimeSafetyTestCase(unittest.TestCase):
         self.assertIn("--ServerApp.token=", cmd_text)
         self.assertIn("--ServerApp.disable_check_xsrf=True", cmd_text)
 
-    def test_jupyter_command_remote_mode_keeps_auth_defaults(self):
+    def test_jupyter_command_remote_mode_is_ignored_and_keeps_local_flags(self):
         config = JupyterConfig(allow_remote_access=True)
         manager = JupyterManager(config)
         cmd = manager._build_command(config)  # noqa: SLF001
         cmd_text = " ".join(cmd)
-        self.assertIn("--ServerApp.ip=0.0.0.0", cmd_text)
-        self.assertNotIn("--ServerApp.token=", cmd_text)
-        self.assertNotIn("--NotebookApp.token=", cmd_text)
-        self.assertNotIn("--ServerApp.disable_check_xsrf=True", cmd_text)
+        self.assertIn("--ServerApp.ip=127.0.0.1", cmd_text)
+        self.assertIn("--ServerApp.token=", cmd_text)
+        self.assertIn("--NotebookApp.token=", cmd_text)
+        self.assertIn("--ServerApp.disable_check_xsrf=True", cmd_text)
 
     def test_logger_ignores_closed_stream_errors(self):
         logger = BackendLogger("runtime-safety-test")

@@ -229,6 +229,8 @@ test('teacher Python profiles stay resolver-safe and pin the model runtime', asy
     assert.match(content, /^rapidocr-onnxruntime==1\.4\.4$/m);
   }
 
+  assert.match(minimal, /^jupyterlab==4\.5\.9$/m);
+  assert.match(minimal, /^ipykernel==6\.29\.3$/m);
   assert.match(full, /^protobuf==6\.33\.5$/m);
   assert.match(full, /^onnx==1\.22\.0$/m);
   assert.match(full, /^onnxruntime==1\.27\.0$/m);

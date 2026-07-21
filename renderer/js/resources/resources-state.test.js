@@ -24,14 +24,3 @@ test("resources state keeps classroom defaults safe for new sessions", () => {
     assert.equal(state.classroomState.connected, false);
     assert.equal(state.classroomState.activeSectionIndex, null);
 });
-
-test("resources state gives QuickForm settings an isolated default", () => {
-    const first = createResourcesState();
-    const second = createResourcesState();
-
-    first.quickFormSettings.username = "teacher";
-
-    assert.equal(first.quickFormSettings.base_url, "https://quickform.cn");
-    assert.equal(second.quickFormSettings.username, "");
-    assert.equal(second.quickFormSettings.enabled, false);
-});

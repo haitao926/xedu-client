@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import urllib.error
-from datetime import datetime
+import urllib.request as urllib_request
+from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Response, jsonify, request, send_file
+from flask import Response, current_app, jsonify, request, send_file
 from api.resource_runtime import (
     InvalidResourceHandle,
     InvalidScratchProject,
@@ -21,19 +23,38 @@ from api.resource_runtime import (
 )
 from api.security import require_capability, require_same_origin_or_native
 
+from services.gitea_client import GiteaClient
 from services.gitea_service import (
     GiteaServiceError,
     find_course_entry_from_index,
+    import_local_course_package,
     inspect_course,
     load_course_data_from_repo,
     load_index_data,
     load_repo_tree_data,
+    publish_course,
+    pull_course,
+    resolve_local_course_package_target_path,
+    save_course_json,
     scan_course,
     scan_folder,
 )
 
 
 MAX_SCRATCH_PROJECT_BYTES = 64 * 1024 * 1024
+SCRATCH_ASSET_HOST = "https://assets.scratch.mit.edu"
+SCRATCH_ASSET_PATH_RE = re.compile(r"^[A-Fa-f0-9]+\.(?:svg|png|jpg|jpeg|wav|mp3)$")
+
+
+def _safe_course_storage_id(value: str) -> str:
+    raw = str(value or "").strip()
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("._-")
+    normalized = re.sub(r"\.{2,}", ".", normalized)[:96].strip("._-")
+    if not normalized:
+        return "course"
+    if normalized.upper() in {"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}:
+        return f"course-{normalized.lower()}"
+    return normalized
 
 
 def register_resource_routes(app, services: dict):
@@ -52,12 +73,20 @@ def register_resource_routes(app, services: dict):
     register_resource_root = services["register_resource_root"]
     issue_resource_handle = services["issue_resource_handle"]
     get_frontend_build_dir = services["get_frontend_build_dir"]
+    transfer_jobs = app.extensions["xedu_course_transfer_jobs"]
 
     def _get_scratch_editor_build_dir() -> Path:
         configured = services.get("get_scratch_editor_build_dir")
         if callable(configured):
             return configured()
         return Path(__file__).resolve().parents[3] / "scratch-editor" / "build"
+
+    def _issue_local_course_handle(local_path: str | Path) -> str:
+        course_root = Path(str(local_path or "")).expanduser()
+        if not course_root.is_dir():
+            raise ValueError("本地课程目录不存在")
+        root_id = register_resource_root(course_root, "course", "renderer-client")
+        return issue_resource_handle(root_id, "", "read", 12 * 3600)
 
     def _send_scratch_editor_asset(asset_path: str):
         build_dir = _get_scratch_editor_build_dir().resolve()
@@ -67,6 +96,12 @@ def register_resource_routes(app, services: dict):
         if not target.exists() or not target.is_file():
             return jsonify({"success": False, "message": "Scratch 编辑器资源不存在"}), 404
         return send_file(target)
+
+    def _normalize_scratch_asset_path(asset_path: str) -> str:
+        clean_path = str(asset_path or "").strip().lstrip("/")
+        if not SCRATCH_ASSET_PATH_RE.fullmatch(clean_path):
+            raise ValueError("非法 Scratch 素材路径")
+        return clean_path
 
     @app.route("/api/resources/frontend-assets/<path:asset_path>")
     def resources_frontend_assets(asset_path):
@@ -130,6 +165,32 @@ def register_resource_routes(app, services: dict):
             logger.error(f"读取 Scratch 编辑器资源失败: {exc}")
             return jsonify({"success": False, "message": "读取 Scratch 编辑器资源失败"}), 500
 
+    @app.route("/api/scratch-assets/internalapi/asset/<path:asset_path>/get/")
+    def resources_scratch_asset_proxy(asset_path):
+        try:
+            clean_path = _normalize_scratch_asset_path(asset_path)
+            upstream_url = f"{SCRATCH_ASSET_HOST}/internalapi/asset/{clean_path}/get/"
+            request_headers = {"User-Agent": "XEdu-Client-Scratch-Asset-Proxy/1.0"}
+            with urllib_request.urlopen(urllib_request.Request(upstream_url, headers=request_headers), timeout=15) as upstream:
+                payload = upstream.read()
+                response = Response(payload, mimetype=upstream.headers.get_content_type())
+                cache_control = upstream.headers.get("Cache-Control")
+                if cache_control:
+                    response.headers["Cache-Control"] = cache_control
+                response.headers["Content-Length"] = str(len(payload))
+                return response
+        except ValueError as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except urllib.error.HTTPError as exc:
+            message = "Scratch 官方素材不存在" if exc.code == 404 else "读取 Scratch 官方素材失败"
+            return jsonify({"success": False, "message": message}), exc.code
+        except urllib.error.URLError as exc:
+            logger.error(f"代理 Scratch 官方素材失败: {exc}")
+            return jsonify({"success": False, "message": "无法连接 Scratch 官方素材服务"}), 502
+        except Exception as exc:
+            logger.error(f"代理 Scratch 官方素材失败: {exc}")
+            return jsonify({"success": False, "message": "代理 Scratch 官方素材失败"}), 500
+
     @app.route("/api/resources/default-sample", methods=["GET"])
     @require_capability("resource:read")
     def get_default_sample_course():
@@ -158,7 +219,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "读取默认测试样例失败"}), 500
 
     @app.route("/api/resources/local-file/<root_token>/<path:relpath>")
-    @require_capability("resource:read")
+    @require_same_origin_or_native()
     def resources_local_file(root_token, relpath):
         try:
             file_path = resolve_resource_handle(root_token, "read", relpath)
@@ -261,6 +322,26 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": True, "project_handle": project_handle})
         except (InvalidResourceHandle, ValueError) as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
+
+    @app.route("/api/resources/local-handle", methods=["POST"])
+    @require_capability("resource:read")
+    def issue_local_course_handle():
+        payload = request.get_json(silent=True) or {}
+        local_path = str(payload.get("local_path") or "").strip()
+        if not local_path:
+            return jsonify({"success": False, "message": "缺少 local_path"}), 400
+        try:
+            handle = _issue_local_course_handle(local_path)
+            return jsonify({
+                "success": True,
+                "local_path": os.path.abspath(os.path.expanduser(local_path)),
+                "resource_handle": handle,
+            })
+        except (InvalidResourceHandle, ValueError) as exc:
+            return jsonify({"success": False, "message": str(exc)}), 400
+        except Exception as exc:
+            logger.error(f"注册本地课程资源句柄失败: {exc}")
+            return jsonify({"success": False, "message": "注册本地课程资源句柄失败"}), 500
 
     @app.route("/api/resources/index", methods=["GET", "POST"])
     @require_capability("resource:read")
@@ -405,7 +486,7 @@ def register_resource_routes(app, services: dict):
 
         merged_resources = list(merged_map.values())
         merged_resources.sort(key=lambda item: str(item.get("title") or item.get("id") or ""))
-        merged_index = {"version": "aggregated-1.0", "updated_at": datetime.utcnow().strftime("%Y-%m-%d"), "resources": merged_resources}
+        merged_index = {"version": "aggregated-1.0", "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "resources": merged_resources}
         if success_count == 0:
             return jsonify({
                 "success": False, "message": "所有课程源均加载失败，请检查配置", "index": merged_index,
@@ -422,18 +503,30 @@ def register_resource_routes(app, services: dict):
     @app.route("/api/resources/scan", methods=["POST"])
     @require_capability("resource:read")
     def scan_resource_course():
-        # 仅保留只读扫描：解析已存在的 course.json，不创建/不自动构建结构。
-        # 课程创建与自动构建结构已迁移到 Claude skills（xedu-pack / xedu-course-builder），
-        # 它们直接以库的方式调用 services.gitea_service.scan_course。
         payload = request.get_json(silent=True) or {}
         try:
+            local_path = Path(str(payload.get("local_path") or "").strip()).expanduser()
             result = scan_course(
-                payload.get("local_path", ""),
-                init_if_missing=False,
-                init_meta=None,
-                auto_build=False,
+                str(local_path),
+                init_if_missing=parse_bool(payload.get("init_if_missing"), False),
+                init_meta=payload.get("meta") if isinstance(payload.get("meta"), dict) else None,
+                auto_build=parse_bool(payload.get("auto_build"), False),
             )
-            return jsonify({"success": True, "course": result.course, "summary": result.summary})
+            resource_handle = _issue_local_course_handle(local_path)
+            course = {
+                **result.course,
+                "source": "local",
+                "local_path": str(local_path),
+                "resource_handle": resource_handle,
+            }
+            return jsonify({
+                "success": True,
+                "course": course,
+                "summary": result.summary,
+                "source": "local",
+                "local_path": str(local_path),
+                "resource_handle": resource_handle,
+            })
         except GiteaServiceError as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:
@@ -612,7 +705,7 @@ def register_resource_routes(app, services: dict):
         course_url = payload.get("course_url", "")
         package_url = payload.get("package_url", "")
         target_path = payload.get("target_path", "")
-        replace_existing = payload.get("replace_existing", True)
+        replace_existing = parse_bool(payload.get("replace_existing"), True)
         source_id = str(payload.get("source_id") or "").strip()
         source_override = payload.get("source_override")
         token_override = str(payload.get("token_override") or "").strip()
@@ -630,6 +723,8 @@ def register_resource_routes(app, services: dict):
         index_path = (selected.get("index_path") or "index.json").strip().lstrip("/") or "index.json"
         publish_path = (selected.get("publish_path") or "courses").strip("/") or "courses"
         single_course_repo = parse_bool(selected.get("single_course_repo"), False)
+        if str(package_url or "").strip():
+            single_course_repo = False
         token = resolve_resources_token(ui_config, token_override)
         if not base_url or not repo:
             return jsonify({"success": False, "message": "课程资源库未配置"}), 400
@@ -666,31 +761,60 @@ def register_resource_routes(app, services: dict):
         if not target_path:
             default_root = Path.home() / "Documents" / "XeduCourses"
             default_root.mkdir(parents=True, exist_ok=True)
-            target_path = str(default_root / (derived_course_id or "course"))
+            target_path = str(default_root / _safe_course_storage_id(derived_course_id))
+
+        def run_pull(progress_callback=None):
+            with app.app_context():
+                result = pull_course(
+                    raw_base_url=raw_base_url, course_url=course_url, package_url=package_url, target_path=target_path, token=token,
+                    replace_existing=replace_existing, backup_before_replace=backup_before_replace,
+                    single_course_repo=single_course_repo, base_url=base_url, repo=repo, branch=branch,
+                    progress_callback=progress_callback,
+                )
+                origin = {
+                    "source_id": selected.get("id", ""), "base_url": base_url, "repo": repo, "branch": branch,
+                    "index_path": index_path, "publish_path": "" if single_course_repo else publish_path,
+                    "course_id": derived_course_id or str((result.course or {}).get("id") or ""),
+                    "course_url": course_url or (resolved_entry or {}).get("course_url", "") or "course.json",
+                    "package_url": "" if single_course_repo else (package_url or (resolved_entry or {}).get("package_url", "")),
+                    "single_course_repo": single_course_repo,
+                }
+                resource_handle = _issue_local_course_handle(target_path)
+                course = {
+                    **(result.course or {}),
+                    "source": "local",
+                    "local_path": target_path,
+                    "resource_handle": resource_handle,
+                }
+                return {
+                    "success": True, "course": course, "summary": result.summary, "local_path": target_path,
+                    "source": "local", "resource_handle": resource_handle, "publish_path": publish_path,
+                    "source_id": selected.get("id", ""), "origin": origin,
+                }
+
+        if parse_bool(payload.get("async"), False):
+            operation_id = transfer_jobs.start(
+                lambda progress: run_pull(progress),
+                metadata={"kind": "remote-pull", "course_id": derived_course_id or ""},
+            )
+            return jsonify({"success": True, "operation_id": operation_id})
 
         try:
-            result = pull_course(
-                raw_base_url=raw_base_url, course_url=course_url, package_url=package_url, target_path=target_path, token=token,
-                replace_existing=bool(replace_existing), backup_before_replace=backup_before_replace,
-                single_course_repo=single_course_repo, base_url=base_url, repo=repo, branch=branch,
-            )
-            origin = {
-                "source_id": selected.get("id", ""), "base_url": base_url, "repo": repo, "branch": branch,
-                "index_path": index_path, "publish_path": "" if single_course_repo else publish_path,
-                "course_id": derived_course_id or str((result.course or {}).get("id") or ""),
-                "course_url": "course.json" if single_course_repo else (course_url or (resolved_entry or {}).get("course_url", "")),
-                "package_url": "" if single_course_repo else (package_url or (resolved_entry or {}).get("package_url", "")),
-                "single_course_repo": single_course_repo,
-            }
-            return jsonify({
-                "success": True, "course": result.course, "summary": result.summary, "local_path": target_path,
-                "publish_path": publish_path, "source_id": selected.get("id", ""), "origin": origin,
-            })
+            with current_app.app_context():
+                return jsonify(run_pull())
         except GiteaServiceError as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:
             logger.error(f"导入课程失败: {exc}")
             return jsonify({"success": False, "message": "导入课程失败"}), 500
+
+    @app.route("/api/resources/operations/<operation_id>", methods=["GET"])
+    @require_capability("resource:write")
+    def get_resource_operation(operation_id):
+        operation = transfer_jobs.get(operation_id)
+        if operation is None:
+            return jsonify({"success": False, "message": "导入任务不存在或已过期"}), 404
+        return jsonify({"success": True, "operation": operation})
 
     @app.route("/api/resources/ensure-repo", methods=["POST"])
     @require_capability("resource:write")
@@ -734,8 +858,19 @@ def register_resource_routes(app, services: dict):
     def save_resource_course():
         payload = request.get_json(silent=True) or {}
         try:
-            result = save_course_json(payload.get("local_path", ""), payload.get("course") or {})
-            return jsonify({"success": True, "course": result.course, "summary": result.summary})
+            local_path = str(payload.get("local_path") or "").strip()
+            result = save_course_json(local_path, payload.get("course") or {})
+            resource_handle = _issue_local_course_handle(local_path)
+            course = {
+                **(result.course or {}),
+                "source": "local",
+                "local_path": local_path,
+                "resource_handle": resource_handle,
+            }
+            return jsonify({
+                "success": True, "course": course, "summary": result.summary,
+                "source": "local", "local_path": local_path, "resource_handle": resource_handle,
+            })
         except GiteaServiceError as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:
@@ -754,48 +889,42 @@ def register_resource_routes(app, services: dict):
             return jsonify({"success": False, "message": "缺少 package_path"}), 400
         if not target_path:
             target_path = resolve_local_course_package_target_path(package_path)
-        try:
-            result = import_local_course_package(
-                package_path=package_path,
-                target_path=target_path,
-                replace_existing=replace_existing,
-                backup_before_replace=backup_before_replace,
+
+        def run_import(progress_callback=None):
+            with app.app_context():
+                result = import_local_course_package(
+                    package_path=package_path,
+                    target_path=target_path,
+                    replace_existing=replace_existing,
+                    backup_before_replace=backup_before_replace,
+                    progress_callback=progress_callback,
+                )
+                resource_handle = _issue_local_course_handle(target_path)
+                course = {
+                    **(result.course or {}),
+                    "source": "local",
+                    "local_path": target_path,
+                    "resource_handle": resource_handle,
+                }
+                return {
+                    "success": True, "course": course, "summary": result.summary,
+                    "source": "local", "local_path": target_path, "resource_handle": resource_handle,
+                }
+
+        if parse_bool(payload.get("async"), False):
+            operation_id = transfer_jobs.start(
+                lambda progress: run_import(progress),
+                metadata={"kind": "local-package-import"},
             )
-            return jsonify({"success": True, "course": result.course, "summary": result.summary, "local_path": target_path})
+            return jsonify({"success": True, "operation_id": operation_id})
+
+        try:
+            return jsonify(run_import())
         except GiteaServiceError as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:
             logger.error(f"导入本地课程包失败: {exc}")
             return jsonify({"success": False, "message": "导入本地课程包失败"}), 500
-
-    @app.route("/api/resources/quickform/inject", methods=["POST"])
-    @require_capability("resource:write")
-    def inject_quickform_script():
-        payload = request.get_json(silent=True) or {}
-        local_path = str(payload.get("local_path") or "").strip()
-        html_path = str(payload.get("html_path") or "").strip().lstrip("/")
-        quickform = normalize_quickform_public_config(payload.get("quickform") or {})
-        create_backup = parse_bool(payload.get("create_backup"), True)
-        if not local_path:
-            return jsonify({"success": False, "message": "缺少 local_path"}), 400
-        if not html_path:
-            return jsonify({"success": False, "message": "缺少 html_path"}), 400
-        if not html_path.lower().endswith((".html", ".htm")):
-            return jsonify({"success": False, "message": "仅支持注入 HTML 文件"}), 400
-        if not quickform.get("submit_url"):
-            return jsonify({"success": False, "message": "QuickForm submit_url 未配置"}), 400
-        try:
-            injected = inject_quickform_file(local_path, html_path, quickform, create_backup)
-            return jsonify({"success": True, "message": "QuickForm 脚本已注入", "html_path": injected.get("html_path") or html_path, "backup_path": injected.get("backup_path") or ""})
-        except ValueError as exc:
-            return jsonify({"success": False, "message": str(exc)}), 400
-        except FileNotFoundError:
-            return jsonify({"success": False, "message": "HTML 文件不存在"}), 404
-        except UnicodeDecodeError:
-            return jsonify({"success": False, "message": "HTML 文件编码不受支持，请使用 UTF-8"}), 400
-        except Exception as exc:
-            logger.error(f"注入 QuickForm 失败: {exc}")
-            return jsonify({"success": False, "message": "注入 QuickForm 失败"}), 500
 
     @app.route("/api/resources/scan-folder", methods=["POST"])
     @require_capability("resource:read")

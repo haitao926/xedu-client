@@ -64,6 +64,15 @@ class ClassroomApiTestCase(unittest.TestCase):
         with zipfile.ZipFile(zip_path, "r") as archive:
             return archive.read(member).decode("utf-8")
 
+    def test_teacher_verification_fails_closed_until_a_code_is_configured(self):
+        response = self.client.post(
+            "/api/classroom/verify-teacher",
+            json={"teacher_code": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["success"])
+
     def test_pull_package_rejects_non_http_url(self):
         target = Path(self.temp_dir.name) / "course"
 
@@ -121,15 +130,87 @@ class ClassroomApiTestCase(unittest.TestCase):
                 ("lesson/readme.txt", "hello"),
             )
         )
+        progress = []
 
         with patch(
             "services.classroom_service.urlrequest.urlopen",
             return_value=io.BytesIO(package),
         ):
-            result = ClassroomService.pull_package("http://classroom.test/course.zip", str(target))
+            result = ClassroomService.pull_package(
+                "http://classroom.test/course.zip",
+                str(target),
+                progress_callback=progress.append,
+            )
 
         self.assertEqual(result["course"]["id"], "course-1")
         self.assertEqual((target / "lesson" / "readme.txt").read_text(encoding="utf-8"), "hello")
+        self.assertEqual(
+            {item.get("phase") for item in progress},
+            {"downloading", "extracting", "validating", "writing"},
+        )
+
+    def test_classroom_pull_route_returns_a_pollable_job_before_transfer_finishes(self):
+        release_worker = threading.Event()
+        progress_reported = threading.Event()
+        target = Path(self.temp_dir.name) / "async-classroom-course"
+
+        def fake_pull_package(package_url, target_path, progress_callback=None):
+            self.assertEqual(package_url, "http://classroom.test/course.zip")
+            self.assertEqual(target_path, str(target))
+            release_worker.wait(timeout=2)
+            if progress_callback:
+                progress_callback({
+                    "phase": "downloading",
+                    "percent": 50,
+                    "message": "正在下载课堂课程包...",
+                })
+                progress_reported.set()
+            target.mkdir(parents=True, exist_ok=True)
+            return {
+                "course": {"id": "classroom-course", "title": "课堂课程"},
+                "local_path": str(target),
+                "summary": {"section_count": 0},
+            }
+
+        release_timer = threading.Timer(1, release_worker.set)
+        try:
+            with patch.object(ClassroomService, "pull_package", side_effect=fake_pull_package):
+                release_timer.start()
+                response = self.client.post(
+                    "/api/classroom/pull",
+                    json={
+                        "async": "true",
+                        "package_url": "http://classroom.test/course.zip",
+                        "target_path": str(target),
+                    },
+                )
+                returned_before_worker_finished = not release_worker.is_set()
+                body = response.get_json()
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(returned_before_worker_finished)
+                self.assertIsInstance(body.get("operation_id"), str)
+
+                release_worker.set()
+                deadline = time.monotonic() + 2
+                operation = None
+                while time.monotonic() < deadline:
+                    operation_response = self.client.get(
+                        f"/api/resources/operations/{body['operation_id']}"
+                    )
+                    self.assertEqual(operation_response.status_code, 200)
+                    operation = operation_response.get_json()["operation"]
+                    if operation["state"] == "success":
+                        break
+                    time.sleep(0.01)
+
+                self.assertIsNotNone(operation)
+                self.assertEqual(operation["state"], "success")
+                self.assertEqual(operation["result"]["course"]["id"], "classroom-course")
+                self.assertTrue(progress_reported.is_set())
+        finally:
+            release_worker.set()
+            release_timer.cancel()
 
     def test_fetch_index_returns_flattened_contract(self):
         upstream = {
@@ -160,10 +241,11 @@ class ClassroomApiTestCase(unittest.TestCase):
         self.assertEqual(data["message"], "课堂索引不可用: HTTP 404")
 
     def test_start_broadcast_status_and_index_include_classroom_code(self):
-        self.client.post("/api/save_config", json={"ui": {"classroom_teacher_code": ""}})
+        teacher_code = "test-teacher-code"
+        self.client.post("/api/save_config", json={"ui": {"classroom_teacher_code": teacher_code}})
         response = self.client.post(
             "/api/classroom/start",
-            json={"name": "课堂A", "code": "abc123", "port": 5123},
+            json={"name": "课堂A", "code": "abc123", "port": 5123, "teacher_code": teacher_code},
         )
         self.assertEqual(response.status_code, 200)
         start_data = response.get_json()
@@ -181,6 +263,14 @@ class ClassroomApiTestCase(unittest.TestCase):
         index_data = index_response.get_json()
         self.assertTrue(index_data["success"])
         self.assertEqual(index_data["index"]["classroom"]["code"], "abc123")
+
+        lan_index_response = self.client.get(
+            "/api/classroom/index",
+            headers={"Host": "192.168.1.20:5123"},
+        )
+        self.assertEqual(lan_index_response.status_code, 200)
+        lan_index_data = lan_index_response.get_json()
+        self.assertEqual(lan_index_data["source_url"], "http://192.168.1.20:5123/api/classroom/index")
 
     def test_classroom_package_keeps_full_course_sections_for_students(self):
         course_dir = Path(self.temp_dir.name) / "course"
@@ -235,10 +325,18 @@ class ClassroomApiTestCase(unittest.TestCase):
         )
         self.assertEqual(sync_response.status_code, 200)
 
-        self.client.post("/api/save_config", json={"ui": {"classroom_teacher_code": ""}})
+        teacher_code = "test-teacher-code"
+        self.client.post("/api/save_config", json={"ui": {"classroom_teacher_code": teacher_code}})
         start_response = self.client.post(
             "/api/classroom/start",
-            json={"name": "课堂A", "code": "abc123", "port": 5123, "course_id": "course-full", "section_index": 1},
+            json={
+                "name": "课堂A",
+                "code": "abc123",
+                "port": 5123,
+                "course_id": "course-full",
+                "section_index": 1,
+                "teacher_code": teacher_code,
+            },
         )
         self.assertEqual(start_response.status_code, 200)
 

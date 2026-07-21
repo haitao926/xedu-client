@@ -98,7 +98,11 @@ def main() -> None:
     startup_marker("create-app-done")
 
     port = int(os.environ.get("XEDU_API_PORT") or os.environ.get("XEDU_BACKEND_PORT") or "5123")
-    host_env = os.environ.get("XEDU_API_HOST") or os.environ.get("XEDU_BACKEND_HOST")
+    host_env = (
+        os.environ.get("XEDU_BACKEND_BIND_HOST")
+        or os.environ.get("XEDU_API_HOST")
+        or os.environ.get("XEDU_BACKEND_HOST")
+    )
     host = (host_env or "").strip()
     if not host:
         try:

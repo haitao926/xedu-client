@@ -7,6 +7,7 @@ const sourceBuild = path.join(guiRoot, 'dist');
 const targetBuild = path.join(root, 'build');
 const stagingBuild = path.join(root, `.build-staging-${process.pid}`);
 const staleBuild = path.join(root, `.build-stale-${process.pid}-${Date.now()}`);
+const scratchPublicPath = '/api/scratch-editor/';
 
 if (!fs.existsSync(sourceBuild)) {
   throw new Error(`Scratch GUI build output not found: ${sourceBuild}`);
@@ -30,6 +31,10 @@ const linkBuildTree = (source, target) => {
     }
     return;
   }
+  if (source.endsWith('.js') || source.endsWith('.css')) {
+    fs.copyFileSync(source, target);
+    return;
+  }
   try {
     fs.linkSync(source, target);
   } catch (error) {
@@ -38,8 +43,62 @@ const linkBuildTree = (source, target) => {
   }
 };
 
+const walkFiles = (directory) => {
+  const files = [];
+  for (const name of fs.readdirSync(directory)) {
+    const target = path.join(directory, name);
+    const entry = fs.lstatSync(target);
+    if (entry.isDirectory()) files.push(...walkFiles(target));
+    else files.push(target);
+  }
+  return files;
+};
+
+const stripExternalSourceMapReferences = (content) => content
+  .replace(/(?:\r?\n)?\/\/[#@]\s*sourceMappingURL=(?!data:)[^\r\n]*/g, '')
+  .replace(/(?:\r?\n)?\/\*[#@]\s*sourceMappingURL=(?!data:)[^*]+\*\//g, '');
+
+const patchScratchRuntime = (bundlePath) => {
+  let content = fs.readFileSync(bundlePath, 'utf8');
+  const workerRuntimePattern = /(__nested_webpack_require_\d+__)\.u\s*=\s*function\s*\([^)]*\)\s*\{\s*return\s*["'](chunks\/fetch-worker\.[^"']+\.js)["'];?\s*\}/g;
+  const workerRuntimeIds = [...content.matchAll(workerRuntimePattern)].map((match) => match[1]);
+  if (!workerRuntimeIds.length) {
+    throw new Error('Scratch fetch-worker runtime structure was not recognized');
+  }
+
+  for (const runtimeId of new Set(workerRuntimeIds)) {
+    const escapedRuntimeId = runtimeId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const publicPathPattern = new RegExp(`(${escapedRuntimeId}\\.p\\s*=\\s*)(["'])\\/\\2`, 'g');
+    let replacementCount = 0;
+    content = content.replace(publicPathPattern, (_match, prefix, quote) => {
+      replacementCount += 1;
+      return `${prefix}${quote}${scratchPublicPath}${quote}`;
+    });
+    if (replacementCount !== 1) {
+      throw new Error(`Scratch fetch-worker public path was expected once for ${runtimeId}, found ${replacementCount}`);
+    }
+  }
+
+  content = content.replace(
+    /(solutionPath\s*:\s*)(["'])\/chunks\/mediapipe\/face_detection\2/g,
+    (_match, prefix, quote) => `${prefix}${quote}${scratchPublicPath}chunks/mediapipe/face_detection${quote}`,
+  );
+  fs.writeFileSync(bundlePath, stripExternalSourceMapReferences(content), 'utf8');
+};
+
 fs.rmSync(stagingBuild, { recursive: true, force: true });
 linkBuildTree(sourceBuild, stagingBuild);
+const standaloneBundle = path.join(stagingBuild, 'scratch-gui-standalone.js');
+if (!fs.existsSync(standaloneBundle)) {
+  throw new Error(`Scratch standalone bundle not found: ${standaloneBundle}`);
+}
+patchScratchRuntime(standaloneBundle);
+for (const assetPath of walkFiles(stagingBuild)) {
+  if (assetPath === standaloneBundle || (!assetPath.endsWith('.js') && !assetPath.endsWith('.css'))) continue;
+  const content = fs.readFileSync(assetPath, 'utf8');
+  const cleaned = stripExternalSourceMapReferences(content);
+  if (cleaned !== content) fs.writeFileSync(assetPath, cleaned, 'utf8');
+}
 fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -76,6 +135,7 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
       if (window.location.origin && window.location.origin !== 'null') return window.location.origin;
       return 'http://127.0.0.1:5123';
     };
+    const getScratchAssetHost = () => getApiBase() + '/api/scratch-assets';
     const getProjectInfo = () => {
       const rootToken = params.get('rootToken');
       const project = (params.get('project') || '').replace(/^\\/+/, '');
@@ -88,6 +148,34 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
     const getProjectUrl = () => {
       const info = getProjectInfo();
       return info ? info.host + '/' + info.id : '';
+    };
+    const notifyProjectAccessExpired = () => {
+      const bridgeToken = params.get('bridgeToken');
+      if (!bridgeToken || window.parent === window) return;
+      window.parent.postMessage({
+        type: 'xedu:scratch-project-access-expired',
+        bridgeToken
+      }, '*');
+    };
+    const verifyProjectAccess = async () => {
+      const projectUrl = getProjectUrl();
+      if (!projectUrl) return true;
+      try {
+        const response = await fetch(projectUrl, {method: 'HEAD', cache: 'no-store'});
+        if (response.status === 410) {
+          showStatus('Scratch 项目访问已过期，正在重新连接…', 0);
+          notifyProjectAccessExpired();
+          return false;
+        }
+        if (!response.ok) {
+          showStatus('Scratch 项目加载失败（HTTP ' + response.status + '）', 0);
+          return false;
+        }
+        return true;
+      } catch (_) {
+        showStatus('Scratch 项目连接失败，请返回课程后重新打开。', 0);
+        return false;
+      }
     };
     const saveXEduProject = (id, vmState, saveParams, state) => {
       void vmState;
@@ -115,7 +203,175 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
           throw error;
         });
     };
-    const boot = () => {
+    // The standalone bundle is bootstrapped here instead of through Scratch's playground entry,
+    // so the host file-operation bridge must be bound by this page.
+    const getScratchProjectTitle = (state) => {
+      const title = String(state.store.getState().scratchGui.projectTitle || '').trim();
+      return title || 'Scratch作品';
+    };
+    const downloadScratchBlob = (filename, blob) => {
+      const link = document.createElement('a');
+      document.body.appendChild(link);
+      const url = window.URL.createObjectURL(blob);
+      link.href = url;
+      link.download = filename;
+      link.type = blob.type;
+      link.click();
+      window.setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 1000);
+    };
+    const saveScratchProjectToCurrentFile = async (state) => {
+      const projectInfo = getProjectInfo();
+      if (!projectInfo) throw new Error('当前 Scratch 页面没有绑定可保存的项目文件。');
+      await saveXEduProject(projectInfo.id, null, null, state);
+      return true;
+    };
+    const createNewScratchProject = async (state) => {
+      if (Boolean(state.store.getState().scratchGui.projectChanged)) {
+        if (!window.confirm('新建项目会替换当前内容，是否继续？')) return false;
+      }
+      if (typeof window.GUI?.requestNewProject !== 'function') {
+        throw new Error('Scratch 新建项目功能不可用。');
+      }
+      state.store.dispatch(window.GUI.requestNewProject(false));
+      return true;
+    };
+    const normalizeProjectBuffer = (buffer) => {
+      if (buffer instanceof ArrayBuffer) return buffer;
+      if (ArrayBuffer.isView(buffer)) {
+        return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+      }
+      return null;
+    };
+    const importScratchProject = async (state, { buffer, fileName = '' } = {}) => {
+      const scratchState = state.store.getState().scratchGui;
+      if (!scratchState?.vm) throw new Error('Scratch 还没有准备好。');
+      const projectBuffer = normalizeProjectBuffer(buffer);
+      if (!projectBuffer) throw new Error('Scratch 项目文件读取失败。');
+      if (scratchState.projectChanged && !window.confirm('从电脑打开会替换当前内容，是否继续？')) {
+        return false;
+      }
+      const GUI = window.GUI;
+      const loadingState = scratchState.projectState.loadingState;
+      const uploadAction = typeof GUI?.requestProjectUpload === 'function'
+        ? GUI.requestProjectUpload(loadingState)
+        : null;
+      if (uploadAction) state.store.dispatch(uploadAction);
+      const uploadLoadingState = state.store.getState().scratchGui.projectState.loadingState;
+      if (typeof GUI?.openLoadingProject === 'function') state.store.dispatch(GUI.openLoadingProject());
+      let success = false;
+      try {
+        await scratchState.vm.loadProject(projectBuffer);
+        success = true;
+        return true;
+      } catch (error) {
+        showStatus('项目文件加载失败，请确认选择的是有效的 Scratch 项目。', 5000);
+        throw error;
+      } finally {
+        if (typeof GUI?.onLoadedProject === 'function') {
+          const loadedAction = GUI.onLoadedProject(uploadLoadingState, Boolean(getProjectInfo()), success);
+          if (loadedAction) state.store.dispatch(loadedAction);
+        }
+        if (typeof GUI?.closeLoadingProject === 'function') state.store.dispatch(GUI.closeLoadingProject());
+      }
+    };
+    const uploadScratchProjectFromComputer = (state) => new Promise((resolve, reject) => {
+      const scratchState = state.store.getState().scratchGui;
+      if (!scratchState?.vm) {
+        reject(new Error('Scratch 还没有准备好。'));
+        return;
+      }
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.sb,.sb2,.sb3';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      const cleanup = () => {
+        input.value = '';
+        input.remove();
+      };
+      input.addEventListener('change', async () => {
+        const file = input.files?.[0];
+        if (!file) {
+          cleanup();
+          resolve(false);
+          return;
+        }
+        try {
+          resolve(await importScratchProject(state, {
+            buffer: await file.arrayBuffer(),
+            fileName: file.name,
+          }));
+        } catch (error) {
+          reject(error);
+        } finally {
+          cleanup();
+        }
+      }, {once: true});
+      input.click();
+    });
+    const downloadScratchProjectToComputer = async (state) => {
+      const vm = state.store.getState().scratchGui.vm;
+      if (!vm?.saveProjectSb3) throw new Error('Scratch 还没有准备好。');
+      downloadScratchBlob(getScratchProjectTitle(state) + '.sb3', await vm.saveProjectSb3());
+      return true;
+    };
+    const createXEduScratchBridge = (state) => ({
+      getState: () => ({
+        canSave: Boolean(getProjectInfo()),
+        projectTitle: getScratchProjectTitle(state)
+      }),
+      newProject: () => createNewScratchProject(state),
+      saveProject: () => saveScratchProjectToCurrentFile(state),
+      uploadProject: () => uploadScratchProjectFromComputer(state),
+      downloadProject: () => downloadScratchProjectToComputer(state),
+      importProjectFromHost: ({ buffer, fileName }) => importScratchProject(state, { buffer, fileName })
+    });
+    const bindXEduScratchHostBridge = (state, bridge) => {
+      const bridgeToken = params.get('bridgeToken') || '';
+      if (!bridgeToken || window.parent === window) return;
+      const send = (payload) => window.parent.postMessage({...payload, bridgeToken}, '*');
+      const sendState = () => send({type: 'xedu:scratch-host-state', state: bridge.getState()});
+      window.addEventListener('message', async (event) => {
+        const request = event.data;
+        if (event.source !== window.parent || request?.bridgeToken !== bridgeToken) return;
+        if (request?.type === 'xedu:scratch-host-state-request') {
+          sendState();
+          return;
+        }
+        if (request?.type === 'xedu:scratch-host-upload-project') {
+          try {
+            const result = await bridge.importProjectFromHost({
+              buffer: request.buffer,
+              fileName: request.fileName,
+            });
+            send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, result});
+            sendState();
+          } catch (error) {
+            send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, error: error?.message || 'Scratch 文件操作失败'});
+          }
+          return;
+        }
+        if (request?.type !== 'xedu:scratch-host-action') return;
+        const actionMap = {new: 'newProject', save: 'saveProject', upload: 'uploadProject', download: 'downloadProject'};
+        const handler = bridge[actionMap[request.action]];
+        if (typeof handler !== 'function') {
+          send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, error: '当前 Scratch 页面暂不支持这个操作。'});
+          return;
+        }
+        try {
+          const result = await handler();
+          send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, result});
+          sendState();
+        } catch (error) {
+          send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, error: error?.message || 'Scratch 文件操作失败'});
+        }
+      });
+      sendState();
+    };
+    const boot = async () => {
       const GUI = window.GUI;
       if (!GUI) {
         showStatus('Scratch GUI 加载失败', 0);
@@ -123,14 +379,20 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
       }
       const appTarget = document.getElementById('app');
       const projectInfo = getProjectInfo();
+      if (!(await verifyProjectAccess())) return;
+      window.__XEDU_SCRATCH_ASSET_HOST__ = getScratchAssetHost();
       GUI.setAppElement(appTarget);
       const state = new GUI.EditorState({});
       const root = GUI.createStandaloneRoot(state, appTarget);
+      const xeduScratchBridge = createXEduScratchBridge(state);
+      window.__xeduScratchBridge__ = xeduScratchBridge;
+      bindXEduScratchHostBridge(state, xeduScratchBridge);
       root.render({
         canEditTitle: false,
         menuBarHidden: true,
         backpackVisible: false,
         showComingSoon: false,
+        assetHost: getScratchAssetHost(),
         canSave: Boolean(projectInfo),
         projectHost: projectInfo ? projectInfo.host : undefined,
         projectId: projectInfo ? projectInfo.id : '0',

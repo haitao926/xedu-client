@@ -2,7 +2,7 @@ const DEFAULT_CLASSROOM_CONFIG = Object.freeze({
     autoDiscover: true,
     name: "",
     code: "",
-    teacherCode: "",
+    teacherCodeConfigured: false,
 });
 
 export function createResourcesState() {
@@ -64,12 +64,6 @@ export function createResourcesState() {
         teacherMode: {
             unlocked: false,
             code: "",
-        },
-        quickFormSettings: {
-            enabled: false,
-            base_url: "https://quickform.cn",
-            username: "",
-            password: "",
         },
         detailMoreMenuBound: false,
         createEntryMenuBound: false,

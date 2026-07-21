@@ -27,7 +27,7 @@ test("student sidebar contains only the intended student-facing course entries",
   assert.match(html, /id="scratch-workspace"[\s\S]*?id="scratch-workspace-frame"/);
   assert.doesNotMatch(html, /id="topbar-teacher-mode-btn"/);
   assert.doesNotMatch(html, /右上角使用“教师登录”/);
-  assert.match(html, /左下角“教师登录”解锁教师模式/);
+  assert.doesNotMatch(html, /教师登录入口固定在左下角/);
   assert.match(html, /id="sidebar-teacher-mode-btn"[\s\S]*?<strong data-role="teacher-mode-label">教师登录<\/strong>/);
   assert.doesNotMatch(html, /id="resources-teacher-mode-btn"/);
 });
@@ -61,6 +61,16 @@ test("static shell actions use the explicit allowlisted event boundary", () => {
   assert.match(dispatcher, /const ACTIONS = Object\.freeze\(\{/);
   assert.match(dispatcher, /registerActionDelegation\(\);/);
   assert.doesNotMatch(dispatcher, /\beval\s*\(|new Function\s*\(/);
+});
+
+test("content security policy allows images from the local resource proxy only", () => {
+  const html = readRepoFile("renderer/index.html");
+
+  assert.match(
+    html,
+    /img-src 'self' data: blob: file: http:\/\/127\.0\.0\.1:\* http:\/\/localhost:\*;/,
+  );
+  assert.doesNotMatch(html, /img-src[^;]*(?:^|\s)https?:\s/);
 });
 
 test("resources module exports the student lesson tab entrypoint", () => {
@@ -110,6 +120,12 @@ test("student task center opens HTML pages directly and routes coding tabs to na
   assert.match(resources, /label: "进入互动体验"/);
   assert.match(resources, /label: isStudentLessonMode\(\) \? "进入图形编程" : "进入可视化编程"/);
   assert.match(resources, /label: isStudentLessonMode\(\) \? "进入Python实验" : "进入Python编程"/);
+  assert.match(resources, /function getStudentRouteEntries\(context\)/);
+  assert.match(resources, /\.filter\(\(entry\) => entry\.file\)/);
+  assert.match(resources, /if \(isStudentLessonMode\(\) && !hasStudentRouteEntries\(context\)\) \{/);
+  assert.match(resources, /title\.textContent = context\.exp\.title \|\| `实验 \$\{context\.expIndex \+ 1\}`;/);
+  assert.match(resources, /本节暂无实验内容。/);
+  assert.doesNotMatch(resources, /当前实验没有配置 Scratch 资源。/);
   assert.match(resources, /function buildStudentHtmlExperienceView\(context\)/);
   assert.match(resources, /openBrowserBtn\.addEventListener\("click", withAsyncActionErrorBoundary\(async \(\) => \{[\s\S]*await openExternal\(frameUrl\);/);
   assert.doesNotMatch(resources, /window\.app\?\.system\?\.openExternal\?\.\(frameUrl\)/);
@@ -131,7 +147,77 @@ test("student task center opens HTML pages directly and routes coding tabs to na
   assert.doesNotMatch(resources, /function renderResources\(list\)[\s\S]*openStudentVisualWorkspace\(course\)/);
   assert.match(resources, /sourcePage !== "student-visual"/);
   assert.match(resources, /sourcePage = isStudentLessonMode\(\)[\s\S]*\? "student-visual"[\s\S]*: "resources";/);
-  assert.match(resources, /if \(!isStudentLessonMode\(\) && kind === "html"/);
+  assert.match(resources, /if \(kind === "html" && context\?\.resource/);
+  assert.match(resources, /buildLocalCourseFileUrl\(context\.resource/);
+});
+
+test("student task center does not fall back to local, historical, or generic resource courses", () => {
+  const resources = readRepoFile("renderer/js/resources.js");
+  const selectorStart = resources.indexOf("function pickStudentCurrentCourse");
+  const selectorEnd = resources.indexOf("function syncStudentLessonNav", selectorStart);
+  const selector = resources.slice(selectorStart, selectorEnd);
+  const rendererStart = resources.indexOf("function renderResources(list = [])");
+  const rendererEnd = resources.indexOf("function buildResourceCard", rendererStart);
+  const renderer = resources.slice(rendererStart, rendererEnd);
+
+  assert.match(selector, /selectStudentCurrentCourse\(/);
+  assert.doesNotMatch(selector, /currentResource/);
+  assert.doesNotMatch(selector, /localCourses\[0\]/);
+  assert.doesNotMatch(selector, /resourcesCache\[0\]/);
+  assert.doesNotMatch(renderer, /Array\.isArray\(list\)\s*&&\s*list\.length\s*\?\s*list\[0\]/);
+});
+
+test("student interactive experience opens the selected HTML file without the course outline", () => {
+  const resources = readRepoFile("renderer/js/resources.js");
+  const styles = readRepoFile("renderer/styles/main.css");
+
+  assert.match(resources, /const directStudentExperience = isStudentLessonMode\(\) && resourcesState\.activeCourseWorkspaceTab === "experience";/);
+  assert.match(resources, /if \(!directStudentExperience && \(!isStudentLessonMode\(\) \|\| resourcesState\.activeCourseWorkspaceTab !== "route"\)\)/);
+  assert.match(resources, /split\.classList\.add\("is-direct-file-workspace"\);/);
+  assert.doesNotMatch(resources, /is-experience-workbench/);
+  assert.match(styles, /resources-outline-layout\.is-direct-file-workspace\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.doesNotMatch(styles, /is-experience-workbench/);
+});
+
+test("student classroom entry is owned by the course task center", () => {
+  const html = readRepoFile("renderer/index.html");
+  const main = readRepoFile("renderer/js/main.js");
+  const resources = readRepoFile("renderer/js/resources.js");
+
+  assert.doesNotMatch(html, /data-quick-tab="classroom"/);
+  assert.doesNotMatch(html, /id="dashboard-input-hint"/);
+  assert.doesNotMatch(main, /dashboardClassroomCodeCache/);
+  assert.doesNotMatch(main, /prepareConsoleLaunch/);
+  assert.doesNotMatch(main, /connectStudentClassroomByCode/);
+  assert.match(main, /openStudentLessonTab\("route"/);
+  assert.match(resources, /async function requestStudentClassroomCode\(\)/);
+  assert.match(resources, /title: "加入课堂"/);
+  assert.match(resources, /label: "课堂码"/);
+  assert.match(resources, /placeholder: "留空自动发现"/);
+  assert.match(resources, /required: false/);
+  assert.match(resources, /connectStudentClassroomByCode\(classroomCode, \{ showResourcesView: true \}\)/);
+  assert.match(resources, /if \(!currentCourse && \(resourcesState\.activeCourseWorkspaceTab === "python" \|\| resourcesState\.activeCourseWorkspaceTab === "visual"\)\) \{[\s\S]*?return openStudentLessonTab\("route", document\.getElementById\("nav-student-lesson-item"\)\);/);
+});
+
+test("student task center shows only runnable experiment content", () => {
+  const resources = readRepoFile("renderer/js/resources.js");
+  const routeEntries = resources.match(
+    /function getStudentRouteEntries\(context\) \{[\s\S]*?(?=\nfunction hasStudentRouteEntries)/
+  )?.[0] || "";
+  const studentRoute = resources.match(
+    /if \(isStudentLessonMode\(\) && resourcesState\.activeCourseWorkspaceTab === "route"\) \{[\s\S]*?\n    \}/
+  )?.[0] || "";
+
+  assert.match(routeEntries, /context\.overview\.htmlFiles\[0\]/);
+  assert.match(routeEntries, /context\.overview\.scratchFiles\?\.\[0\]/);
+  assert.match(routeEntries, /context\.overview\.notebookFiles\[0\]/);
+  assert.doesNotMatch(routeEntries, /blocklyFiles/);
+  assert.doesNotMatch(routeEntries, /查看提示/);
+  assert.doesNotMatch(studentRoute, /resources-route-workbench-shell/);
+  assert.doesNotMatch(studentRoute, /选择下一步要进入的学习空间/);
+  assert.doesNotMatch(studentRoute, /建议按课堂顺序/);
+  assert.match(studentRoute, /renderLearningRouteWorkspace\(mainPane, resource, visibleSectionContexts\);/);
+  assert.match(resources, /empty\.textContent = "本节暂无实验内容。";/);
 });
 
 test("Electron Jupyter BrowserView is not attached by create-view unless visible state is authorized", () => {
@@ -169,7 +255,7 @@ test("student copy keeps course tasks separate from Scratch and Jupyter workspac
 
 test("legacy Blockly experiments use an unsupported-course degradation path", () => {
   const resources = readRepoFile("renderer/js/resources.js");
-  assert.match(resources, /该实验类型已不再支持/);
+  assert.match(resources, /旧图形资源（不支持）/);
   assert.doesNotMatch(resources, /openBlocklyWorkspace\(/);
 });
 
@@ -189,15 +275,17 @@ test("AI assistant stays focused on student experiment help", () => {
   assert.doesNotMatch(teacherAiConfig, /QuickForm|打包|发布|教师侧问题|助教会话|生成 Blockly|课程目录/);
 });
 
-test("student experiment pages keep the original outline/detail layout outside the task center", () => {
+test("student task-center workspaces keep route and direct HTML layouts distinct", () => {
   const css = readRepoFile("renderer/styles/main.css");
   assert.match(css, /resources-view\.is-student-lesson \.resources-outline-layout\s*\{[\s\S]*grid-template-columns:\s*260px minmax\(0, 1fr\);/);
   assert.match(css, /body\.student-mode\.student-page-route \.content-scroll-area,[\s\S]*body\.student-mode\.student-page-python \.content-scroll-area\s*\{[\s\S]*padding:\s*0;/);
   assert.match(css, /\.top-bar\s*\{[\s\S]*height:\s*58px;/);
   assert.match(css, /body\.student-mode\.student-page-experience \.top-bar\s*\{[\s\S]*height:\s*58px;/);
-  assert.match(css, /resources-outline-layout\.is-experience-workbench\s*\{[\s\S]*grid-template-columns:\s*220px minmax\(0, 1fr\);/);
+  assert.match(css, /resources-outline-layout\.is-direct-file-workspace\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/);
   assert.match(css, /resources-view\.is-student-lesson \.resources-outline-layout\.is-student-workspace\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/);
-  assert.match(css, /resources-student-html-experience\s*\{[\s\S]*min-height:\s*calc\(100vh - 122px\);/);
+  assert.match(css, /resources-student-html-experience\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;/);
+  assert.match(css, /resources-student-html-experience-head\s*\{[\s\S]*flex:\s*0 0 auto;[\s\S]*min-height:\s*38px;/);
+  assert.match(css, /resources-student-html-frame-wrap\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;/);
   assert.match(css, /resources-student-html-frame\s*\{[\s\S]*height:\s*100%;/);
   assert.doesNotMatch(css, /resources-student-gateway/);
 });

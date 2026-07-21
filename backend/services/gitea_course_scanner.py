@@ -114,8 +114,22 @@ def _normalize_lessons_to_sections(lessons: Any) -> List[Dict[str, Any]]:
     return sections
 
 
+def _strip_removed_integration_fields(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_strip_removed_integration_fields(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: _strip_removed_integration_fields(item)
+        for key, item in value.items()
+        if key not in {"quickform", "quickform_defaults"}
+    }
+
+
 def _normalize_course_data(course: Dict[str, Any]) -> Dict[str, Any]:
-    normalized = dict(course or {})
+    normalized = _strip_removed_integration_fields(course or {})
+    if not isinstance(normalized, dict):
+        normalized = {}
     normalized.setdefault("tags", [])
     sections = normalized.get("sections") or []
     if not sections and isinstance(normalized.get("lessons"), list):
@@ -135,6 +149,7 @@ def _strip_runtime_course_fields(course: Dict[str, Any]) -> Dict[str, Any]:
         "sync",
         "course_url",
         "package_url",
+        "resource_handle",
         "_source_id",
         "_source_name",
         "_source_repo_url",
@@ -206,7 +221,8 @@ def _load_course_data_from_local_package_path(source_path: Path) -> Dict[str, An
 def resolve_local_course_package_target_path(package_path: str) -> str:
     source_path = Path(package_path).expanduser()
     course_data = _load_course_data_from_local_package_path(source_path)
-    course_id = str(course_data.get("id") or "").strip()
+    raw_course_id = str(course_data.get("id") or "").strip()
+    course_id = raw_course_id if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", raw_course_id) else ""
     if not course_id:
         course_id = _generate_course_id(str(course_data.get("title") or "").strip())
     if not course_id:

@@ -72,9 +72,12 @@ Agent 状态字段：
 
 - `GET|POST /api/resources/index`
 - `POST /api/resources/scan`
+- `POST /api/resources/local-handle`
+- `GET /api/resources/local-file/<handle>/<path>`
+- `POST /api/resources/import-package-local`
+- `GET /api/resources/operations/<operation_id>`
 - `POST /api/resources/save-course`
 - `POST /api/resources/scan-folder`
-- `POST /api/resources/quickform/inject`
 - `POST /api/resources/publish`
 - `POST /api/resources/pull`
 - `GET /api/classroom/index`
@@ -84,6 +87,21 @@ Agent 状态字段：
 课程文件夹衔接约定见：
 
 - [docs/overview/course-folder-contract.md](/Users/apple/Documents/GitHub/xedu-client/docs/overview/course-folder-contract.md)
+
+### 长耗时课程传输
+
+`POST /api/resources/pull` 和 `POST /api/resources/import-package-local` 支持在请求体中传入 `async: true`。接口会立即返回：
+
+```json
+{
+  "success": true,
+  "operation_id": "任务 ID"
+}
+```
+
+客户端随后轮询 `GET /api/resources/operations/<operation_id>`。`operation.state` 为 `queued` 或 `running` 时继续等待；为 `success` 时从 `operation.result` 读取课程；为 `error` 时显示 `operation.error`。进度字段包括 `phase`、`percent`、`completed_files`、`total_files`、`completed_bytes`、`total_bytes` 和 `current_file`。不传 `async` 时保留同步响应兼容。
+
+本地课程包请求只需提供 `package_path`；省略 `target_path` 时，服务端按课程 ID 写入 `~/Documents/XeduCourses/<course-id>`。覆盖已有课程前会保留 `.xedu_backup` 备份。
 
 ### Python 包管理
 

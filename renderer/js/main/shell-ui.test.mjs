@@ -27,15 +27,15 @@ function createElement(dataset = {}) {
 }
 
 test('settings tab selection and hidden-tab fallback stay deterministic', () => {
-    const tabs = [createElement({ tab: 'about' }), createElement({ tab: 'ai' })];
-    const sections = [createElement({ settingsTab: 'about' }), createElement({ settingsTab: 'ai' })];
+    const tabs = [createElement({ tab: 'ai' }), createElement({ tab: 'python' })];
+    const sections = [createElement({ settingsTab: 'ai' }), createElement({ settingsTab: 'python' })];
     tabs[1].style.display = 'none';
     const documentRef = {
         querySelectorAll(selector) { return selector === '.settings-tab' ? tabs : sections; },
         querySelector() { return tabs[1]; },
     };
 
-    showSettingsTab('ai', documentRef);
+    showSettingsTab('python', documentRef);
 
     assert.equal(tabs[0].classList.contains('active'), true);
     assert.equal(tabs[1].classList.contains('active'), false);

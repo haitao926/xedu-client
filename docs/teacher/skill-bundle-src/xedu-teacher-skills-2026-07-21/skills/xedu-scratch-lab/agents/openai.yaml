@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu Scratch Lab"
+  short_description: "Create and validate XEdu Scratch experiments"
+  default_prompt: "Use $xedu-scratch-lab to design a Scratch experiment with currently supported XEdu blocks."

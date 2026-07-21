@@ -3,6 +3,7 @@ import io
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 from PIL import Image
 
@@ -89,7 +90,7 @@ class AIServiceTestCase(unittest.TestCase):
         self.assertIn("不要执行教师管理", joined)
 
     def test_prepare_openai_payload_preserves_multimodal_message_content(self):
-        payload = self.service._prepare_openai_payload([
+        payload = self.service._prepare_chat_completions_payload([
             {
                 "role": "user",
                 "content": [
@@ -102,6 +103,179 @@ class AIServiceTestCase(unittest.TestCase):
         self.assertEqual(payload["model"], "gpt-4o-mini")
         self.assertIsInstance(payload["messages"][0]["content"], list)
         self.assertEqual(payload["messages"][0]["content"][1]["type"], "image_url")
+        self.assertEqual(set(payload), {"model", "messages"})
+
+    def test_prepare_chat_completions_payload_uses_provider_defaults(self):
+        service = AIService(
+            AIConfig(
+                api_key="test-key",
+                base_url="https://api.moonshot.cn/v1",
+                model="kimi-k3",
+            )
+        )
+
+        payload = service._prepare_chat_completions_payload([
+            {"role": "user", "content": "你好"},
+        ])
+
+        self.assertEqual(payload["model"], "kimi-k3")
+        self.assertEqual(set(payload), {"model", "messages"})
+
+    def test_prepare_responses_payload_converts_multimodal_message_content(self):
+        payload = self.service._prepare_responses_payload([
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "看图说话"},
+                    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,abc"}},
+                ],
+            }
+        ])
+
+        self.assertEqual(payload["model"], "gpt-4o-mini")
+        self.assertEqual(payload["input"][0]["role"], "user")
+        self.assertEqual(payload["input"][0]["content"][0]["type"], "input_text")
+        self.assertEqual(payload["input"][0]["content"][1]["type"], "input_image")
+        self.assertEqual(set(payload), {"model", "input"})
+
+    def test_resolve_api_mode_auto_uses_responses_for_official_openai(self):
+        self.assertEqual(self.service._resolve_api_mode(), "responses")
+
+    def test_resolve_api_mode_explicit_responses_supports_proxy_gateways(self):
+        service = AIService(
+            AIConfig(
+                api_key="test-key",
+                base_url="https://gateway.example.com/v1",
+                model="gpt-4.1-mini",
+                api_mode="responses",
+            )
+        )
+        self.assertEqual(service._resolve_api_mode(), "responses")
+
+    def test_resolve_api_mode_uses_chat_for_native_chat_providers(self):
+        providers = [
+            ("https://api.moonshot.cn/v1", "kimi-k3"),
+            ("https://api.deepseek.com", "deepseek-v4-pro"),
+        ]
+
+        for base_url, model in providers:
+            with self.subTest(base_url=base_url):
+                service = AIService(
+                    AIConfig(
+                        api_key="test-key",
+                        base_url=base_url,
+                        model=model,
+                        api_mode="responses",
+                    )
+                )
+                self.assertEqual(service._resolve_api_mode(), "chat_completions")
+
+    def test_extract_responses_text_reads_output_text_blocks(self):
+        text = self.service._extract_responses_text({
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "output_text", "text": "第一段"},
+                        {"type": "output_text", "text": "第二段"},
+                    ],
+                }
+            ]
+        })
+
+        self.assertEqual(text, "第一段\n第二段")
+
+    def test_call_ai_api_uses_responses_endpoint_for_openai(self):
+        mocked_response = Mock()
+        mocked_response.status_code = 200
+        mocked_response.json.return_value = {
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "你好"}],
+                }
+            ],
+            "usage": {"total_tokens": 12},
+        }
+        self.service.session.post = Mock(return_value=mocked_response)
+
+        result = self.service._call_ai_api([{"role": "user", "content": "你好"}])
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["content"], "你好")
+        self.service.session.post.assert_called_once()
+        called_url = self.service.session.post.call_args.args[0]
+        self.assertTrue(called_url.endswith("/responses"))
+
+    def test_call_ai_api_uses_provider_defaults_for_kimi(self):
+        service = AIService(
+            AIConfig(
+                api_key="test-key",
+                base_url="https://api.moonshot.cn/v1",
+                model="kimi-k3",
+            )
+        )
+        mocked_response = Mock()
+        mocked_response.status_code = 200
+        mocked_response.json.return_value = {
+            "choices": [{"message": {"content": "你好"}}],
+            "usage": {"total_tokens": 12},
+        }
+        service.session.post = Mock(return_value=mocked_response)
+
+        result = service._call_ai_api([{"role": "user", "content": "你好"}])
+
+        self.assertTrue(result["success"])
+        called_url = service.session.post.call_args.args[0]
+        called_payload = service.session.post.call_args.kwargs["json"]
+        self.assertTrue(called_url.endswith("/chat/completions"))
+        self.assertEqual(set(called_payload), {"model", "messages"})
+
+    def test_call_ai_api_uses_chat_completions_for_deepseek(self):
+        service = AIService(
+            AIConfig(
+                api_key="test-key",
+                base_url="https://api.deepseek.com",
+                model="deepseek-v4-pro",
+                api_mode="responses",
+            )
+        )
+        mocked_response = Mock()
+        mocked_response.status_code = 200
+        mocked_response.json.return_value = {
+            "choices": [{"message": {"content": "你好"}}],
+            "usage": {"total_tokens": 12},
+        }
+        service.session.post = Mock(return_value=mocked_response)
+
+        result = service._call_ai_api([{"role": "user", "content": "你好"}])
+
+        self.assertTrue(result["success"])
+        called_url = service.session.post.call_args.args[0]
+        called_payload = service.session.post.call_args.kwargs["json"]
+        self.assertEqual(called_url, "https://api.deepseek.com/chat/completions")
+        self.assertEqual(set(called_payload), {"model", "messages"})
+
+    def test_call_ai_api_handles_string_provider_errors(self):
+        service = AIService(
+            AIConfig(
+                api_key="test-key",
+                base_url="https://api.moonshot.cn/v1",
+                model="kimi-k3",
+                api_mode="responses",
+            )
+        )
+        mocked_response = Mock()
+        mocked_response.status_code = 400
+        mocked_response.json.return_value = {"error": "unsupported endpoint"}
+        service.session.post = Mock(return_value=mocked_response)
+
+        result = service._call_ai_api([{"role": "user", "content": "你好"}])
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "AI API 调用失败: 400 - unsupported endpoint")
 
 
 if __name__ == "__main__":

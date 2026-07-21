@@ -75,6 +75,39 @@ test("loadResourcesIndexFlow refreshes cached local courses from disk before ren
   assert.equal(persisted, true);
 });
 
+test("loadResourcesIndexFlow falls back to the configured resource index when a stale classroom fails", async () => {
+  const classroomState = {
+    connected: true,
+    source: { base_url: "http://127.0.0.1:5999" },
+  };
+  const requests = [];
+  let appliedOptions = null;
+  const deps = makeDeps({
+    classroomState,
+    apiClient: {
+      post: async (path) => {
+        requests.push(path);
+        throw new Error("课堂未开启");
+      },
+      get: async (path) => {
+        requests.push(path);
+        return { success: true, index: { resources: [{ id: "remote-course" }] } };
+      },
+    },
+    applyResourcesIndex: (_index, options) => {
+      appliedOptions = options;
+    },
+  });
+
+  await loadResourcesIndexFlow(deps);
+
+  assert.deepEqual(requests, ["/api/classroom/fetch-index", "/api/resources/index"]);
+  assert.equal(classroomState.connected, false);
+  assert.equal(classroomState.source, null);
+  assert.equal(appliedOptions.remoteSource, "remote");
+  assert.equal(appliedOptions.isMock, false);
+});
+
 test("loadResourcesIndexFlow always hides loading when local course loading fails", async () => {
   const loading = { style: { display: "none" } };
   let appliedMock = false;

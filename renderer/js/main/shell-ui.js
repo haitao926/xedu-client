@@ -4,7 +4,8 @@ export function showSettingsTab(tab, documentRef = globalThis.document) {
     const tabs = documentRef?.querySelectorAll?.('.settings-tab') || [];
     const sections = documentRef?.querySelectorAll?.('[data-settings-tab]') || [];
     const targetTab = documentRef?.querySelector?.(`.settings-tab[data-tab="${tab}"]`);
-    const activeTab = targetTab?.style.display === 'none' ? 'about' : tab;
+    const fallbackTab = Array.from(tabs).find((button) => button.style.display !== 'none')?.dataset.tab || null;
+    const activeTab = targetTab && targetTab.style.display !== 'none' ? tab : fallbackTab;
 
     tabs.forEach((button) => {
         button.classList.toggle('active', button.dataset.tab === activeTab);

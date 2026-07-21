@@ -1,3 +1,9 @@
+import {
+  hasDesktopBridgeMethod,
+  selectFolderWithDesktopBridge,
+} from './desktop-bridge.js';
+import { runCourseTransferFlow } from './course-transfer.js';
+
 export function upsertLocalCourseRecord(course, { addCourse, showDetailView, showDetail = false } = {}) {
   if (!course) return;
   addCourse(course, { silent: true });
@@ -186,6 +192,8 @@ export async function pullLatestForLocalCourseFlow(resource, deps) {
     upsertLocalCourseRecord,
     loadResourcesIndex,
     showDetailView,
+    setImportStatus = () => {},
+    pollIntervalMs = 500,
     alertUser = alert,
   } = deps;
 
@@ -219,23 +227,30 @@ export async function pullLatestForLocalCourseFlow(resource, deps) {
 
   const resolveLatest = origin.single_course_repo ? false : true;
   const doPull = async (tokenOverride = '') =>
-    apiClient.post('/api/resources/pull', {
-      source_override: {
-        id: origin.source_id || 'override',
-        ...origin,
+    runCourseTransferFlow({
+      apiClient,
+      endpoint: '/api/resources/pull',
+      payload: {
+        source_override: {
+          id: origin.source_id || 'override',
+          ...origin,
+        },
+        token_override: tokenOverride || undefined,
+        course_id: origin.course_id || resource.id || '',
+        course_url: origin.course_url || '',
+        package_url: origin.package_url || '',
+        resolve_latest: resolveLatest,
+        target_path: resource.local_path,
+        replace_existing: true,
+        backup_before_replace: true,
       },
-      token_override: tokenOverride || undefined,
-      course_id: origin.course_id || resource.id || '',
-      course_url: origin.course_url || '',
-      package_url: origin.package_url || '',
-      resolve_latest: resolveLatest,
-      target_path: resource.local_path,
-      replace_existing: true,
-      backup_before_replace: true,
+      setImportStatus,
+      pollIntervalMs,
     });
 
   let response = null;
   try {
+    setImportStatus('downloading', '正在拉取课程更新...');
     response = await doPull('');
     if (!response?.success) {
       throw new Error(response?.message || '拉取失败');
@@ -245,21 +260,25 @@ export async function pullLatestForLocalCourseFlow(resource, deps) {
     if (message.includes('认证失败') || message.includes('Token')) {
       const token = await resolvePublishRetryToken();
       if (!token) {
+        setImportStatus('error', '拉取失败：仓库需要访问令牌');
         alertUser('该仓库需要访问令牌。请在“设置 → 资源库”填写访问令牌后重试。');
         return;
       }
       try {
         response = await doPull(token.trim());
         if (!response?.success) {
+          setImportStatus('error', response?.message || '拉取失败');
           alertUser(`拉取失败：${response?.message || '未知错误'}`);
           return;
         }
       } catch (retryError) {
         const retryMessage = extractApiErrorMessage(retryError, '拉取失败');
+        setImportStatus('error', retryMessage);
         alertUser(`拉取失败：${retryMessage}`);
         return;
       }
     } else {
+      setImportStatus('error', message);
       alertUser(`拉取失败：${message}`);
       return;
     }
@@ -281,6 +300,7 @@ export async function pullLatestForLocalCourseFlow(resource, deps) {
   await persistCourseToDisk(syncedCourse);
   upsertLocalCourseRecord(syncedCourse, { showDetail: true });
 
+  setImportStatus('success', '课程已更新到本地');
   alertUser('课程已更新到本地。');
   await loadResourcesIndex();
   showDetailView(syncedCourse);
@@ -296,6 +316,8 @@ export async function importRemoteCourseFlow(resource, options = {}, deps) {
     extractApiErrorMessage,
     alertUser = alert,
     electronAPI = window.electronAPI,
+    setImportStatus = () => {},
+    pollIntervalMs = 500,
   } = deps;
 
   if (!resource) return null;
@@ -304,19 +326,19 @@ export async function importRemoteCourseFlow(resource, options = {}, deps) {
   const isClassroomResource = resource.source === 'classroom';
   let targetPath = '';
 
-  if (electronAPI && typeof electronAPI.invoke === 'function') {
-    try {
-      const base = await electronAPI.invoke('select-folder');
-      if (base) {
-        const cleanBase = base.replace(/[\\/]+$/, '');
-        targetPath = `${cleanBase}/${resource.id || 'course'}`;
-      }
-    } catch (error) {
-      console.warn('选择导入目录失败:', error);
-    }
-  }
-
   try {
+    setImportStatus('selecting', '正在选择目录...');
+    if (hasDesktopBridgeMethod(electronAPI, 'selectFolder')) {
+      const base = await selectFolderWithDesktopBridge(electronAPI);
+      if (!base) {
+        setImportStatus('cancelled', '已取消导入');
+        if (!options.silent) alertUser('已取消导入。');
+        return null;
+      }
+      const cleanBase = base.replace(/[\\/]+$/, '');
+      targetPath = `${cleanBase}/${resource.id || 'course'}`;
+    }
+
     const endpoint = isClassroomResource ? '/api/classroom/pull' : '/api/resources/pull';
     const payload = {
       course_url: courseUrl,
@@ -336,13 +358,22 @@ export async function importRemoteCourseFlow(resource, options = {}, deps) {
         payload.token_override = deps.cloudTempToken;
       }
     }
-    const response = await apiClient.post(endpoint, payload);
+    const response = await runCourseTransferFlow({
+      apiClient,
+      endpoint,
+      payload,
+      setImportStatus,
+      pollIntervalMs,
+      initialStatus: ['downloading', '正在下载课程...'],
+    });
     if (!response.success) {
       throw new Error(response.message || '导入失败');
     }
+    setImportStatus('writing', '正在写入本地课程...');
     const localCourse = {
       ...response.course,
       local_path: response.local_path,
+      resource_handle: response.resource_handle || response.course?.resource_handle || '',
       source: 'local',
       origin: normalizeOrigin(response.origin || buildSourceOverrideFromCourseMeta(resource)),
       updated_at: new Date().toISOString().slice(0, 10),
@@ -352,13 +383,16 @@ export async function importRemoteCourseFlow(resource, options = {}, deps) {
     };
     const syncedCourse = withCourseSyncFingerprint(localCourse);
     const updated = addCourse(syncedCourse, { silent: true });
+    setImportStatus('success', updated ? '课程已更新到本地' : '课程已导入到本地');
     if (!options.silent) {
       alertUser(updated ? '课程已更新到本地。' : '课程已导入到本地。');
     }
     return syncedCourse;
   } catch (error) {
+    const message = extractApiErrorMessage(error, '导入失败');
+    setImportStatus('error', message);
     if (!options.silent) {
-      alertUser(extractApiErrorMessage(error, '导入失败'));
+      alertUser(message);
     } else {
       throw error;
     }

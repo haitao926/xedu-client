@@ -59,6 +59,7 @@ class JupyterManager:
             'last_check': 0,
             'cache_duration': 300  # 缓存5分钟
         }
+        self._last_environment_errors: tuple[str, ...] = ()
 
         # HTTP 探测失败计数，用于避免短暂波动引发误判重启
         self._http_failure_count = 0
@@ -162,7 +163,9 @@ class JupyterManager:
                 if not self._validate_environment(merged_config):
                     return {
                         "success": False,
-                        "message": "环境验证失败"
+                        "message": self._last_environment_errors[0] if self._last_environment_errors else "环境验证失败",
+                        "errors": list(self._last_environment_errors),
+                        "error_code": "environment_not_ready",
                     }
 
             result = self._start_process(merged_config)
@@ -566,6 +569,7 @@ class JupyterManager:
 
         if validation_result.used_cache:
             logger.debug("Using cached environment validation")
+            self._last_environment_errors = ()
             return validation_result.is_valid
 
         if (
@@ -577,6 +581,8 @@ class JupyterManager:
 
         for error in validation_result.errors:
             logger.error(error)
+
+        self._last_environment_errors = validation_result.errors
 
         self._env_cache.update({
             'python_exe': validation_result.python_executable,
@@ -1185,6 +1191,7 @@ env
             'last_check': 0,
             'cache_duration': 300  # 缓存5分钟
         }
+        self._last_environment_errors = ()
         logger.info("Environment cache cleared")
 
     def _is_port_occupied(self, port: int = None) -> bool:

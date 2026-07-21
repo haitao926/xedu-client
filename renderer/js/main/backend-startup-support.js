@@ -24,6 +24,7 @@ export function createBackendStartupSupport({
     showToast,
     apiClient,
     applySystemConfigToInputs,
+    onConfigurationReset,
     refreshStatus,
 } = {}) {
     let latestState = { ...DEFAULT_BACKEND_STARTUP_STATE };
@@ -116,6 +117,7 @@ export function createBackendStartupSupport({
         const result = await apiClient.resetConfig();
         if (!result?.success) throw new Error(result?.message || '恢复默认配置失败');
         applySystemConfigToInputs(result);
+        await onConfigurationReset?.(result);
         showToast?.('已恢复默认配置，原配置已备份', 'success');
         void Promise.resolve(refreshStatus?.()).catch((error) => console.warn('恢复配置后刷新状态失败:', error));
     }

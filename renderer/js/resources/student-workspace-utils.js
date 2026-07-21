@@ -90,6 +90,25 @@ export function shouldHideJupyterForStudentTab(tabId = "route") {
   return normalizeStudentWorkspaceTabId(tabId) !== "python";
 }
 
+export function selectStudentCurrentCourse({
+  classroomState = {},
+  remoteSource = "",
+  localCourses = [],
+  resourcesCache = [],
+} = {}) {
+  if (classroomState.active) {
+    const activeCourseIds = [
+      classroomState.activeCourseOriginId,
+      classroomState.activeCourseId,
+    ].filter(Boolean);
+    if (!activeCourseIds.length) return null;
+    return localCourses.find((course) => course?.id && activeCourseIds.includes(course.id)) || null;
+  }
+
+  if (!classroomState.connected || remoteSource !== "classroom") return null;
+  return resourcesCache.find((course) => course?.source === "classroom") || null;
+}
+
 export function getStudentVisibleLessonContexts(sections = [], sectionIndex = 0, isStudent = true) {
   if (!isStudent) {
     return sections.map((section, index) => ({ section, sectionIndex: index }));

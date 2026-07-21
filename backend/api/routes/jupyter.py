@@ -14,6 +14,7 @@ def register_jupyter_routes(app, services: dict):
     merge_jupyter_payload = services["merge_jupyter_payload"]
     serialize_status = services["serialize_status"]
     collect_system_info = services["collect_system_info"]
+    get_app_config = services["get_app_config"]
     logger = services["logger"]
 
     @app.route("/api/status")
@@ -30,7 +31,14 @@ def register_jupyter_routes(app, services: dict):
         result = jupyter_manager.start(**merged_config)
         if result.get("success"):
             result["config"] = merged_config
-        return jsonify(result), (200 if result.get("success") else 500)
+        status_code = (
+            200
+            if result.get("success")
+            else 400
+            if result.get("error_code") == "environment_not_ready"
+            else 500
+        )
+        return jsonify(result), status_code
 
     @app.route("/api/stop", methods=["POST"])
     @require_capability("process:control")
@@ -77,5 +85,8 @@ def register_jupyter_routes(app, services: dict):
         validation = inspect_python_executable(requested_python)
         if not validation["success"]:
             return jsonify({"success": False, "message": validation["message"]}), 400
-        result = repair_xedu_python_environment(validation["executable"])
+        use_mirror = bool(getattr(get_app_config().ui, "pip_use_mirror", True))
+        result = repair_xedu_python_environment(validation["executable"], use_mirror=use_mirror)
+        if result.get("success"):
+            jupyter_manager.clear_env_cache()
         return jsonify(result), (200 if result.get("success") else 400)

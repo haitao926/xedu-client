@@ -9,12 +9,16 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from utils.xedu_compat import XEDU_PYTHON_VERSION, patch_xedu_metadata
+from utils.xedu_compat import XEDU_PYTHON_MIN_VERSION, is_supported_xedu_version, patch_xedu_metadata
 
 
 MIN_PYTHON_VERSION = (3, 10)
 _VERSION_PATTERN = re.compile(r"Python\s+(\d+)\.(\d+)(?:\.(\d+))?")
 _ENVIRONMENT_MARKER = "__XEDU_ENVIRONMENT__="
+_JUPYTER_MODULES = {"jupyterlab": "JupyterLab", "notebook": "Notebook"}
+_JUPYTER_REPAIR_PACKAGES = ("jupyterlab", "ipykernel")
+_DEFAULT_PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
+_PIP_INSTALL_TIMEOUT_SECONDS = 300
 _ENVIRONMENT_PROBE = r'''
 import importlib.metadata as metadata
 import json
@@ -35,6 +39,7 @@ payload = {
     "xedu_version": package_version("xedu-python"),
     "jupyterlab_version": package_version("jupyterlab"),
     "jupyter_notebook_version": package_version("notebook"),
+    "ipykernel_version": package_version("ipykernel"),
     "xedu_runtime_ok": False,
     "xedu_runtime_message": "",
 }
@@ -91,6 +96,43 @@ def inspect_python_executable(executable: str) -> dict[str, Any]:
     }
 
 
+def inspect_jupyter_module(executable: str, module: str = "jupyterlab") -> dict[str, Any]:
+    """Check that the selected interpreter can launch the requested Jupyter module."""
+    validation = inspect_python_executable(executable)
+    if not validation["success"]:
+        return validation
+
+    module_label = _JUPYTER_MODULES.get(module)
+    if not module_label:
+        return {"success": False, "message": f"不支持检查的 Jupyter 模块: {module}"}
+
+    try:
+        completed = subprocess.run(
+            [validation["executable"], "-m", module, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"success": False, "message": f"无法检查 {module_label}: {exc}"}
+
+    if completed.returncode != 0:
+        return {
+            "success": False,
+            "message": f"缺少 {module_label}，请在“Python”设置中点击“修复”。",
+            "executable": validation["executable"],
+            "module": module,
+        }
+
+    return {
+        "success": True,
+        "message": f"{module_label} 可用",
+        "executable": validation["executable"],
+        "module": module,
+    }
+
+
 def inspect_python_environment(executable: str, timeout_seconds: int = 20) -> dict[str, Any]:
     """Run a minimal probe inside the selected interpreter."""
     validation = inspect_python_executable(executable)
@@ -123,35 +165,136 @@ def inspect_python_environment(executable: str, timeout_seconds: int = 20) -> di
         }
     payload["success"] = True
     payload["executable"] = candidate
-    payload["xedu_expected_version"] = XEDU_PYTHON_VERSION
-    payload["xedu_version_ok"] = payload.get("xedu_version") == XEDU_PYTHON_VERSION
-    payload["xedu_repair_available"] = payload.get("xedu_version") == XEDU_PYTHON_VERSION and not payload.get("xedu_runtime_ok")
+    payload["xedu_expected_version"] = XEDU_PYTHON_MIN_VERSION
+    payload["xedu_version_ok"] = is_supported_xedu_version(payload.get("xedu_version"))
+    payload["xedu_repair_available"] = payload["xedu_version_ok"] and not payload.get("xedu_runtime_ok")
     return payload
 
 
-def repair_xedu_python_environment(executable: str) -> dict[str, Any]:
-    """Patch only the known xedu-python metadata mismatch, then re-probe."""
+def _missing_jupyter_packages(environment: dict[str, Any]) -> list[str]:
+    return [
+        package
+        for package in _JUPYTER_REPAIR_PACKAGES
+        if not environment.get(f"{package}_version")
+    ]
+
+
+def _summarize_command_error(completed: subprocess.CompletedProcess[str]) -> str:
+    detail = (completed.stderr or completed.stdout or "").strip()
+    detail = " ".join(detail.split())
+    return detail[-600:] if detail else "未知错误"
+
+
+def _install_jupyter_packages(
+    executable: str,
+    packages: list[str],
+    *,
+    use_mirror: bool,
+) -> dict[str, Any]:
+    command = [
+        executable,
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--no-input",
+        *packages,
+    ]
+    if use_mirror:
+        command.extend(["-i", _DEFAULT_PIP_MIRROR])
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=_PIP_INSTALL_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"success": False, "message": "安装 JupyterLab 超时。"}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"success": False, "message": f"无法安装 JupyterLab: {exc}"}
+
+    if completed.returncode != 0:
+        return {
+            "success": False,
+            "message": f"JupyterLab 安装失败: {_summarize_command_error(completed)}",
+        }
+
+    return {"success": True, "message": "JupyterLab 已安装", "installed_packages": packages}
+
+
+def repair_xedu_python_environment(executable: str, *, use_mirror: bool = True) -> dict[str, Any]:
+    """Install missing Jupyter dependencies and repair a known XEdu metadata mismatch."""
     environment = inspect_python_environment(executable)
     if not environment.get("success"):
         return environment
-    if environment.get("xedu_version") != XEDU_PYTHON_VERSION:
+
+    changed = False
+    installed_packages = _missing_jupyter_packages(environment)
+    if installed_packages:
+        installation = _install_jupyter_packages(
+            executable,
+            installed_packages,
+            use_mirror=use_mirror,
+        )
+        if not installation.get("success"):
+            installation["changed"] = False
+            installation["runtime"] = environment
+            return installation
+        changed = True
+        environment = inspect_python_environment(executable)
+        if not environment.get("success") or _missing_jupyter_packages(environment):
+            return {
+                "success": False,
+                "changed": changed,
+                "message": "JupyterLab 安装后仍不可用。",
+                "runtime": environment,
+            }
+
+    if not is_supported_xedu_version(environment.get("xedu_version")):
         return {
             "success": False,
-            "changed": False,
-            "message": f"只允许修复 xedu-python=={XEDU_PYTHON_VERSION}，当前环境未满足版本要求。",
+            "changed": changed,
+            "message": f"只允许修复 xedu-python>={XEDU_PYTHON_MIN_VERSION}，当前环境未满足版本要求。",
+            "runtime": environment,
         }
-    site_packages = environment.get("site_packages")
-    if not site_packages:
-        return {"success": False, "changed": False, "message": "无法定位所选 Python 的 site-packages。"}
-    result = patch_xedu_metadata(Path(site_packages))
-    if not result.get("success"):
-        return result
-    after = inspect_python_environment(executable)
-    result["runtime"] = after
-    result["success"] = bool(after.get("success") and after.get("xedu_runtime_ok"))
-    if not result["success"]:
-        if result.get("changed"):
-            result["message"] = f"元数据已修复，但 XEduHub 探针仍失败: {after.get('xedu_runtime_message') or after.get('message', '未知错误')}"
-        else:
-            result["message"] = f"没有可修复的依赖元数据，XEduHub 探针仍失败: {after.get('xedu_runtime_message') or after.get('message', '未知错误')}"
-    return result
+
+    if not environment.get("xedu_runtime_ok"):
+        site_packages = environment.get("site_packages")
+        if not site_packages:
+            return {
+                "success": False,
+                "changed": changed,
+                "message": "无法定位所选 Python 的 site-packages。",
+                "runtime": environment,
+            }
+        metadata_result = patch_xedu_metadata(Path(site_packages))
+        if not metadata_result.get("success"):
+            metadata_result["changed"] = bool(changed or metadata_result.get("changed"))
+            metadata_result["runtime"] = environment
+            return metadata_result
+        changed = bool(changed or metadata_result.get("changed"))
+        environment = inspect_python_environment(executable)
+
+    success = bool(
+        environment.get("success")
+        and not _missing_jupyter_packages(environment)
+        and environment.get("xedu_runtime_ok")
+    )
+    if not success:
+        return {
+            "success": False,
+            "changed": changed,
+            "message": f"XEduHub 探针仍失败: {environment.get('xedu_runtime_message') or environment.get('message', '未知错误')}",
+            "runtime": environment,
+        }
+
+    return {
+        "success": True,
+        "changed": changed,
+        "message": "Python 环境已修复" if changed else "Python 环境已就绪",
+        "runtime": environment,
+        "installed_packages": installed_packages,
+    }

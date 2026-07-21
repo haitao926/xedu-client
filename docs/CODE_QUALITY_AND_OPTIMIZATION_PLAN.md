@@ -122,7 +122,7 @@ Step 5: 验证
 
 **第一步已完成**：原 37 个模块级状态变量已集中到 `resources/resources-state.js` 的工厂对象，并以资源页契约测试守护课堂状态隔离、工作区位置参数和状态引用。`resources.js` 仍负责大量协调逻辑，后续按功能边界继续拆分，不在发布前进行大范围重写。
 
-**拆分目标**（10 个模块）：`resources-state.js` / `cloud-source-config.js` / `cloud-course-import.js` / `course-wizard.js` / `course-publish.js` / `teacher-mode.js` / `student-workspace-pages.js` / `quickform-integration.js` / `course-detail-view.js` / `resources-events.js`
+**拆分目标**（9 个模块）：`resources-state.js` / `cloud-source-config.js` / `cloud-course-import.js` / `course-wizard.js` / `course-publish.js` / `teacher-mode.js` / `student-workspace-pages.js` / `course-detail-view.js` / `resources-events.js`
 
 详细行范围映射见 v1 归档（各块 L150-L7585 划分仍有效）。
 

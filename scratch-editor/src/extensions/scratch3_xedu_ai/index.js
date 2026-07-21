@@ -65,7 +65,7 @@ let fallbackSharedState;
 function createSharedState() {
     return {
         input: 'demo.jpg', workflowTask: 'cls_imagenet', workflowParams: {}, lastResult: '', lastRawResult: null,
-        lastValue: '', lastError: '', records: [], resources: new Map(), resultsByExtension: {},
+        lastValue: '', lastError: '', records: [], resources: new Map(), resultsByExtension: {}, cameraStreams: new Set(),
     };
 }
 
@@ -81,7 +81,7 @@ function getSharedState(runtime) {
 const SHARED_PROPERTIES = Object.freeze({
     _input: 'input', _workflowTask: 'workflowTask', _workflowParams: 'workflowParams', _lastResult: 'lastResult',
     _lastRawResult: 'lastRawResult', _lastValue: 'lastValue', _lastError: 'lastError', _records: 'records', _resources: 'resources',
-    _resultsByExtension: 'resultsByExtension',
+    _resultsByExtension: 'resultsByExtension', _cameraStreams: 'cameraStreams',
 });
 
 function stringValue(value, fallback = '') {
@@ -110,6 +110,12 @@ class Scratch3XEduAI {
                 get: () => state[stateKey],
                 set: value => { state[stateKey] = value; },
             });
+        }
+        if (runtime && typeof runtime === 'object' && typeof runtime.__xeduReleaseCameraResources !== 'function') {
+            runtime.__xeduReleaseCameraResources = () => {
+                this._releaseCameraResources();
+            };
+            runtime.on?.('PROJECT_STOP_ALL', runtime.__xeduReleaseCameraResources);
         }
     }
 
@@ -183,6 +189,8 @@ class Scratch3XEduAI {
     faceCount () { return this._detections('*').length || (this._points().length ? 1 : 0); }
     facePosition (args) { return this._boxPosition(this._detectionBox(this._detections('*')[this._oneBasedIndex(args.INDEX)]), args.POSITION); }
     facePointAxis (args) { return this._pointAxis(args.INDEX, args.AXIS); }
+    showFaceKeypoints () { return this._setKeypointOverlay(true); }
+    hideFaceKeypoints () { this._setKeypointOverlay(false); }
 
     enableBodySensing () { return this._enableSensing(); }
     bodyReady () { return this._sensingReady(); }
@@ -190,6 +198,8 @@ class Scratch3XEduAI {
     bodyCount () { return this._detections('*').length || (this._points().length ? 1 : 0); }
     bodyPosition (args) { return this._boxPosition(this._detectionBox(this._detections('*')[this._oneBasedIndex(args.INDEX)]), args.POSITION); }
     bodyPointAxis (args) { return this._pointAxis(args.POINT, args.AXIS); }
+    showBodyKeypoints () { return this._setKeypointOverlay(true); }
+    hideBodyKeypoints () { this._setKeypointOverlay(false); }
 
     enableHandSensing () { return this._enableSensing(); }
     handReady () { return this._sensingReady(); }
@@ -197,6 +207,8 @@ class Scratch3XEduAI {
     handCount () { return this._detections('*').length || (this._points().length ? 1 : 0); }
     handPosition (args) { return this._boxPosition(this._detectionBox(this._detections('*')[this._oneBasedIndex(args.INDEX)]), args.POSITION); }
     handPointAxis (args) { return this._pointAxis(args.POINT, args.AXIS); }
+    showHandKeypoints () { return this._setKeypointOverlay(true); }
+    hideHandKeypoints () { this._setKeypointOverlay(false); }
 
     enableTextRecognition () { return this._enableSensing(); }
     textReady () { return this._sensingReady(); }
@@ -366,6 +378,14 @@ class Scratch3XEduAI {
     _sensingReady () {
         const taskId = SENSING_TASKS[this.moduleKey];
         return taskId ? this._sensingSession().isReady(taskId) : false;
+    }
+
+    _setKeypointOverlay (visible) {
+        const taskId = SENSING_TASKS[this.moduleKey];
+        if (!taskId) return '';
+        if (visible) return this._sensingSession().showKeypoints(taskId);
+        this._sensingSession().hideKeypoints(taskId);
+        return '';
     }
 
     _moduleSummary () {
@@ -571,10 +591,51 @@ class Scratch3XEduAI {
         return new URLSearchParams(window.location.search || '').get('deviceBase') || '';
     }
 
+    _stopMediaStream (stream) {
+        if (!stream || typeof stream.getTracks !== 'function') return;
+        for (const track of stream.getTracks()) {
+            try {
+                track.stop();
+            } catch (_) {
+                // ignore individual track shutdown failures
+            }
+        }
+    }
+
+    _releaseTrackedCameraStreams () {
+        if (!(this._cameraStreams instanceof Set)) return;
+        for (const stream of this._cameraStreams) {
+            this._stopMediaStream(stream);
+        }
+        this._cameraStreams.clear();
+    }
+
+    _releaseCameraResources () {
+        this._sensingSession().disableCamera();
+        const streams = new Set();
+        if (this._lastValue?.stream) {
+            streams.add(this._lastValue.stream);
+        }
+        if (this._cameraStreams instanceof Set) {
+            for (const stream of this._cameraStreams) {
+                streams.add(stream);
+            }
+            this._cameraStreams.clear();
+        }
+        for (const stream of streams) {
+            this._stopMediaStream(stream);
+        }
+        if (this._lastValue?.type === 'camera') {
+            this._lastValue = {type: 'camera', source: this._lastValue.source};
+        }
+    }
+
     async _openCamera (source) {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
             try {
+                this._releaseTrackedCameraStreams();
                 const stream = await navigator.mediaDevices.getUserMedia({video: {deviceId: String(source || 0)}});
+                this._cameraStreams.add(stream);
                 this._lastValue = {type: 'camera', source, stream};
                 return this._lastValue;
             } catch (error) {

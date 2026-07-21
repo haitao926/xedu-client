@@ -239,6 +239,8 @@ const SENSING_DEFINITIONS = Object.freeze([
             ['faceCount', '人脸数量', 'reporter'],
             ['facePosition', '第 [INDEX] 张人脸的 [POSITION]', 'reporter', ['INDEX', 'POSITION']],
             ['facePointAxis', '第 [INDEX] 个面部关键点的 [AXIS]', 'reporter', ['INDEX', 'AXIS']],
+            ['showFaceKeypoints', '显示面部关键点', 'command'],
+            ['hideFaceKeypoints', '隐藏面部关键点', 'command'],
         ],
     },
     {
@@ -251,6 +253,8 @@ const SENSING_DEFINITIONS = Object.freeze([
             ['bodyCount', '人体数量', 'reporter'],
             ['bodyPosition', '第 [INDEX] 个人体的 [POSITION]', 'reporter', ['INDEX', 'POSITION']],
             ['bodyPointAxis', '第 [POINT] 个身体关键点的 [AXIS]', 'reporter', ['POINT', 'AXIS']],
+            ['showBodyKeypoints', '显示身体关键点', 'command'],
+            ['hideBodyKeypoints', '隐藏身体关键点', 'command'],
         ],
     },
     {
@@ -263,6 +267,8 @@ const SENSING_DEFINITIONS = Object.freeze([
             ['handCount', '手部数量', 'reporter'],
             ['handPosition', '第 [INDEX] 只手的 [POSITION]', 'reporter', ['INDEX', 'POSITION']],
             ['handPointAxis', '第 [POINT] 个手部关键点的 [AXIS]', 'reporter', ['POINT', 'AXIS']],
+            ['showHandKeypoints', '显示手部关键点', 'command'],
+            ['hideHandKeypoints', '隐藏手部关键点', 'command'],
         ],
     },
     {

@@ -135,7 +135,6 @@ Service 层
 - 后端路由：[backend/api/routes/ai.py](/Users/apple/Documents/GitHub/xedu-client/backend/api/routes/ai.py)
 - 后端服务：
   - [backend/services/ai_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/ai_service.py)
-  - [backend/services/quickform_agent_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/quickform_agent_service.py)
   - [backend/services/xedu_pack_agent_service.py](/Users/apple/Documents/GitHub/xedu-client/backend/services/xedu_pack_agent_service.py)
 
 ## 功能导览
@@ -220,7 +219,7 @@ Service 层
 1. 前端提交问题、历史和上下文
 2. 后端根据教师/学生模式和意图做分流
 3. 普通问答走 `AIService`
-4. 教师态问题可命中 QuickForm / 打包等代理能力
+4. 教师态问题可命中课程包等代理能力
 
 关键接口：
 
@@ -248,7 +247,7 @@ Service 层
 ### 当前确认的工程债
 
 - 根目录混入源码、课程、模型、打包产物、Python 运行时、说明文档。
-- `resources.js` 承担了过多职责：资源索引、课程扫描、发布拉取、本地文件预览、Scratch 入口和 QuickForm 注入。
+- `resources.js` 承担了过多职责：资源索引、课程扫描、发布拉取、本地文件预览和 Scratch 入口。
 - `app.py` 仍然是大型装配中心，依赖注入 helper 很多。
 - `api.js` 里存在全局 `fetch` 改写，说明前端对本地 API 的运行环境假设很强。
 - Scratch 编辑器是独立构建产物，根前端不再包含 Blockly chunk。

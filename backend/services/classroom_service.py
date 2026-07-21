@@ -22,7 +22,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib import error as urlerror, request as urlrequest
 from urllib.parse import quote, urlsplit
 
@@ -37,6 +37,7 @@ MAX_CLASSROOM_EXPANDED_BYTES = 1024 * 1024 * 1024
 MAX_CLASSROOM_ARCHIVE_MEMBERS = 10_000
 CLASSROOM_PACKAGE_CACHE_TTL_SECONDS = 300.0
 CLASSROOM_PACKAGE_CACHE_MAX_ENTRIES = 8
+ProgressCallback = Optional[Callable[[Dict[str, Any]], None]]
 
 DEFAULT_EXCLUDES = {
     ".git",
@@ -63,10 +64,21 @@ def _validate_package_url(package_url: str) -> str:
     return value
 
 
-def _download_package(package_url: str) -> bytes:
+def _report_transfer_progress(progress_callback: ProgressCallback, **updates: Any) -> None:
+    if callable(progress_callback):
+        progress_callback(updates)
+
+
+def _download_package(package_url: str, progress_callback: ProgressCallback = None) -> bytes:
     request = urlrequest.Request(package_url)
     try:
         with urlrequest.urlopen(request, timeout=60) as response:
+            try:
+                total_bytes = max(0, int(response.headers.get("Content-Length") or 0))
+            except (AttributeError, TypeError, ValueError):
+                total_bytes = 0
+            if total_bytes > MAX_CLASSROOM_PACKAGE_BYTES:
+                raise ClassroomServiceError("课堂课程包超过允许的下载大小")
             chunks = []
             total = 0
             while True:
@@ -77,6 +89,18 @@ def _download_package(package_url: str) -> bytes:
                 if total > MAX_CLASSROOM_PACKAGE_BYTES:
                     raise ClassroomServiceError("课堂课程包超过允许的下载大小")
                 chunks.append(chunk)
+                percent = 5 + int((total / total_bytes) * 60) if total_bytes else 10
+                _report_transfer_progress(
+                    progress_callback,
+                    phase="downloading",
+                    percent=min(65, percent),
+                    completed_files=0,
+                    total_files=1,
+                    completed_bytes=total,
+                    total_bytes=total_bytes,
+                    current_file=Path(urlsplit(package_url).path).name,
+                    message="正在下载课堂课程包...",
+                )
             return b"".join(chunks)
     except ClassroomServiceError:
         raise
@@ -107,25 +131,50 @@ def _validated_archive_members(archive: zipfile.ZipFile) -> List[zipfile.ZipInfo
     return members
 
 
-def _extract_archive(archive: zipfile.ZipFile, members: List[zipfile.ZipInfo], staging_dir: Path) -> None:
+def _extract_archive(
+    archive: zipfile.ZipFile,
+    members: List[zipfile.ZipInfo],
+    staging_dir: Path,
+    progress_callback: ProgressCallback = None,
+) -> None:
     staging_root = staging_dir.resolve()
-    for member in members:
+    completed_bytes = 0
+    total_bytes = sum(max(0, member.file_size) for member in members)
+    for index, member in enumerate(members, start=1):
         relative = PurePosixPath(member.filename.replace("\\", "/"))
         destination = (staging_root / Path(*relative.parts)).resolve()
         if staging_root != destination and staging_root not in destination.parents:
             raise ClassroomServiceError("课堂课程包包含不安全的文件路径")
         if member.is_dir():
             destination.mkdir(parents=True, exist_ok=True)
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        with archive.open(member, "r") as source, destination.open("wb") as target:
-            shutil.copyfileobj(source, target)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(member, "r") as source, destination.open("wb") as target:
+                shutil.copyfileobj(source, target)
+            completed_bytes += max(0, member.file_size)
+        percent = 68 + int((completed_bytes / total_bytes) * 17) if total_bytes else 85
+        _report_transfer_progress(
+            progress_callback,
+            phase="extracting",
+            percent=min(85, percent),
+            completed_files=index,
+            total_files=len(members),
+            completed_bytes=completed_bytes,
+            total_bytes=total_bytes,
+            current_file=relative.as_posix(),
+            message=f"正在解压 {relative.as_posix()}",
+        )
 
 
-def _copy_staged_course(staging_dir: Path, target_dir: Path) -> None:
+def _copy_staged_course(
+    staging_dir: Path,
+    target_dir: Path,
+    progress_callback: ProgressCallback = None,
+) -> None:
     target_root = target_dir.resolve()
     target_root.mkdir(parents=True, exist_ok=True)
-    for source in staging_dir.rglob("*"):
+    sources = list(staging_dir.rglob("*"))
+    for index, source in enumerate(sources, start=1):
         relative = source.relative_to(staging_dir)
         destination = target_root / relative
         resolved_parent = destination.parent.resolve()
@@ -135,17 +184,26 @@ def _copy_staged_course(staging_dir: Path, target_dir: Path) -> None:
             raise ClassroomServiceError("课堂课程目标目录包含不安全的符号链接")
         if source.is_dir():
             destination.mkdir(parents=True, exist_ok=True)
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=destination.parent,
-            prefix=f".{destination.name}.",
-            delete=False,
-        ) as temp_file, source.open("rb") as source_file:
-            shutil.copyfileobj(source_file, temp_file)
-            temp_path = Path(temp_file.name)
-        os.replace(temp_path, destination)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                delete=False,
+            ) as temp_file, source.open("rb") as source_file:
+                shutil.copyfileobj(source_file, temp_file)
+                temp_path = Path(temp_file.name)
+            os.replace(temp_path, destination)
+        _report_transfer_progress(
+            progress_callback,
+            phase="writing",
+            percent=min(97, 92 + int((index / max(1, len(sources))) * 5)),
+            completed_files=index,
+            total_files=len(sources),
+            current_file=relative.as_posix(),
+            message=f"正在写入 {relative.as_posix()}",
+        )
 
 
 def _generate_course_id(title: str) -> str:
@@ -828,7 +886,11 @@ class ClassroomService:
             raise ClassroomServiceError("课堂索引格式错误") from exc
 
     @staticmethod
-    def pull_package(package_url: str, target_path: str) -> Dict[str, Any]:
+    def pull_package(
+        package_url: str,
+        target_path: str,
+        progress_callback: ProgressCallback = None,
+    ) -> Dict[str, Any]:
         package_url = _validate_package_url(package_url)
 
         if not target_path:
@@ -837,7 +899,15 @@ class ClassroomService:
             target_path = str(default_root / "course")
 
         target_dir = Path(target_path).expanduser()
-        data = _download_package(package_url)
+        _report_transfer_progress(
+            progress_callback,
+            phase="downloading",
+            percent=5,
+            completed_files=0,
+            total_files=1,
+            message="正在下载课堂课程包...",
+        )
+        data = _download_package(package_url, progress_callback)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             zip_path = Path(tmp_dir) / "course.zip"
@@ -847,19 +917,40 @@ class ClassroomService:
             try:
                 with zipfile.ZipFile(zip_path, "r") as archive:
                     members = _validated_archive_members(archive)
-                    _extract_archive(archive, members, staging_dir)
+                    _report_transfer_progress(
+                        progress_callback,
+                        phase="extracting",
+                        percent=68,
+                        completed_files=0,
+                        total_files=len(members),
+                        message="正在解压课堂课程包...",
+                    )
+                    _extract_archive(archive, members, staging_dir, progress_callback)
             except (zipfile.BadZipFile, OSError) as exc:
                 raise ClassroomServiceError("课堂课程包格式错误") from exc
 
             course_json_path = staging_dir / "course.json"
             if not course_json_path.is_file():
                 raise ClassroomServiceError("课程包缺少 course.json")
+            _report_transfer_progress(
+                progress_callback,
+                phase="validating",
+                percent=88,
+                message="正在校验课堂课程结构...",
+            )
             try:
                 with course_json_path.open("r", encoding="utf-8") as course_file:
                     course_data = json.load(course_file)
             except (OSError, UnicodeError, json.JSONDecodeError) as exc:
                 raise ClassroomServiceError("课程包 course.json 无法解析") from exc
-            _copy_staged_course(staging_dir, target_dir)
+            _report_transfer_progress(
+                progress_callback,
+                phase="writing",
+                percent=92,
+                completed_files=0,
+                message="正在写入本地课程...",
+            )
+            _copy_staged_course(staging_dir, target_dir, progress_callback)
 
         return {
             "course": course_data,

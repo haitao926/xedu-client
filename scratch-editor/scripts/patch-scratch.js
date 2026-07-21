@@ -291,10 +291,37 @@ class ExtensionLibrary extends React.PureComponent {`
 
 const blocksContainer = path.join(guiRoot, 'src', 'containers', 'blocks.jsx');
 assertExists(blocksContainer);
-patchFile(blocksContainer, (text) => text.replace(
-  'if (this.props.colorMode !== DEFAULT_MODE) {',
-  "if (this.props.colorMode !== DEFAULT_MODE && !String(categoryInfo.id).startsWith('xedu')) {"
-));
+patchFile(blocksContainer, (text) => {
+  let next = text.replace(
+    'if (this.props.colorMode !== DEFAULT_MODE) {',
+    "if (this.props.colorMode !== DEFAULT_MODE && !String(categoryInfo.id).startsWith('xedu')) {"
+  );
+  if (!next.includes('delete this.ScratchBlocks.Blocks[blockInfo.json.type]')) {
+    next = next.replace(
+      `    handleBlocksInfoUpdate (categoryInfo) {
+        // @todo Later we should replace this to avoid all the warnings from redefining blocks.
+        this.handleExtensionAdded(categoryInfo);
+    }`,
+      `    handleBlocksInfoUpdate (categoryInfo) {
+        if (String(categoryInfo.id).startsWith('xedu')) {
+            const definitions = [
+                ...Object.getOwnPropertyNames(categoryInfo.customFieldTypes)
+                    .map(fieldTypeName => categoryInfo.customFieldTypes[fieldTypeName].scratchBlocksDefinition),
+                ...(categoryInfo.menus || []),
+                ...(categoryInfo.blocks || [])
+            ];
+            definitions.forEach(blockInfo => {
+                if (blockInfo?.json?.type) {
+                    delete this.ScratchBlocks.Blocks[blockInfo.json.type];
+                }
+            });
+        }
+        this.handleExtensionAdded(categoryInfo);
+    }`
+    );
+  }
+  return next;
+});
 
 const colorModeBlockHelpers = path.join(guiRoot, 'src', 'lib', 'settings', 'color-mode', 'blockHelpers.js');
 assertExists(colorModeBlockHelpers);
@@ -310,6 +337,20 @@ const libraryComponent = path.join(guiRoot, 'src', 'components', 'library', 'lib
 assertExists(libraryComponent);
 patchFile(libraryComponent, (text) => {
   let next = text;
+  if (!next.includes('const getScratchAssetServiceBase = () => {')) {
+    next = next.replace(
+      `const getMemberOnlyTags = data => (data && data.some(item => item.isMemberOnly) ? [MEMBERSHIP_TAG] : []);\n`,
+      `const getMemberOnlyTags = data => (data && data.some(item => item.isMemberOnly) ? [MEMBERSHIP_TAG] : []);\n\nconst getScratchAssetServiceBase = () => {\n    if (typeof window === 'object' && window.__XEDU_SCRATCH_ASSET_HOST__) {\n        return \`\${window.__XEDU_SCRATCH_ASSET_HOST__}/internalapi/asset\`;\n    }\n    return 'https://cdn.assets.scratch.mit.edu/internalapi/asset';\n};\n`
+    );
+  }
+  next = next.replace(
+    "            assetServiceUri: `https://cdn.assets.scratch.mit.edu/internalapi/asset/${item.assetId}.${item.dataFormat}/get/`",
+    "            assetServiceUri: `${getScratchAssetServiceBase()}/${item.assetId}.${item.dataFormat}/get/`"
+  );
+  next = next.replace(
+    "            assetServiceUri: `https://cdn.assets.scratch.mit.edu/internalapi/asset/${md5ext}/get/`",
+    "            assetServiceUri: `${getScratchAssetServiceBase()}/${md5ext}/get/`"
+  );
   next = next.replace(
     `            selectedTag: ALL_TAG.tag,`,
     `            selectedTag: props.defaultTag || ALL_TAG.tag,`
@@ -581,6 +622,8 @@ const getXEduApiBase = () => {
     return 'http://127.0.0.1:5123';
 };
 
+const getXEduScratchAssetHost = () => \`\${getXEduApiBase()}/api/scratch-assets\`;
+
 const getXEduScratchProjectUrl = () => {
     const info = getXEduScratchProjectInfo();
     if (!info) return '';
@@ -654,6 +697,81 @@ patchFile(standaloneRenderer, (text) => {
       "import {setProjectTitle} from '../reducers/project-title';\nimport {setProjectUnchanged} from '../reducers/project-changed';"
     );
   }
+  const scratchHostBridgeSource = `const bindXEduScratchHostBridge = (state, bridge) => {
+    const bridgeToken = new URLSearchParams(window.location.search).get('bridgeToken') || '';
+    if (!bridgeToken || window.parent === window) return;
+    const send = payload => window.parent.postMessage({...payload, bridgeToken}, '*');
+    const sendState = () => send({
+        type: 'xedu:scratch-host-state',
+        state: bridge.getState()
+    });
+    window.addEventListener('message', async event => {
+        const request = event.data;
+        if (event.source !== window.parent || request?.bridgeToken !== bridgeToken) return;
+        if (request?.type === 'xedu:scratch-host-state-request') {
+            sendState();
+            return;
+        }
+        if (request?.type === 'xedu:scratch-host-upload-project') {
+            try {
+                const result = await bridge.importProjectFromHost({
+                    buffer: request.buffer,
+                    fileName: request.fileName
+                });
+                send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, result});
+                sendState();
+            } catch (error) {
+                send({
+                    type: 'xedu:scratch-host-action-result',
+                    requestId: request.requestId,
+                    error: error?.message || 'Scratch 文件操作失败'
+                });
+            }
+            return;
+        }
+        if (request?.type === 'xedu:scratch-host-lifecycle') {
+            if (request.active === false && typeof bridge.releaseMedia === 'function') {
+                await bridge.releaseMedia();
+                sendState();
+            }
+            return;
+        }
+        if (request?.type !== 'xedu:scratch-host-action') return;
+        const actionMap = {
+            new: 'newProject',
+            save: 'saveProject',
+            upload: 'uploadProject',
+            download: 'downloadProject'
+        };
+        const handler = bridge[actionMap[request.action]];
+        if (typeof handler !== 'function') {
+            send({
+                type: 'xedu:scratch-host-action-result',
+                requestId: request.requestId,
+                error: '当前 Scratch 页面暂不支持这个操作。'
+            });
+            return;
+        }
+        try {
+            const result = await handler();
+            send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, result});
+            sendState();
+        } catch (error) {
+            send({
+                type: 'xedu:scratch-host-action-result',
+                requestId: request.requestId,
+                error: error?.message || 'Scratch 文件操作失败'
+            });
+        }
+    });
+    window.addEventListener('beforeunload', () => {
+        bridge.releaseMedia?.();
+    });
+    window.addEventListener('pagehide', () => {
+        bridge.releaseMedia?.();
+    });
+    sendState();
+};`;
   if (!next.includes('const createXEduScratchBridge = state => ({')) {
     next = next.replace(
       "const onClickLogo = () => {",
@@ -697,6 +815,64 @@ const createNewScratchProject = async state => {
     return true;
 };
 
+const normalizeScratchProjectBuffer = buffer => {
+    if (buffer instanceof ArrayBuffer) {
+        return buffer;
+    }
+    if (ArrayBuffer.isView(buffer)) {
+        return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    }
+    return null;
+};
+
+const importScratchProjectFromBuffer = async (state, {buffer, fileName = ''} = {}) => {
+    const scratchState = state.store.getState().scratchGui;
+    if (!scratchState?.vm) {
+        throw new Error('Scratch 还没有准备好。');
+    }
+    const projectBuffer = normalizeScratchProjectBuffer(buffer);
+    if (!projectBuffer) {
+        throw new Error('Scratch 项目文件读取失败。');
+    }
+    const projectChanged = Boolean(scratchState.projectChanged);
+    if (projectChanged) {
+        const confirmed = window.confirm('从电脑打开会替换当前内容，是否继续？');
+        if (!confirmed) {
+            return false;
+        }
+    }
+    const currentLoadingState = scratchState.projectState.loadingState;
+    const uploadAction = requestProjectUpload(currentLoadingState);
+    if (uploadAction) {
+        state.store.dispatch(uploadAction);
+    }
+    const uploadLoadingState = state.store.getState().scratchGui.projectState.loadingState;
+    state.store.dispatch(openLoadingProject());
+    let success = false;
+    try {
+        await state.store.getState().scratchGui.vm.loadProject(projectBuffer);
+        const uploadedProjectTitle = getProjectTitleFromFilename(fileName);
+        if (uploadedProjectTitle) {
+            state.store.dispatch(setProjectTitle(uploadedProjectTitle));
+        }
+        success = true;
+        return true;
+    } catch (error) {
+        window.alert('项目文件加载失败，请确认选择的是有效的 Scratch 项目。');
+        throw error;
+    } finally {
+        const loadedAction = onLoadedProject(
+            uploadLoadingState,
+            Boolean(getXEduScratchProjectInfo()),
+            success
+        );
+        if (loadedAction) {
+            state.store.dispatch(loadedAction);
+        }
+        state.store.dispatch(closeLoadingProject());
+    }
+};
+
 const uploadScratchProjectFromComputer = state => new Promise((resolve, reject) => {
     const scratchState = state.store.getState().scratchGui;
     if (!scratchState?.vm) {
@@ -729,36 +905,14 @@ const uploadScratchProjectFromComputer = state => new Promise((resolve, reject) 
             resolve(false);
             return;
         }
-        const currentLoadingState = state.store.getState().scratchGui.projectState.loadingState;
-        const uploadAction = requestProjectUpload(currentLoadingState);
-        if (uploadAction) {
-            state.store.dispatch(uploadAction);
-        }
-        const uploadLoadingState = state.store.getState().scratchGui.projectState.loadingState;
-        state.store.dispatch(openLoadingProject());
-        let success = false;
         try {
-            const buffer = await file.arrayBuffer();
-            await state.store.getState().scratchGui.vm.loadProject(buffer);
-            const uploadedProjectTitle = getProjectTitleFromFilename(file.name);
-            if (uploadedProjectTitle) {
-                state.store.dispatch(setProjectTitle(uploadedProjectTitle));
-            }
-            success = true;
-            resolve(true);
+            resolve(await importScratchProjectFromBuffer(state, {
+                buffer: await file.arrayBuffer(),
+                fileName: file.name
+            }));
         } catch (error) {
-            window.alert('项目文件加载失败，请确认选择的是有效的 Scratch 项目。');
             reject(error);
         } finally {
-            const loadedAction = onLoadedProject(
-                uploadLoadingState,
-                Boolean(getXEduScratchProjectInfo()),
-                success
-            );
-            if (loadedAction) {
-                state.store.dispatch(loadedAction);
-            }
-            state.store.dispatch(closeLoadingProject());
             cleanup();
         }
     }, {once: true});
@@ -775,6 +929,14 @@ const downloadScratchProjectToComputer = async state => {
     return true;
 };
 
+const releaseScratchCameraResources = state => {
+    const vm = state.store.getState().scratchGui.vm;
+    if (!vm?.runtime) return false;
+    vm.runtime.ioDevices?.video?.disableVideo?.();
+    vm.runtime.__xeduReleaseCameraResources?.();
+    return true;
+};
+
 const createXEduScratchBridge = state => ({
     getState: () => ({
         canSave: Boolean(getXEduScratchProjectInfo()),
@@ -783,16 +945,30 @@ const createXEduScratchBridge = state => ({
     newProject: () => createNewScratchProject(state),
     saveProject: () => saveScratchProjectToCurrentFile(state),
     uploadProject: () => uploadScratchProjectFromComputer(state),
-    downloadProject: () => downloadScratchProjectToComputer(state)
+    downloadProject: () => downloadScratchProjectToComputer(state),
+    importProjectFromHost: ({buffer, fileName}) => importScratchProjectFromBuffer(state, {buffer, fileName}),
+    releaseMedia: () => releaseScratchCameraResources(state)
 });
+
+${scratchHostBridgeSource}
 
 const onClickLogo = () => {`
     );
   }
-  if (!next.includes('window.__xeduScratchBridge__ = createXEduScratchBridge(state);')) {
+  if (!next.includes('const bindXEduScratchHostBridge = (state, bridge) => {')) {
+    next = next.replace(
+      'const onClickLogo = () => {',
+      `${scratchHostBridgeSource}\n\nconst onClickLogo = () => {`
+    );
+  }
+  if (!next.includes('bindXEduScratchHostBridge(state, xeduScratchBridge);')) {
+    next = next.replace(
+      '\n    window.__xeduScratchBridge__ = createXEduScratchBridge(state);',
+      ''
+    );
     next = next.replace(
       "    const gui = createStandaloneRoot(state, appTarget, {\n        wrappers: [HashParserHOC]\n    });",
-      "    const gui = createStandaloneRoot(state, appTarget, {\n        wrappers: [HashParserHOC]\n    });\n    window.__xeduScratchBridge__ = createXEduScratchBridge(state);"
+      "    const gui = createStandaloneRoot(state, appTarget, {\n        wrappers: [HashParserHOC]\n    });\n    const xeduScratchBridge = createXEduScratchBridge(state);\n    window.__xeduScratchBridge__ = xeduScratchBridge;\n    bindXEduScratchHostBridge(state, xeduScratchBridge);"
     );
   }
   next = next.replace(
@@ -802,6 +978,25 @@ const onClickLogo = () => {`
   next = next.replace(
     "            backpackVisible: true,\n            showComingSoon: true,",
     "            backpackVisible: true,\n            menuBarHidden: true,\n            showComingSoon: true,"
+  );
+  return next;
+});
+
+patchFile(standaloneRenderer, (text) => {
+  let next = text;
+  if (!next.includes("window.__XEDU_SCRATCH_ASSET_HOST__ = getXEduScratchAssetHost();")) {
+    next = next.replace(
+      "    const gui = createStandaloneRoot(state, appTarget, {\n        wrappers: [HashParserHOC]\n    });",
+      "    const gui = createStandaloneRoot(state, appTarget, {\n        wrappers: [HashParserHOC]\n    });\n    window.__XEDU_SCRATCH_ASSET_HOST__ = getXEduScratchAssetHost();"
+    );
+  }
+  next = next.replace(
+    "            menuBarHidden: true,\n            canSave: Boolean(xeduProjectInfo),",
+    "            menuBarHidden: true,\n            assetHost: getXEduScratchAssetHost(),\n            canSave: Boolean(xeduProjectInfo),"
+  );
+  next = next.replace(
+    "            showComingSoon: true,\n            backpackHost,\n            canSave: Boolean(xeduProjectInfo),",
+    "            showComingSoon: true,\n            backpackHost,\n            assetHost: getXEduScratchAssetHost(),\n            canSave: Boolean(xeduProjectInfo),"
   );
   return next;
 });
@@ -916,10 +1111,10 @@ patchFile(detectLocaleFile, (text) => {
 const colorModePersistence = path.join(guiRoot, 'src', 'lib', 'settings', 'color-mode', 'persistence.js');
 assertExists(colorModePersistence);
 patchFile(colorModePersistence, (text) => {
-  if (text.includes("const detectColorMode = () => HIGH_CONTRAST_MODE;")) {
+  if (text.includes("const detectColorMode = () => DEFAULT_MODE;")) {
     return text;
   }
-  return text.replace(
+  const originalDetection =
     `const detectColorMode = () => {
     const obj = cookie.parse(document.cookie) || {};
     const colorModeCookie = obj.scratchtheme;
@@ -928,9 +1123,10 @@ patchFile(colorModePersistence, (text) => {
 
     // No cookie set. Fall back to system preferences
     return systemPreferencesColorMode();
-};`,
-    `const detectColorMode = () => HIGH_CONTRAST_MODE;`
-  );
+};`;
+  return text
+    .replace(originalDetection, `const detectColorMode = () => DEFAULT_MODE;`)
+    .replace(`const detectColorMode = () => HIGH_CONTRAST_MODE;`, `const detectColorMode = () => DEFAULT_MODE;`);
 });
 
 const themePersistence = path.join(guiRoot, 'src', 'lib', 'settings', 'theme', 'persistence.js');

@@ -16,7 +16,8 @@ from typing import Any, Dict, List
 
 from flask import current_app
 
-from services.gitea_service import build_single_course_entry, load_course_data_from_repo
+from services.gitea_client import GiteaServiceError
+from services.gitea_service import build_single_course_entry, load_course_data_from_repo, load_repo_tree_data
 
 
 class ResourceHandleExpired(ValueError):
@@ -326,5 +327,41 @@ def get_scratch_editor_build_dir() -> Path:
 
 
 def build_single_course_source_entry(*, base_url: str, repo: str, branch: str, raw_base_url: str, token: str) -> Dict[str, Any]:
-    course_data = load_course_data_from_repo(raw_base_url=raw_base_url, course_path="course.json", token=token)
-    return build_single_course_entry(course_data=course_data, course_url="course.json", package_url="")
+    tree_items = load_repo_tree_data(base_url=base_url, repo=repo, branch=branch, token=token)
+    paths = sorted(
+        str(item.get("path") or "").strip().strip("/")
+        for item in tree_items
+        if str(item.get("type") or "").lower() == "blob"
+    )
+    if "course.json" in paths:
+        course_path = "course.json"
+    else:
+        candidates = [path for path in paths if path.endswith("/course.json")]
+        if len(candidates) != 1:
+            if len(candidates) > 1:
+                raise GiteaServiceError("仓库包含多个课程，请配置明确的 course_url 或 index.json")
+            raise GiteaServiceError("仓库中未找到 course.json")
+        course_path = candidates[0]
+
+    course_data = load_course_data_from_repo(raw_base_url=raw_base_url, course_path=course_path, token=token)
+    course_prefix = course_path.rsplit("/", 1)[0] if "/" in course_path else ""
+    course_id = str(course_data.get("id") or "").strip()
+    course_version = str(course_data.get("version") or "").strip()
+    preferred_package_name = (
+        f"{course_id}-{course_version}.zip".casefold()
+        if course_id and course_version
+        else ""
+    )
+    package_candidates = [
+        path
+        for path in paths
+        if preferred_package_name
+        and Path(path).name.casefold() == preferred_package_name
+        and (not course_prefix or path.startswith(f"{course_prefix}/package/"))
+    ]
+    package_url = package_candidates[0] if package_candidates else ""
+    return build_single_course_entry(
+        course_data=course_data,
+        course_url=course_path,
+        package_url=package_url,
+    )

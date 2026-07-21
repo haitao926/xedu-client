@@ -45,6 +45,51 @@ test('release artifact verifier accepts a complete unpacked package', async () =
   }
 });
 
+test('minimal artifact verifier requires bundled Python and rejects packaged models', async () => {
+  const root = await createArtifactFixture();
+  try {
+    await rm(path.join(root, 'resources', 'checkpoint'), { recursive: true });
+    await mkdir(path.join(root, 'resources', 'python_env'), { recursive: true });
+    const minimalResult = await verifyReleaseArtifact(root, {
+      expectedVersion: '2.0.0',
+      profile: 'minimal',
+    });
+    assert.equal(minimalResult.ok, true, minimalResult.errors.join('\n'));
+
+    await writeFile(path.join(root, 'resources', 'python_env', 'detector.onnx'), 'model');
+    const resultWithModels = await verifyReleaseArtifact(root, {
+      expectedVersion: '2.0.0',
+      profile: 'minimal',
+    });
+    assert.equal(resultWithModels.ok, false);
+    assert.match(resultWithModels.errors.join('\n'), /model file must not be included: python_env\/detector\.onnx/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('external-Python artifact verifier rejects bundled Python', async () => {
+  const root = await createArtifactFixture();
+  try {
+    await rm(path.join(root, 'resources', 'checkpoint'), { recursive: true });
+    const externalResult = await verifyReleaseArtifact(root, {
+      expectedVersion: '2.0.0',
+      profile: 'external-python',
+    });
+    assert.equal(externalResult.ok, true, externalResult.errors.join('\n'));
+
+    await mkdir(path.join(root, 'resources', 'python_env'), { recursive: true });
+    const invalidResult = await verifyReleaseArtifact(root, {
+      expectedVersion: '2.0.0',
+      profile: 'external-python',
+    });
+    assert.equal(invalidResult.ok, false);
+    assert.match(invalidResult.errors.join('\n'), /bundled Python environment/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('release artifact verifier rejects a package containing a bundled Python environment', async () => {
   const root = await createArtifactFixture();
   try {

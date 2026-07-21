@@ -6,12 +6,14 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 const {
+    discoverPythonEnvironments,
     getPythonDialogFilters,
     isUsablePythonExecutable,
     readConfiguredPythonExecutable,
     resolvePythonExecutable,
     validatePythonExecutable,
 } = require('./python-runtime');
+const { resolveBackendBindHost, resolveBackendConnectHost } = require('./backend-network-config');
 
 function isBrokenPipeError(error) {
     return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
@@ -60,8 +62,7 @@ if (process.platform === 'win32') {
     app.setAppUserModelId(APP_ID);
 }
 
-const BACKEND_HOST_ENV = process.env.XEDU_BACKEND_HOST || process.env.XEDU_API_HOST || '';
-const BACKEND_HOST = BACKEND_HOST_ENV || '127.0.0.1';
+const BACKEND_CONNECT_HOST = resolveBackendConnectHost(process.env);
 const BACKEND_PORT = parseInt(
     process.env.XEDU_BACKEND_PORT || process.env.XEDU_API_PORT || '5123',
     10
@@ -122,8 +123,8 @@ const DIAGNOSTIC_SECRET_LABELS = [
 const DIAGNOSTIC_BODY_LABELS = ['request_body', 'request-body', 'request body', '请求正文'];
 
 const API_REQUEST_ALLOWLIST = Object.freeze([
-    { method: 'GET', pattern: /^\/api\/(?:health|status|detect_python|load_config|documents(?:\/|$)|classroom\/(?:status|discover|index|course\/|file\/|package\/)|resources\/(?:default-sample|index|local-file\/|scan|inspect-course|scan-folder)|projects\/templates)(?:\?.*)?$/ },
-    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|repair_xedu|projects\/create|ai\/(?:ask|test_config|save_config)|quickform\/(?:test|tasks(?:\/create)?$)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|inspect-course|publish|pull|ensure-repo|save-course|import-package-local|quickform\/inject|scratch-workspace))(?:\?.*)?$/ },
+    { method: 'GET', pattern: /^\/api\/(?:health|status|detect_python|load_config|documents(?:\/|$)|classroom\/(?:status|discover|index|course\/|file\/|package\/)|resources\/(?:default-sample|index|local-file\/|scan|inspect-course|scan-folder|operations\/[^/]+)|projects\/templates)(?:\?.*)?$/ },
+    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|repair_xedu|projects\/create|ai\/(?:ask|test_config|save_config)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|inspect-course|publish|pull|ensure-repo|save-course|import-package-local|local-handle|scratch-workspace))(?:\?.*)?$/ },
 ]);
 
 const DEV_RENDERER_CANDIDATES = [
@@ -285,7 +286,7 @@ async function stopJupyterGracefully(timeoutMs = 3000) {
         try {
             const req = http.request(
                 {
-                    host: BACKEND_HOST,
+                    host: BACKEND_CONNECT_HOST,
                     port: BACKEND_PORT,
                     path: '/api/status',
                     method: 'GET',
@@ -300,7 +301,7 @@ async function stopJupyterGracefully(timeoutMs = 3000) {
                             if (data.running) {
                                 const stopReq = http.request(
                                     {
-                                        host: BACKEND_HOST,
+                                        host: BACKEND_CONNECT_HOST,
                                         port: BACKEND_PORT,
                                         path: '/api/stop',
                                         method: 'POST',
@@ -647,6 +648,36 @@ function setupJupyterCspBypass() {
     }, { urls: ['*://*/*'] });
 }
 
+function isTrustedLocalMediaOrigin(rawUrl = '') {
+    try {
+        const parsed = new URL(rawUrl);
+        return (
+            (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+            (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost')
+        );
+    } catch (_) {
+        return false;
+    }
+}
+
+function setupTrustedMediaPermissionHandler() {
+    const isTrustedMediaRequest = (permission, requestingUrl) => {
+        const isMediaPermission = permission === 'media' || permission === 'camera' || permission === 'microphone';
+        return isMediaPermission && isTrustedLocalMediaOrigin(requestingUrl);
+    };
+
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+        const requestingUrl = details?.requestingUrl || webContents?.getURL?.() || '';
+        callback(isTrustedMediaRequest(permission, requestingUrl));
+    });
+
+    if (typeof session.defaultSession.setPermissionCheckHandler === 'function') {
+        session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+            return isTrustedMediaRequest(permission, requestingOrigin);
+        });
+    }
+}
+
 ipcMain.handle('select-folder', async (event) => {
     if (!isTrustedRenderer(event)) return null;
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
@@ -705,10 +736,22 @@ ipcMain.handle('select-python', async (event) => {
         return { success: false, error: 'forbidden' };
     }
 
-    const result = await dialog.showOpenDialog(mainWindow, {
-        properties: ['openFile'],
-        filters: getPythonDialogFilters(process.platform),
-    });
+    const dialogOptions = {
+        properties: process.platform === 'darwin'
+            ? ['openFile', 'openDirectory', 'showHiddenFiles']
+            : ['openFile'],
+        message: process.platform === 'darwin'
+            ? '请选择 Python 可执行文件，或直接选择 Python 环境目录。'
+            : undefined,
+    };
+    const filters = getPythonDialogFilters(process.platform);
+    if (filters.length > 0) {
+        dialogOptions.filters = filters;
+    }
+
+    const result = process.platform === 'darwin'
+        ? await dialog.showOpenDialog(dialogOptions)
+        : await dialog.showOpenDialog(mainWindow, dialogOptions);
     if (result.canceled || result.filePaths.length === 0) {
         return { success: false, canceled: true };
     }
@@ -722,9 +765,54 @@ ipcMain.handle('select-python', async (event) => {
         };
     }
 
-    selectedPythonExecutable = selectedPath;
-    rememberApprovedPath(selectedPath);
-    return { success: true, path: selectedPath };
+    const resolvedPath = validation.resolvedPath || selectedPath;
+    selectedPythonExecutable = resolvedPath;
+    rememberApprovedPath(resolvedPath);
+    return { success: true, path: resolvedPath };
+});
+
+ipcMain.handle('set-python', async (event, targetPath) => {
+    if (!isTrustedRenderer(event) || typeof targetPath !== 'string' || !targetPath.trim()) {
+        return { success: false, error: 'forbidden' };
+    }
+
+    const selectedPath = path.resolve(targetPath.trim());
+    const validation = validatePythonExecutable(selectedPath, { platform: process.platform, fsImpl: fs });
+    if (!validation.success) {
+        return {
+            success: false,
+            error: validation.message,
+        };
+    }
+
+    const resolvedPath = validation.resolvedPath || selectedPath;
+    selectedPythonExecutable = resolvedPath;
+    rememberApprovedPath(resolvedPath);
+    return { success: true, path: resolvedPath };
+});
+
+ipcMain.handle('scan-python-environments', async (event) => {
+    if (!isTrustedRenderer(event)) {
+        return { success: false, error: 'forbidden' };
+    }
+
+    const configuredPath = readConfiguredPythonExecutable(getBackendConfigFile(), fs);
+    const projectRoot = app.isPackaged ? '' : process.cwd();
+    const homeDir = app.getPath('home');
+    const environments = discoverPythonEnvironments({
+        platform: process.platform,
+        projectRoot,
+        homeDir,
+        configuredPath,
+        selectedPath: selectedPythonExecutable,
+        envPath: process.env.PATH || '',
+        fsImpl: fs,
+    });
+
+    return {
+        success: true,
+        environments,
+    };
 });
 
 ipcMain.handle('open-external', async (event, url) => {
@@ -788,27 +876,30 @@ ipcMain.handle('backend:retry-startup', async (event) => {
         return { success: false, error: 'forbidden' };
     }
     try {
-        if (cleanupBackend) {
-            cleanupBackend();
-        } else if (backendProcess && !backendProcess.killed) {
-            backendProcess.kill();
-        }
-    } catch (error) {
-        console.warn('清理失败的后端进程失败:', error?.message || error);
-    } finally {
-        backendProcess = null;
-        cleanupBackend = null;
-        backendReadyPromise = null;
-        jupyterManagedPid = null;
-    }
-
-    try {
+        await stopManagedBackend();
         await startBackendServer({ force: true, reason: 'manual-retry' });
         return { success: true, state: getBackendStartupStateSnapshot() };
     } catch (error) {
         return {
             success: false,
             error: error?.message || 'retry-backend-startup-failed',
+            state: getBackendStartupStateSnapshot(),
+        };
+    }
+});
+
+ipcMain.handle('backend:restart', async (event) => {
+    if (!isTrustedRenderer(event)) {
+        return { success: false, error: 'forbidden' };
+    }
+    try {
+        await stopManagedBackend();
+        await startBackendServer({ force: true, reason: 'config-change' });
+        return { success: true, state: getBackendStartupStateSnapshot() };
+    } catch (error) {
+        return {
+            success: false,
+            error: error?.message || 'restart-backend-failed',
             state: getBackendStartupStateSnapshot(),
         };
     }
@@ -843,7 +934,7 @@ ipcMain.handle('api:request', async (event, request) => {
 
     return new Promise((resolve) => {
         const proxyRequest = http.request({
-            host: BACKEND_HOST,
+            host: BACKEND_CONNECT_HOST,
             port: BACKEND_PORT,
             path: relativePath,
             method,
@@ -887,7 +978,7 @@ ipcMain.handle('api:scratch-request', async (event, request) => {
     }
     return new Promise((resolve) => {
         const proxyRequest = http.request({
-            host: BACKEND_HOST,
+            host: BACKEND_CONNECT_HOST,
             port: BACKEND_PORT,
             path: '/api/resources/xeduhub/execute',
             method: 'POST',
@@ -942,7 +1033,7 @@ ipcMain.handle('api:pip-stream', async (event, request) => {
             }
         };
         const proxyRequest = http.request({
-            host: BACKEND_HOST,
+            host: BACKEND_CONNECT_HOST,
             port: BACKEND_PORT,
             path: '/api/python/pip',
             method: 'POST',
@@ -983,7 +1074,7 @@ function waitForBackendReady(timeoutMs = BACKEND_TIMEOUT_MS) {
         const tryConnect = () => {
             const request = http.request(
                 {
-                    host: BACKEND_HOST,
+                    host: BACKEND_CONNECT_HOST,
                     port: BACKEND_PORT,
                     path: BACKEND_READY_PATH,
                     method: 'GET',
@@ -1065,7 +1156,7 @@ function stopJupyterGracefully(timeoutMs = 3000) {
         try {
             const statusReq = http.request(
                 {
-                    host: BACKEND_HOST,
+                    host: BACKEND_CONNECT_HOST,
                     port: BACKEND_PORT,
                     path: '/api/status',
                     method: 'GET',
@@ -1081,7 +1172,7 @@ function stopJupyterGracefully(timeoutMs = 3000) {
                                 jupyterManagedPid = data.pid || jupyterManagedPid;
                                 const stopReq = http.request(
                                     {
-                                        host: BACKEND_HOST,
+                                        host: BACKEND_CONNECT_HOST,
                                         port: BACKEND_PORT,
                                         path: '/api/stop',
                                         method: 'POST',
@@ -1112,6 +1203,47 @@ function stopJupyterGracefully(timeoutMs = 3000) {
         } catch (e) {
             resolve();
         }
+    });
+}
+
+function stopManagedBackend(timeoutMs = 5000) {
+    const processRef = backendProcess;
+    backendReadyPromise = null;
+    jupyterManagedPid = null;
+
+    if (!processRef) {
+        cleanupBackend = null;
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            if (backendProcess === processRef) backendProcess = null;
+            if (cleanupBackend) cleanupBackend = null;
+            resolve();
+        };
+
+        processRef.once('close', finish);
+        try {
+            if (!processRef.killed) processRef.kill();
+        } catch (error) {
+            console.warn('停止后端进程失败:', error?.message || error);
+            finish();
+            return;
+        }
+
+        setTimeout(() => {
+            if (settled) return;
+            try {
+                if (!processRef.killed) processRef.kill('SIGKILL');
+            } catch (_) {
+                // The process may have exited between the two kill attempts.
+            }
+            finish();
+        }, timeoutMs);
     });
 }
 
@@ -1169,6 +1301,7 @@ function startBackendServer(options = {}) {
         selectedPath: selectedPythonExecutable,
         envPath: process.env.XEDU_PYTHON_EXECUTABLE || '',
         projectRoot: path.resolve(__dirname, '../..'),
+        bundledPythonBaseDir: app.isPackaged ? path.join(process.resourcesPath, 'python_env') : '',
         fsImpl: fs,
     });
 
@@ -1284,14 +1417,16 @@ function startBackendServer(options = {}) {
             XEDU_DOCS_DIR: docsDir,
             XEDU_API_PORT: String(BACKEND_PORT),
             XEDU_BACKEND_PORT: String(BACKEND_PORT),
-            XEDU_BACKEND_HOST: BACKEND_HOST,
-            XEDU_API_HOST: BACKEND_HOST,
+            XEDU_BACKEND_BIND_HOST: resolveBackendBindHost(getBackendConfigFile(), { env: process.env, fsImpl: fs }),
+            XEDU_BACKEND_CONNECT_HOST: BACKEND_CONNECT_HOST,
             XEDU_CLIENT_CAPABILITY: backendCapability,
             XEDU_CHECKPOINT_DIRS: checkpointDirs.join(path.delimiter),
             XEDU_PYTHON_EXECUTABLE: pythonCmd,
             PYTHONPATH: path.dirname(serverScript),
             PYTHONHOME: '',
         };
+        delete env.XEDU_BACKEND_HOST;
+        delete env.XEDU_API_HOST;
         const pythonEnvDir = path.dirname(pythonCmd);
         if (process.platform === 'win32') {
             env.PATH = [
@@ -1649,7 +1784,7 @@ function setupJupyterView() {
     });
 
     ipcMain.handle('jupyter:open-external', async (event, url) => {
-        if (!isTrustedRenderer(event) || !isSafeExternalUrl(url)) {
+        if (!isTrustedRenderer(event) || !isAllowedJupyterUrl(url)) {
             return { success: false, error: 'invalid-url' };
         }
         await shell.openExternal(url);
@@ -1734,6 +1869,7 @@ if (!gotTheLock) {
     app.whenReady().then(async () => {
         registerXeduProtocol();
         setupJupyterCspBypass();
+        setupTrustedMediaPermissionHandler();
         setupMenu();
         setupJupyterView(); // 初始化 Jupyter 视图管理器
         createWindow();

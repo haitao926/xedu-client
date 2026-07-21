@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu Pack"
+  short_description: "Inspect, package, and publish XEdu courses with Scratch resources"
+  default_prompt: "Use $xedu-pack to inspect a local XEdu course, validate its Scratch projects, build a package, or publish it safely."

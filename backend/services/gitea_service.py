@@ -10,13 +10,16 @@ import json
 import os
 import re
 import socket
+import stat
 import shutil
 import tempfile
+import unicodedata
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from pathlib import PurePosixPath
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib import request, error, parse
 
 from services.gitea_client import GiteaClient, GiteaServiceError
@@ -46,6 +49,11 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+ProgressCallback = Optional[Callable[[Dict[str, Any]], None]]
+MAX_COURSE_ARCHIVE_EXPANDED_BYTES = 1024 * 1024 * 1024
+MAX_COURSE_ARCHIVE_MEMBERS = 10_000
+MAX_REMOTE_RESPONSE_BYTES = 256 * 1024 * 1024
+
 
 def _iter_read_tokens(token: str = "", prefer_anonymous: bool = True) -> List[str]:
     clean_token = (token or "").strip()
@@ -64,6 +72,8 @@ def fetch_url_bytes_with_auth_fallback(
     token: str = "",
     timeout: int = 30,
     prefer_anonymous: bool = True,
+    on_chunk: Optional[Callable[[int, int], None]] = None,
+    max_bytes: int = MAX_REMOTE_RESPONSE_BYTES,
 ) -> bytes:
     attempts = _iter_read_tokens(token, prefer_anonymous=prefer_anonymous)
     last_exc: Exception | None = None
@@ -74,7 +84,27 @@ def fetch_url_bytes_with_auth_fallback(
             req.add_header("Authorization", f"token {active_token}")
         try:
             with request.urlopen(req, timeout=timeout) as resp:
-                return resp.read()
+                byte_limit = max(1, int(max_bytes))
+                try:
+                    content_length = int(resp.headers.get("Content-Length") or 0)
+                except (AttributeError, TypeError, ValueError):
+                    content_length = 0
+                if content_length > byte_limit:
+                    raise GiteaServiceError("远程课程文件过大")
+
+                chunks = []
+                completed = 0
+                while True:
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    completed += len(chunk)
+                    if completed > byte_limit:
+                        raise GiteaServiceError("远程课程文件过大")
+                    chunks.append(chunk)
+                    if on_chunk is not None:
+                        on_chunk(len(chunk), completed)
+                return b"".join(chunks)
         except error.HTTPError as exc:
             last_exc = exc
             can_retry_auth = exc.code in (401, 403) and idx < len(attempts) - 1
@@ -169,7 +199,7 @@ def load_course_data_from_repo(
     parsed = json.loads(raw.decode("utf-8"))
     if not isinstance(parsed, dict):
         raise GiteaServiceError("course.json 格式错误")
-    return parsed
+    return _normalize_course_data(parsed)
 
 
 def build_single_course_entry(
@@ -260,7 +290,7 @@ def _build_index_entry(
     publish_path: str,
     cover_name: Optional[str],
 ) -> Dict[str, Any]:
-    updated_at = datetime.utcnow().strftime("%Y-%m-%d")
+    updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     entry = {
         "id": course_id,
         "title": course.get("title", ""),
@@ -281,7 +311,7 @@ def _build_index_entry(
 
 def _load_index(existing: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not existing:
-        return {"version": "1.0", "updated_at": datetime.utcnow().strftime("%Y-%m-%d"), "resources": []}
+        return {"version": "1.0", "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "resources": []}
     resources = existing.get("resources")
     if not isinstance(resources, list):
         existing["resources"] = []
@@ -469,7 +499,7 @@ def publish_course(
             "subject": course.get("subject", ""),
             "author": course.get("author", ""),
             "version": version,
-            "updated_at": datetime.utcnow().strftime("%Y-%m-%d"),
+            "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "tags": course.get("tags", []) or [],
             "course_url": "course.json",
             "package_url": "",
@@ -513,7 +543,7 @@ def publish_course(
         if not replaced:
             resources.append(entry)
         index_data["resources"] = resources
-        index_data["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d")
+        index_data["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         index_bytes = json.dumps(index_data, ensure_ascii=False, indent=2).encode("utf-8")
         publish_client.upsert_file(index_path, index_bytes, f"更新课程索引 {course_id}")
@@ -546,9 +576,35 @@ def publish_course(
 
 def resolve_raw_url(raw_base_url: str, path_or_url: str) -> str:
     if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
-        return path_or_url
-    clean = path_or_url.lstrip("/")
-    return f"{raw_base_url}/{clean}"
+        base = parse.urlsplit(raw_base_url)
+        parsed = parse.urlsplit(path_or_url)
+        base_path = parse.unquote(base.path).rstrip("/")
+        target_path = parse.unquote(parsed.path)
+        within_repo = target_path == base_path or target_path.startswith(f"{base_path}/")
+        if (
+            parsed.scheme.lower() != base.scheme.lower()
+            or parsed.netloc.lower() != base.netloc.lower()
+            or not within_repo
+            or any(part in {"", ".", ".."} for part in target_path[len(base_path):].split("/") if part)
+        ):
+            raise GiteaServiceError("远程课程文件必须位于已选择的仓库路径内")
+        encoded_path = parse.quote(
+            parsed.path,
+            safe="/%:@!$&'()*+,;=-._~",
+        )
+        return parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, encoded_path, parsed.query, parsed.fragment)
+        )
+    clean = path_or_url.replace("\\", "/").lstrip("/")
+    decoded_path = parse.unquote(clean)
+    relative = PurePosixPath(decoded_path)
+    if not clean or relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+        raise GiteaServiceError("远程课程文件必须位于已选择的仓库路径内")
+    encoded_path = parse.quote(
+        clean,
+        safe="/%:@!$&'()*+,;=-._~",
+    )
+    return f"{raw_base_url.rstrip('/')}/{encoded_path}"
 
 
 def _is_syncable_repo_path(rel_path: str) -> bool:
@@ -564,38 +620,255 @@ def _is_syncable_repo_path(rel_path: str) -> bool:
     return True
 
 
+def _report_progress(progress_callback: ProgressCallback, **updates: Any) -> None:
+    if callable(progress_callback):
+        progress_callback(updates)
+
+
+def _safe_archive_members(archive: zipfile.ZipFile) -> List[zipfile.ZipInfo]:
+    members = archive.infolist()
+    if len(members) > MAX_COURSE_ARCHIVE_MEMBERS:
+        raise GiteaServiceError("课程包包含过多文件")
+
+    expanded_size = 0
+    names = set()
+    for member in members:
+        normalized_name = member.filename.replace("\\", "/")
+        name_key = unicodedata.normalize("NFC", normalized_name).casefold()
+        relative = PurePosixPath(normalized_name)
+        if (
+            not normalized_name
+            or "\x00" in normalized_name
+            or relative.is_absolute()
+            or any(part in {"", ".", ".."} for part in relative.parts)
+            or stat.S_ISLNK(member.external_attr >> 16)
+            or name_key in names
+        ):
+            raise GiteaServiceError("课程包包含不安全的文件路径")
+        names.add(name_key)
+        expanded_size += max(0, member.file_size)
+        if expanded_size > MAX_COURSE_ARCHIVE_EXPANDED_BYTES:
+            raise GiteaServiceError("课程包超过允许的解压大小")
+    return members
+
+
+def _extract_course_archive(
+    archive: zipfile.ZipFile,
+    staging_dir: Path,
+    *,
+    progress_callback: ProgressCallback = None,
+    percent_start: int = 0,
+    percent_end: int = 80,
+) -> Path:
+    members = _safe_archive_members(archive)
+    staging_root = staging_dir.resolve()
+    total_bytes = sum(max(0, member.file_size) for member in members)
+    completed_bytes = 0
+
+    for member in members:
+        relative = PurePosixPath(member.filename.replace("\\", "/"))
+        destination = (staging_root / Path(*relative.parts)).resolve()
+        if staging_root != destination and staging_root not in destination.parents:
+            raise GiteaServiceError("课程包包含不安全的文件路径")
+        if member.is_dir():
+            destination.mkdir(parents=True, exist_ok=True)
+            continue
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(member, "r") as source, destination.open("wb") as target:
+            while True:
+                chunk = source.read(64 * 1024)
+                if not chunk:
+                    break
+                target.write(chunk)
+                completed_bytes += len(chunk)
+                percent = percent_start
+                if total_bytes:
+                    percent += int((completed_bytes / total_bytes) * (percent_end - percent_start))
+                _report_progress(
+                    progress_callback,
+                    phase="extracting",
+                    percent=percent,
+                    completed_bytes=completed_bytes,
+                    total_bytes=total_bytes,
+                    current_file=member.filename,
+                    message=f"正在解压 {member.filename}",
+                )
+
+    extracted_root = staging_dir
+    if not (extracted_root / "course.json").is_file():
+        top_level = list(extracted_root.iterdir())
+        if len(top_level) == 1 and top_level[0].is_dir() and (top_level[0] / "course.json").is_file():
+            extracted_root = top_level[0]
+    if not (extracted_root / "course.json").is_file():
+        raise GiteaServiceError("课程包缺少 course.json")
+    return extracted_root
+
+
+def _stage_local_course_directory(
+    source_dir: Path,
+    staging_dir: Path,
+    *,
+    progress_callback: ProgressCallback = None,
+) -> Path:
+    if source_dir.is_symlink():
+        raise GiteaServiceError("已解压课程目录包含不安全的链接或文件")
+
+    source_root = source_dir.resolve()
+    directories: List[Tuple[Path, Path]] = []
+    files: List[Tuple[Path, Path, os.stat_result]] = []
+    names = set()
+    total_bytes = 0
+
+    def raise_walk_error(_error: OSError) -> None:
+        raise GiteaServiceError("无法安全读取已解压课程目录")
+
+    for root, dir_names, file_names in os.walk(
+        source_root,
+        topdown=True,
+        followlinks=False,
+        onerror=raise_walk_error,
+    ):
+        dir_names.sort()
+        file_names.sort()
+        root_path = Path(root)
+        for name, expected_directory in (
+            [(item, True) for item in dir_names]
+            + [(item, False) for item in file_names]
+        ):
+            source_path = root_path / name
+            try:
+                file_stat = source_path.lstat()
+                relative_path = source_path.relative_to(source_root)
+            except (OSError, ValueError) as exc:
+                raise GiteaServiceError("无法安全读取已解压课程目录") from exc
+
+            normalized_name = relative_path.as_posix()
+            name_key = unicodedata.normalize("NFC", normalized_name).casefold()
+            unsafe_type = (
+                stat.S_ISLNK(file_stat.st_mode)
+                or (expected_directory and not stat.S_ISDIR(file_stat.st_mode))
+                or (not expected_directory and not stat.S_ISREG(file_stat.st_mode))
+                or (not expected_directory and file_stat.st_nlink > 1)
+                or name_key in names
+            )
+            if unsafe_type:
+                raise GiteaServiceError("已解压课程目录包含不安全的链接或文件")
+
+            names.add(name_key)
+            if len(names) > MAX_COURSE_ARCHIVE_MEMBERS:
+                raise GiteaServiceError("课程包包含过多文件")
+            if expected_directory:
+                directories.append((source_path, relative_path))
+                continue
+
+            total_bytes += max(0, file_stat.st_size)
+            if total_bytes > MAX_COURSE_ARCHIVE_EXPANDED_BYTES:
+                raise GiteaServiceError("课程包超过允许的解压大小")
+            files.append((source_path, relative_path, file_stat))
+
+    for _source_path, relative_path in directories:
+        (staging_dir / relative_path).mkdir(parents=True, exist_ok=True)
+
+    completed_bytes = 0
+    completed_files = 0
+    open_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    for source_path, relative_path, expected_stat in files:
+        destination = staging_dir / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            descriptor = os.open(source_path, open_flags)
+        except OSError as exc:
+            raise GiteaServiceError("已解压课程目录包含不安全的链接或文件") from exc
+
+        try:
+            opened_stat = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(opened_stat.st_mode)
+                or opened_stat.st_nlink > 1
+                or opened_stat.st_dev != expected_stat.st_dev
+                or opened_stat.st_ino != expected_stat.st_ino
+            ):
+                raise GiteaServiceError("已解压课程目录包含不安全的链接或文件")
+            source = os.fdopen(descriptor, "rb")
+            descriptor = -1
+            with source, destination.open("wb") as target:
+                while True:
+                    chunk = source.read(64 * 1024)
+                    if not chunk:
+                        break
+                    completed_bytes += len(chunk)
+                    if completed_bytes > MAX_COURSE_ARCHIVE_EXPANDED_BYTES:
+                        raise GiteaServiceError("课程包超过允许的解压大小")
+                    target.write(chunk)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+
+        completed_files += 1
+        percent = 10 + int((completed_bytes / total_bytes) * 68) if total_bytes else 78
+        _report_progress(
+            progress_callback,
+            phase="extracting",
+            percent=min(78, percent),
+            completed_files=completed_files,
+            total_files=len(files),
+            completed_bytes=completed_bytes,
+            total_bytes=total_bytes,
+            current_file=relative_path.as_posix(),
+            message=f"正在读取 {relative_path.as_posix()}",
+        )
+
+    return staging_dir
+
+
 def _backup_and_replace_course_dir(
     *,
     staged_dir: Path,
     target_dir: Path,
     replace_existing: bool = True,
     backup_before_replace: bool = True,
+    progress_callback: ProgressCallback = None,
 ) -> str:
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir = target_dir.expanduser()
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    if target_dir.exists() and not target_dir.is_dir():
+        raise GiteaServiceError("课程保存位置不是目录")
+
     backup_path = ""
-    existing_items = list(target_dir.iterdir())
-    has_course_json = (target_dir / "course.json").exists()
-    if replace_existing and existing_items and has_course_json:
+    old_target = None
+    existing = target_dir.exists()
+    if existing and not replace_existing:
+        raise GiteaServiceError("课程保存位置已存在，请选择覆盖或其他目录")
+
+    if existing:
+        _report_progress(progress_callback, phase="backing_up", percent=88, message="正在备份旧课程...")
         if backup_before_replace:
-            stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
             backup_root = target_dir.parent / ".xedu_backup" / target_dir.name
             backup_root.mkdir(parents=True, exist_ok=True)
             backup_target = backup_root / stamp
-            shutil.copytree(target_dir, backup_target)
+            while backup_target.exists():
+                backup_target = backup_root / f"{stamp}-{os.getpid()}"
+            shutil.copytree(target_dir, backup_target, symlinks=True)
             backup_path = str(backup_target)
-        for item in existing_items:
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink(missing_ok=True)
+        old_target = target_dir.parent / f".{target_dir.name}.xedu-old-{os.getpid()}-{id(target_dir)}"
+        if old_target.exists():
+            shutil.rmtree(old_target)
+        target_dir.rename(old_target)
 
-    for item in staged_dir.iterdir():
-        destination = target_dir / item.name
-        if item.is_dir():
-            shutil.copytree(item, destination, dirs_exist_ok=True)
-        else:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item, destination)
+    try:
+        _report_progress(progress_callback, phase="writing", percent=94, message="正在写入本地课程...")
+        shutil.copytree(staged_dir, target_dir, symlinks=False)
+    except Exception as exc:
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        if old_target and old_target.exists():
+            old_target.rename(target_dir)
+        raise GiteaServiceError("替换本地课程失败，已保留旧课程") from exc
+    else:
+        if old_target and old_target.exists():
+            shutil.rmtree(old_target)
     return backup_path
 
 
@@ -606,9 +879,11 @@ def _sync_single_course_repo(
     branch: str,
     raw_base_url: str,
     target_path: str,
+    course_path: str = "course.json",
     token: str = "",
     replace_existing: bool = True,
     backup_before_replace: bool = True,
+    progress_callback: ProgressCallback = None,
 ) -> CourseScanResult:
     target_dir = Path(target_path)
     tree_items = load_repo_tree_data(
@@ -617,29 +892,98 @@ def _sync_single_course_repo(
         branch=branch,
         token=token,
     )
-    file_paths = sorted(
-        {
-            str(item.get("path") or "").strip().strip("/")
-            for item in tree_items
-            if str(item.get("type") or "").lower() == "blob"
-            and _is_syncable_repo_path(str(item.get("path") or ""))
-        }
+    blob_items = [
+        item
+        for item in tree_items
+        if str(item.get("type") or "").lower() == "blob"
+        and _is_syncable_repo_path(str(item.get("path") or ""))
+    ]
+    path_map = {
+        str(item.get("path") or "").strip().strip("/"): item
+        for item in blob_items
+    }
+    requested_path = str(course_path or "course.json").strip().strip("/") or "course.json"
+    if requested_path.startswith(f"{raw_base_url}/"):
+        requested_path = requested_path[len(raw_base_url) + 1:]
+
+    if requested_path in path_map and requested_path.endswith("course.json"):
+        selected_course_path = requested_path
+    elif requested_path == "course.json" and "course.json" in path_map:
+        selected_course_path = "course.json"
+    else:
+        candidates = sorted(path for path in path_map if path.endswith("/course.json"))
+        if len(candidates) == 1:
+            selected_course_path = candidates[0]
+        elif len(candidates) > 1:
+            raise GiteaServiceError("仓库包含多个课程，请配置明确的 course_url 或 package_url")
+        else:
+            raise GiteaServiceError("仓库中未找到 course.json")
+
+    prefix = selected_course_path.rsplit("/", 1)[0] if "/" in selected_course_path else ""
+    selected_items = []
+    for item in blob_items:
+        full_path = str(item.get("path") or "").strip().strip("/")
+        if prefix:
+            prefix_marker = f"{prefix}/"
+            if not full_path.startswith(prefix_marker):
+                continue
+            relative_path = full_path[len(prefix_marker):]
+        else:
+            relative_path = full_path
+        if _is_syncable_repo_path(relative_path):
+            selected_items.append((relative_path, item))
+    selected_items.sort(key=lambda pair: pair[0])
+    if not any(relative_path == "course.json" for relative_path, _item in selected_items):
+        raise GiteaServiceError("课程目录中未找到 course.json")
+
+    total_files = len(selected_items)
+    total_bytes = sum(max(0, int(item.get("size") or 0)) for _path, item in selected_items)
+    completed_files = 0
+    completed_bytes = 0
+    _report_progress(
+        progress_callback,
+        phase="downloading",
+        percent=5,
+        completed_files=0,
+        total_files=total_files,
+        completed_bytes=0,
+        total_bytes=total_bytes,
+        message="正在下载课程文件...",
     )
-    if "course.json" not in file_paths:
-        raise GiteaServiceError("仓库根目录未找到 course.json")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         staged_dir = Path(tmp_dir) / "course"
         staged_dir.mkdir(parents=True, exist_ok=True)
 
-        for rel_path in file_paths:
-            download_url = resolve_raw_url(raw_base_url, rel_path)
+        for rel_path, item in selected_items:
+            full_path = str(item.get("path") or "").strip().strip("/")
+            download_url = resolve_raw_url(raw_base_url, full_path)
+            base_completed_bytes = completed_bytes
+
+            def on_chunk(chunk_size, current_file_bytes):
+                current_total = base_completed_bytes + current_file_bytes
+                percent = 5
+                if total_bytes:
+                    percent += int((current_total / total_bytes) * 75)
+                _report_progress(
+                    progress_callback,
+                    phase="downloading",
+                    percent=min(80, percent),
+                    completed_files=completed_files,
+                    total_files=total_files,
+                    completed_bytes=current_total,
+                    total_bytes=total_bytes,
+                    current_file=rel_path,
+                    message=f"正在下载 {rel_path}",
+                )
+
             try:
                 data = fetch_url_bytes_with_auth_fallback(
                     download_url,
                     token=token,
                     timeout=60,
                     prefer_anonymous=True,
+                    on_chunk=on_chunk,
                 )
             except error.HTTPError as exc:
                 if exc.code in (401, 403):
@@ -653,18 +997,54 @@ def _sync_single_course_repo(
             destination = staged_dir / rel_path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
+            completed_files += 1
+            completed_bytes += len(data)
+            _report_progress(
+                progress_callback,
+                phase="downloading",
+                percent=min(80, 5 + int((completed_bytes / total_bytes) * 75)) if total_bytes else 80,
+                completed_files=completed_files,
+                total_files=total_files,
+                completed_bytes=completed_bytes,
+                total_bytes=total_bytes,
+                current_file=rel_path,
+                message=f"已下载 {rel_path}",
+            )
 
+        _report_progress(progress_callback, phase="validating", percent=84, message="正在校验课程结构...")
         scan_course(str(staged_dir))
         backup_path = _backup_and_replace_course_dir(
             staged_dir=staged_dir,
             target_dir=target_dir,
             replace_existing=replace_existing,
             backup_before_replace=backup_before_replace,
+            progress_callback=progress_callback,
         )
+        _report_progress(progress_callback, phase="validating", percent=98, message="正在确认本地课程...")
         final_result = scan_course(str(target_dir))
         if backup_path:
             final_result.summary["backup_path"] = backup_path
         return final_result
+
+
+def _find_remote_file_size(*, base_url: str, repo: str, branch: str, raw_base_url: str, path: str, token: str) -> int:
+    clean_path = str(path or "").strip().strip("/")
+    if clean_path.startswith(f"{raw_base_url}/"):
+        clean_path = clean_path[len(raw_base_url) + 1:]
+    if clean_path.startswith(("http://", "https://")):
+        clean_path = parse.urlparse(clean_path).path.strip("/")
+    try:
+        tree_items = load_repo_tree_data(base_url=base_url, repo=repo, branch=branch, token=token)
+    except Exception:
+        return 0
+    for item in tree_items:
+        item_path = str(item.get("path") or "").strip().strip("/")
+        if item_path == clean_path:
+            try:
+                return max(0, int(item.get("size") or 0))
+            except (TypeError, ValueError):
+                return 0
+    return 0
 
 
 def pull_course(
@@ -680,9 +1060,10 @@ def pull_course(
     base_url: str = "",
     repo: str = "",
     branch: str = "",
+    progress_callback: ProgressCallback = None,
 ) -> CourseScanResult:
     target_dir = Path(target_path)
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
 
     if single_course_repo:
         return _sync_single_course_repo(
@@ -691,15 +1072,50 @@ def pull_course(
             branch=branch,
             raw_base_url=raw_base_url,
             target_path=target_path,
+            course_path=course_url,
             token=token,
             replace_existing=replace_existing,
             backup_before_replace=backup_before_replace,
+            progress_callback=progress_callback,
         )
 
     if not package_url:
         raise GiteaServiceError("课程包地址为空")
 
     download_url = resolve_raw_url(raw_base_url, package_url)
+    total_bytes = _find_remote_file_size(
+        base_url=base_url,
+        repo=repo,
+        branch=branch,
+        raw_base_url=raw_base_url,
+        path=package_url,
+        token=token,
+    )
+    _report_progress(
+        progress_callback,
+        phase="downloading",
+        percent=5,
+        completed_files=0,
+        total_files=1,
+        completed_bytes=0,
+        total_bytes=total_bytes,
+        current_file=package_url,
+        message="正在下载课程包...",
+    )
+
+    def on_package_chunk(_chunk_size, completed):
+        percent = 5 + int((completed / total_bytes) * 75) if total_bytes else 10
+        _report_progress(
+            progress_callback,
+            phase="downloading",
+            percent=min(80, percent),
+            completed_files=0,
+            total_files=1,
+            completed_bytes=completed,
+            total_bytes=total_bytes,
+            current_file=package_url,
+            message="正在下载课程包...",
+        )
 
     try:
         data = fetch_url_bytes_with_auth_fallback(
@@ -707,6 +1123,7 @@ def pull_course(
             token=token,
             timeout=60,
             prefer_anonymous=True,
+            on_chunk=on_package_chunk,
         )
     except error.HTTPError as exc:
         if exc.code in (401, 403):
@@ -724,22 +1141,27 @@ def pull_course(
         zip_path.write_bytes(data)
         try:
             with zipfile.ZipFile(zip_path, "r") as zipf:
-                zipf.extractall(extract_dir)
-                extracted_root = extract_dir
-                if not (extracted_root / "course.json").exists():
-                    top_level = [item for item in extract_dir.iterdir()]
-                    if len(top_level) == 1 and top_level[0].is_dir() and (top_level[0] / "course.json").exists():
-                        extracted_root = top_level[0]
+                _report_progress(progress_callback, phase="extracting", percent=82, message="正在解压课程包...")
+                extracted_root = _extract_course_archive(
+                    zipf,
+                    extract_dir,
+                    progress_callback=progress_callback,
+                    percent_start=82,
+                    percent_end=90,
+                )
+                _report_progress(progress_callback, phase="validating", percent=92, message="正在校验课程结构...")
+                scan_course(str(extracted_root))
                 backup_path = _backup_and_replace_course_dir(
                     staged_dir=extracted_root,
                     target_dir=target_dir,
                     replace_existing=replace_existing,
                     backup_before_replace=backup_before_replace,
+                    progress_callback=progress_callback,
                 )
         except zipfile.BadZipFile as exc:
             raise GiteaServiceError("课程包格式错误，无法解压") from exc
 
-    # Validate course.json after extraction
+    _report_progress(progress_callback, phase="validating", percent=98, message="正在确认本地课程...")
     scan_result = scan_course(str(target_dir))
     if backup_path:
         scan_result.summary["backup_path"] = backup_path
@@ -752,47 +1174,63 @@ def import_local_course_package(
     target_path: str,
     replace_existing: bool = True,
     backup_before_replace: bool = True,
+    progress_callback: ProgressCallback = None,
 ) -> CourseScanResult:
     source_path = Path(package_path).expanduser()
     if not source_path.exists():
         raise GiteaServiceError("课程包不存在")
 
     target_dir = Path(target_path).expanduser()
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    _report_progress(progress_callback, phase="preparing", percent=3, message="正在准备本地课程包...")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         staged_dir = Path(tmp_dir) / "course"
         staged_dir.mkdir(parents=True, exist_ok=True)
 
         if source_path.is_dir():
-            if source_path.resolve() == target_dir.resolve():
-                raise GiteaServiceError("课程包目录与本地保存位置不能相同")
-            extracted_root = source_path
+            source_root = source_path.resolve()
+            target_root = target_dir.resolve()
+            if (
+                source_root == target_root
+                or source_root in target_root.parents
+                or target_root in source_root.parents
+            ):
+                raise GiteaServiceError("课程包目录与本地保存位置不能重叠")
+            extracted_root = _stage_local_course_directory(
+                source_path,
+                staged_dir,
+                progress_callback=progress_callback,
+            )
         else:
             if source_path.suffix.lower() != ".zip":
                 raise GiteaServiceError("仅支持导入 zip 课程包或已解压目录")
             try:
                 with zipfile.ZipFile(source_path, "r") as zipf:
-                    zipf.extractall(staged_dir)
+                    extracted_root = _extract_course_archive(
+                        zipf,
+                        staged_dir,
+                        progress_callback=progress_callback,
+                        percent_start=10,
+                        percent_end=78,
+                    )
             except zipfile.BadZipFile as exc:
                 raise GiteaServiceError("课程包格式错误，无法解压") from exc
-            extracted_root = staged_dir
-            if not (extracted_root / "course.json").exists():
-                top_level = [item for item in staged_dir.iterdir()]
-                if len(top_level) == 1 and top_level[0].is_dir() and (top_level[0] / "course.json").exists():
-                    extracted_root = top_level[0]
 
         if not (extracted_root / "course.json").exists():
             raise GiteaServiceError("课程包缺少 course.json")
 
+        _report_progress(progress_callback, phase="validating", percent=84, message="正在校验课程结构...")
         scan_course(str(extracted_root))
         backup_path = _backup_and_replace_course_dir(
             staged_dir=extracted_root,
             target_dir=target_dir,
             replace_existing=replace_existing,
             backup_before_replace=backup_before_replace,
+            progress_callback=progress_callback,
         )
 
+    _report_progress(progress_callback, phase="validating", percent=98, message="正在确认本地课程...")
     scan_result = scan_course(str(target_dir))
     if backup_path:
         scan_result.summary["backup_path"] = backup_path

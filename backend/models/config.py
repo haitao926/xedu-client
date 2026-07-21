@@ -90,36 +90,6 @@ class JupyterConfig:
 
 
 @dataclass
-class QuickFormSettings:
-    """QuickForm CLI 配置"""
-    enabled: bool = False
-    base_url: str = "https://quickform.cn"
-    username: str = ""
-    password: str = ""
-
-    def validate(self) -> tuple[bool, list[str]]:
-        errors = []
-
-        if isinstance(self.enabled, bool) is False:
-            errors.append("QuickForm 开关必须为布尔值")
-
-        if self.enabled and not self.base_url:
-            errors.append("启用 QuickForm 时 Base URL 不能为空")
-
-        return len(errors) == 0, errors
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'QuickFormSettings':
-        if not isinstance(data, dict):
-            data = {}
-        allowed = {key: data[key] for key in cls.__dataclass_fields__ if key in data}
-        return cls(**allowed)
-
-
-@dataclass
 class UIConfig:
     """UI 配置模型"""
     theme: str = "dark"
@@ -143,8 +113,7 @@ class UIConfig:
     classroom_name: str = ""
     classroom_code: str = ""
     classroom_teacher_code: str = ""
-    allow_network_access: bool = False
-    quickform: QuickFormSettings = field(default_factory=QuickFormSettings)
+    allow_network_access: bool = True
 
     def validate(self) -> tuple[bool, list[str]]:
         """验证配置"""
@@ -171,10 +140,6 @@ class UIConfig:
         if isinstance(self.allow_network_access, bool) is False:
             errors.append("网络暴露开关必须为布尔值")
 
-        quickform_valid, quickform_errors = self.quickform.validate()
-        if not quickform_valid:
-            errors.extend(quickform_errors)
-
         return len(errors) == 0, errors
 
     def to_dict(self) -> Dict[str, Any]:
@@ -187,8 +152,6 @@ class UIConfig:
         if not isinstance(data, dict):
             data = {}
         allowed = {key: data[key] for key in cls.__dataclass_fields__ if key in data}
-        if "quickform" in allowed:
-            allowed["quickform"] = QuickFormSettings.from_dict(allowed["quickform"])
         return cls(**allowed)
 
 
@@ -198,6 +161,7 @@ class AIConfig:
     api_key: str = ""
     base_url: str = "https://api.moonshot.cn/v1"
     model: str = "moonshot-v1-8k-vision-preview"
+    api_mode: str = "auto"
     max_history: int = 50
     timeout: int = 30  # 秒
 
@@ -211,6 +175,9 @@ class AIConfig:
 
         if not self.base_url:
             errors.append("Base URL 不能为空")
+
+        if self.api_mode not in {"auto", "chat_completions", "responses"}:
+            errors.append("AI 接口类型必须是 auto、chat_completions 或 responses")
 
         if self.max_history < 1:
             errors.append("最大历史记录数不能小于 1")
@@ -273,7 +240,6 @@ class AppConfig:
         data["ai"].pop("api_key", None)
         data["ui"].pop("resources_publish_token", None)
         data["ui"].pop("classroom_teacher_code", None)
-        data["ui"]["quickform"].pop("password", None)
         data["secret_status"] = self.to_secret_refs()
         return data
 
@@ -284,7 +250,6 @@ class AppConfig:
             "ai_configured": bool(self.ai.api_key),
             "resources_publish_configured": bool(self.ui.resources_publish_token),
             "classroom_teacher_configured": bool(self.ui.classroom_teacher_code),
-            "quickform_password_configured": bool(self.ui.quickform.password),
         }
 
     @classmethod
@@ -315,7 +280,6 @@ _SECRET_CONFIG_FIELDS = {
     ("ai", "api_key"),
     ("ui", "resources_publish_token"),
     ("ui", "classroom_teacher_code"),
-    ("ui.quickform", "password"),
 }
 
 
@@ -340,20 +304,7 @@ def merge_config_update(
     for section, values in updates.items():
         if not isinstance(values, dict):
             raise ValueError(f"{section} 配置必须是对象")
-        if section == "ui" and "quickform" in values:
-            quickform_values = values["quickform"]
-            if not isinstance(quickform_values, dict):
-                raise ValueError("quickform 配置必须是对象")
-            unknown = set(quickform_values) - set(data["ui"]["quickform"])
-            if unknown:
-                raise ValueError(f"未知 QuickForm 配置: {', '.join(sorted(unknown))}")
-            if ("ui.quickform", "password") in _SECRET_CONFIG_FIELDS and "password" in quickform_values and not allow_secret_write:
-                raise ValueError("不允许写入 QuickForm 密码")
-            data["ui"]["quickform"].update(quickform_values)
-
         for key, value in values.items():
-            if section == "ui" and key == "quickform":
-                continue
             if key not in data[section]:
                 raise ValueError(f"未知 {section} 配置: {key}")
             if (section, key) in _SECRET_CONFIG_FIELDS and not allow_secret_write:

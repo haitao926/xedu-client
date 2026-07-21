@@ -37,6 +37,25 @@ export function mergeInspectionCourse(resource, response) {
   };
 }
 
+export async function inspectCloudCourseOptionFlow(resource, deps) {
+  const { apiClient, buildInspectCoursePayload, mergeInspectionCourse } = deps;
+  const payload = buildInspectCoursePayload(resource);
+  if (!payload) {
+    throw new Error('缺少课程路径或资源库配置，无法读取课程结构');
+  }
+
+  const response = await apiClient.post('/api/resources/inspect-course', payload);
+  if (!response?.success) {
+    throw new Error(response?.message || '读取课程结构失败');
+  }
+
+  return {
+    course: mergeInspectionCourse(resource, response),
+    summary: response.summary || null,
+    inspection: response.inspection || null,
+  };
+}
+
 export async function inspectCourseResourceFlow(resource, deps) {
   const {
     apiClient,
@@ -90,16 +109,22 @@ export async function inspectCourseResourceFlow(resource, deps) {
   }
 }
 
-export function shouldAutoInspectRemoteCourse(resource, courseInspectionState, teacherMode) {
+export function shouldAutoInspectCourse(resource, courseInspectionState, teacherMode) {
   return Boolean(
     teacherMode.unlocked &&
     resource &&
-    resource.source !== 'local' &&
-    (!Array.isArray(resource.sections) || !resource.sections.length) &&
+    (resource.source !== 'local' || resource.local_path) &&
     !courseInspectionState.loading &&
     !courseInspectionState.inspection &&
     !courseInspectionState.error
   );
+}
+
+export function shouldShowCourseInspectionCard(courseInspectionState = {}) {
+  if (courseInspectionState.error) return true;
+  if (!courseInspectionState.inspection || courseInspectionState.loading) return false;
+  const summary = courseInspectionState.summary || {};
+  return Number(summary.partial_count || 0) > 0 || Number(summary.broken_count || 0) > 0;
 }
 
 export function renderCourseInspectionCardFlow(resource, deps) {

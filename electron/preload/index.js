@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
     apiRequest: (request) => ipcRenderer.invoke('api:request', request),
@@ -18,7 +18,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDeepLinkOpenPractice: (callback) => ipcRenderer.on('deep-link-open-practice', (event, payload) => callback(payload)),
     selectFolder: () => ipcRenderer.invoke('select-folder'),
     selectPython: () => ipcRenderer.invoke('select-python'),
+    scanPythonEnvironments: () => ipcRenderer.invoke('scan-python-environments'),
+    setPythonExecutable: (targetPath) => ipcRenderer.invoke('set-python', targetPath),
     selectCoursePackage: () => ipcRenderer.invoke('select-course-package'),
+    getPathForFile: (file) => {
+        if (!file || typeof webUtils?.getPathForFile !== 'function') return '';
+        try {
+            return webUtils.getPathForFile(file) || '';
+        } catch (_) {
+            return '';
+        }
+    },
     isDirectory: (targetPath) => ipcRenderer.invoke('path-is-directory', targetPath),
     selectImageFile: () => ipcRenderer.invoke('select-image-file'),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
@@ -26,6 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openBackendLogDirectory: () => ipcRenderer.invoke('backend:open-log-directory'),
     copyBackendDiagnosticSummary: () => ipcRenderer.invoke('backend:copy-diagnostic-summary'),
     retryBackendStartup: () => ipcRenderer.invoke('backend:retry-startup'),
+    restartBackend: () => ipcRenderer.invoke('backend:restart'),
     getBackendStartupState: () => ipcRenderer.invoke('backend:get-startup-state'),
     onBackendStartupState: (callback) => ipcRenderer.on('backend-startup-state', (event, payload) => callback(payload)),
     getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
@@ -39,7 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 // 后端配置（用于前端动态获取 API Base）
 const backendPort = process.env.XEDU_BACKEND_PORT || process.env.XEDU_API_PORT || '5123';
-const backendHost = process.env.XEDU_BACKEND_HOST || '127.0.0.1';
+const backendHost = process.env.XEDU_BACKEND_CONNECT_HOST || process.env.XEDU_BACKEND_HOST || '127.0.0.1';
 const apiBase = process.env.XEDU_API_BASE || `http://${backendHost}:${backendPort}`;
 
 contextBridge.exposeInMainWorld('xeduConfig', {

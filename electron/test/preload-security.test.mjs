@@ -11,6 +11,8 @@ test('preload exposes named capabilities instead of a generic IPC invoker', asyn
   assert.match(source, /apiRequest:\s*\(request\)\s*=>\s*ipcRenderer\.invoke\('api:request', request\)/);
   assert.match(source, /scratchApiRequest:\s*\(request\)\s*=>\s*ipcRenderer\.invoke\('api:scratch-request', request\)/);
   assert.match(source, /streamPip:\s*\(request, onEvent\)\s*=>/);
+  assert.match(source, /getPathForFile:\s*\(file\)\s*=>/);
+  assert.match(source, /webUtils\?\.getPathForFile/);
   assert.doesNotMatch(source, /invoke:\s*\(channel,/);
 });
 
@@ -32,14 +34,33 @@ test('main and Jupyter windows keep sandbox and web security enabled', async () 
   assert.doesNotMatch(source, /webSecurity:\s*false/);
 });
 
+test('Jupyter external browser bridge only accepts the local Jupyter URL policy', async () => {
+  const source = await readFile(mainProcessPath, 'utf8');
+  const handler = source.match(/ipcMain\.handle\('jupyter:open-external',[\s\S]*?\n\s*}\);/)?.[0];
+
+  assert.ok(handler, 'Jupyter external browser handler should be registered');
+  assert.match(handler, /isAllowedJupyterUrl\(url\)/);
+  assert.doesNotMatch(handler, /isSafeExternalUrl\(url\)/);
+});
+
 test('generic API IPC uses an explicit route allowlist and pip uses a dedicated stream bridge', async () => {
   const source = await readFile(mainProcessPath, 'utf8');
 
   assert.match(source, /API_REQUEST_ALLOWLIST/);
   assert.match(source, /repair_xedu/);
+  assert.match(source, /operations\\\/\[\^\/\]\+/);
   assert.match(source, /!isAllowedApiRequest\(method, relativePath\)/);
   assert.match(source, /ipcMain\.handle\('api:pip-stream'/);
   assert.match(source, /ipcMain\.handle\('api:scratch-request'/);
+});
+
+test('embedded Scratch camera access is limited to trusted local origins', async () => {
+  const source = await readFile(mainProcessPath, 'utf8');
+
+  assert.match(source, /function isTrustedLocalMediaOrigin\(/);
+  assert.match(source, /setPermissionRequestHandler/);
+  assert.match(source, /permission === 'media'/);
+  assert.match(source, /parsed\.hostname === '127\.0\.0\.1' \|\| parsed\.hostname === 'localhost'/);
 });
 
 test('teacher recovery bridge exposes named startup support capabilities only', async () => {
@@ -47,11 +68,24 @@ test('teacher recovery bridge exposes named startup support capabilities only', 
 
   assert.match(source, /openBackendLogDirectory:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:open-log-directory'\)/);
   assert.match(source, /selectPython:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('select-python'\)/);
+  assert.match(source, /scanPythonEnvironments:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('scan-python-environments'\)/);
+  assert.match(source, /setPythonExecutable:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('set-python', targetPath\)/);
   assert.match(source, /copyBackendDiagnosticSummary:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:copy-diagnostic-summary'\)/);
   assert.match(source, /retryBackendStartup:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:retry-startup'\)/);
+  assert.match(source, /restartBackend:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:restart'\)/);
   assert.match(source, /getBackendStartupState:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:get-startup-state'\)/);
   assert.match(source, /onBackendStartupState:\s*\(callback\)\s*=>\s*ipcRenderer\.on\('backend-startup-state'/);
   assert.doesNotMatch(source, /backend:\s*\{[\s\S]*invoke/i);
+});
+
+test('teacher verification code is not persisted through an Electron credential bridge', async () => {
+  const [preloadSource, mainSource] = await Promise.all([
+    readFile(preloadPath, 'utf8'),
+    readFile(mainProcessPath, 'utf8'),
+  ]);
+
+  assert.doesNotMatch(preloadSource, /loadTeacherCredential|saveTeacherCredential|clearTeacherCredential|teacher-credential:/);
+  assert.doesNotMatch(mainSource, /teacherCredentialStore|createTeacherCredentialStore|teacher-credential:/);
 });
 
 test('backend diagnostics redact secrets and expose explicit recovery handlers', async () => {

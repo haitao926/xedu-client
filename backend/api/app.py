@@ -20,12 +20,12 @@ from services.ai_service import AIService
 from services.project_service import ProjectService
 from services.teacher_intent_detection import (
     looks_like_confirmation,
-    looks_like_quickform_request,
     looks_like_xedu_pack_request,
 )
 from services.classroom_service import (
     ClassroomService,
 )
+from services.course_transfer_jobs import CourseTransferJobManager
 from services.jupyter_service import JupyterManager
 from utils.logger import get_logger
 from .app_support import (
@@ -56,6 +56,7 @@ def create_app(config_dir=None) -> Flask:
     app = Flask(__name__)
     configure_security(app)
     app.extensions["xedu_resource_handles"] = ResourceHandleRegistry()
+    app.extensions["xedu_course_transfer_jobs"] = CourseTransferJobManager()
 
     def _persist_config(target_config: AppConfig | None = None) -> bool:
         config_to_save = target_config or app_config
@@ -90,7 +91,6 @@ def create_app(config_dir=None) -> Flask:
         serialize_status=_serialize_status,
         get_app_config=lambda: app_config,
         looks_like_confirmation=looks_like_confirmation,
-        looks_like_quickform_request=looks_like_quickform_request,
         looks_like_xedu_pack_request=looks_like_xedu_pack_request,
     )
 
