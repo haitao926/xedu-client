@@ -6,13 +6,32 @@ let currentJupyterUrl = '';
 let isViewAttached = false;
 let isViewVisible = false;
 let isAttaching = false;
-let allowAutoAttach = false;
+const JUPYTER_VIEW_INTENT_KEY = 'xedu-jupyter-view-intent';
+let allowAutoAttach = readJupyterViewIntent();
 let resizeObserver = null;
 let suppressVisibleUntil = 0;
 const LAST_PROJECT_KEY = 'xedu-last-project-dir';
 let lastProjectDir = loadLastProjectDir();
 let lastStatusErrorKey = '';
 let lastStatusErrorAt = 0;
+
+function readJupyterViewIntent(storage = globalThis.sessionStorage) {
+    try {
+        return storage?.getItem(JUPYTER_VIEW_INTENT_KEY) === 'true';
+    } catch (_) {
+        return false;
+    }
+}
+
+function writeJupyterViewIntent(value, storage = globalThis.sessionStorage) {
+    try {
+        if (value) storage?.setItem(JUPYTER_VIEW_INTENT_KEY, 'true');
+        else storage?.removeItem(JUPYTER_VIEW_INTENT_KEY);
+    } catch (_) {
+        // A missing session store should fail closed and keep the in-memory flag.
+    }
+    allowAutoAttach = Boolean(value);
+}
 
 function getApiErrorMessage(error, fallback = '操作失败') {
     if (error?.details) {
@@ -171,6 +190,17 @@ export function isUsableJupyterViewBounds(bounds) {
     );
 }
 
+export function shouldRestoreJupyterView({
+    running,
+    url,
+    pageVisible,
+    intent,
+    viewAttached,
+    isAttaching: attaching,
+} = {}) {
+    return Boolean(running && url && pageVisible && intent && !viewAttached && !attaching);
+}
+
 function startViewSync() {
     const placeholder = document.getElementById('jupyter-view-placeholder');
     if (!placeholder || resizeObserver) return;
@@ -197,6 +227,38 @@ function stopViewSync() {
     if (resizeObserver) {
         resizeObserver.disconnect();
         resizeObserver = null;
+    }
+}
+
+async function adoptJupyterView(url) {
+    const normalizedUrl = normalizeJupyterUrl(url);
+    if (!normalizedUrl) return false;
+    currentJupyterUrl = normalizedUrl;
+    isViewAttached = true;
+    const placeholderContent = document.querySelector('.jupyter-placeholder');
+    if (placeholderContent) placeholderContent.style.display = 'none';
+    const badge = document.getElementById('canvas-status');
+    if (badge) {
+        badge.textContent = '已连接';
+        badge.style.background = '#dcfce7';
+        badge.style.color = '#166534';
+    }
+    startViewSync();
+    await setVisibility(shouldDisplayEmbeddedJupyter());
+    return true;
+}
+
+async function reconcileJupyterView(url) {
+    try {
+        const state = await window.electronAPI?.jupyterGetState?.();
+        if (state?.exists && await adoptJupyterView(state.url || url)) {
+            return;
+        }
+    } catch (error) {
+        console.warn('读取 Jupyter 视图状态失败，将尝试重新挂载:', error);
+    }
+    if (document.getElementById('jupyter-view-placeholder')) {
+        await attachJupyterView(url);
     }
 }
 
@@ -232,22 +294,7 @@ async function attachJupyterView(url, options = {}) {
             if (result && result.success === false) {
                 throw new Error(result.error || 'jupyter-create-view-failed');
             }
-            isViewAttached = true;
-            
-            // Hide placeholder content, keep container for layout
-            const placeholderContent = document.querySelector('.jupyter-placeholder');
-            if (placeholderContent) placeholderContent.style.display = 'none';
-            
-            // Update badge
-            const badge = document.getElementById('canvas-status');
-            if (badge) {
-                badge.textContent = '已连接';
-                badge.style.background = '#dcfce7';
-                badge.style.color = '#166534';
-            }
-
-            startViewSync();
-            await setVisibility(shouldDisplayEmbeddedJupyter());
+            await adoptJupyterView(normalizedUrl);
         }
     } catch (e) {
         console.error('挂载视图失败:', e);
@@ -387,7 +434,7 @@ function buildNotebookUrl(baseUrl, filePath) {
 
 export async function openNotebookFile(filePath, projectDir) {
     if (!filePath) return;
-    allowAutoAttach = true;
+    writeJupyterViewIntent(true);
 
     const normalizedPath = normalizeNotebookPath(filePath, projectDir);
     if (!normalizedPath) return;
@@ -442,7 +489,7 @@ export async function openNotebookFile(filePath, projectDir) {
 // --- Core Jupyter Logic ---
 
 export async function startJupyter() {
-    allowAutoAttach = true;
+    writeJupyterViewIntent(true);
     const btn = document.getElementById('start-btn');
     if (btn) {
         btn.disabled = true;
@@ -587,7 +634,7 @@ export async function startJupyter() {
 }
 
 export async function stopJupyter() {
-    allowAutoAttach = false;
+    writeJupyterViewIntent(false);
     const btn = document.getElementById('stop-btn');
     if (btn) {
         btn.disabled = true;
@@ -616,7 +663,7 @@ export async function stopJupyter() {
 export async function restartJupyter() {
     if (!confirm('确定要重启 Jupyter 吗？未保存的工作可能会丢失。')) return;
     
-    allowAutoAttach = true;
+    writeJupyterViewIntent(true);
     await stopJupyter();
     setTimeout(() => startJupyter(), 1000);
 }
@@ -666,12 +713,15 @@ export async function refreshStatus() {
             if (stopBtn) stopBtn.disabled = false;
             if (restartBtn) restartBtn.disabled = false;
             
-            // Only attach when the user explicitly entered Jupyter in this session.
-            if (!isViewAttached && !isAttaching && data.url && allowAutoAttach && shouldDisplayEmbeddedJupyter()) {
-                // Ensure placeholder is ready
-                if (document.getElementById('jupyter-view-placeholder')) {
-                    attachJupyterView(data.url);
-                }
+            if (shouldRestoreJupyterView({
+                running: data.running,
+                url: data.url,
+                pageVisible: shouldDisplayEmbeddedJupyter(),
+                intent: allowAutoAttach,
+                viewAttached: isViewAttached,
+                isAttaching,
+            })) {
+                await reconcileJupyterView(data.url);
             }
             
         } else {
@@ -692,6 +742,7 @@ export async function refreshStatus() {
             
             if (isViewAttached) {
                 console.warn('Jupyter 状态变为停止，销毁视图');
+                writeJupyterViewIntent(false);
                 detachJupyterView();
             }
         }
@@ -787,13 +838,23 @@ export async function testPythonEnvironment() {
         resultEl.textContent = '正在检测…';
     }
     try {
-        const query = pythonPath ? `?python_executable=${encodeURIComponent(pythonPath)}` : '';
-        const response = await apiClient.get(`/api/detect_python${query}`);
-        if (!response?.success || !response?.info) {
-            throw new Error(response?.message || '检测失败');
+        let info;
+        const standaloneInspect = window.electronAPI?.inspectPythonEnvironment;
+        if (pythonPath && typeof standaloneInspect === 'function') {
+            const response = await standaloneInspect(pythonPath);
+            if (!response?.success) {
+                throw new Error(response?.message || response?.error || 'Python 环境探针失败');
+            }
+            info = response.runtime || response;
+        } else {
+            const query = pythonPath ? `?python_executable=${encodeURIComponent(pythonPath)}` : '';
+            const response = await apiClient.get(`/api/detect_python${query}`);
+            if (!response?.success || !response?.info) {
+                throw new Error(response?.message || '检测失败');
+            }
+            info = response.info;
         }
 
-        const info = response.info;
         const jupyterReady = Boolean(info.jupyterlab_version);
         const xeduReady = Boolean(info.xedu_version_ok && info.xedu_runtime_ok);
         const message = [

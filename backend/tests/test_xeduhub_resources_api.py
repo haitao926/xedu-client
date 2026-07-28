@@ -30,7 +30,7 @@ from services.gitea_service import (  # noqa: E402
     resolve_raw_url,
 )
 from api.resource_runtime import build_single_course_source_entry  # noqa: E402
-from services.xeduhub_support import _materialize_image_data_url  # noqa: E402
+from services.xeduhub_support import _extract_key_fields, _materialize_image_data_url  # noqa: E402
 from api_test_utils import authorized_test_client, issue_test_resource_handle  # noqa: E402
 
 
@@ -162,6 +162,41 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         body = response.get_json()
         self.assertEqual(body["course"]["title"], "新课程")
         self.assertTrue((course_dir / "course.json").is_file())
+
+    def test_scan_rejects_symlink_and_hardlink_course_files(self):
+        course_dir = Path(self.temp_dir.name) / "unsafe-course"
+        course_dir.mkdir()
+        (course_dir / "course.json").write_text(
+            json.dumps({"id": "unsafe-course", "title": "不安全课程", "sections": []}),
+            encoding="utf-8",
+        )
+        outside = Path(self.temp_dir.name) / "outside.txt"
+        outside.write_text("outside", encoding="utf-8")
+
+        symlink_path = course_dir / "linked.txt"
+        try:
+            symlink_path.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前文件系统不支持符号链接")
+        symlink_response = self.client.post(
+            "/api/resources/scan",
+            json={"local_path": str(course_dir)},
+        )
+        self.assertEqual(symlink_response.status_code, 400)
+        self.assertIn("符号链接", symlink_response.get_json()["message"])
+        symlink_path.unlink()
+
+        hardlink_path = course_dir / "hardlink.txt"
+        try:
+            hardlink_path.hardlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前文件系统不支持硬链接")
+        hardlink_response = self.client.post(
+            "/api/resources/scan",
+            json={"local_path": str(course_dir)},
+        )
+        self.assertEqual(hardlink_response.status_code, 400)
+        self.assertIn("硬链接", hardlink_response.get_json()["message"])
 
     def test_local_handle_route_issues_a_fresh_handle_without_returning_file_bytes(self):
         course_dir = Path(self.temp_dir.name) / "local-handle-course"
@@ -959,6 +994,170 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
                 temporary_path.unlink(missing_ok=True)
         self.assertFalse(path.exists())
 
+    def test_xeduhub_realtime_route_accepts_multipart_camera_frame(self):
+        from PIL import Image
+
+        image_buffer = io.BytesIO()
+        Image.new("RGB", (32, 24), color=(10, 20, 30)).save(image_buffer, format="JPEG")
+        image_buffer.seek(0)
+
+        class _FakeWorkflow:
+            def __init__(self, task, **kwargs):
+                self.task = task
+
+            def inference(self, data=None, **kwargs):
+                self.seen_shape = getattr(data, "shape", None)
+                return {"关键点": [[5, 6]]}
+
+        with patch(
+            "services.xeduhub_support._get_runtime_supported_tasks",
+            return_value=["pose_body17"],
+        ), patch(
+            "services.xeduhub_support._resolve_smoke_checkpoint",
+            return_value="",
+        ), patch(
+            "services.xeduhub_support._patch_openxlab_repo_parser",
+            return_value=None,
+        ), patch.dict(
+            "sys.modules",
+            {"XEdu.hub": type("FakeHubModule", (), {"Workflow": _FakeWorkflow})},
+        ):
+            response = self.client.post(
+                "/api/resources/xeduhub/realtime",
+                data={
+                    "task_id": "pose_body17",
+                    "session_id": "route-test",
+                    "frame_seq": "3",
+                    "captured_at_ms": "123",
+                    "params": "{}",
+                    "frame": (image_buffer, "camera.jpg"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["session_id"], "route-test")
+        self.assertEqual(body["frame_seq"], 3)
+        self.assertEqual(body["result"]["output"], {"关键点": [[5, 6]]})
+
+    def test_xeduhub_realtime_multipart_frame_stays_in_memory(self):
+        from PIL import Image
+
+        image_buffer = io.BytesIO()
+        Image.new("RGB", (32, 24), color=(10, 20, 30)).save(image_buffer, format="JPEG")
+        image_buffer.seek(0)
+
+        class _FakeWorkflow:
+            def __init__(self, task, **kwargs):
+                self.task = task
+
+            def inference(self, data=None, **kwargs):
+                return {"关键点": [[5, 6]]}
+
+        with patch(
+            "werkzeug.wrappers.request.default_stream_factory",
+            side_effect=AssertionError("realtime upload must not use Werkzeug temporary files"),
+        ), patch(
+            "services.xeduhub_support._get_runtime_supported_tasks",
+            return_value=["pose_body17"],
+        ), patch(
+            "services.xeduhub_support._resolve_smoke_checkpoint",
+            return_value="",
+        ), patch(
+            "services.xeduhub_support._patch_openxlab_repo_parser",
+            return_value=None,
+        ), patch.dict(
+            "sys.modules",
+            {"XEdu.hub": type("FakeHubModule", (), {"Workflow": _FakeWorkflow})},
+        ):
+            response = self.client.post(
+                "/api/resources/xeduhub/realtime",
+                data={
+                    "task_id": "pose_body17",
+                    "session_id": "memory-test",
+                    "frame_seq": "1",
+                    "frame": (image_buffer, "camera.jpg"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_xeduhub_realtime_route_rejects_missing_or_non_jpeg_frames(self):
+        missing = self.client.post(
+            "/api/resources/xeduhub/realtime",
+            data={"task_id": "pose_body17"},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(missing.get_json()["error_code"], "invalid_image_data")
+
+        png_buffer = io.BytesIO()
+        from PIL import Image
+
+        Image.new("RGB", (4, 4), color=(10, 20, 30)).save(png_buffer, format="PNG")
+        png_buffer.seek(0)
+        png_bytes = png_buffer.getvalue()
+        non_jpeg = self.client.post(
+            "/api/resources/xeduhub/realtime",
+            data={
+                "task_id": "pose_body17",
+                "frame": (png_buffer, "camera.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(non_jpeg.status_code, 400)
+        self.assertEqual(non_jpeg.get_json()["error_code"], "invalid_image_data")
+        self.assertIn("result_summary", missing.get_json())
+        self.assertIn("result_artifacts", non_jpeg.get_json())
+
+        disguised_png = io.BytesIO(png_bytes)
+        disguised = self.client.post(
+            "/api/resources/xeduhub/realtime",
+            data={
+                "task_id": "pose_body17",
+                "frame": (disguised_png, "camera.jpg"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(disguised.status_code, 400)
+        self.assertEqual(disguised.get_json()["error_code"], "invalid_image_data")
+
+    def test_xeduhub_realtime_route_rejects_invalid_params_json(self):
+        from PIL import Image
+
+        image_buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), color=(10, 20, 30)).save(image_buffer, format="JPEG")
+        image_buffer.seek(0)
+        response = self.client.post(
+            "/api/resources/xeduhub/realtime",
+            data={
+                "task_id": "pose_body17",
+                "params": "not-json",
+                "frame": (image_buffer, "camera.jpg"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error_code"], "invalid_metadata")
+
+    def test_xeduhub_realtime_route_rejects_oversized_requests_before_inference(self):
+        oversized = io.BytesIO(b"x" * (1024 * 1024 + 100 * 1024))
+        with patch("services.xeduhub_support.execute_xeduhub_realtime") as realtime_mock:
+            response = self.client.post(
+                "/api/resources/xeduhub/realtime",
+                data={
+                    "task_id": "pose_body17",
+                    "frame": (oversized, "camera.jpg"),
+                },
+                content_type="multipart/form-data",
+            )
+        self.assertEqual(response.status_code, 413)
+        realtime_mock.assert_not_called()
+
     def test_default_sample_course_route_returns_sample(self):
         response = self.client.get("/api/resources/default-sample")
         self.assertEqual(response.status_code, 200)
@@ -1006,6 +1205,11 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         self.assertEqual(data["result"]["task_id"], "cls_imagenet")
         self.assertEqual(data["result"].get("runtime_mode"), "real")
         self.assertEqual(data["result"].get("result_truthfulness"), "verified")
+
+    def test_classification_probability_vector_has_teaching_fields(self):
+        fields = _extract_key_fields("cls_imagenet", [[0.1, 0.7, 0.2]])
+        self.assertEqual(fields["预测类别"], "ImageNet 类别 1")
+        self.assertAlmostEqual(fields["分数"], 0.7)
 
     def test_xeduhub_execute_route_rejects_invalid_model(self):
         image_path = Path(self.temp_dir.name) / "demo.jpg"
@@ -1221,10 +1425,25 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
                     },
                 },
             )
+            second_response = self.client.post(
+                "/api/resources/xeduhub/execute",
+                json={
+                    "code": "print('demo')",
+                    "spec": {
+                        "task_id": "det_body",
+                        "input": str(image_path),
+                        "params": {},
+                        "mode": "preset",
+                    },
+                },
+            )
 
         data = response.get_json()
+        second_data = second_response.get_json()
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
         self.assertTrue(data["success"])
+        self.assertTrue(second_data["success"])
         self.assertEqual(len(init_calls), 1)
         self.assertEqual(init_calls[0]["task"], "det_body")
         self.assertEqual(init_calls[0]["checkpoint"], "/tmp/smoke-det_body.onnx")
@@ -1451,7 +1670,7 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         self.assertEqual(data["result"].get("result_truthfulness"), "demo_only")
         self.assertIn("兼容演示", data["result_summary"]["headline"])
 
-    def test_inspect_course_reports_ready_for_complete_local_experiment(self):
+    def test_course_structure_route_returns_local_course_summary(self):
         course_dir = Path(self.temp_dir.name) / "ready-course"
         course_dir.mkdir(parents=True, exist_ok=True)
         (course_dir / "index.html").write_text("<html></html>", encoding="utf-8")
@@ -1482,13 +1701,12 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertTrue(data["success"])
-        self.assertEqual(data["summary"]["ready_count"], 1)
-        self.assertEqual(data["summary"]["broken_count"], 0)
-        experiment = data["inspection"]["sections"][0]["experiments"][0]
-        self.assertEqual(experiment["status"], "ready")
-        self.assertEqual([entry["kind"] for entry in experiment["entries"]], ["html", "blockly"])
+        self.assertEqual(data["summary"]["section_count"], 1)
+        self.assertEqual(data["summary"]["experiment_count"], 1)
+        self.assertEqual(data["summary"]["file_count"], 2)
+        self.assertNotIn("inspection", data)
 
-    def test_inspect_course_normalizes_lessons_schema_with_experiment_relative_files(self):
+    def test_course_structure_route_normalizes_lessons_schema_with_experiment_relative_files(self):
         course_dir = Path(self.temp_dir.name) / "lesson-course"
         exp_dir = course_dir / "lesson10" / "exp1"
         exp_dir.mkdir(parents=True, exist_ok=True)
@@ -1523,12 +1741,9 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertTrue(data["success"])
-        self.assertEqual(data["summary"]["ready_count"], 1)
         self.assertEqual(data["course"]["sections"][0]["title"], "第10课 模型评估")
-        experiment = data["inspection"]["sections"][0]["experiments"][0]
-        self.assertEqual(experiment["status"], "ready")
         self.assertEqual(
-            [entry["path"] for entry in experiment["entries"]],
+            [entry["path"] for entry in data["course"]["sections"][0]["experiments"][0]["files"]],
             [
                 "lesson10/exp1/index.html",
                 "lesson10/exp1/main.blockly.xml",
@@ -1536,11 +1751,12 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            [entry["kind"] for entry in experiment["entries"]],
-            ["html", "blockly", "notebook"],
+            data["summary"],
+            {"section_count": 1, "experiment_count": 1, "file_count": 3},
         )
+        self.assertNotIn("inspection", data)
 
-    def test_inspect_course_reports_broken_for_missing_local_file(self):
+    def test_course_structure_route_does_not_check_local_file_existence(self):
         course_dir = Path(self.temp_dir.name) / "broken-course"
         course_dir.mkdir(parents=True, exist_ok=True)
         (course_dir / "course.json").write_text(
@@ -1565,15 +1781,16 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         response = self.client.post("/api/resources/inspect-course", json={"local_path": str(course_dir)})
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["summary"]["broken_count"], 1)
-        experiment = data["inspection"]["sections"][0]["experiments"][0]
-        self.assertEqual(experiment["status"], "broken")
-        self.assertIn("missing.ipynb", experiment["missing_files"])
+        self.assertEqual(data["summary"], {"section_count": 1, "experiment_count": 1, "file_count": 1})
+        self.assertEqual(
+            data["course"]["sections"][0]["experiments"][0]["files"][0]["path"],
+            "missing.ipynb",
+        )
+        self.assertNotIn("inspection", data)
 
-    @patch("api.routes.resources.load_repo_tree_data")
     @patch("api.routes.resources.load_course_data_from_repo")
     @patch("api.routes.resources.find_course_entry_from_index")
-    def test_inspect_remote_course_loads_course_json_from_index_entry(self, find_entry, load_course, load_tree):
+    def test_course_structure_route_loads_remote_course_from_index_entry(self, find_entry, load_course):
         find_entry.return_value = {
             "id": "remote-course",
             "course_url": "courses/remote-course/course.json",
@@ -1594,11 +1811,6 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
                 }
             ],
         }
-        load_tree.return_value = [
-            {"path": "courses/remote-course/course.json", "type": "blob"},
-            {"path": "lessons/one/index.html", "type": "blob"},
-        ]
-
         response = self.client.post(
             "/api/resources/inspect-course",
             json={
@@ -1615,13 +1827,13 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data["course"]["sections"][0]["experiments"][0]["title"], "实验一")
-        self.assertEqual(data["summary"]["ready_count"], 1)
+        self.assertEqual(data["summary"], {"section_count": 1, "experiment_count": 1, "file_count": 1})
+        self.assertNotIn("inspection", data)
         find_entry.assert_called_once()
         load_course.assert_called_once()
 
-    @patch("api.routes.resources.load_repo_tree_data")
     @patch("api.routes.resources.load_course_data_from_repo")
-    def test_inspect_remote_course_reports_broken_when_tree_missing_file(self, load_course, load_tree):
+    def test_remote_course_structure_preserves_declared_files_without_file_inspection(self, load_course):
         load_course.return_value = {
             "id": "remote-missing",
             "title": "Remote Missing",
@@ -1637,8 +1849,6 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
                 }
             ],
         }
-        load_tree.return_value = [{"path": "course.json", "type": "blob"}]
-
         response = self.client.post(
             "/api/resources/inspect-course",
             json={
@@ -1653,14 +1863,15 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["summary"]["broken_count"], 1)
-        experiment = data["inspection"]["sections"][0]["experiments"][0]
-        self.assertEqual(experiment["status"], "broken")
-        self.assertIn("lesson/demo.py", experiment["missing_files"])
+        self.assertEqual(data["summary"], {"section_count": 1, "experiment_count": 1, "file_count": 1})
+        self.assertEqual(
+            data["course"]["sections"][0]["experiments"][0]["files"][0]["path"],
+            "lesson/demo.py",
+        )
+        self.assertNotIn("inspection", data)
 
-    @patch("api.routes.resources.load_repo_tree_data")
     @patch("api.routes.resources.load_course_data_from_repo")
-    def test_inspect_single_course_repo_defaults_to_root_course_json(self, load_course, load_tree):
+    def test_course_structure_route_defaults_single_course_repo_to_root_course_json(self, load_course):
         load_course.return_value = {
             "id": "single-course",
             "title": "Single Course",
@@ -1676,11 +1887,6 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
                 }
             ],
         }
-        load_tree.return_value = [
-            {"path": "course.json", "type": "blob"},
-            {"path": "demo.ipynb", "type": "blob"},
-        ]
-
         response = self.client.post(
             "/api/resources/inspect-course",
             json={
@@ -1697,4 +1903,5 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["course"]["course_url"], "course.json")
         self.assertTrue(data["course"]["single_course_repo"])
-        self.assertEqual(data["summary"]["ready_count"], 1)
+        self.assertEqual(data["summary"], {"section_count": 1, "experiment_count": 1, "file_count": 1})
+        self.assertNotIn("inspection", data)

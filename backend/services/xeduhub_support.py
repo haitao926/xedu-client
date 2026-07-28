@@ -15,6 +15,7 @@ import threading
 import time
 import tempfile
 import traceback
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 from urllib.parse import unquote, urlparse
@@ -35,6 +36,85 @@ _RUNTIME_SUPPORTED_TASKS_CACHE: Dict[str, Any] = {
     "value": None,
     "expires_at": 0.0,
 }
+_RUNTIME_SUPPORTED_TASKS_LOCK = threading.RLock()
+
+
+class _RuntimeWorkflowEntry:
+    def __init__(self, workflow: Any, inference_signature: inspect.Signature):
+        self.workflow = workflow
+        self.inference_signature = inference_signature
+        self.inference_lock = threading.Lock()
+        self.active_requests = 0
+
+
+class _RuntimeWorkflowBusyError(RuntimeError):
+    pass
+
+
+REALTIME_TASK_IDS = frozenset({
+    "cls_imagenet",
+    "det_coco_l",
+    "pose_face106",
+    "pose_body17",
+    "pose_hand21",
+    "ocr",
+    "segment_anything",
+    "depth_anything",
+})
+REALTIME_MAX_FRAME_BYTES = 1024 * 1024
+REALTIME_MAX_FRAME_DIMENSION = 640
+
+
+def _decode_realtime_frame(frame_bytes: bytes) -> Any:
+    """Decode camera JPEG bytes in memory and return the BGR ndarray XEdu expects."""
+    if (
+        len(frame_bytes) < 4
+        or frame_bytes[:2] != b"\xff\xd8"
+        or b"\xff\xd9" not in frame_bytes[-64:]
+    ):
+        raise ValueError("摄像头画面必须是有效的 JPEG")
+    import numpy as np  # type: ignore
+
+    cv2_error = None
+    try:
+        import cv2  # type: ignore
+
+        encoded = np.frombuffer(frame_bytes, dtype=np.uint8)
+        decoded = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+        if decoded is not None:
+            return decoded
+    except Exception as exc:
+        cv2_error = exc
+
+    try:
+        from PIL import Image  # type: ignore
+
+        with Image.open(io.BytesIO(frame_bytes)) as image:
+            if str(image.format or "").upper() != "JPEG":
+                raise ValueError("摄像头画面必须是 JPEG")
+            rgb_image = image.convert("RGB")
+            return np.asarray(rgb_image)[:, :, ::-1].copy()
+    except ValueError:
+        raise
+    except Exception as pil_error:
+        detail = cv2_error or pil_error
+        raise ValueError(f"摄像头画面无法解码: {detail}") from cv2_error
+
+
+def _realtime_concurrency_limit() -> int:
+    try:
+        return max(1, min(4, int(os.environ.get("XEDU_REALTIME_MAX_CONCURRENCY", "2"))))
+    except (TypeError, ValueError):
+        return 2
+
+
+_REALTIME_INFERENCE_SLOTS = threading.BoundedSemaphore(_realtime_concurrency_limit())
+
+
+_RUNTIME_WORKFLOW_CACHE_MAX_SIZE = 4
+_RUNTIME_WORKFLOW_CACHE: "OrderedDict[tuple[Any, ...], _RuntimeWorkflowEntry]" = OrderedDict()
+_RUNTIME_WORKFLOW_CACHE_LOCK = threading.RLock()
+_RUNTIME_WORKFLOW_INIT_LOCKS: Dict[tuple[Any, ...], threading.Lock] = {}
 FALLBACK_SUPPORTED_TASK_IDS = {
     "det_body",
     "cls_imagenet",
@@ -450,6 +530,11 @@ def normalize_task_type(value: Any) -> str:
 
 
 def _get_runtime_supported_tasks() -> List[str]:
+    with _RUNTIME_SUPPORTED_TASKS_LOCK:
+        return _get_runtime_supported_tasks_locked()
+
+
+def _get_runtime_supported_tasks_locked() -> List[str]:
     now = time.monotonic()
     cached = _RUNTIME_SUPPORTED_TASKS_CACHE.get("value")
     expires_at = float(_RUNTIME_SUPPORTED_TASKS_CACHE.get("expires_at") or 0)
@@ -553,6 +638,110 @@ def _resolve_smoke_checkpoint(runtime_task_id: str) -> str:
 def _workflow_init_kwargs(runtime_task_id: str) -> Dict[str, str]:
     checkpoint_path = _resolve_smoke_checkpoint(runtime_task_id)
     return {"checkpoint": checkpoint_path} if checkpoint_path else {}
+
+
+def _clear_runtime_workflow_cache() -> None:
+    with _RUNTIME_WORKFLOW_CACHE_LOCK:
+        _RUNTIME_WORKFLOW_CACHE.clear()
+        _RUNTIME_WORKFLOW_INIT_LOCKS.clear()
+
+
+def _runtime_workflow_cache_key(
+    workflow_factory: Any,
+    runtime_task_id: str,
+    workflow_kwargs: Dict[str, Any],
+) -> tuple[Any, ...]:
+    # Include the factory identity so tests and hot-swapped runtimes cannot reuse a stale model.
+    kwargs_key = tuple(sorted((str(key), str(value)) for key, value in workflow_kwargs.items()))
+    return workflow_factory, str(runtime_task_id), kwargs_key
+
+
+def _get_runtime_workflow(
+    workflow_factory: Any,
+    runtime_task_id: str,
+    workflow_kwargs: Dict[str, Any],
+) -> _RuntimeWorkflowEntry:
+    cache_key = _runtime_workflow_cache_key(workflow_factory, runtime_task_id, workflow_kwargs)
+    with _RUNTIME_WORKFLOW_CACHE_LOCK:
+        entry = _RUNTIME_WORKFLOW_CACHE.get(cache_key)
+        if entry is not None:
+            _RUNTIME_WORKFLOW_CACHE.move_to_end(cache_key)
+            entry.active_requests += 1
+            return entry
+        init_lock = _RUNTIME_WORKFLOW_INIT_LOCKS.setdefault(cache_key, threading.Lock())
+
+    # Model construction is serialized per cache key, not across unrelated tasks.
+    try:
+        with init_lock:
+            with _RUNTIME_WORKFLOW_CACHE_LOCK:
+                entry = _RUNTIME_WORKFLOW_CACHE.get(cache_key)
+                if entry is not None:
+                    _RUNTIME_WORKFLOW_CACHE.move_to_end(cache_key)
+                    entry.active_requests += 1
+                    return entry
+            workflow = workflow_factory(task=runtime_task_id, **workflow_kwargs)
+            new_entry = _RuntimeWorkflowEntry(workflow, inspect.signature(workflow.inference))
+            with _RUNTIME_WORKFLOW_CACHE_LOCK:
+                entry = _RUNTIME_WORKFLOW_CACHE.get(cache_key)
+                if entry is None:
+                    entry = new_entry
+                    _RUNTIME_WORKFLOW_CACHE[cache_key] = entry
+                else:
+                    _RUNTIME_WORKFLOW_CACHE.move_to_end(cache_key)
+                entry.active_requests += 1
+                _trim_runtime_workflow_cache()
+                return entry
+    except Exception:
+        with _RUNTIME_WORKFLOW_CACHE_LOCK:
+            if _RUNTIME_WORKFLOW_INIT_LOCKS.get(cache_key) is init_lock:
+                _RUNTIME_WORKFLOW_INIT_LOCKS.pop(cache_key, None)
+        raise
+
+
+def _trim_runtime_workflow_cache() -> None:
+    while len(_RUNTIME_WORKFLOW_CACHE) > _RUNTIME_WORKFLOW_CACHE_MAX_SIZE:
+        evicted_key = None
+        for key, entry in _RUNTIME_WORKFLOW_CACHE.items():
+            if entry.active_requests == 0:
+                evicted_key = key
+                break
+        if evicted_key is None:
+            return
+        _RUNTIME_WORKFLOW_CACHE.pop(evicted_key, None)
+        _RUNTIME_WORKFLOW_INIT_LOCKS.pop(evicted_key, None)
+
+
+def _release_runtime_workflow(workflow_entry: _RuntimeWorkflowEntry) -> None:
+    with _RUNTIME_WORKFLOW_CACHE_LOCK:
+        workflow_entry.active_requests = max(0, workflow_entry.active_requests - 1)
+        _trim_runtime_workflow_cache()
+
+
+def _run_runtime_inference(
+    workflow_entry: _RuntimeWorkflowEntry,
+    prepared_input: Any,
+    runtime_params: Dict[str, Any],
+    *,
+    realtime: bool,
+) -> Any:
+    acquired = workflow_entry.inference_lock.acquire(blocking=not realtime)
+    if not acquired:
+        _release_runtime_workflow(workflow_entry)
+        raise _RuntimeWorkflowBusyError("上一个实时画面仍在检测")
+    try:
+        call_params = dict(runtime_params)
+        img_type = call_params.pop("img_type", None)
+        inference_signature = workflow_entry.inference_signature
+        workflow = workflow_entry.workflow
+        if img_type not in (None, ""):
+            if "img_type" in inference_signature.parameters:
+                return workflow.inference(data=prepared_input, img_type=img_type, **call_params)
+            if "get_img" in inference_signature.parameters:
+                return workflow.inference(data=prepared_input, get_img=img_type, **call_params)
+        return workflow.inference(data=prepared_input, **call_params)
+    finally:
+        workflow_entry.inference_lock.release()
+        _release_runtime_workflow(workflow_entry)
 
 
 def _is_runtime_task_available(task_id: str, supported_tasks: List[str] | None = None) -> bool:
@@ -768,7 +957,12 @@ def _build_input_preview_image(prepared_input: Any) -> str:
     return _best_effort_image_to_data_url(image)
 
 
-def _build_segmentation_preview_image(prepared_input: Any, output: Any) -> str:
+def _build_segmentation_preview_image(
+    prepared_input: Any,
+    output: Any,
+    *,
+    transparent_only: bool = False,
+) -> str:
     image = _load_image_for_preview(prepared_input)
     if image is None:
         return ""
@@ -776,6 +970,8 @@ def _build_segmentation_preview_image(prepared_input: Any, output: Any) -> str:
         import numpy as np  # type: ignore
         from PIL import Image, ImageDraw  # type: ignore
 
+        if isinstance(output, dict):
+            output = next((output.get(key) for key in ("掩码", "masks", "mask") if output.get(key) is not None), [])
         payload = np.array(output)
         if payload.ndim == 3:
             mask = payload[0]
@@ -783,6 +979,8 @@ def _build_segmentation_preview_image(prepared_input: Any, output: Any) -> str:
             mask = payload
         mask = np.array(mask).squeeze()
         if mask.size == 0:
+            if transparent_only:
+                return _best_effort_image_to_data_url(Image.new("RGBA", image.size, (0, 0, 0, 0)))
             return _best_effort_image_to_data_url(image)
         mask = (mask > 0.5).astype("uint8") * 255
         width, height = image.size
@@ -794,6 +992,8 @@ def _build_segmentation_preview_image(prepared_input: Any, output: Any) -> str:
         step = max(1, len(xs) // 4000 + 1)
         for x, y in zip(xs[::step], ys[::step]):
             draw.point((int(x), int(y)), fill=(64, 196, 255, 96))
+        if transparent_only:
+            return _best_effort_image_to_data_url(overlay)
         composed = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
         return _best_effort_image_to_data_url(composed)
     except Exception:
@@ -804,18 +1004,86 @@ def _build_depth_preview_image(output: Any) -> str:
     try:
         import numpy as np  # type: ignore
 
+        if isinstance(output, dict):
+            output = output.get("深度图") if output.get("深度图") is not None else output.get("depth")
         payload = np.array(output).astype("float32").squeeze()
         if payload.size == 0:
             return ""
         min_v = float(np.min(payload))
         max_v = float(np.max(payload))
         if max_v - min_v < 1e-6:
-            normalized = np.zeros_like(payload, dtype="uint8")
+            normalized = np.zeros_like(payload, dtype="float32")
         else:
-            normalized = ((payload - min_v) / (max_v - min_v) * 255.0).clip(0, 255).astype("uint8")
-        return _best_effort_image_to_data_url(normalized)
+            normalized = ((payload - min_v) / (max_v - min_v)).clip(0, 1).astype("float32")
+        red = np.where(normalized < 0.5, 0, (normalized - 0.5) * 2 * 255)
+        green = np.where(normalized < 0.5, normalized * 2 * 255, (1 - normalized) * 2 * 255)
+        blue = np.where(normalized < 0.5, (1 - normalized * 2) * 255, 0)
+        heatmap = np.stack((red, green, blue), axis=-1).clip(0, 255).astype("uint8")
+        return _best_effort_image_to_data_url(heatmap)
     except Exception:
         return ""
+
+
+def _segmentation_mask_count(output: Any) -> int:
+    try:
+        import numpy as np  # type: ignore
+
+        if isinstance(output, dict):
+            for count_key in ("掩码数", "mask_count", "maskCount", "count"):
+                if output.get(count_key) is not None:
+                    return max(0, int(output[count_key]))
+            output = next((output.get(key) for key in ("掩码", "masks", "mask") if output.get(key) is not None), [])
+        payload = np.array(output)
+        if payload.size == 0:
+            return 0
+        if payload.ndim <= 2:
+            return 1 if bool(np.any(payload)) else 0
+        return int(payload.shape[0])
+    except Exception:
+        return 0
+
+
+def _compact_depth_output(output: Any) -> Dict[str, Any]:
+    try:
+        import numpy as np  # type: ignore
+
+        if isinstance(output, dict):
+            raw_depth = output.get("深度图") if output.get("深度图") is not None else output.get("depth")
+        else:
+            raw_depth = output
+        depth = np.asarray(raw_depth, dtype="float32").squeeze()
+        if depth.ndim != 2 or depth.size == 0:
+            return {"深度图": []}
+        height, width = depth.shape[:2]
+        scale = min(160 / width, 120 / height, 1.0)
+        target_width = max(1, int(round(width * scale)))
+        target_height = max(1, int(round(height * scale)))
+        if target_width != width or target_height != height:
+            y_indices = np.linspace(0, height - 1, target_height).astype("int32")
+            x_indices = np.linspace(0, width - 1, target_width).astype("int32")
+            depth = depth[np.ix_(y_indices, x_indices)]
+        depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+        return {"深度图": np.round(depth, 3).tolist()}
+    except Exception:
+        return {"深度图": []}
+
+
+def _compact_realtime_output(task_id: str, output: Any) -> Any:
+    result_kind = TASK_REGISTRY[task_id].get("result_kind")
+    if result_kind == "depth":
+        return _compact_depth_output(output)
+    if result_kind == "segmentation":
+        return {"掩码数": _segmentation_mask_count(output)}
+    return output
+
+
+def _realtime_overlay_image(task_id: str, prepared_input: Any, output: Any) -> str:
+    result_kind = TASK_REGISTRY[task_id].get("result_kind")
+    if result_kind == "segmentation":
+        return _build_segmentation_preview_image(prepared_input, output, transparent_only=True)
+    if result_kind == "depth":
+        return _build_depth_preview_image(output)
+    return ""
 
 
 def _ensure_preview_image_for_result(task_id: str, prepared_input: Any, output: Any, image_data: str) -> str:
@@ -925,6 +1193,9 @@ def _normalize_params(task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
     for key, raw_value in (params or {}).items():
         if key not in allowed:
             continue
+        if key == "img_type" and raw_value == "":
+            normalized[key] = ""
+            continue
         coerced = _coerce_param_value(allowed[key], raw_value)
         if coerced in (None, ""):
             continue
@@ -951,7 +1222,7 @@ def _build_xeduhub_runtime_params(task_id: str, params: Dict[str, Any]) -> Dict[
     if task_id == "gen_style" and params.get("style") not in (None, ""):
         runtime_params["style"] = params["style"]
     img_type = params.get("img_type")
-    if img_type in (None, ""):
+    if "img_type" not in params:
         for spec in task.get("params") or []:
             if spec.get("key") == "img_type":
                 img_type = spec.get("default") or ""
@@ -1158,15 +1429,34 @@ def _is_bodydetect_model_bootstrap_error(error_text: str) -> bool:
     )
 
 
+def _classification_key_fields(output: Any) -> Dict[str, Any]:
+    """Extract a stable teaching result from XEdu's classification formats."""
+    payload = _jsonable(output)
+    candidates = payload
+    if isinstance(payload, list) and len(payload) == 1 and isinstance(payload[0], list):
+        candidates = payload[0]
+    if isinstance(candidates, dict):
+        label = candidates.get("预测类别") or candidates.get("label") or candidates.get("class")
+        score = candidates.get("分数")
+        if score is None:
+            score = candidates.get("score")
+        return {"预测类别": label, "分数": score}
+    if isinstance(candidates, list) and candidates and all(isinstance(value, (int, float)) for value in candidates):
+        top_index = max(range(len(candidates)), key=lambda index: candidates[index])
+        return {
+            "预测类别": f"ImageNet 类别 {top_index}",
+            "分数": float(candidates[top_index]),
+        }
+    if isinstance(candidates, list) and candidates and isinstance(candidates[0], dict):
+        return _classification_key_fields(candidates[0])
+    return {"预测类别": None, "分数": None}
+
+
 def _extract_key_fields(task_id: str, output: Any) -> Dict[str, Any]:
     result_kind = TASK_REGISTRY[task_id].get("result_kind")
     payload = _jsonable(output)
     if result_kind == "classification":
-        if isinstance(payload, dict):
-            return {"预测类别": payload.get("预测类别") or payload.get("label") or payload.get("class"), "分数": payload.get("分数") or payload.get("score")}
-        if isinstance(payload, list) and payload:
-            top = payload[0] if isinstance(payload[0], dict) else {}
-            return {"预测类别": top.get("预测类别") or top.get("label") or top.get("class"), "分数": top.get("分数") or top.get("score")}
+        return _classification_key_fields(payload)
     if result_kind == "detection":
         if isinstance(payload, dict) and isinstance(payload.get("检测框"), list):
             return {"检测框数": len(payload.get("检测框") or [])}
@@ -1185,6 +1475,8 @@ def _extract_key_fields(task_id: str, output: Any) -> Dict[str, Any]:
         if isinstance(payload, list):
             return {"文本块数": len(payload), "文本预览": str(payload[0][0])[:60] if payload and isinstance(payload[0], (list, tuple)) else ""}
     if result_kind == "segmentation":
+        if isinstance(payload, dict) and payload.get("掩码数") is not None:
+            return {"掩码数": int(payload.get("掩码数") or 0)}
         if isinstance(payload, list):
             return {"掩码数": len(payload)}
         if isinstance(payload, dict):
@@ -1254,10 +1546,19 @@ def _build_runtime_success(
     image_data: str = "",
     message: str | None = None,
     extra_result: Dict[str, Any] | None = None,
+    include_input: bool = True,
+    preview_image_override: str | None = None,
 ) -> Dict[str, Any]:
     task = TASK_REGISTRY[task_id]
     normalized_result = _jsonable(output)
-    preview_image = _ensure_preview_image_for_result(task_id, prepared_input, output, image_data)
+    preview_image = preview_image_override if preview_image_override is not None else (
+        "" if params.get("img_type") == "" else _ensure_preview_image_for_result(
+            task_id,
+            prepared_input,
+            output,
+            image_data,
+        )
+    )
     result_payload = {
         "task_id": task_id,
         "runtime_task_id": runtime_task_id,
@@ -1265,7 +1566,11 @@ def _build_runtime_success(
         "result_truthfulness": "verified",
         "task_label": task["label"],
         "task_family": task["family"],
-        "input": _jsonable(prepared_input),
+        "input": _jsonable(prepared_input) if include_input else {
+            "source": "camera",
+            "width": int(getattr(prepared_input, "shape", [0, 0])[1]) if getattr(prepared_input, "shape", None) is not None else 0,
+            "height": int(getattr(prepared_input, "shape", [0, 0])[0]) if getattr(prepared_input, "shape", None) is not None else 0,
+        },
         "params": _jsonable(params),
         "output": normalized_result,
     }
@@ -1326,6 +1631,171 @@ def _build_runtime_error(
             "recommended_action": (hints or [""])[0],
         },
     }
+
+
+def execute_xeduhub_realtime(frame_bytes: bytes, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Run one camera frame without materializing it as a temporary file."""
+    started_at = time.perf_counter()
+    task_id = _canonical_task_id(metadata.get("task_id"))
+    if task_id not in REALTIME_TASK_IDS:
+        return _build_runtime_error(
+            code="realtime_task_unavailable",
+            message="当前任务不支持实时摄像头感知",
+            headline="实时任务不可用",
+            task_id=task_id,
+            hints=["请使用当前 Scratch 摄像头感知扩展支持的任务。"],
+        )
+    if not isinstance(frame_bytes, (bytes, bytearray, memoryview)) or not frame_bytes:
+        return _build_runtime_error(
+            code="invalid_image_data",
+            message="摄像头画面为空",
+            headline="摄像头画面无效",
+            task_id=task_id,
+            hints=["请重新开启摄像头后再试。"],
+        )
+    frame_bytes = bytes(frame_bytes)
+    if len(frame_bytes) > REALTIME_MAX_FRAME_BYTES:
+        return _build_runtime_error(
+            code="invalid_image_data",
+            message="摄像头画面过大",
+            headline="摄像头画面过大",
+            task_id=task_id,
+            hints=["请降低摄像头画面尺寸后重试。"],
+        )
+    try:
+        prepared_input = _decode_realtime_frame(frame_bytes)
+        if prepared_input is None or prepared_input.ndim != 3:
+            raise ValueError("摄像头画面无法解码")
+        height, width = prepared_input.shape[:2]
+        if max(width, height) > REALTIME_MAX_FRAME_DIMENSION:
+            raise ValueError("摄像头画面尺寸超过限制")
+    except ValueError as exc:
+        return _build_runtime_error(
+            code="invalid_image_data",
+            message=str(exc),
+            headline="摄像头画面无效",
+            task_id=task_id,
+            hints=["请重新开启摄像头后再试。"],
+        )
+    except Exception as exc:
+        return _build_runtime_error(
+            code="invalid_image_data",
+            message=f"摄像头画面无法解码: {exc}",
+            headline="摄像头画面无效",
+            task_id=task_id,
+            hints=["请重新开启摄像头后再试。"],
+        )
+    decode_ms = round((time.perf_counter() - started_at) * 1000, 2)
+
+    raw_params = metadata.get("params")
+    if isinstance(raw_params, str):
+        try:
+            raw_params = json.loads(raw_params or "{}")
+        except json.JSONDecodeError:
+            raw_params = {}
+    params = dict(raw_params) if isinstance(raw_params, dict) else {}
+    params["img_type"] = ""
+    params = _normalize_params(task_id, params)
+    runtime_params = _build_xeduhub_runtime_params(task_id, params)
+    session_id = str(metadata.get("session_id") or "")[:128]
+    try:
+        frame_seq = int(metadata.get("frame_seq") or 0)
+    except (TypeError, ValueError):
+        frame_seq = 0
+    try:
+        captured_at_ms = int(metadata.get("captured_at_ms") or 0)
+    except (TypeError, ValueError):
+        captured_at_ms = 0
+
+    try:
+        _force_noninteractive_matplotlib_backend()
+        _patch_rapidocr_visres_compat()
+        _patch_openxlab_repo_parser()
+        from XEdu.hub import Workflow as wf  # type: ignore
+
+        supported_runtime_tasks = _get_runtime_supported_tasks()
+        if not _is_runtime_task_available(task_id, supported_runtime_tasks):
+            return _build_runtime_error(
+                code="runtime_task_unavailable",
+                message=f"当前本地 XEdu 运行环境暂不支持：{TASK_REGISTRY[task_id]['label']}",
+                headline="实时运行环境不支持该任务",
+                task_id=task_id,
+                hints=["请安装对应 XEdu 模型后再重试。"],
+            )
+        if not _REALTIME_INFERENCE_SLOTS.acquire(blocking=False):
+            raise _RuntimeWorkflowBusyError("实时推理并发槽已满")
+        try:
+            workflow_kwargs = _workflow_init_kwargs(task_id)
+            workflow_entry = _get_runtime_workflow(wf, task_id, workflow_kwargs)
+            inference_started = time.perf_counter()
+            result = _run_runtime_inference(
+                workflow_entry,
+                prepared_input,
+                runtime_params,
+                realtime=True,
+            )
+        finally:
+            _REALTIME_INFERENCE_SLOTS.release()
+        inference_ms = round((time.perf_counter() - inference_started) * 1000, 2)
+        normalized_result = result[0] if isinstance(result, (list, tuple)) and len(result) == 2 else result
+        compact_output = _compact_realtime_output(task_id, normalized_result)
+        overlay_image = _realtime_overlay_image(task_id, prepared_input, normalized_result)
+        payload = _build_runtime_success(
+            code="",
+            task_id=task_id,
+            runtime_task_id=task_id,
+            prepared_input=prepared_input,
+            params=params,
+            output=compact_output,
+            image_data=overlay_image,
+            include_input=False,
+            preview_image_override=overlay_image,
+            extra_result={
+                "session_id": session_id,
+                "frame_seq": frame_seq,
+                "captured_at_ms": captured_at_ms,
+                "frame_size": {"width": int(width), "height": int(height)},
+            },
+        )
+        payload.update({
+            "session_id": session_id,
+            "frame_seq": frame_seq,
+            "captured_at_ms": captured_at_ms,
+            "frame_size": {"width": int(width), "height": int(height)},
+            "decode_ms": decode_ms,
+            "inference_ms": inference_ms,
+            "total_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "timings_ms": {
+                "decode": decode_ms,
+                "inference": inference_ms,
+                "total": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        })
+        return payload
+    except _RuntimeWorkflowBusyError as exc:
+        return _build_runtime_error(
+            code="runtime_busy",
+            message=str(exc),
+            headline="实时检测繁忙",
+            task_id=task_id,
+            hints=["已跳过过期画面，请稍候获取下一帧。"],
+        ) | {"session_id": session_id, "frame_seq": frame_seq, "captured_at_ms": captured_at_ms}
+    except (ModuleNotFoundError, ImportError) as exc:
+        return _build_runtime_error(
+            code="missing_dependency",
+            message=f"XEduHub 运行依赖缺失: {exc}",
+            headline="运行时缺少 XEduHub 依赖",
+            task_id=task_id,
+            hints=["请检查本地 Python 环境中的 XEduHub 及其推理依赖。"],
+        )
+    except Exception as exc:
+        return _build_runtime_error(
+            code="realtime_inference_failed",
+            message=str(exc),
+            headline="实时感知失败",
+            task_id=task_id,
+            hints=["请检查模型文件和本地 XEduHub 运行环境。"],
+        )
 
 
 def execute_xeduhub_runtime(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -1501,27 +1971,22 @@ def _execute_xeduhub_runtime(payload: Dict[str, Any], temporary_paths: List[Path
 
     try:
         workflow_kwargs = _workflow_init_kwargs(runtime_task_id)
-        workflow = wf(task=runtime_task_id, **workflow_kwargs)
-        inference_signature = inspect.signature(workflow.inference)
-        call_params = dict(runtime_params)
-        img_type = call_params.pop("img_type", None)
-        if img_type not in (None, ""):
-            if "img_type" in inference_signature.parameters:
-                result = workflow.inference(data=prepared_input, img_type=img_type, **call_params)
-            elif "get_img" in inference_signature.parameters:
-                result = workflow.inference(data=prepared_input, get_img=img_type, **call_params)
-            else:
-                result = workflow.inference(data=prepared_input, **call_params)
-        else:
-            result = workflow.inference(data=prepared_input, **call_params)
+        workflow_entry = _get_runtime_workflow(wf, runtime_task_id, workflow_kwargs)
+        result = _run_runtime_inference(
+            workflow_entry,
+            prepared_input,
+            runtime_params,
+            realtime=params.get("img_type") == "",
+        )
         image_data = ""
         normalized_result = result
         if isinstance(result, (list, tuple)) and len(result) == 2:
             normalized_result = result[0]
-            image_data = _best_effort_image_to_data_url(result[1])
+            if params.get("img_type") != "":
+                image_data = _best_effort_image_to_data_url(result[1])
         elif isinstance(result, dict):
             for key in ("image", "result_image", "visualization"):
-                if key in result:
+                if key in result and params.get("img_type") != "":
                     image_data = _best_effort_image_to_data_url(result[key])
                     break
         return _build_runtime_success(
@@ -1535,6 +2000,15 @@ def _execute_xeduhub_runtime(payload: Dict[str, Any], temporary_paths: List[Path
             extra_result={"checkpoint": workflow_kwargs.get("checkpoint", "")},
         )
     except Exception as exc:
+        if isinstance(exc, _RuntimeWorkflowBusyError):
+            return _build_runtime_error(
+                code="runtime_busy",
+                message=str(exc),
+                headline="实时检测繁忙",
+                task_id=task_id,
+                hints=["已跳过过期画面，请稍候获取下一帧。"],
+                artifacts={"generated_python": code},
+            )
         if isinstance(exc, (ModuleNotFoundError, ImportError)):
             return _build_runtime_error(
                 code="missing_dependency",

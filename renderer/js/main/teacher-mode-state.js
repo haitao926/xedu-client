@@ -42,21 +42,69 @@ export function clearTeacherModeSession(storage = globalThis.sessionStorage) {
 
 export async function rememberTeacherMode(value, {
     storage = globalThis.sessionStorage,
+    credentialApi = globalThis.electronAPI,
 } = {}) {
     const state = writeTeacherModeState(value, storage);
-    return { ...state, persisted: false, error: undefined };
+    if (!state.unlocked || typeof credentialApi?.saveTeacherCredential !== 'function') {
+        return { ...state, persisted: false, error: state.unlocked ? 'credential-api-unavailable' : undefined };
+    }
+    let saved;
+    try {
+        saved = await credentialApi.saveTeacherCredential(state.code);
+    } catch (_) {
+        saved = { success: false, error: 'credential-save-failed' };
+    }
+    if (!saved?.success) {
+        clearTeacherModeSession(storage);
+        return { unlocked: false, code: '', persisted: false, error: saved?.error || 'credential-save-failed' };
+    }
+    return { ...state, persisted: true, error: undefined };
 }
 
 export async function forgetTeacherMode({
     storage = globalThis.sessionStorage,
+    credentialApi = globalThis.electronAPI,
 } = {}) {
-    return { ...clearTeacherModeSession(storage), cleared: true, error: undefined };
+    const cleared = clearTeacherModeSession(storage);
+    if (typeof credentialApi?.clearTeacherCredential !== 'function') {
+        return { ...cleared, cleared: false, error: 'credential-api-unavailable' };
+    }
+    let result;
+    try {
+        result = await credentialApi.clearTeacherCredential();
+    } catch (_) {
+        result = { success: false, error: 'credential-clear-failed' };
+    }
+    return {
+        ...cleared,
+        cleared: Boolean(result?.success),
+        error: result?.success ? undefined : (result?.error || 'credential-clear-failed'),
+    };
 }
 
 export async function restoreTeacherModeState({
     storage = globalThis.sessionStorage,
+    credentialApi = globalThis.electronAPI,
+    verifyCode,
 } = {}) {
-    return readTeacherModeState(storage);
+    const current = readTeacherModeState(storage);
+    if (current.unlocked) return current;
+    if (typeof credentialApi?.loadTeacherCredential !== 'function') return current;
+
+    let loaded;
+    try {
+        loaded = await credentialApi.loadTeacherCredential();
+    } catch (_) {
+        loaded = { success: false, code: '' };
+    }
+    const code = String(loaded?.code || '').trim();
+    if (!loaded?.success || !code || typeof verifyCode !== 'function') {
+        return current;
+    }
+    if (!await verifyCode(code)) {
+        return current;
+    }
+    return writeTeacherModeState(code, storage);
 }
 
 export function isTeacherCodeConfigured(response) {

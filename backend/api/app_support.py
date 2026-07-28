@@ -15,7 +15,7 @@ from models.config import AppConfig, SystemInfo
 from utils.python_runtime import inspect_python_environment, inspect_python_executable
 from services.ai_service import AIService
 from services.config_service import ConfigService
-from services.xeduhub_support import execute_xeduhub_runtime
+from services.xeduhub_support import execute_xeduhub_realtime, execute_xeduhub_runtime
 from .config_utils import build_ai_service, merge_jupyter_payload, normalize_config_payload
 from .resource_runtime import (
     build_single_course_source_entry,
@@ -262,4 +262,5 @@ def build_route_services(
         "get_frontend_build_dir": get_frontend_build_dir,
         "get_scratch_editor_build_dir": get_scratch_editor_build_dir,
         "execute_xeduhub_runtime": execute_xeduhub_runtime,
+        "execute_xeduhub_realtime": execute_xeduhub_realtime,
     }

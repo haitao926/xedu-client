@@ -3,8 +3,9 @@ import { normalizeAiApiMode, saveAIConfig } from '../ai.js';
 import { log, showToast, showModal, hideModal } from '../ui.js';
 import {
     buildTeacherCodeUpdate,
+    forgetTeacherMode,
+    rememberTeacherMode,
     isTeacherCodeConfigured,
-    writeTeacherModeState,
 } from './teacher-mode-state.js';
 
 let savedAllowNetworkAccess = null;
@@ -370,8 +371,20 @@ export async function confirmPythonEnvironment() {
         }
 
         const restartBackend = window.electronAPI?.restartBackend;
+        const inspectPythonEnvironment = window.electronAPI?.inspectPythonEnvironment;
+        const savePythonExecutable = window.electronAPI?.savePythonExecutable;
+        const hasStandalonePythonFlow =
+            typeof inspectPythonEnvironment === 'function'
+            && typeof savePythonExecutable === 'function';
         let restartedBeforeSave = false;
-        if (typeof restartBackend === 'function') {
+        if (hasStandalonePythonFlow) {
+            log('正在独立检测 Python 环境（不要求预先安装 Flask）…', 'info');
+            const inspected = await inspectPythonEnvironment(confirmedPath);
+            if (!inspected?.success) {
+                throw new Error(inspected?.message || inspected?.error || 'Python 环境探针失败');
+            }
+            confirmedPath = String(inspected.path || confirmedPath).trim();
+        } else if (typeof restartBackend === 'function') {
             let startupState = null;
             try {
                 const stateResult = await window.electronAPI?.getBackendStartupState?.();
@@ -389,15 +402,23 @@ export async function confirmPythonEnvironment() {
             }
         }
 
-        const detected = await apiClient.get(`${API_ENDPOINTS.PYTHON_DETECT}?python_executable=${encodeURIComponent(confirmedPath)}`);
-        if (!detected?.success) {
-            throw new Error(detected?.message || 'Python 环境检测失败');
+        let detected = null;
+        if (!hasStandalonePythonFlow) {
+            detected = await apiClient.get(`${API_ENDPOINTS.PYTHON_DETECT}?python_executable=${encodeURIComponent(confirmedPath)}`);
+            if (!detected?.success) {
+                throw new Error(detected?.message || 'Python 环境检测失败');
+            }
         }
 
-        confirmedPath = String(detected.info?.python_executable || confirmedPath).trim();
-        const saved = await apiClient.saveConfig({
-            jupyter: { python_executable: confirmedPath },
-        });
+        if (!hasStandalonePythonFlow) {
+            confirmedPath = String(detected.info?.python_executable || confirmedPath).trim();
+        }
+
+        const saved = hasStandalonePythonFlow
+            ? await savePythonExecutable(confirmedPath)
+            : await apiClient.saveConfig({
+                jupyter: { python_executable: confirmedPath },
+            });
         if (!saved?.success) {
             throw new Error(saved?.message || 'Python 环境保存失败');
         }
@@ -409,13 +430,32 @@ export async function confirmPythonEnvironment() {
         log(`已确认使用 Python 环境: ${confirmedPath}`, 'success');
         showToast('Python 环境已确认', 'success');
 
-        if (typeof restartBackend === 'function' && !restartedBeforeSave) {
+        if (typeof restartBackend === 'function' && !restartedBeforeSave && !hasStandalonePythonFlow) {
             log('正在重启后端服务以应用 Python 环境…', 'info');
             const restartResult = await restartBackend();
             if (!restartResult?.success) {
                 throw new Error(restartResult?.error || '应用 Python 环境失败');
             }
             log('后端服务已就绪', 'success');
+        } else if (typeof restartBackend === 'function' && hasStandalonePythonFlow) {
+            let startupState = null;
+            try {
+                const stateResult = await window.electronAPI?.getBackendStartupState?.();
+                startupState = stateResult?.state || null;
+            } catch (_) {
+                startupState = null;
+            }
+            if (startupState?.status === 'ready') {
+                log('正在重启后端服务以应用 Python 环境…', 'info');
+                const restartResult = await restartBackend();
+                if (!restartResult?.success) {
+                    log(`Python 已保存，但后端重启失败: ${restartResult?.error || '未知错误'}`, 'warning');
+                } else {
+                    log('后端服务已就绪', 'success');
+                }
+            } else {
+                log('Python 环境已保存；后端尚未就绪，完成修复后可重试后端启动。', 'warning');
+            }
         }
         return confirmedPath;
     } catch (error) {
@@ -443,21 +483,43 @@ export async function repairXeduEnvironment() {
     isRepairingPython = true;
     renderPythonSelectionState(pythonPath, { confirmed: pythonSelectionConfirmed });
     try {
-        const result = await apiClient.call(API_ENDPOINTS.PYTHON_REPAIR_XEDU, {
-            method: 'POST',
-            body: JSON.stringify({ python_executable: pythonPath }),
-            timeoutMs: 330000,
-        });
+        let result;
+        const directRepair = window.electronAPI?.repairPythonEnvironment;
+        if (typeof directRepair === 'function') {
+            const setPythonExecutable = window.electronAPI?.setPythonExecutable;
+            const selected = typeof setPythonExecutable === 'function'
+                ? await setPythonExecutable(pythonPath)
+                : { success: true, path: pythonPath };
+            if (!selected?.success) {
+                throw new Error(selected?.error || 'Python 环境校验失败');
+            }
+
+            const confirmedPath = String(selected.path || pythonPath).trim();
+            log('正在独立修复 XEdu 环境（不要求预先安装 Flask）…', 'info');
+            const bootstrap = await directRepair(confirmedPath);
+            if (!bootstrap?.success) {
+                throw new Error(bootstrap?.message || bootstrap?.error || 'XEdu 环境修复失败');
+            }
+            result = bootstrap;
+        } else {
+            result = await apiClient.call(API_ENDPOINTS.PYTHON_REPAIR_XEDU, {
+                method: 'POST',
+                body: JSON.stringify({ python_executable: pythonPath }),
+                timeoutMs: 330000,
+            });
+        }
         if (!result?.success) throw new Error(result?.message || '环境修复失败');
 
         const resultEl = document.getElementById('python-env-check-result');
         if (resultEl) {
             resultEl.hidden = false;
-            resultEl.dataset.state = 'success';
+            resultEl.dataset.state = result.backend_ready === false ? 'warning' : 'success';
             resultEl.textContent = result.message || '环境已修复';
         }
-        log(result.message || 'Python 环境修复完成', 'success');
-        showToast(result.message || '环境已修复', 'success');
+        const resultMessage = result.message || '环境已修复';
+        const resultLevel = result.backend_ready === false ? 'warning' : 'success';
+        log(resultMessage, resultLevel);
+        showToast(resultMessage, resultLevel);
         return result;
     } catch (error) {
         const message = getApiErrorMessage(error, '未知错误');
@@ -501,7 +563,8 @@ export async function saveSystemConfig() {
             await saveAIConfig();
         }
 
-        if (pythonPath) {
+        const hasStandalonePythonFlow = typeof window.electronAPI?.savePythonExecutable === 'function';
+        if (pythonPath && !hasStandalonePythonFlow) {
             const detected = await apiClient.get(`/api/detect_python?python_executable=${encodeURIComponent(pythonPath)}`);
             if (!detected?.success) {
                 throw new Error(detected?.message || 'Python 环境检测失败');
@@ -533,7 +596,10 @@ export async function saveSystemConfig() {
         }
         savedAllowNetworkAccess = allowNetworkAccessInput;
         if (classroomTeacherCodeInput) {
-            const teacherSession = writeTeacherModeState(classroomTeacherCodeInput);
+            const teacherSession = await rememberTeacherMode(classroomTeacherCodeInput);
+            if (!teacherSession.persisted && typeof window.electronAPI?.saveTeacherCredential === 'function') {
+                throw new Error('系统安全存储不可用，教师口令未能保存到本机');
+            }
             publishTeacherSessionUpdate(teacherSession);
             const classroomTeacherCode = document.getElementById('classroom-teacher-code');
             if (classroomTeacherCode) {
@@ -579,6 +645,17 @@ export async function resetSystemConfig() {
         console.error('恢复设置失败:', error);
         showToast('恢复失败: ' + error.message, 'error');
     }
+}
+
+export async function forgetStoredTeacherCredential() {
+    const result = await forgetTeacherMode();
+    if (!result.cleared) {
+        showToast('清除本机教师口令失败，请稍后重试', 'error');
+        return result;
+    }
+    window.dispatchEvent(new CustomEvent('xedu:teacher-credential-cleared'));
+    showToast('已清除本机教师口令，下次进入教师模式需要重新输入', 'success');
+    return result;
 }
 
 export async function ensureTeacherCodeInitialized(options = {}) {
@@ -656,7 +733,10 @@ export async function ensureTeacherCodeInitialized(options = {}) {
                 if (!isTeacherCodeConfigured(updatedConfig)) {
                     throw new Error('教师口令保存后未生效');
                 }
-                const teacherSession = writeTeacherModeState(code1);
+                const teacherSession = await rememberTeacherMode(code1);
+                if (!teacherSession.persisted && typeof window.electronAPI?.saveTeacherCredential === 'function') {
+                    throw new Error('系统安全存储不可用，教师口令未能保存到本机');
+                }
                 publishTeacherSessionUpdate(teacherSession);
                 const classroomTeacherCode = document.getElementById('classroom-teacher-code');
                 if (classroomTeacherCode) {

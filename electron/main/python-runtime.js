@@ -2,8 +2,21 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+const MIN_PYTHON_VERSION = [3, 8, 0];
+
 function joinForPlatform(platform, ...parts) {
     return platform === 'win32' ? path.win32.join(...parts) : path.posix.join(...parts);
+}
+
+function formatPythonVersion(version) {
+    return version.join('.');
+}
+
+function isSupportedPythonVersion(version) {
+    if (!Array.isArray(version) || version.length < 2) return false;
+    if (version[0] !== MIN_PYTHON_VERSION[0]) return version[0] > MIN_PYTHON_VERSION[0];
+    if (version[1] !== MIN_PYTHON_VERSION[1]) return version[1] > MIN_PYTHON_VERSION[1];
+    return (version[2] || 0) >= MIN_PYTHON_VERSION[2];
 }
 
 function getPythonExecutableCandidates({ platform = process.platform, baseDir }) {
@@ -98,11 +111,11 @@ function validatePythonExecutable(target, {
             return { success: false, message: '无法读取所选 Python 的版本。' };
         }
         const version = [Number(match[1]), Number(match[2]), Number(match[3] || 0)];
-        const versionText = version.join('.');
-        if (version[0] < 3 || (version[0] === 3 && version[1] < 10)) {
+        const versionText = formatPythonVersion(version);
+        if (!isSupportedPythonVersion(version)) {
             return {
                 success: false,
-                message: `Python 版本过低: ${versionText}，至少需要 Python 3.10.0。`,
+                message: `Python 版本过低: ${versionText}，至少需要 Python ${formatPythonVersion(MIN_PYTHON_VERSION)}。`,
                 version: versionText,
                 resolvedPath: resolvedTarget,
             };
@@ -337,7 +350,9 @@ function resolvePythonExecutable({
     bundledPythonBaseDir = '',
     fsImpl = fs,
 }) {
-    const candidates = [selectedPath, configuredPath, envPath].filter(Boolean);
+    const candidates = [selectedPath, envPath, configuredPath]
+        .map((candidate) => resolvePythonSelectionTarget(candidate, { platform, fsImpl }) || candidate)
+        .filter(Boolean);
     if (!packaged) {
         candidates.push(...getPythonExecutableCandidates({
             platform,

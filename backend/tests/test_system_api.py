@@ -108,6 +108,17 @@ class SystemApiTestCase(unittest.TestCase):
         self.assertFalse(response.get_json()["success"])
         self.assertIn("不存在", response.get_json()["message"])
 
+    def test_detect_python_rejects_python_3_7_runtime(self):
+        with patch(
+            "api.routes.jupyter.inspect_python_executable",
+            return_value={"success": False, "message": "Python 版本过低: 3.7.17，至少需要 Python 3.8.0"},
+        ):
+            response = self.client.get("/api/detect_python?python_executable=/tmp/python3.7")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()["success"])
+        self.assertIn("至少需要 Python 3.8.0", response.get_json()["message"])
+
     def test_save_config_persists_selected_python_interpreter(self):
         response = self.client.post(
             "/api/save_config",

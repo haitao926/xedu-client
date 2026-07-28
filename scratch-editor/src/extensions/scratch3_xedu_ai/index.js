@@ -185,27 +185,27 @@ class Scratch3XEduAI {
 
     enableFaceSensing () { return this._enableSensing(); }
     faceReady () { return this._sensingReady(); }
-    faceDetected () { return this._detections('*').length > 0 || this._points().length > 0; }
-    faceCount () { return this._detections('*').length || (this._points().length ? 1 : 0); }
-    facePosition (args) { return this._boxPosition(this._detectionBox(this._detections('*')[this._oneBasedIndex(args.INDEX)]), args.POSITION); }
+    faceDetected () { return this._sensingSubjectCount() > 0; }
+    faceCount () { return this._sensingSubjectCount(); }
+    facePosition (args) { return this._sensingPosition(args); }
     facePointAxis (args) { return this._pointAxis(args.INDEX, args.AXIS); }
     showFaceKeypoints () { return this._setKeypointOverlay(true); }
     hideFaceKeypoints () { this._setKeypointOverlay(false); }
 
     enableBodySensing () { return this._enableSensing(); }
     bodyReady () { return this._sensingReady(); }
-    bodyDetected () { return this._detections('*').length > 0 || this._points().length > 0; }
-    bodyCount () { return this._detections('*').length || (this._points().length ? 1 : 0); }
-    bodyPosition (args) { return this._boxPosition(this._detectionBox(this._detections('*')[this._oneBasedIndex(args.INDEX)]), args.POSITION); }
+    bodyDetected () { return this._sensingSubjectCount() > 0; }
+    bodyCount () { return this._sensingSubjectCount(); }
+    bodyPosition (args) { return this._sensingPosition(args); }
     bodyPointAxis (args) { return this._pointAxis(args.POINT, args.AXIS); }
     showBodyKeypoints () { return this._setKeypointOverlay(true); }
     hideBodyKeypoints () { this._setKeypointOverlay(false); }
 
     enableHandSensing () { return this._enableSensing(); }
     handReady () { return this._sensingReady(); }
-    handDetected () { return this._detections('*').length > 0 || this._points().length > 0; }
-    handCount () { return this._detections('*').length || (this._points().length ? 1 : 0); }
-    handPosition (args) { return this._boxPosition(this._detectionBox(this._detections('*')[this._oneBasedIndex(args.INDEX)]), args.POSITION); }
+    handDetected () { return this._sensingSubjectCount() > 0; }
+    handCount () { return this._sensingSubjectCount(); }
+    handPosition (args) { return this._sensingPosition(args); }
     handPointAxis (args) { return this._pointAxis(args.POINT, args.AXIS); }
     showHandKeypoints () { return this._setKeypointOverlay(true); }
     hideHandKeypoints () { this._setKeypointOverlay(false); }
@@ -224,13 +224,14 @@ class Scratch3XEduAI {
     enableDepthSensing () { return this._enableSensing(); }
     depthReady () { return this._sensingReady(); }
     depthValue (args) {
-        const depth = this._resultValue('深度图', 'depth', 'depthMap');
+        const depth = this._resultValue('深度图', 'depth', 'depthMap')
+            ?? (this.moduleKey === 'depthSensing' ? this._output() : undefined);
         if (!Array.isArray(depth) || !depth.length || !Array.isArray(depth[0])) return 0;
         const y = Math.max(0, Math.min(depth.length - 1, Math.round((180 - (Number(args.Y) || 0)) / 360 * (depth.length - 1))));
         const x = Math.max(0, Math.min(depth[0].length - 1, Math.round(((Number(args.X) || 0) + 240) / 480 * (depth[0].length - 1))));
         return Number(depth[y]?.[x]) || 0;
     }
-    enableCamera () { this._sensingSession()._video()?.enableVideo?.(); }
+    enableCamera () { return this._sensingSession().enableCamera(); }
     disableCamera () { this._sensingSession().disableCamera(); }
     showCameraPreview (args) { this._sensingSession().setPreviewVisible(args.DISPLAY !== 'hidden'); }
     setCameraTransparency (args) { this._sensingSession().setPreviewTransparency(args.TRANSPARENCY); }
@@ -273,11 +274,17 @@ class Scratch3XEduAI {
         case 'xeduhub_execute_workflow':
         case 'xeduhub_flow_execute': return this._runTask(this._workflowTask, {IMAGE: this._input});
         case 'xeduhub_show_result':
-        case 'xeduhub_show_result_card': return this._lastResult;
-        case 'xeduhub_show_result_image': return this._lastRawResult?.result_artifacts?.preview_image || this._lastValue || '';
+        case 'xeduhub_show_result_card':
+            this._showLastResultOnStage();
+            return this._lastResult;
+        case 'xeduhub_show_result_image':
+            this._showLastResultOnStage();
+            return this._lastRawResult?.result_artifacts?.preview_image || this._lastValue || '';
         case 'xeduhub_run_and_record':
             this._records.push({note: stringValue(args.NOTE), result: this._lastRawResult, at: new Date().toISOString()}); return this._lastResult;
-        case 'xeduhub_clear_result': this._lastResult = ''; this._lastRawResult = null; this._lastError = ''; return '';
+        case 'xeduhub_clear_result':
+            this._sensingSession().clearResult();
+            this._lastResult = ''; this._lastRawResult = null; this._lastError = ''; return '';
         case 'xeduhub_get_result_field': return this._readResultField(args.RESULT, args.FIELD);
         case 'xeduhub_result_first_box': return this._firstBox(args.RESULT || this._lastRawResult);
         case 'xeduhub_bbox_center_x': { const box = this._firstBox(args.BOX || this._lastRawResult); return box ? (Number(box[0]) + Number(box[2])) / 2 : 0; }
@@ -350,6 +357,7 @@ class Scratch3XEduAI {
             const payload = await response.json();
             this._lastRawResult = payload;
             this._lastResult = summarizeXEduPayload(payload);
+            this._showLastResultOnStage();
             if (this.moduleKey) this._resultsByExtension[this.moduleKey] = payload;
             this._lastError = payload.success === false ? this._lastResult : '';
             return this._lastResult;
@@ -364,6 +372,13 @@ class Scratch3XEduAI {
     _modulePayload () {
         if (SENSING_TASKS[this.moduleKey]) return this._sensingSession().result(SENSING_TASKS[this.moduleKey]);
         return this._resultsByExtension[this.moduleKey] || null;
+    }
+
+    _showLastResultOnStage () {
+        const payload = this._lastRawResult;
+        if (!payload || payload.success === false) return;
+        const taskId = payload.result?.task_id || payload.task_id || 'result';
+        this._sensingSession().showResult(taskId, payload);
     }
 
     _sensingSession () {
@@ -423,6 +438,26 @@ class Scratch3XEduAI {
         return Array.isArray(value) ? value : [];
     }
 
+    _isPoint (point) {
+        if (Array.isArray(point)) {
+            return Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1]));
+        }
+        if (!point || typeof point !== 'object') return false;
+        return Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
+    }
+
+    _pointSets () {
+        const rawPoints = this._resultList('关键点坐标', '关键点', 'keypoints', 'points');
+        if (!rawPoints.length) return [];
+        if (this._isPoint(rawPoints[0])) return [rawPoints];
+        return rawPoints.filter(group => Array.isArray(group) && group.some(point => this._isPoint(point)));
+    }
+
+    _sensingSubjectCount () {
+        const pointSets = this._pointSets();
+        return pointSets.length || this._detections('*').length;
+    }
+
     _oneBasedIndex (value) {
         return Math.max(0, Math.floor(Number(value) || 1) - 1);
     }
@@ -432,6 +467,14 @@ class Scratch3XEduAI {
         const output = this._output();
         const first = Array.isArray(output) ? output[0] : output;
         const source = first && typeof first === 'object' ? first : {};
+        const vector = Array.isArray(first) && first.length && first.every(value => Number.isFinite(Number(value))) ? first : null;
+        if (vector) {
+            const index = vector.reduce((best, value, candidate) => Number(value) > Number(vector[best]) ? candidate : best, 0);
+            return {
+                label: `ImageNet 类别 ${index}`,
+                confidence: Number(vector[index]) || 0,
+            };
+        }
         return {
             label: String(fields['预测类别'] ?? source['预测类别'] ?? source.label ?? source.class ?? ''),
             confidence: Number(fields['分数'] ?? source['分数'] ?? source.score ?? source.confidence ?? 0) || 0,
@@ -439,6 +482,7 @@ class Scratch3XEduAI {
     }
 
     _detections (target = '*') {
+        if (this._isPosePayload()) return [];
         const output = this._output();
         let values = Array.isArray(output) ? output : this._resultList('检测框', 'boxes', 'bboxes', 'predictions', 'detections');
         const requested = stringValue(target, '*').toLowerCase();
@@ -474,10 +518,33 @@ class Scratch3XEduAI {
         }
     }
 
+    _sensingPosition (args) {
+        const index = this._oneBasedIndex(args.INDEX);
+        const detections = this._detections('*');
+        const detection = detections[index];
+        if (detection) return this._boxPosition(this._detectionBox(detection), args.POSITION);
+        return this._boxPosition(this._pointSetBox(this._pointSets()[index]), args.POSITION);
+    }
+
+    _pointSetBox(points) {
+        if (!Array.isArray(points) || !points.length) return [];
+        const values = points.map(point => {
+            if (Array.isArray(point)) return [Number(point[0]), Number(point[1])];
+            return [Number(point?.x), Number(point?.y)];
+        }).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+        if (!values.length) return [];
+        const xs = values.map(([x]) => x);
+        const ys = values.map(([, y]) => y);
+        return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    }
+
     _points () {
-        const points = this._resultList('关键点坐标', '关键点', 'keypoints', 'points');
-        if (points.length === 1 && Array.isArray(points[0])) return points[0];
-        return points;
+        return this._pointSets()[0] || [];
+    }
+
+    _isPosePayload () {
+        const taskId = SENSING_TASKS[this.moduleKey];
+        return Boolean(taskId?.startsWith('pose_')) || this._modulePayload()?.result_type === 'pose';
     }
 
     _pointAxis (index, axis) {

@@ -6,14 +6,14 @@
 
 ## 1. Python 环境未配置或检测失败
 
-教师版发布包不包含 `python_env`。首次启动或换电脑后，请在“Python”设置中选择本机 Python 3.10+ 可执行文件：Windows 选择 `Scripts\\python.exe`，macOS 选择 `bin/python3` 或 `bin/python`。
+教师版发布包不包含 `python_env`。首次启动或换电脑后，请在“Python”设置中选择本机 Python 3.8+ 可执行文件：Windows 选择 `Scripts\\python.exe`，macOS 选择 `bin/python3` 或 `bin/python`。“修复兼容性”按钮通过独立修复程序直接处理 XEdu/Jupyter，不要求环境预先安装 Flask，也不依赖已启动的 Flask 后端；后端启动时会另行尝试补齐 Flask 等服务依赖。
 
 如果检测失败：
 
 1. 确认选择的是 Python 可执行文件，不是环境目录或 `pip` 文件。
-2. 确认版本至少为 Python 3.10。
+2. 确认版本至少为 Python 3.8。
 3. 在该环境中安装课程依赖，再回到应用点击“测试”。
-4. 如果显示 `xedu-python>=2.0.0` 但兼容性异常，点击“修复兼容性”，完成后再次点击“测试”。该操作只会移除已确认的两条旧元数据上限，不会自动升级其他包。
+4. 如果显示 `xedu-python>=2.0.0` 但兼容性异常，点击“修复兼容性”，完成后再次点击“测试”。该操作不要求 Flask，直接准备 Jupyter 并移除已确认的两条旧元数据上限，不会自动升级其他包；应用启动后端时再准备 Flask 等服务依赖。
 5. XEduHub 探针通过后点击“保存设置”，再启动 Jupyter。
 
 如果后端尚未启动，首页的“选择本机 Python”按钮会在选择后自动重试；不需要把 Python 文件复制到安装目录。

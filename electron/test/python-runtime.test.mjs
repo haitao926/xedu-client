@@ -87,6 +87,39 @@ test('macOS directory validation returns the resolved interpreter path', () => {
   assert.equal(invokedPath, '/Users/teacher/.venv/xedu/bin/python3');
 });
 
+test('Python 3.8 is accepted as the minimum supported teacher environment', () => {
+  const fsImpl = {
+    statSync: () => ({ isDirectory: () => false, isFile: () => true, mode: 0o755 }),
+    accessSync: () => undefined,
+    constants: { X_OK: 1 },
+  };
+
+  const validation = validatePythonExecutable('/usr/local/bin/python3.8', {
+    platform: 'darwin',
+    fsImpl,
+    runner: () => ({ status: 0, stdout: 'Python 3.8.20', stderr: '' }),
+  });
+
+  assert.equal(validation.success, true, validation.message);
+});
+
+test('Python 3.7 remains below the supported teacher environment range', () => {
+  const fsImpl = {
+    statSync: () => ({ isDirectory: () => false, isFile: () => true, mode: 0o755 }),
+    accessSync: () => undefined,
+    constants: { X_OK: 1 },
+  };
+
+  const validation = validatePythonExecutable('/usr/local/bin/python3.7', {
+    platform: 'darwin',
+    fsImpl,
+    runner: () => ({ status: 0, stdout: 'Python 3.7.17', stderr: '' }),
+  });
+
+  assert.equal(validation.success, false);
+  assert.match(validation.message, /至少需要 Python 3\.8\.0/);
+});
+
 test('packaged external-Python builds never fall back to a bundled Python directory', () => {
   const existing = new Set(['/Applications/Python/bin/python3']);
   const fsImpl = {
@@ -137,6 +170,30 @@ test('packaged bundled-Python builds fall back to their packaged interpreter', (
       fsImpl,
     }),
     bundledPython,
+  );
+});
+
+test('an explicit Python environment override takes precedence over stale config', () => {
+  const existing = new Set([
+    '/repo/python_env_minimal/bin/python3',
+    '/Users/teacher/old-env/bin/python3',
+  ]);
+  const fsImpl = {
+    existsSync: (target) => existing.has(target),
+    statSync: () => ({ isFile: () => true, mode: 0o755 }),
+    accessSync: () => undefined,
+  };
+
+  assert.equal(
+    resolvePythonExecutable({
+      platform: 'darwin',
+      packaged: false,
+      configuredPath: '/Users/teacher/old-env/bin/python3',
+      envPath: '/repo/python_env_minimal/bin/python3',
+      projectRoot: '/repo',
+      fsImpl,
+    }),
+    '/repo/python_env_minimal/bin/python3',
   );
 });
 
@@ -216,4 +273,77 @@ test('configured Python is preserved in scan results even when it is outside kno
   assert.equal(environments.length, 1);
   assert.equal(environments[0].path, '/custom/python/bin/python3');
   assert.match(environments[0].label, /当前配置/);
+});
+
+test('scan ordering keeps configured and selected environments ahead of project and system results', () => {
+  const existingDirectories = new Set([
+    '/custom/env',
+    '/selected/env',
+    '/repo/.venv',
+  ]);
+  const existingFiles = new Set([
+    '/custom/env/bin/python3',
+    '/selected/env/bin/python3',
+    '/repo/.venv/bin/python3',
+    '/usr/local/bin/python3',
+  ]);
+  const fsImpl = {
+    statSync: (target) => ({
+      isDirectory: () => existingDirectories.has(target),
+      isFile: () => existingFiles.has(target),
+      mode: 0o755,
+    }),
+    readdirSync: (target) => {
+      if (target === '/repo') {
+        return [{ name: '.venv', isDirectory: () => true }];
+      }
+      return [];
+    },
+    accessSync: () => undefined,
+    constants: { X_OK: 1 },
+  };
+
+  const environments = discoverPythonEnvironments({
+    platform: 'darwin',
+    configuredPath: '/custom/env',
+    selectedPath: '/selected/env',
+    projectRoot: '/repo',
+    envPath: '/usr/local/bin',
+    fsImpl,
+    runner: (command) => ({ status: 0, stdout: `Python ${command.includes('/selected/') ? '3.10.14' : '3.12.8'}`, stderr: '' }),
+  });
+
+  assert.deepEqual(
+    environments.map((item) => item.path),
+    [
+      '/custom/env/bin/python3',
+      '/selected/env/bin/python3',
+      '/repo/.venv/bin/python3',
+      '/usr/local/bin/python3',
+    ],
+  );
+  assert.match(environments[0].label, /当前配置/);
+  assert.match(environments[1].label, /当前选择/);
+});
+
+test('configured environment directories remain launchable for startup compatibility', () => {
+  const existing = new Set(['/custom/env/bin/python3']);
+  const fsImpl = {
+    statSync: (target) => ({
+      isDirectory: () => target === '/custom/env',
+      isFile: () => existing.has(target),
+      mode: 0o755,
+    }),
+    accessSync: () => undefined,
+  };
+
+  assert.equal(
+    resolvePythonExecutable({
+      platform: 'darwin',
+      configuredPath: '/custom/env',
+      packaged: true,
+      fsImpl,
+    }),
+    '/custom/env/bin/python3',
+  );
 });

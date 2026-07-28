@@ -13,6 +13,7 @@ test('preload exposes named capabilities instead of a generic IPC invoker', asyn
   assert.match(source, /streamPip:\s*\(request, onEvent\)\s*=>/);
   assert.match(source, /getPathForFile:\s*\(file\)\s*=>/);
   assert.match(source, /webUtils\?\.getPathForFile/);
+  assert.match(source, /approveLocalPath:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('approve-local-path', targetPath\)/);
   assert.doesNotMatch(source, /invoke:\s*\(channel,/);
 });
 
@@ -43,6 +44,14 @@ test('Jupyter external browser bridge only accepts the local Jupyter URL policy'
   assert.doesNotMatch(handler, /isSafeExternalUrl\(url\)/);
 });
 
+test('local embedded pages allow the file renderer without opening framing to arbitrary origins', async () => {
+  const source = await readFile(mainProcessPath, 'utf8');
+
+  assert.match(source, /localFrameAncestors\s*=\s*["']'self' file: http:\/\/127\.0\.0\.1:\* http:\/\/localhost:\*["']/);
+  assert.match(source, /frame-ancestors \$\{localFrameAncestors\}/);
+  assert.doesNotMatch(source, /frame-ancestors \*/);
+});
+
 test('generic API IPC uses an explicit route allowlist and pip uses a dedicated stream bridge', async () => {
   const source = await readFile(mainProcessPath, 'utf8');
 
@@ -52,15 +61,32 @@ test('generic API IPC uses an explicit route allowlist and pip uses a dedicated 
   assert.match(source, /!isAllowedApiRequest\(method, relativePath\)/);
   assert.match(source, /ipcMain\.handle\('api:pip-stream'/);
   assert.match(source, /ipcMain\.handle\('api:scratch-request'/);
+  assert.match(source, /ipcMain\.handle\('approve-local-path'/);
+  assert.match(source, /REALTIME_FRAME_MAX_BYTES/);
+  assert.match(source, /REALTIME_MULTIPART_OVERHEAD_BYTES/);
+});
+
+test('development Electron and Vite use the same default backend capability', async () => {
+  const [mainSource, viteSource] = await Promise.all([
+    readFile(mainProcessPath, 'utf8'),
+    readFile(new URL('../../vite.config.js', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(mainSource, /!app\.isPackaged\s*\?\s*['"]xedu-dev-capability['"]/);
+  assert.match(viteSource, /process\.env\.XEDU_CLIENT_CAPABILITY\s*\|\|\s*['"]xedu-dev-capability['"]/);
 });
 
 test('embedded Scratch camera access is limited to trusted local origins', async () => {
-  const source = await readFile(mainProcessPath, 'utf8');
+  const [source, resourcesSource] = await Promise.all([
+    readFile(mainProcessPath, 'utf8'),
+    readFile(new URL('../../renderer/js/resources.js', import.meta.url), 'utf8'),
+  ]);
 
   assert.match(source, /function isTrustedLocalMediaOrigin\(/);
   assert.match(source, /setPermissionRequestHandler/);
   assert.match(source, /permission === 'media'/);
   assert.match(source, /parsed\.hostname === '127\.0\.0\.1' \|\| parsed\.hostname === 'localhost'/);
+  assert.match(resourcesSource, /frame\.allow\s*=\s*["']camera \*["']/);
 });
 
 test('teacher recovery bridge exposes named startup support capabilities only', async () => {
@@ -70,6 +96,9 @@ test('teacher recovery bridge exposes named startup support capabilities only', 
   assert.match(source, /selectPython:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('select-python'\)/);
   assert.match(source, /scanPythonEnvironments:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('scan-python-environments'\)/);
   assert.match(source, /setPythonExecutable:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('set-python', targetPath\)/);
+  assert.match(source, /savePythonExecutable:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('python:save-selection', targetPath\)/);
+  assert.match(source, /inspectPythonEnvironment:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('python:inspect-environment', targetPath\)/);
+  assert.match(source, /repairPythonEnvironment:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('python:repair-environment', targetPath\)/);
   assert.match(source, /copyBackendDiagnosticSummary:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:copy-diagnostic-summary'\)/);
   assert.match(source, /retryBackendStartup:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:retry-startup'\)/);
   assert.match(source, /restartBackend:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:restart'\)/);
@@ -78,14 +107,18 @@ test('teacher recovery bridge exposes named startup support capabilities only', 
   assert.doesNotMatch(source, /backend:\s*\{[\s\S]*invoke/i);
 });
 
-test('teacher verification code is not persisted through an Electron credential bridge', async () => {
+test('teacher verification code persists only through the encrypted named bridge', async () => {
   const [preloadSource, mainSource] = await Promise.all([
     readFile(preloadPath, 'utf8'),
     readFile(mainProcessPath, 'utf8'),
   ]);
 
-  assert.doesNotMatch(preloadSource, /loadTeacherCredential|saveTeacherCredential|clearTeacherCredential|teacher-credential:/);
-  assert.doesNotMatch(mainSource, /teacherCredentialStore|createTeacherCredentialStore|teacher-credential:/);
+  assert.match(preloadSource, /loadTeacherCredential/);
+  assert.match(preloadSource, /saveTeacherCredential/);
+  assert.match(preloadSource, /clearTeacherCredential/);
+  assert.match(mainSource, /createTeacherCredentialStore/);
+  assert.match(mainSource, /safeStorage/);
+  assert.doesNotMatch(mainSource, /console\.(log|info|warn|error).*teacher[_-]?code/i);
 });
 
 test('backend diagnostics redact secrets and expose explicit recovery handlers', async () => {

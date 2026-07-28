@@ -69,6 +69,11 @@ jobs:
           node-version: '20'
           cache: npm
 
+      - name: Setup Python runtime builder
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install root dependencies
         run: npm ci
 
@@ -239,6 +244,10 @@ jobs:
       - name: Check release model assets
         run: node scripts/check_release_inputs.mjs
 
+      - name: Provision bundled minimal Python
+        shell: pwsh
+        run: python scripts/setup_portable_python.py --target windows-x64 --output python_env_win_minimal --requirements minimal
+
       - name: Clean release output
         shell: pwsh
         run: Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist-release, release-evidence
@@ -297,6 +306,11 @@ jobs:
           node-version: '20'
           cache: npm
 
+      - name: Setup Python runtime builder
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install root dependencies
         run: npm ci
 
@@ -311,6 +325,9 @@ jobs:
 
       - name: Check release model assets
         run: node scripts/check_release_inputs.mjs
+
+      - name: Provision bundled minimal Python
+        run: python scripts/setup_portable_python.py --target darwin-arm64 --output python_env_minimal --requirements minimal
 
       - name: Clean release output
         run: rm -rf dist-release release-evidence

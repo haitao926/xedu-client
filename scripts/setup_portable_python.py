@@ -52,7 +52,7 @@ REQ_FULL = PROJECT_ROOT / "backend" / "requirements_full.txt"
 REQ_MINIMAL = PROJECT_ROOT / "backend" / "requirements.txt"
 WINDOWS_SOURCE_WHEEL_FALLBACKS = {"pinpong"}
 WINDOWS_FALLBACK_DEPENDENCIES = {
-    "pinpong": ("pyserial==3.5", "freetype-py==2.1.0", "modbus-tk==1.1.2"),
+    "pinpong": ("pyserial==3.5", "freetype-py==2.1.0", "modbus-tk==1.1.5"),
 }
 NO_DEPS_REQUIREMENTS = {"xedu-python"}
 XEDU_PYTHON_SPEC = f"xedu-python=={XEDU_PYTHON_VERSION}"
@@ -553,14 +553,9 @@ def main():
     archive = ensure_archive(target)
     extract_archive_to_dir(archive, target, env_dir)
 
-    host_system = platform.system()
     target_platform = TARGETS[target]["platform"]
-    can_run_native = (
-        (target_platform == "windows" and host_system == "Windows")
-        or (target_platform == "darwin" and host_system == "Darwin")
-    )
 
-    if target_platform == "windows" and not can_run_native:
+    if target_platform == "windows":
         wheelhouse = PROJECT_ROOT / "wheelhouse_win"
         install_windows_requirements_offline(env_dir, requirements_file, wheelhouse)
         if not args.keep_wheelhouse and wheelhouse.exists():

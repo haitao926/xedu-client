@@ -55,34 +55,6 @@ export function pickAutoTestEntry(experiment = {}) {
     return pickAutoTestEntryFromFiles(experiment.files || experiment.items || experiment.resources || []);
 }
 
-export function getInspectionExperiment(inspection, sectionIndex, experimentIndex) {
-    const sections = Array.isArray(inspection?.sections) ? inspection.sections : [];
-    const section = sections.find((item) => Number(item?.section_index) === Number(sectionIndex));
-    const experiments = Array.isArray(section?.experiments) ? section.experiments : [];
-    return experiments.find((item) => Number(item?.experiment_index) === Number(experimentIndex)) || null;
-}
-
-export function summarizeInspection(inspection, fallbackSummary = {}) {
-    const sections = Array.isArray(inspection?.sections) ? inspection.sections : [];
-    const counts = {
-        ready_count: 0,
-        partial_count: 0,
-        broken_count: 0,
-    };
-    sections.forEach((section) => {
-        (section?.experiments || []).forEach((experiment) => {
-            const status = experiment?.status || "";
-            if (status === "ready") counts.ready_count += 1;
-            if (status === "partial") counts.partial_count += 1;
-            if (status === "broken") counts.broken_count += 1;
-        });
-    });
-    return {
-        ...fallbackSummary,
-        ...counts,
-    };
-}
-
 export function mapRemoteExperimentToLocalCourse(localCourse, sectionIndex, experimentIndex) {
     const sections = Array.isArray(localCourse?.sections) ? localCourse.sections : [];
     const section = sections[sectionIndex] || null;

@@ -1,4 +1,5 @@
 const packageJson = require('./package.json');
+const bundledPythonConfig = require('./electron-builder.bundled-python-no-models.cjs');
 
 const baseBuild = packageJson.build ?? {};
 const baseMac = baseBuild.mac ?? {};
@@ -9,6 +10,11 @@ const RELEASE_ENV_BY_PLATFORM = {
   win32: ['WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD'],
   darwin: ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'],
 };
+
+const pythonRuntimeSource = process.platform === 'win32'
+  ? 'python_env_win_minimal'
+  : 'python_env_minimal';
+const bundledPythonResource = bundledPythonConfig.extraResources.find(({ to }) => to === 'python_env');
 
 function getRequiredReleaseEnv(platform = process.platform) {
   return RELEASE_ENV_BY_PLATFORM[platform] ?? [
@@ -34,6 +40,10 @@ assertReleaseSigningEnv();
 
 const releaseConfig = {
   ...baseBuild,
+  extraResources: [
+    ...baseBuild.extraResources,
+    { ...bundledPythonResource, from: pythonRuntimeSource },
+  ],
   directories: {
     ...baseDirectories,
     output: 'dist-release',

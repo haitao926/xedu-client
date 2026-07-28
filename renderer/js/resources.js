@@ -40,11 +40,7 @@ import {
 import {
     buildInspectCoursePayload,
     inspectCloudCourseOptionFlow,
-    inspectCourseResourceFlow,
     mergeInspectionCourse,
-    renderCourseInspectionCardFlow,
-    shouldAutoInspectCourse as shouldAutoInspectCourseAction,
-    shouldShowCourseInspectionCard,
 } from "./resources/course-inspection-actions.js";
 import {
     applyResourcesIndexFlow,
@@ -70,7 +66,6 @@ import {
 import { loadResourcesIndexFlow } from "./resources/resource-index-flow.js";
 import { bindResourcesUI } from "./resources/resource-bindings.js";
 import {
-    getInspectionExperiment,
     mapRemoteExperimentToLocalCourse,
     pickAutoTestEntry,
 } from "./resources/course-inspection-utils.js";
@@ -90,6 +85,7 @@ import {
 } from "./resources/student-workspace-utils.js";
 import {
     buildCourseSyncFingerprint,
+    importDroppedCourseSourceFlow,
     getCourseOrigin,
     getLocalCourseChangeState,
     getResourceSourceContext,
@@ -100,6 +96,7 @@ import {
     stripRemovedIntegrationMetadata,
     withCourseSyncFingerprint,
 } from "./resources/course-storage.js";
+import { runCourseTransferFlow } from "./resources/course-transfer.js";
 import {
     addCourseFlow,
     buildCourseFromFormFlow,
@@ -140,7 +137,7 @@ import {
     clearTeacherModeSession,
     isTeacherCodeConfigured,
     readTeacherModeState,
-    writeTeacherModeState,
+    rememberTeacherMode,
 } from "./main/teacher-mode-state.js";
 import {
     buildLocalCourseFileUrl,
@@ -158,8 +155,18 @@ import {
 import { getExperimentFileOverview } from "./resources/experiment-overview.js";
 import { createResourcesState } from "./resources/resources-state.js";
 import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
+import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
 
 const resourcesState = createResourcesState();
+const courseAiFrameBridge = createCourseAiFrameBridge({
+    windowObject: window,
+    requestApi: (request) => {
+        if (typeof window.electronAPI?.scratchApiRequest !== "function") {
+            throw new Error("本地姿态检测桥接不可用");
+        }
+        return window.electronAPI.scratchApiRequest(request);
+    },
+});
 window.addEventListener("xedu:teacher-credential-updated", () => {
     const state = readTeacherModeState();
     if (!state.unlocked) return;
@@ -172,13 +179,6 @@ window.addEventListener("xedu:teacher-credential-cleared", () => {
     resourcesState.classroomConfig.teacherCodeConfigured = false;
     updateTeacherModeUI();
 });
-const courseInspectionState = {
-    courseId: "",
-    loading: false,
-    error: "",
-    summary: null,
-    inspection: null,
-};
 const pageState = {
     current: 1,
     size: 6
@@ -945,6 +945,81 @@ function renderPackagePathSummary() {
     const name = parts[parts.length - 1] || packagePath;
     summary.innerHTML = `当前课程包：<strong>${escapeAttr(name)}</strong>。`;
     if (droppedFile) droppedFile.textContent = name;
+}
+
+async function importDroppedCourseZipPackage(packagePath) {
+    return runCourseTransferFlow({
+        apiClient,
+        endpoint: "/api/resources/import-package-local",
+        payload: {
+            package_path: packagePath,
+            target_path: "",
+            replace_existing: true,
+            backup_before_replace: true,
+        },
+        setImportStatus: setResourceDropImportStatus,
+        pollIntervalMs: 500,
+    });
+}
+
+async function handleCourseImportDrop(event) {
+    event.preventDefault();
+    const files = Array.from(event?.dataTransfer?.files || []);
+    if (files.length !== 1) {
+        setResourceDropImportStatus("error", "请一次拖入一个课程 ZIP 或完整课程文件夹");
+        return false;
+    }
+
+    const [file] = files;
+    let path = "";
+    try {
+        path = await getPathForFileWithDesktopBridge(file, window.electronAPI);
+    } catch (_) {
+        path = file?.path || "";
+    }
+    if (!path) {
+        setResourceDropImportStatus("error", "无法读取拖入项目的本地路径，请重试");
+        return false;
+    }
+
+    try {
+        await window.electronAPI?.approveLocalPath?.(path);
+    } catch (_) {
+        // The backend still validates the course path; approval is only needed
+        // for the Electron directory check.
+    }
+
+    let isDirectory = false;
+    try {
+        if (typeof window.electronAPI?.isDirectory === "function") {
+            isDirectory = Boolean(await window.electronAPI.isDirectory(path));
+        }
+    } catch (_) {
+        isDirectory = false;
+    }
+    if (!isDirectory && !/\.zip$/i.test(path)) {
+        setResourceDropImportStatus("error", "仅支持拖入课程 ZIP 或完整课程文件夹");
+        return false;
+    }
+
+    try {
+        const result = await importDroppedCourseSourceFlow({ path, isDirectory }, {
+            apiClient,
+            importZipCoursePackage: importDroppedCourseZipPackage,
+            addCourse: (course, options = {}) => addCourse(course, options),
+            loadResourcesIndex,
+            showListView,
+            showDetailView,
+            setImportStatus: setResourceDropImportStatus,
+        });
+        notifyUser(result.message, result.duplicated ? "warning" : "success");
+        return true;
+    } catch (error) {
+        const message = error?.message || "导入课程失败";
+        setResourceDropImportStatus("error", message);
+        notifyUser(message, "error");
+        return false;
+    }
 }
 
 async function handlePackageDrop(event) {
@@ -3046,7 +3121,12 @@ async function unlockTeacherMode() {
             alert("教师验证码错误，请重新输入");
             continue;
         }
-        resourcesState.teacherMode = writeTeacherModeState(code);
+        const remembered = await rememberTeacherMode(code);
+        if (typeof window.electronAPI?.saveTeacherCredential === 'function' && !remembered.persisted) {
+            notifyUser("系统安全存储不可用，无法记住教师口令，请检查系统权限后重试。", "error");
+            return false;
+        }
+        resourcesState.teacherMode = remembered;
         updateTeacherModeUI();
         return true;
     }
@@ -3398,7 +3478,7 @@ async function discoverClassrooms() {
     resourcesState.classroomState.searching = true;
     updateClassroomBanner();
     try {
-        const response = await apiClient.get(`/api/classroom/discover?timeout=1.5`);
+        const response = await apiClient.get(`/api/classroom/discover?timeout=3.5`);
         if (response?.success) {
             resourcesState.classroomState.classrooms = response.classrooms || [];
             const selected = await selectClassroom(resourcesState.classroomState.classrooms);
@@ -3457,13 +3537,36 @@ function rememberClassroomSource(source) {
 
 async function initClassroom() {
     resourcesState.localCourses = loadLocalCourses();
-    await ensureTeacherModeReady();
+    // Classroom discovery and student course import must remain usable before
+    // a teacher unlocks the management controls.
+    if (!isStudentLessonMode()) {
+        await ensureTeacherModeReady();
+    }
     await refreshClassroomStatus();
     scheduleClassroomSync();
     if (resourcesState.classroomConfig.autoDiscover) {
         await discoverClassrooms();
     }
     updateClassroomBanner();
+}
+
+async function waitForBackendBeforeResourceRequests(timeoutMs = 125000) {
+    const getStartupState = window.electronAPI?.getBackendStartupState;
+    if (typeof getStartupState !== "function") return true;
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        try {
+            const result = await getStartupState();
+            const status = result?.state?.status || result?.status;
+            if (status === "ready") return true;
+            if (status === "error") return false;
+        } catch (_) {
+            // The browser-only development path may not expose startup state.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return false;
 }
 
 function getText(resource, key, fallback = "-") {
@@ -3542,25 +3645,6 @@ function getResourceIdentity(resource) {
         resource.course_url || "",
         resource.package_url || "",
     ].join("|");
-}
-
-function resetCourseInspectionState(resource = null) {
-    courseInspectionState.courseId = resource ? getResourceIdentity(resource) : "";
-    courseInspectionState.loading = false;
-    courseInspectionState.error = "";
-    courseInspectionState.summary = null;
-    courseInspectionState.inspection = null;
-}
-
-function ensureCourseInspectionIdentity(resource) {
-    const identity = getResourceIdentity(resource);
-    if (courseInspectionState.courseId !== identity) {
-        resetCourseInspectionState(resource);
-    }
-}
-
-function getCourseInspectionStatus(sectionIndex, expIndex) {
-    return getInspectionExperiment(courseInspectionState.inspection, sectionIndex, expIndex);
 }
 
 function isStudentLessonMode() {
@@ -4095,10 +4179,11 @@ function buildStudentHtmlExperienceView(context) {
     const frame = document.createElement("iframe");
     frame.className = "resources-student-html-frame";
     frame.title = primaryHtml.name || primaryHtml.path || "互动体验";
-    frame.allow = "camera";
+    frame.allow = "camera *";
     frame.src = frameUrl;
     frame.loading = "eager";
     frameWrap.appendChild(frame);
+    courseAiFrameBridge.attach(frame, frameUrl);
     wrap.appendChild(frameWrap);
     const openBrowserBtn = document.createElement("button");
     openBrowserBtn.type = "button";
@@ -5028,7 +5113,7 @@ function renderStudentLessonEmpty(tabId = resourcesState.activeCourseWorkspaceTa
 
     const desc = document.createElement("div");
     desc.className = "resources-student-empty-desc";
-    desc.textContent = `${getWorkspaceTabTitle(tabId)}会在加入课堂后显示，只呈现当前课程当前课节对应的学习内容。`;
+    desc.textContent = `${getWorkspaceTabTitle(tabId)}会在加入课堂后显示；也可以直接把课程 ZIP 或完整课程文件夹拖到上方导入区。`;
     wrap.appendChild(desc);
 
     const actions = document.createElement("div");
@@ -5175,6 +5260,17 @@ function setCreateImportStatus(state, message = "", progress = null) {
     });
 }
 
+function setResourceDropImportStatus(state, message = "", progress = null) {
+    const statusEl = document.getElementById("resources-import-drop-status");
+    const dropZone = document.getElementById("resources-import-drop-zone");
+    const busy = ["selecting", "downloading", "writing"].includes(state);
+    renderTransferStatus(statusEl, state, message, progress);
+    if (dropZone) {
+        dropZone.classList.toggle("is-busy", busy);
+        dropZone.setAttribute("aria-busy", busy ? "true" : "false");
+    }
+}
+
 function showListView() {
     const listView = document.getElementById("resources-list-view");
     const detailView = document.getElementById("resources-detail-view");
@@ -5191,7 +5287,6 @@ function showDetailView(resource, options = {}) {
     if (listView) listView.style.display = "none";
     if (detailView) detailView.style.display = "flex";
     resourcesState.currentResource = resource;
-    resetCourseInspectionState(resource);
     resourcesState.sectionDetailMode = false;
     resourcesState.activeCourseWorkspaceTab = normalizeWorkspaceTabId(
         options.tabId || (options.preserveTab ? resourcesState.activeCourseWorkspaceTab : "route")
@@ -5250,10 +5345,6 @@ function showDetailView(resource, options = {}) {
 
 function renderResourceDetailSplitContent(resource, contentEl) {
     contentEl.innerHTML = "";
-    ensureCourseInspectionIdentity(resource);
-    if (resourcesState.teacherMode.unlocked && shouldShowCourseInspectionCard(courseInspectionState)) {
-        contentEl.appendChild(renderCourseInspectionCard(resource));
-    }
     const sections = normalizeSections(resource);
     if (!sections.length) {
         const empty = document.createElement("div");
@@ -5401,20 +5492,6 @@ function renderResourceDetailSplitContent(resource, contentEl) {
             text.textContent = exp.title || `实验 ${expIndex + 1}`;
             expNode.appendChild(text);
 
-            const inspectionStatus = getCourseInspectionStatus(sectionIndex, expIndex);
-            if (inspectionStatus) {
-                const inspectBadge = document.createElement("span");
-                inspectBadge.className = `resources-inspection-badge is-${inspectionStatus.status || "unknown"}`;
-                inspectBadge.textContent =
-                    inspectionStatus.status === "ready"
-                        ? "可测"
-                        : inspectionStatus.status === "partial"
-                            ? "待补"
-                            : "异常";
-                inspectBadge.title = (inspectionStatus.issues || []).join("；");
-                expNode.appendChild(inspectBadge);
-            }
-
             const stateKey = buildExperimentStateKey(resource, sectionIndex, expIndex);
             if (stateKey && stateKey === resourcesState.runningExperimentKey) {
                 const running = document.createElement("span");
@@ -5544,7 +5621,6 @@ function renderResourceDetailSplitContent(resource, contentEl) {
 }
 
 function renderResourceDetail(resource) {
-    ensureCourseInspectionIdentity(resource);
     const detailView = document.getElementById("resources-detail-view");
     if (detailView) {
         detailView.classList.toggle("is-section-detail", resourcesState.sectionDetailMode);
@@ -5563,7 +5639,6 @@ function renderResourceDetail(resource) {
     const editBtn = document.getElementById("resources-detail-edit");
     const deleteBtn = document.getElementById("resources-detail-delete");
     const repoBtn = document.getElementById("resources-detail-repo");
-    const inspectBtn = document.getElementById("resources-detail-inspect");
     const uploadBtn = document.getElementById("resources-detail-upload");
     const pullBtn = document.getElementById("resources-detail-pull");
     const openBtn = document.getElementById("resources-detail-open");
@@ -5612,10 +5687,6 @@ function renderResourceDetail(resource) {
 
     if (backBtn) {
         backBtn.style.display = isStudentLessonMode() ? "none" : "inline-flex";
-    }
-
-    if (inspectBtn) {
-        inspectBtn.style.display = resourcesState.teacherMode.unlocked && !isStudentLessonMode() ? "inline-flex" : "none";
     }
 
     if (coverWrap && coverImg) {
@@ -5770,13 +5841,6 @@ function renderResourceDetail(resource) {
 
     if (!contentEl) return;
     renderResourceDetailSplitContent(resource, contentEl);
-    if (shouldAutoInspectCourse(resource)) {
-        window.setTimeout(() => {
-            if (resourcesState.currentResource === resource) {
-                inspectCourseResource(resource, { silent: true });
-            }
-        }, 0);
-    }
 }
 
 async function editExperiment(resource, mutableSections, sectionIndex, expIndex) {
@@ -6805,43 +6869,6 @@ function notifyCourseCreated(course) {
     if (!course || course.source !== "local") return;
     alert("课程已创建。");
 }
-
-
-async function inspectCourseResource(resource, { silent = false } = {}) {
-    return inspectCourseResourceFlow(resource, {
-        apiClient,
-        ensureCourseInspectionIdentity,
-        buildInspectCoursePayload: (target) =>
-            buildInspectCoursePayload(target, {
-                getCourseOrigin,
-                buildSourceOverrideFromCourseMeta,
-                cloudTempToken: resourcesState.cloudTempToken,
-            }),
-        renderResourceDetail,
-        courseInspectionState,
-        mergeInspectionCourse,
-        getResourceIdentity,
-        currentResource: resourcesState.currentResource,
-        setCurrentResource: (value) => {
-            resourcesState.currentResource = value;
-        },
-        extractApiErrorMessage,
-        silent,
-    });
-}
-
-function shouldAutoInspectCourse(resource) {
-    return shouldAutoInspectCourseAction(resource, courseInspectionState, resourcesState.teacherMode);
-}
-
-function renderCourseInspectionCard(resource) {
-    return renderCourseInspectionCardFlow(resource, {
-        ensureCourseInspectionIdentity,
-        courseInspectionState,
-        documentRef: document,
-    });
-}
-
 async function testCurrentExperiment(resource = resourcesState.currentResource) {
     if (!resource) return;
     const sections = normalizeSections(resource);
@@ -7182,7 +7209,6 @@ function bindEvents() {
         openCreateView,
         deleteCourse,
         currentResource: () => resourcesState.currentResource,
-        inspectCourseResource,
         toggleDetailMoreMenu,
         bindDetailMoreMenu,
         startClassroomForResource,
@@ -7221,6 +7247,7 @@ function bindEvents() {
         useDefaultSampleCourse,
         importLocalPackageToPath,
         handlePackageDrop,
+        handleCourseImportDrop,
         pickLocalCourse,
         loadCloudCourseOptions,
         importCloudCourseAndSave,
@@ -7255,6 +7282,11 @@ export async function initResourcesPage() {
         return;
     }
     resourcesState.resourcesPageInitPromise = (async () => {
+        const backendReady = await waitForBackendBeforeResourceRequests();
+        if (!backendReady) {
+            console.warn("后端尚未就绪，暂不加载课堂和课程资源请求");
+            return;
+        }
         await initClassroom();
         await loadResourcesIndex();
         if (!isStudentLessonMode()) {

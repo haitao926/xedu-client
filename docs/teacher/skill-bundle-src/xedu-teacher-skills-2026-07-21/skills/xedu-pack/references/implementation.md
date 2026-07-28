@@ -5,13 +5,13 @@ Read this for direct service calls, Scratch validation, package construction, or
 ## Inspect
 
 ```python
-from services.gitea_service import scan_course, inspect_course
+from services.gitea_service import scan_course
 
 scan_result = scan_course(local_path, init_if_missing=False, init_meta=None, auto_build=False)
-report = inspect_course(scan_result.course, local_path=local_path)
+course = scan_result.course
 ```
 
-`scan_course` validates `course.json`; `inspect_course` reports whether referenced files exist. Neither decides which experiment forms the teacher intended, so compare its output with the course plan or handoff.
+`scan_course` validates and normalizes `course.json`, and returns the basic section, experiment, and file summary. It does not decide which experiment forms the teacher intended, so compare the declared structure with the course plan or handoff.
 
 ## Validate Scratch Projects
 

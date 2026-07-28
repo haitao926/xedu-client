@@ -88,6 +88,18 @@ test('APIClient post normalizes /api URLs and sends JSON bodies', async () => {
     }
 });
 
+test('APIClient keeps development capability handling inside the API request layer', async () => {
+    const source = await import('node:fs/promises').then(({ readFile }) => readFile(
+        new URL('./api.js', import.meta.url),
+        'utf8',
+    ));
+
+    assert.match(source, /import\.meta\.env\?\.DEV/);
+    assert.match(source, /X-XEdu-Client-Token/);
+    assert.match(source, /VITE_XEDU_CLIENT_CAPABILITY/);
+    assert.match(source, /startsWith\(`\$\{trimTrailingSlash\(this\.baseURL\)\}\/api\//);
+});
+
 test('APIClient debug logs redact request and response payloads', async () => {
     const debugCalls = [];
     const originalDebug = console.debug;

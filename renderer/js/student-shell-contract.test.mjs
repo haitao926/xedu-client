@@ -116,7 +116,7 @@ test("student task center opens HTML pages directly and routes coding tabs to na
   assert.match(resources, /只显示当前课程/);
   assert.match(resources, /function renderStudentLessonEmpty[\s\S]*?加入课堂/);
   assert.doesNotMatch(resources, /function renderStudentLessonEmpty[\s\S]*?打开本地课程/);
-  assert.match(resources, /当前课程当前课节对应的学习内容/);
+  assert.match(resources, /加入课堂后显示；也可以直接把课程 ZIP 或完整课程文件夹拖到上方导入区/);
   assert.match(resources, /label: "进入互动体验"/);
   assert.match(resources, /label: isStudentLessonMode\(\) \? "进入图形编程" : "进入可视化编程"/);
   assert.match(resources, /label: isStudentLessonMode\(\) \? "进入Python实验" : "进入Python编程"/);

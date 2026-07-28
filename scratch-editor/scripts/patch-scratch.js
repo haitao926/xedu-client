@@ -96,6 +96,10 @@ const vmRoots = [
   path.join(root, 'node_modules', '@scratch', 'scratch-vm'),
   path.join(guiRoot, 'node_modules', '@scratch', 'scratch-vm'),
 ].filter((vmRoot, index, all) => fs.existsSync(vmRoot) && all.indexOf(vmRoot) === index);
+const scratchBlocksRoots = [
+  path.join(root, 'node_modules', 'scratch-blocks'),
+  path.join(guiRoot, 'node_modules', 'scratch-blocks'),
+].filter((blocksRoot, index, all) => fs.existsSync(blocksRoot) && all.indexOf(blocksRoot) === index);
 
 function ensureFile(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -161,6 +165,21 @@ for (const vmRoot of vmRoots) {
       "    faceSensing: () => require('../extensions/scratch3_face_sensing'),\n" + registrations + ','
     );
   });
+}
+
+for (const blocksRoot of scratchBlocksRoots) {
+  const colourSliderFiles = [
+    path.join(blocksRoot, 'src', 'fields', 'field_colour_slider.ts'),
+    path.join(blocksRoot, 'dist', 'main.mjs'),
+  ];
+  for (const colourSlider of colourSliderFiles) {
+    if (!fs.existsSync(colourSlider)) continue;
+    patchFile(colourSlider, text => text
+      .replace("      console.warn('FieldColourSlider.updateDom_: slider/readout DOM is not fully initialized')\n", '')
+      .replace("      console.warn('FieldColourSlider.updateSliderHandles_: slider DOM is not fully initialized')\n", '')
+      .replace(/:console\.warn\(["']FieldColourSlider\.updateDom_: slider\/readout DOM is not fully initialized["']\)/g, ':void 0')
+      .replace(/:console\.warn\(["']FieldColourSlider\.updateSliderHandles_: slider DOM is not fully initialized["']\)/g, ':void 0'));
+  }
 }
 
 fs.mkdirSync(xeduExtensionAssetTargetDir, {recursive: true});

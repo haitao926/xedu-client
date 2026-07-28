@@ -165,6 +165,32 @@ class PipApiTestCase(unittest.TestCase):
         self.assertEqual(run_mock.call_args.args[0][1:], ['-c', "print('你好')"])
         self.assertEqual(run_mock.call_args.kwargs['cwd'], self.temp_dir.name)
 
+    def test_run_python_promotes_visual_runtime_events_to_result_artifacts(self):
+        image = 'data:image/png;base64,aGVsbG8='
+        completed = {
+            'return_code': 0,
+            'stdout': (
+                "__XEDU_RUNTIME__={'type': 'result_card', 'title': '检测结果', 'result': {'数量': 2}}\n"
+                f"__XEDU_RUNTIME__={{'type': 'result_image', 'title': '标注图', 'image': '{image}'}}\n"
+            ),
+            'stderr': '',
+            'resource_events': [],
+            'timed_out': False,
+        }
+        with patch('api.routes.python._run_python_subprocess', return_value=completed):
+            response = self.post_run({
+                'code': 'xrt.xedu_show_result_image(image)',
+                'python_executable': self.python_path,
+                'project_root': self.temp_dir.name,
+            })
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data['result']['result_artifacts']['preview_image'], image)
+        self.assertEqual(data['artifacts']['image_data'], image)
+        self.assertEqual(data['result']['result_artifacts']['result_cards'][0]['title'], '检测结果')
+        self.assertEqual(data['result_summary']['headline'], '检测结果')
+
     def test_run_python_injects_backend_pythonpath(self):
         completed = {
             'return_code': 0,

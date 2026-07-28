@@ -10,9 +10,9 @@ Inspect, stage, build, and publish local XEdu courses. It does not create teachi
 ## Inspect
 
 1. Classify the input as `course-root`, `raw-materials`, `single-lesson`, or `pack-output`.
-2. Parse `course.json` with `scan_course()` and check referenced paths with `inspect_course()`.
+2. Parse and normalize `course.json` with `scan_course()`.
 3. Group each experiment's existing resources by declared `type` and extension: `html`, `scratch`/`.sb3`, `ipynb`, legacy `blockly`, and materials.
-4. Check completeness against the experiment forms selected by the course plan or handoff, not a fixed HTML/Blockly/Jupyter trio. If the intended forms are absent, report the uncertainty rather than inventing a requirement.
+4. Compare declared resources with the experiment forms selected by the course plan or handoff, not a fixed HTML/Blockly/Jupyter trio. If the intended forms are absent, report the uncertainty rather than inventing a requirement.
 5. Validate every `.sb3`: it is a readable ZIP containing parseable `project.json`; its declared extensions and XEdu block opcodes match currently available Scratch extensions. Read `references/implementation.md` for commands and boundaries.
 
 ## Scratch And Blockly Policy

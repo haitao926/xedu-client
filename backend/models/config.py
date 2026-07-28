@@ -228,6 +228,7 @@ class AppConfig:
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
+            'version': '2.0.0',
             'jupyter': self.jupyter.to_dict(),
             'ui': self.ui.to_dict(),
             'ai': self.ai.to_dict()

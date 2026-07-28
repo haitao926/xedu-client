@@ -232,3 +232,142 @@ export async function persistCourseToDisk(resource, apiClient) {
   }
   return null;
 }
+
+export function classifyDroppedCourseSource(path, { isDirectory = false } = {}) {
+  const normalizedPath = String(path || '').trim();
+  if (!normalizedPath) {
+    return {
+      kind: 'invalid',
+      path: '',
+      message: '无法读取拖入项目的本地路径，请重试。',
+    };
+  }
+  if (normalizedPath.includes('\0')) {
+    return {
+      kind: 'invalid',
+      path: normalizedPath,
+      message: '拖入路径包含非法字符，无法导入。',
+    };
+  }
+  if (isDirectory) {
+    return {
+      kind: 'folder',
+      path: normalizedPath,
+    };
+  }
+  if (/\.zip$/i.test(normalizedPath)) {
+    return {
+      kind: 'zip',
+      path: normalizedPath,
+    };
+  }
+  return {
+    kind: 'invalid',
+    path: normalizedPath,
+    message: '仅支持拖入课程 ZIP 或完整课程文件夹。',
+  };
+}
+
+export function buildDroppedCourseImportMessage({ course, duplicated = false, sourceKind = '' } = {}) {
+  const title = String(course?.title || '').trim() || '课程';
+  if (duplicated) {
+    return `课程《${title}》已存在，已按最新拖入内容刷新。`;
+  }
+  if (sourceKind === 'folder') {
+    return `课程《${title}》已从课程文件夹导入。`;
+  }
+  return `课程《${title}》已导入。`;
+}
+
+export async function importDroppedCourseSourceFlow(source, deps = {}) {
+  const resolvedSource = typeof source === 'string'
+    ? classifyDroppedCourseSource(source)
+    : classifyDroppedCourseSource(source?.path, { isDirectory: Boolean(source?.isDirectory) });
+  if (resolvedSource.kind === 'invalid') {
+    throw new Error(resolvedSource.message);
+  }
+
+  const {
+    apiClient,
+    importZipCoursePackage,
+    addCourse,
+    loadResourcesIndex = async () => {},
+    showListView,
+    showDetailView,
+    setImportStatus = () => {},
+  } = deps;
+
+  const initialMessage = resolvedSource.kind === 'folder'
+    ? '正在读取课程文件夹...'
+    : '正在导入课程包...';
+  setImportStatus('writing', initialMessage);
+
+  try {
+    let response = null;
+    if (resolvedSource.kind === 'folder') {
+      if (typeof apiClient?.post !== 'function') {
+        throw new Error('当前环境无法读取课程文件夹。');
+      }
+      const inspectResponse = await apiClient.post('/api/resources/inspect-course', {
+        local_path: resolvedSource.path,
+      });
+      if (!inspectResponse?.success || !inspectResponse?.course) {
+        throw new Error(inspectResponse?.message || '读取课程文件夹失败');
+      }
+      response = await apiClient.post('/api/resources/scan', {
+        local_path: resolvedSource.path,
+        init_if_missing: false,
+        auto_build: false,
+      });
+    } else {
+      if (typeof importZipCoursePackage !== 'function') {
+        throw new Error('当前环境无法导入课程包。');
+      }
+      response = await importZipCoursePackage(resolvedSource.path);
+    }
+
+    if (!response?.success || !response?.course) {
+      throw new Error(
+        response?.message
+        || (resolvedSource.kind === 'folder' ? '读取课程文件夹失败' : '导入课程包失败'),
+      );
+    }
+
+    const course = {
+      ...response.course,
+      source: 'local',
+      local_path: response.local_path || resolvedSource.path,
+    };
+    const duplicated = typeof addCourse === 'function'
+      ? Boolean(addCourse(course, { silent: true }))
+      : false;
+
+    await loadResourcesIndex();
+    if (typeof showListView === 'function') {
+      showListView();
+    }
+    if (typeof showDetailView === 'function') {
+      showDetailView(course);
+    }
+
+    const message = buildDroppedCourseImportMessage({
+      course,
+      duplicated,
+      sourceKind: resolvedSource.kind,
+    });
+    setImportStatus('success', message);
+
+    return {
+      success: true,
+      course,
+      duplicated,
+      sourceKind: resolvedSource.kind,
+      message,
+      summary: response.summary || null,
+    };
+  } catch (error) {
+    const message = error?.message || (resolvedSource.kind === 'folder' ? '读取课程文件夹失败' : '导入课程包失败');
+    setImportStatus('error', message);
+    throw error instanceof Error ? error : new Error(message);
+  }
+}

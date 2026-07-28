@@ -9,11 +9,11 @@ import process from 'node:process';
 
 const ARTIFACT_PROFILES = {
   release: {
-    requiredDirectories: ['backend', 'checkpoint'],
+    requiredDirectories: ['backend', 'checkpoint', 'python_env'],
     forbiddenDirectories: [
-      ['python_env', 'bundled Python environment must not be included'],
-      ['python_env_win', 'bundled Python environment must not be included'],
+      ['python_env_win', 'bundled Python environment must use the canonical python_env path'],
     ],
+    bundledPython: true,
   },
   minimal: {
     requiredDirectories: ['backend', 'python_env'],
@@ -21,6 +21,7 @@ const ARTIFACT_PROFILES = {
       ['python_env_win', 'bundled Python environment must use the canonical python_env path'],
       ['checkpoint', 'model directory must not be included'],
     ],
+    bundledPython: true,
     forbidModelFiles: true,
   },
   'external-python': {
@@ -117,6 +118,30 @@ async function findForbiddenModelPaths(current, relative = '', result = []) {
   return result;
 }
 
+async function validateBundledPythonRuntime(resourcesPath, platform) {
+  const runtimePath = path.join(resourcesPath, 'python_env');
+  const errors = [];
+  const metadata = await readJson(path.join(runtimePath, '.portable_runtime.json'));
+  if (!metadata) {
+    errors.push('bundled Python runtime metadata missing: python_env/.portable_runtime.json');
+  } else if (metadata.models_bundled !== false) {
+    errors.push('bundled Python runtime must declare models_bundled=false');
+  }
+
+  const executableCandidates = platform === 'win32'
+    ? ['python.exe']
+    : platform === 'darwin'
+      ? ['bin/python3', 'python3']
+      : ['python.exe', 'bin/python3', 'python3'];
+  const executableFound = (await Promise.all(
+    executableCandidates.map((candidate) => exists(path.join(runtimePath, candidate), constants.R_OK)),
+  )).some(Boolean);
+  if (!executableFound) {
+    errors.push(`bundled Python executable missing: expected one of ${executableCandidates.join(', ')}`);
+  }
+  return errors;
+}
+
 async function findResourcesPath(root) {
   const candidates = [
     path.join(root, 'resources'),
@@ -181,7 +206,7 @@ async function findForbiddenAsarPaths(resourcesPath) {
  * The function intentionally checks only files required at runtime. Signing,
  * notarization, and archive naming are platform-specific release checks.
  */
-export async function verifyReleaseArtifact(root, { expectedVersion, profile = 'release' } = {}) {
+export async function verifyReleaseArtifact(root, { expectedVersion, profile = 'release', platform } = {}) {
   const artifactRoot = path.resolve(root);
   const errors = [];
   const profileRules = ARTIFACT_PROFILES[profile];
@@ -228,6 +253,10 @@ export async function verifyReleaseArtifact(root, { expectedVersion, profile = '
     }
   }
 
+  if (profileRules.bundledPython) {
+    errors.push(...await validateBundledPythonRuntime(resourcesPath, platform));
+  }
+
   const duplicateBackend = path.join(resourcesPath, 'app', 'backend');
   if (await isDirectory(duplicateBackend)) {
     errors.push('duplicate backend found: app/backend (backend must be external resources only)');
@@ -237,8 +266,11 @@ export async function verifyReleaseArtifact(root, { expectedVersion, profile = '
     errors.push(`removed Blockly artifact must not be packaged: ${relativePath}`);
   }
   if (profileRules.forbidModelFiles) {
-    for (const relativePath of await findForbiddenModelPaths(resourcesPath)) {
-      errors.push(`model file must not be included: ${relativePath}`);
+    const modelRoot = path.join(resourcesPath, 'python_env');
+    if (await isDirectory(modelRoot)) {
+      for (const relativePath of await findForbiddenModelPaths(modelRoot, 'python_env')) {
+        errors.push(`model file must not be included: ${relativePath}`);
+      }
     }
   }
   for (const relativePath of await findForbiddenAsarPaths(resourcesPath)) {
@@ -392,7 +424,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     try {
       const targetErrors = validateReleaseTarget({ platform, arch });
       if (targetErrors.length > 0) throw new Error(targetErrors.join('\n'));
-      const result = await verifyReleaseArtifact(root, { expectedVersion, profile });
+      const result = await verifyReleaseArtifact(root, { expectedVersion, profile, platform });
       if (!result.ok) {
         throw new Error(result.errors.join('\n'));
       }

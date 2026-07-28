@@ -34,6 +34,7 @@ from .app_support import (
 )
 from .security import configure_security
 from .resource_runtime import ResourceHandleRegistry
+from .realtime_request import RealtimeRequest
 
 logger = get_logger(__name__)
 
@@ -54,6 +55,7 @@ def create_app(config_dir=None) -> Flask:
     classroom_service = ClassroomService()
 
     app = Flask(__name__)
+    app.request_class = RealtimeRequest
     configure_security(app)
     app.extensions["xedu_resource_handles"] = ResourceHandleRegistry()
     app.extensions["xedu_course_transfer_jobs"] = CourseTransferJobManager()

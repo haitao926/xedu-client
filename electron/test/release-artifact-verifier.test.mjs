@@ -10,12 +10,20 @@ import {
   writeReleaseManifest,
 } from '../../scripts/verify_release_artifact.mjs';
 
-async function createArtifactFixture() {
+async function createArtifactFixture({ bundledPython = true } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'xedu-release-'));
   const resources = path.join(root, 'resources');
   await mkdir(path.join(resources, 'scratch-editor', 'build'), { recursive: true });
   await mkdir(path.join(resources, 'backend'), { recursive: true });
   await mkdir(path.join(resources, 'checkpoint'), { recursive: true });
+  if (bundledPython) {
+    await mkdir(path.join(resources, 'python_env', 'bin'), { recursive: true });
+    await writeFile(
+      path.join(resources, 'python_env', '.portable_runtime.json'),
+      JSON.stringify({ models_bundled: false }),
+    );
+    await writeFile(path.join(resources, 'python_env', 'bin', 'python3'), 'python');
+  }
   await writeFile(path.join(resources, 'scratch-editor', 'build', 'index.html'), '<!doctype html>');
   await writeFile(path.join(root, 'package.json'), JSON.stringify({ version: '2.0.0' }));
   return root;
@@ -69,7 +77,7 @@ test('minimal artifact verifier requires bundled Python and rejects packaged mod
 });
 
 test('external-Python artifact verifier rejects bundled Python', async () => {
-  const root = await createArtifactFixture();
+  const root = await createArtifactFixture({ bundledPython: false });
   try {
     await rm(path.join(root, 'resources', 'checkpoint'), { recursive: true });
     const externalResult = await verifyReleaseArtifact(root, {
@@ -90,13 +98,13 @@ test('external-Python artifact verifier rejects bundled Python', async () => {
   }
 });
 
-test('release artifact verifier rejects a package containing a bundled Python environment', async () => {
+test('release artifact verifier rejects a package without a usable bundled Python environment', async () => {
   const root = await createArtifactFixture();
   try {
-    await mkdir(path.join(root, 'resources', 'python_env'), { recursive: true });
+    await rm(path.join(root, 'resources', 'python_env'), { recursive: true });
     const result = await verifyReleaseArtifact(root, { expectedVersion: '2.0.0' });
     assert.equal(result.ok, false);
-    assert.match(result.errors.join('\n'), /bundled Python environment/);
+    assert.match(result.errors.join('\n'), /required directory missing: python_env/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

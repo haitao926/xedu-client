@@ -22,8 +22,11 @@ BASE_DIR = Path(__file__).resolve().parent
 # 确保 backend 包可以被导入
 sys.path.insert(0, str(BASE_DIR))
 
-from api.app import create_app  # noqa: E402
 from utils.logger import get_logger  # noqa: E402
+from utils.python_bootstrap import (  # noqa: E402
+    ensure_backend_dependencies,
+    missing_backend_packages,
+)
 
 logger = get_logger(__name__)
 _cleanup_executed = False
@@ -75,11 +78,71 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
+def run_bootstrap_recovery_server(port: int) -> None:
+    """Expose environment recovery while Flask dependencies are unavailable."""
+    from utils.bootstrap_server import run_bootstrap_server
+    from utils.python_runtime import inspect_python_executable, repair_xedu_python_environment
+
+    host = (
+        os.environ.get("XEDU_BACKEND_BIND_HOST")
+        or os.environ.get("XEDU_API_HOST")
+        or os.environ.get("XEDU_BACKEND_HOST")
+        or "127.0.0.1"
+    ).strip()
+    capability = os.environ.get("XEDU_CLIENT_CAPABILITY", "")
+
+    def promote_backend(server) -> None:
+        """Install the backend-only dependencies after repair, then re-exec normally."""
+        startup_marker("bootstrap-repair-succeeded; preparing full backend")
+        backend_dependencies = ensure_backend_dependencies()
+        if not backend_dependencies.get("success"):
+            startup_marker(
+                f"bootstrap-promotion-failed: "
+                f"{backend_dependencies.get('message') or '无法准备 Flask 后端依赖'}"
+            )
+            return
+
+        startup_marker("bootstrap-promotion-ready")
+        try:
+            os.execv(
+                sys.executable,
+                [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]],
+            )
+        except OSError as exc:
+            startup_marker(f"bootstrap-promotion-exec-failed: {exc}")
+            server.shutdown()
+
+    startup_marker(f"bootstrap-recovery-ready host={host} port={port}")
+    run_bootstrap_server(
+        host,
+        port,
+        capability=capability,
+        inspect_python=inspect_python_executable,
+        repair_python=repair_xedu_python_environment,
+        on_repair_success=promote_backend,
+        bootstrap_log=startup_marker,
+    )
+
+
 def main() -> None:
     """构建并运行 Flask 应用。"""
     print(f"Python Executable: {sys.executable}", flush=True)
     print(f"System Path: {sys.path}", flush=True)
     startup_marker("entry")
+
+    port = int(os.environ.get("XEDU_API_PORT") or os.environ.get("XEDU_BACKEND_PORT") or "5123")
+
+    # Do not try to import or install Flask before the recovery API exists.
+    # A selected Python environment must be repairable even when it has none
+    # of the backend packages yet.
+    missing = missing_backend_packages()
+    if missing:
+        startup_marker(f"bootstrap-dependencies-missing: {', '.join(missing)}")
+        run_bootstrap_recovery_server(port)
+        return
+    startup_marker("bootstrap-ready")
+
+    from api.app import create_app  # noqa: E402
     
     # 注册退出处理
     atexit.register(cleanup_jupyter_processes)
@@ -97,7 +160,6 @@ def main() -> None:
     app = create_app(env_config_dir)
     startup_marker("create-app-done")
 
-    port = int(os.environ.get("XEDU_API_PORT") or os.environ.get("XEDU_BACKEND_PORT") or "5123")
     host_env = (
         os.environ.get("XEDU_BACKEND_BIND_HOST")
         or os.environ.get("XEDU_API_HOST")

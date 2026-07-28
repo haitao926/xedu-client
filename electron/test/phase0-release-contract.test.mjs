@@ -274,7 +274,13 @@ test('official release config inherits package build settings and forces signed 
 
   assert.equal(releaseConfig.appId, packageJson.build.appId);
   assert.deepEqual(releaseConfig.files, packageJson.build.files);
-  assert.deepEqual(releaseConfig.extraResources, packageJson.build.extraResources);
+  for (const resource of packageJson.build.extraResources) {
+    assert.deepEqual(
+      releaseConfig.extraResources.find(({ from, to }) => from === resource.from && to === resource.to),
+      resource,
+    );
+  }
+  assert.equal(releaseConfig.extraResources.find(({ to }) => to === 'python_env')?.from, 'python_env_minimal');
   assert.equal(releaseConfig.directories.buildResources, packageJson.build.directories.buildResources);
   assert.equal(releaseConfig.directories.output, 'dist-release');
   assert.equal(releaseConfig.win.forceCodeSigning, true);

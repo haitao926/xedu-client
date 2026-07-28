@@ -310,6 +310,41 @@ def register_python_routes(app, services: dict):
                 summary["hints"] = ["请检查视频源、模型加载以及当前 Python/OpenCV 环境。"]
         return summary
 
+    def _visual_result_artifacts(events):
+        preview_image = ""
+        cards = []
+        for event in events or []:
+            event_type = str(event.get("type") or "").strip()
+            if event_type == "result_image":
+                image = str(event.get("image") or "").strip()
+                if image.startswith("data:image/"):
+                    preview_image = image
+            elif event_type == "result_card":
+                cards.append({
+                    "title": str(event.get("title") or "运行结果"),
+                    "result": event.get("result"),
+                })
+        return {
+            "preview_image": preview_image,
+            "result_cards": cards,
+        }
+
+    def _visual_result_summary(artifacts):
+        cards = artifacts.get("result_cards") or []
+        if cards:
+            return {
+                "headline": cards[-1]["title"],
+                "metrics": [],
+                "hints": ["结果卡已写入输出区。"],
+            }
+        if artifacts.get("preview_image"):
+            return {
+                "headline": "结果图已生成",
+                "metrics": [],
+                "hints": ["结果图已写入输出区。"],
+            }
+        return None
+
     @app.route("/api/python/run", methods=["POST"])
     @require_capability("python:run")
     def run_python_code():
@@ -383,6 +418,7 @@ def register_python_routes(app, services: dict):
             success = result["return_code"] == 0
             runtime_events, cleaned_stdout = _parse_runtime_markers(result["stdout"])
             cleaned_stderr = str(result["stderr"] or "").strip()
+            visual_artifacts = _visual_result_artifacts(runtime_events)
             response_payload = {
                 "success": success,
                 "message": "运行成功" if success else "运行失败",
@@ -395,8 +431,14 @@ def register_python_routes(app, services: dict):
                     "return_code": result["return_code"],
                     "runtime_events": runtime_events,
                     "resource_events": result["resource_events"],
+                    "result_artifacts": visual_artifacts,
                 },
             }
+            if visual_artifacts["preview_image"]:
+                response_payload["artifacts"] = {"image_data": visual_artifacts["preview_image"]}
+            visual_summary = _visual_result_summary(visual_artifacts)
+            if visual_summary:
+                response_payload["result_summary"] = visual_summary
             if _is_stream_python(code):
                 stream_summary = _stream_summary_from_events(runtime_events, cleaned_stdout, cleaned_stderr, result["return_code"])
                 response_payload["message"] = stream_summary["headline"]

@@ -10,7 +10,14 @@ import os
 from flask import Response, after_this_request, jsonify, request, send_file
 
 from api.security import require_capability
-from services.classroom_service import ClassroomService, ClassroomServiceError
+from services.classroom_service import (
+    DEFAULT_DISCOVERY_MAX_RESULTS,
+    DEFAULT_DISCOVERY_TIMEOUT,
+    MAX_DISCOVERY_RESULTS,
+    MAX_DISCOVERY_TIMEOUT,
+    ClassroomService,
+    ClassroomServiceError,
+)
 
 
 def register_classroom_routes(app, services: dict):
@@ -70,9 +77,26 @@ def register_classroom_routes(app, services: dict):
 
     @app.route("/api/classroom/discover")
     def classroom_discover():
-        timeout = float(request.args.get("timeout") or 1.5)
-        max_results = int(request.args.get("max_results") or 6)
-        results = ClassroomService.discover(timeout=timeout, max_results=max_results)
+        try:
+            timeout = min(
+                MAX_DISCOVERY_TIMEOUT,
+                max(0.5, float(request.args.get("timeout") or DEFAULT_DISCOVERY_TIMEOUT)),
+            )
+        except (TypeError, ValueError):
+            timeout = DEFAULT_DISCOVERY_TIMEOUT
+        try:
+            max_results = min(
+                MAX_DISCOVERY_RESULTS,
+                max(1, int(request.args.get("max_results") or DEFAULT_DISCOVERY_MAX_RESULTS)),
+            )
+        except (TypeError, ValueError):
+            max_results = DEFAULT_DISCOVERY_MAX_RESULTS
+        classroom_code = str(request.args.get("code") or "").strip()
+        results = ClassroomService.discover(
+            timeout=timeout,
+            max_results=max_results,
+            classroom_code=classroom_code,
+        )
         return jsonify({"success": True, "classrooms": results})
 
     @app.route("/api/classroom/fetch-index", methods=["POST"])
@@ -80,8 +104,9 @@ def register_classroom_routes(app, services: dict):
     def classroom_fetch_index():
         payload = request.get_json(silent=True) or {}
         base_url = payload.get("base_url", "")
+        classroom_code = payload.get("classroom_code", "")
         try:
-            result = ClassroomService.fetch_index(base_url)
+            result = ClassroomService.fetch_index(base_url, classroom_code=classroom_code)
             return jsonify({"success": True, **result})
         except ClassroomServiceError as exc:
             return jsonify({"success": False, "message": str(exc)}), 400

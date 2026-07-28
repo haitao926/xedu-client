@@ -6,6 +6,11 @@ import math
 import os
 import tempfile
 import time
+import base64
+import html
+import io
+import json
+import mimetypes
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +31,110 @@ def _result_note_payload(kind: str, **payload):
     data = {"kind": kind}
     data.update(payload)
     return data
+
+
+def _runtime_jsonable(value: Any, *, depth: int = 0):
+    if depth > 6:
+        return str(value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _runtime_jsonable(item, depth=depth + 1) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_runtime_jsonable(item, depth=depth + 1) for item in value]
+    if hasattr(value, "tolist"):
+        try:
+            return _runtime_jsonable(value.tolist(), depth=depth + 1)
+        except Exception:
+            pass
+    return str(value)
+
+
+def _image_data_url(image: Any) -> str:
+    if image is None:
+        return ""
+    if isinstance(image, str):
+        value = image.strip()
+        if value.startswith("data:image/"):
+            return value
+        path = Path(value).expanduser()
+        if path.is_file():
+            try:
+                mime = mimetypes.guess_type(path.name)[0] or "image/png"
+                encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+                return f"data:{mime};base64,{encoded}"
+            except Exception:
+                return ""
+        return ""
+    if isinstance(image, (bytes, bytearray, memoryview)):
+        try:
+            encoded = base64.b64encode(bytes(image)).decode("ascii")
+            return f"data:image/png;base64,{encoded}"
+        except Exception:
+            return ""
+    try:
+        from PIL import Image
+
+        if not isinstance(image, Image.Image) and hasattr(image, "shape"):
+            image = Image.fromarray(image)
+        if isinstance(image, Image.Image):
+            buffer = io.BytesIO()
+            image.convert("RGB").save(buffer, format="PNG")
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            return f"data:image/png;base64,{encoded}"
+    except Exception:
+        return ""
+    return ""
+
+
+def _display_in_notebook(value: Any) -> bool:
+    try:
+        from IPython import get_ipython
+        from IPython.display import display
+
+        if get_ipython() is None:
+            return False
+        display(value)
+        return True
+    except Exception:
+        return False
+
+
+def _display_result_card(title: str, result: Any) -> bool:
+    try:
+        from IPython.display import HTML
+
+        serialized = json.dumps(_runtime_jsonable(result), ensure_ascii=False, indent=2, default=str)
+        markup = (
+            '<div style="border:1px solid #d8dee9;border-radius:8px;padding:12px;'
+            'background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,sans-serif">'
+            f'<strong>{html.escape(str(title or "运行结果"))}</strong>'
+            f'<pre style="white-space:pre-wrap;margin:8px 0 0">{html.escape(serialized)}</pre>'
+            '</div>'
+        )
+        return _display_in_notebook(HTML(markup))
+    except Exception:
+        return False
+
+
+def _display_result_image(image: Any) -> bool:
+    data_url = _image_data_url(image)
+    if not data_url:
+        return False
+    try:
+        from IPython.display import Image as DisplayImage
+
+        encoded = data_url.split(",", 1)[1]
+        return _display_in_notebook(DisplayImage(data=base64.b64decode(encoded)))
+    except Exception:
+        return False
+
+
+def _emit_result_event(kind: str, **payload):
+    safe_payload = {key: _runtime_jsonable(value) for key, value in payload.items()}
+    return xedu_emit_runtime_event(kind, **safe_payload)
 
 
 class XEduStreamError(RuntimeError):
@@ -360,11 +469,19 @@ def xedu_first_text(result) -> str:
 
 
 def xedu_show_result_card(result, title: str = "运行结果"):
-    return _result_note_payload("result_card", title=str(title or "运行结果"), result=result)
+    normalized_title = str(title or "运行结果")
+    payload = _result_note_payload("result_card", title=normalized_title, result=result)
+    if not _display_result_card(normalized_title, result):
+        _emit_result_event("result_card", title=normalized_title, result=result)
+    return payload
 
 
 def xedu_show_result_image(image=None, title: str = "结果图"):
-    return _result_note_payload("result_image", title=str(title or "结果图"), image=image)
+    normalized_title = str(title or "结果图")
+    payload = _result_note_payload("result_image", title=normalized_title, image=image)
+    if not _display_result_image(image):
+        _emit_result_event("result_image", title=normalized_title, image=_image_data_url(image))
+    return payload
 
 
 def xedu_record_conclusion(note: str = "教学结论已记录", result=None):
@@ -372,7 +489,9 @@ def xedu_record_conclusion(note: str = "教学结论已记录", result=None):
 
 
 def xedu_clear_result():
-    return _result_note_payload("clear_result")
+    payload = _result_note_payload("clear_result")
+    _emit_result_event("clear_result")
+    return payload
 
 
 def xedu_distance(x1, y1, x2, y2) -> int:

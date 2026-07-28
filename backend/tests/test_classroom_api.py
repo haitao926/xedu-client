@@ -1,5 +1,6 @@
 import io
 import json
+import socket
 import stat
 import tempfile
 import threading
@@ -8,6 +9,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
+from urllib import error as urlerror
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -58,6 +60,165 @@ class ClassroomApiTestCase(unittest.TestCase):
             encoding="utf-8",
         )
         return course_dir
+
+    def test_discover_ignores_malformed_datagrams_and_accepts_valid_payload(self):
+        class FakeSocket:
+            def __init__(self):
+                self.payloads = [
+                    (b"not-json", ("192.168.1.10", 39527)),
+                    (json.dumps({"type": "xedu-classroom", "port": "invalid"}).encode(), ("192.168.1.11", 39527)),
+                    (json.dumps({
+                        "type": "xedu-classroom",
+                        "server_id": "teacher-1",
+                        "name": "教师机",
+                        "code": "room-a",
+                        "port": 5123,
+                        "course_count": 2,
+                    }).encode(), ("192.168.1.12", 39527)),
+                ]
+
+            def setsockopt(self, *_args):
+                return None
+
+            def bind(self, *_args):
+                return None
+
+            def settimeout(self, *_args):
+                return None
+
+            def sendto(self, *_args):
+                return None
+
+            def recvfrom(self, *_args):
+                if self.payloads:
+                    return self.payloads.pop(0)
+                raise socket.timeout
+
+            def close(self):
+                return None
+
+        with patch("services.classroom_service._iter_discovery_broadcast_targets", return_value=["255.255.255.255"]), patch("services.classroom_service.socket.socket", return_value=FakeSocket()):
+            results = ClassroomService.discover(timeout=0.5)
+
+        self.assertEqual(results, [{
+            "server_id": "teacher-1",
+            "name": "教师机",
+            "code": "room-a",
+            "host": "192.168.1.12",
+            "port": 5123,
+            "course_count": 2,
+            "last_seen": results[0]["last_seen"],
+        }])
+
+    def test_discover_retries_probes_and_deduplicates_classrooms(self):
+        class FakeSocket:
+            def __init__(self):
+                self.sent = []
+                self.payloads = [
+                    socket.timeout(),
+                    socket.timeout(),
+                    (
+                        json.dumps({
+                            "type": "xedu-classroom",
+                            "server_id": "teacher-1",
+                            "name": "教师机",
+                            "code": "room-a",
+                            "port": 5123,
+                            "course_count": 1,
+                        }).encode(),
+                        ("192.168.1.12", 39527),
+                    ),
+                    (
+                        json.dumps({
+                            "type": "xedu-classroom",
+                            "server_id": "teacher-1",
+                            "name": "教师机",
+                            "code": "room-a",
+                            "port": 5123,
+                            "course_count": 3,
+                        }).encode(),
+                        ("192.168.1.12", 39527),
+                    ),
+                ]
+
+            def setsockopt(self, *_args):
+                return None
+
+            def bind(self, *_args):
+                return None
+
+            def settimeout(self, *_args):
+                return None
+
+            def sendto(self, data, addr):
+                self.sent.append((json.loads(data.decode("utf-8")), addr))
+                return None
+
+            def recvfrom(self, *_args):
+                if not self.payloads:
+                    raise socket.timeout
+                item = self.payloads.pop(0)
+                if isinstance(item, BaseException):
+                    raise item
+                return item
+
+            def close(self):
+                return None
+
+        fake_socket = FakeSocket()
+        monotonic_state = {"value": 0.0}
+
+        def fake_monotonic():
+            monotonic_state["value"] += 0.2
+            return monotonic_state["value"]
+
+        with patch("services.classroom_service._iter_discovery_broadcast_targets", return_value=["255.255.255.255"]), patch("services.classroom_service.time.monotonic", side_effect=fake_monotonic), patch("services.classroom_service.socket.socket", return_value=fake_socket):
+            results = ClassroomService.discover(timeout=1.5, classroom_code="room-a")
+
+        probe_payloads = [payload for payload, _addr in fake_socket.sent]
+        self.assertGreaterEqual(len(probe_payloads), 2)
+        self.assertTrue(all(payload["type"] == "xedu-classroom-probe" for payload in probe_payloads))
+        self.assertTrue(all(payload["code"] == "room-a" for payload in probe_payloads))
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["server_id"], "teacher-1")
+        self.assertEqual(results[0]["course_count"], 3)
+
+    def test_discover_returns_empty_after_timeout_when_no_classroom_responds(self):
+        class FakeSocket:
+            def __init__(self):
+                self.sent = []
+
+            def setsockopt(self, *_args):
+                return None
+
+            def bind(self, *_args):
+                return None
+
+            def settimeout(self, *_args):
+                return None
+
+            def sendto(self, data, addr):
+                self.sent.append((json.loads(data.decode("utf-8")), addr))
+                return None
+
+            def recvfrom(self, *_args):
+                raise socket.timeout
+
+            def close(self):
+                return None
+
+        fake_socket = FakeSocket()
+        monotonic_state = {"value": 0.0}
+
+        def fake_monotonic():
+            monotonic_state["value"] += 0.2
+            return monotonic_state["value"]
+
+        with patch("services.classroom_service._iter_discovery_broadcast_targets", return_value=["255.255.255.255"]), patch("services.classroom_service.time.monotonic", side_effect=fake_monotonic), patch("services.classroom_service.socket.socket", return_value=fake_socket):
+            results = ClassroomService.discover(timeout=1.5, classroom_code="room-a")
+
+        self.assertEqual(results, [])
+        self.assertGreaterEqual(len(fake_socket.sent), 2)
 
     @staticmethod
     def _read_zip_member(zip_path: Path, member: str) -> str:
@@ -219,10 +380,14 @@ class ClassroomApiTestCase(unittest.TestCase):
             "raw_base_url": "http://127.0.0.1:5123",
             "branch": "classroom",
         }
-        with patch("api.routes.classroom.ClassroomService.fetch_index", return_value=upstream):
-            response = self.client.post("/api/classroom/fetch-index", json={"base_url": "http://127.0.0.1:5123"})
+        with patch("api.routes.classroom.ClassroomService.fetch_index", return_value=upstream) as fetch_index:
+            response = self.client.post(
+                "/api/classroom/fetch-index",
+                json={"base_url": "http://127.0.0.1:5123", "classroom_code": "abc123"},
+            )
 
         self.assertEqual(response.status_code, 200)
+        fetch_index.assert_called_once_with("http://127.0.0.1:5123", classroom_code="abc123")
         data = response.get_json()
         self.assertTrue(data["success"])
         self.assertEqual(data["index"]["resources"][0]["id"], "course-1")
@@ -239,6 +404,42 @@ class ClassroomApiTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertFalse(data["success"])
         self.assertEqual(data["message"], "课堂索引不可用: HTTP 404")
+
+    def test_fetch_index_validates_course_reachability(self):
+        index_payload = {
+            "success": True,
+            "index": {
+                "resources": [
+                    {
+                        "id": "course-1",
+                        "course_url": "http://127.0.0.1:5123/api/classroom/course/course-1/course.json",
+                    }
+                ],
+                "classroom": {
+                    "name": "课堂A",
+                    "code": "abc123",
+                    "active_course_id": "course-1",
+                },
+            },
+        }
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                self.close()
+                return False
+
+        def fake_urlopen(request, timeout=10):
+            url = request.full_url
+            if url.endswith("/api/classroom/index"):
+                return FakeResponse(json.dumps(index_payload).encode("utf-8"))
+            raise urlerror.HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
+
+        with patch("services.classroom_service.urlrequest.urlopen", side_effect=fake_urlopen):
+            with self.assertRaisesRegex(ClassroomServiceError, "课堂课程不可达: HTTP 404"):
+                ClassroomService.fetch_index("http://127.0.0.1:5123", classroom_code="abc123")
 
     def test_start_broadcast_status_and_index_include_classroom_code(self):
         teacher_code = "test-teacher-code"
@@ -469,6 +670,65 @@ class ClassroomApiTestCase(unittest.TestCase):
         with zipfile.ZipFile(lease, "r") as archive:
             self.assertIn("course.json", archive.namelist())
         lease.unlink(missing_ok=True)
+
+    def test_classroom_package_rejects_symlink_and_hardlink_files(self):
+        service = ClassroomService()
+        course_dir = self._write_local_course(course_id="unsafe-classroom-course")
+        service.update_courses([
+            {
+                "id": "unsafe-classroom-course",
+                "title": "不安全课堂课程",
+                "local_path": str(course_dir),
+            }
+        ])
+        outside = Path(self.temp_dir.name) / "classroom-outside.txt"
+        outside.write_text("private", encoding="utf-8")
+
+        symlink_path = course_dir / "lesson" / "linked.txt"
+        try:
+            symlink_path.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前文件系统不支持符号链接")
+        with self.assertRaisesRegex(ClassroomServiceError, "符号链接"):
+            service.build_package("unsafe-classroom-course", "1.0")
+        symlink_path.unlink()
+
+        hardlink_path = course_dir / "lesson" / "hardlink.txt"
+        try:
+            hardlink_path.hardlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前文件系统不支持硬链接")
+        with self.assertRaisesRegex(ClassroomServiceError, "硬链接"):
+            service.build_package("unsafe-classroom-course", "1.0")
+
+    def test_classroom_file_rejects_linked_public_files(self):
+        service = ClassroomService()
+        course_dir = self._write_local_course(course_id="public-file-course")
+        service.update_courses([
+            {
+                "id": "public-file-course",
+                "title": "公开文件课程",
+                "local_path": str(course_dir),
+            }
+        ])
+        outside = Path(self.temp_dir.name) / "public-outside.txt"
+        outside.write_text("private", encoding="utf-8")
+        linked = course_dir / "lesson" / "linked.txt"
+        try:
+            linked.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前文件系统不支持符号链接")
+        with self.assertRaisesRegex(ClassroomServiceError, "符号链接"):
+            service.resolve_file_path("public-file-course", "lesson/linked.txt")
+
+        linked.unlink()
+        hardlink = course_dir / "lesson" / "hardlink.txt"
+        try:
+            hardlink.hardlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前文件系统不支持硬链接")
+        with self.assertRaisesRegex(ClassroomServiceError, "硬链接"):
+            service.resolve_file_path("public-file-course", "lesson/hardlink.txt")
 
 
 if __name__ == "__main__":

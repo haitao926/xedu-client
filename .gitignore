@@ -19,6 +19,11 @@ venv/
 .venv/
 python_env/
 python_env_win/
+python_env_minimal/
+python_env_win_minimal/
+python_env_minimal_old/
+python_env_win_minimal_old/
+python-*-embed-*.zip
 checkpoint/
 checkpoints/
 backend/checkpoint/
@@ -48,6 +53,7 @@ dist-installer/
 
 # New ignores
 dist-final/
+dist-*/
 downloads/
 build/
 scratch-editor/build/

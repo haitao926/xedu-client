@@ -213,7 +213,7 @@
                                     后端启动异常时，可在此打开日志目录、复制脱敏诊断摘要或重试启动。
                                 </div>
                                 <div id="startup-support-path" class="resources-create-hint" style="margin-top: 6px; display: none;"></div>
-                                <div class="resources-create-hint" style="margin-top: 6px;">首次使用或环境失效时，请选择本机已安装的 Python 3.10+ 环境。</div>
+                                <div class="resources-create-hint" style="margin-top: 6px;">首次使用或环境失效时，请选择本机已安装的 Python 3.8+ 环境。</div>
                                 <div class="action-row mt-3">
                                     <button id="select-python-btn" class="btn btn-primary flex-1" type="button" data-action="system.selectPythonEnvironment">选择本机 Python</button>
                                     <button id="open-log-directory-btn" class="btn btn-secondary flex-1" type="button">打开日志目录</button>
@@ -375,6 +375,23 @@
             <div id="resources" class="page-section">
                 <div class="resources-layout">
                     <div class="resources-main">
+                        <div id="resources-import-drop-zone" class="resources-import-drop-zone" role="region" aria-label="拖入课程 ZIP 或课程文件夹直接导入">
+                            <div class="resources-import-drop-copy">
+                                <strong>拖入 ZIP 或课程文件夹</strong>
+                                <span>会自动校验 course.json，导入后刷新资源列表</span>
+                            </div>
+                            <div id="resources-import-drop-status" class="resources-detail-import-status resources-import-drop-status" role="status" aria-live="polite">
+                                <span class="resources-transfer-status-message">等待拖入课程</span>
+                                <div class="resources-transfer-progress-panel" hidden>
+                                    <div class="resources-transfer-progress-heading">
+                                        <span class="resources-transfer-progress-phase">正在处理</span>
+                                        <span class="resources-transfer-progress-percent">处理中</span>
+                                    </div>
+                                    <progress class="resources-transfer-progress" max="100" aria-label="课程导入进度"></progress>
+                                    <span class="resources-transfer-progress-detail"></span>
+                                </div>
+                            </div>
+                        </div>
                         <div id="resources-list-view" class="resources-view">
                             <div class="resources-toolbar">
                                 <div>
@@ -469,9 +486,6 @@
                                             </button>
                                             <button id="resources-detail-repo" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>查看仓库
-                                            </button>
-                                            <button id="resources-detail-inspect" class="btn btn-secondary btn-sm" style="display: none; align-items: center; gap: 6px;">
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"></path><path d="M21 21v-5h-5"></path><path d="M21 8a9 9 0 0 0-15.5-3L3 8"></path><path d="M3 16a9 9 0 0 0 15.5 3L21 16"></path></svg>重新巡检
                                             </button>
                                         </div>
                                     </div>
@@ -765,6 +779,7 @@
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>教师口令
                                         </label>
                                         <input type="password" id="classroom-teacher-code" class="form-control" placeholder="输入口令">
+                                        <button id="forget-teacher-credential-btn" class="btn btn-secondary btn-sm" type="button" data-action="system.forgetStoredTeacherCredential" style="margin-top: 8px;">忘记本机教师口令</button>
                                     </div>
                                 </div>
                                 <div class="classroom-setting-options">

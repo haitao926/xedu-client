@@ -35,6 +35,8 @@ test("local course import exposes a ZIP drop target and shared transfer progress
   const resources = readRepoFile("renderer/js/resources.js");
 
   for (const id of [
+    "resources-import-drop-zone",
+    "resources-import-drop-status",
     "resources-package-drop-zone",
     "resources-package-drop-file",
     "resources-create-import-progress",
@@ -43,9 +45,11 @@ test("local course import exposes a ZIP drop target and shared transfer progress
     assert.match(html, new RegExp(`id="${id}"`), `missing transfer DOM node: ${id}`);
   }
 
+  assert.match(html, /拖入 ZIP 或课程文件夹/);
   assert.match(html, /id="resources-package-drop-zone"[\s\S]*?role="button"[\s\S]*?tabindex="0"/);
   assert.match(bindings, /addEventListener\(['"]dragover['"]/);
   assert.match(bindings, /addEventListener\(['"]drop['"]/);
+  assert.match(bindings, /handleCourseImportDrop/);
   assert.match(bindings, /handlePackageDrop/);
   assert.match(resources, /getPathForFileWithDesktopBridge/);
   assert.match(resources, /setCreateImportStatus\(state, message = "", progress = null\)/);
@@ -83,16 +87,15 @@ test("repository URL import detects indexed and root-course repositories from th
   assert.match(createFlow, /single_course_repo:\s*Boolean\(selectedCourse\.single_course_repo\)/);
 });
 
-test("course inspection is automatic and manual reinspection lives in the more menu", () => {
+test("teacher resource more menu keeps update actions without a reinspection entry", () => {
   const html = readRepoFile("renderer/index.html");
   const resources = readRepoFile("renderer/js/resources.js");
   const bindings = readRepoFile("renderer/js/resources/resource-bindings.js");
 
   assert.match(html, /id="resources-detail-pull"[\s\S]*?更新课程/);
-  assert.match(html, /id="resources-detail-inspect"[\s\S]*?重新巡检/);
-  assert.match(resources, /shouldShowCourseInspectionCard\(courseInspectionState\)/);
-  assert.match(bindings, /resources-detail-inspect/);
-  assert.match(bindings, /inspectCourseResource/);
+  assert.doesNotMatch(html, /resources-detail-inspect/);
+  assert.doesNotMatch(resources, /courseInspectionState/);
+  assert.doesNotMatch(bindings, /resources-detail-inspect/);
   assert.match(bindings, /resources-detail-pull/);
   assert.match(bindings, /pullLatestForLocalCourse/);
 });
@@ -113,4 +116,13 @@ test("student task center cannot enter the teacher course import wizard", () => 
   assert.match(studentEmpty, /action:\s*"connect-classroom"/);
   assert.match(resources, /if \(action === "import-local"\) \{[\s\S]*if \(!resourcesState\.teacherMode\.unlocked\) return;/);
   assert.match(resources, /function openCreateView\(resource = null\) \{[\s\S]*if \(!resourcesState\.teacherMode\.unlocked\) return false;/);
+});
+
+test("resource requests wait for the Electron backend to become ready", () => {
+  const resources = readRepoFile("renderer/js/resources.js");
+
+  assert.match(resources, /async function waitForBackendBeforeResourceRequests\(/);
+  assert.match(resources, /getBackendStartupState/);
+  assert.match(resources, /后端尚未就绪，暂不加载课堂和课程资源请求/);
+  assert.match(resources, /const backendReady = await waitForBackendBeforeResourceRequests\(\)/);
 });

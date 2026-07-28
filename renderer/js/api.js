@@ -6,6 +6,9 @@
 const DEFAULT_BASE_URL = (typeof window !== 'undefined' && window.xeduConfig && window.xeduConfig.apiBase)
     ? window.xeduConfig.apiBase
     : 'http://127.0.0.1:5123';
+const DEV_API_CAPABILITY = import.meta.env?.DEV
+    ? String(import.meta.env.VITE_XEDU_CLIENT_CAPABILITY || '').trim()
+    : '';
 
 const rawFetch = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : fetch;
 const trimTrailingSlash = (url) => url ? url.replace(/\/$/, '') : '';
@@ -136,6 +139,9 @@ class APIClient {
         const requestHeaders = new Headers(headers || {});
         if (!isFormDataBody(restOptions.body) && !requestHeaders.has('Content-Type')) {
             requestHeaders.set('Content-Type', 'application/json');
+        }
+        if (DEV_API_CAPABILITY && url.startsWith(`${trimTrailingSlash(this.baseURL)}/api/`)) {
+            requestHeaders.set('X-XEdu-Client-Token', DEV_API_CAPABILITY);
         }
 
         const config = {

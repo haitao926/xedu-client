@@ -147,6 +147,10 @@
       "gatekeeperAssess": false,
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "XEdu 课程中的 HTML 和 Scratch 实验需要使用摄像头。",
+        "NSLocalNetworkUsageDescription": "XEdu 需要访问同一局域网中的课堂设备以自动发现课堂。"
+      },
       "target": [
         {
           "target": "dmg",

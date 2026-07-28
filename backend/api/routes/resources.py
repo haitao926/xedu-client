@@ -23,15 +23,14 @@ from api.resource_runtime import (
 )
 from api.security import require_capability, require_same_origin_or_native
 
+from services.gitea_course_scanner import normalize_course_data, summarize_course
 from services.gitea_client import GiteaClient
 from services.gitea_service import (
     GiteaServiceError,
     find_course_entry_from_index,
     import_local_course_package,
-    inspect_course,
     load_course_data_from_repo,
     load_index_data,
-    load_repo_tree_data,
     publish_course,
     pull_course,
     resolve_local_course_package_target_path,
@@ -541,8 +540,7 @@ def register_resource_routes(app, services: dict):
             local_path = str(payload.get("local_path") or "").strip()
             if local_path:
                 result = scan_course(local_path, init_if_missing=False, init_meta=None, auto_build=False)
-                inspection = inspect_course(result.course, local_path=local_path)
-                return jsonify({"success": True, **inspection})
+                return jsonify({"success": True, "course": result.course, "summary": result.summary})
 
             ui_config = get_app_config().ui
             source_id = str(payload.get("source_id") or "").strip()
@@ -581,26 +579,8 @@ def register_resource_routes(app, services: dict):
                 return jsonify({"success": False, "message": "缺少 course_url，无法读取课程结构"}), 400
 
             course = load_course_data_from_repo(raw_base_url=raw_base_url, course_path=course_url, token=token)
-            remote_tree = load_repo_tree_data(base_url=base_url, repo=repo, branch=branch, token=token)
-            course_path_for_root = course_url
-            if course_path_for_root.startswith(raw_base_url):
-                course_path_for_root = course_path_for_root[len(raw_base_url):].lstrip("/")
-            if course_path_for_root.startswith(("http://", "https://")):
-                course_path_for_root = ""
-            course_root = str(Path(course_path_for_root).parent).replace("\\", "/").strip(".").strip("/")
-            if course_root:
-                prefix = f"{course_root}/"
-                remote_tree = [
-                    *remote_tree,
-                    *[
-                        {**item, "path": str(item.get("path") or "")[len(prefix):]}
-                        for item in remote_tree
-                        if str(item.get("path") or "").startswith(prefix)
-                    ],
-                ]
-            inspection = inspect_course(course, remote_tree=remote_tree)
             normalized_course = {
-                **(inspection.get("course") or {}),
+                **normalize_course_data(course),
                 "course_url": course_url,
                 "package_url": package_url,
                 "_source_id": selected.get("id", source_id),
@@ -613,8 +593,7 @@ def register_resource_routes(app, services: dict):
             return jsonify({
                 "success": True,
                 "course": normalized_course,
-                "summary": inspection.get("summary") or {},
-                "inspection": inspection.get("inspection") or {},
+                "summary": summarize_course(normalized_course),
             })
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
@@ -625,8 +604,8 @@ def register_resource_routes(app, services: dict):
         except GiteaServiceError as exc:
             return jsonify({"success": False, "message": str(exc)}), 400
         except Exception as exc:
-            logger.error(f"巡检课程失败: {exc}")
-            return jsonify({"success": False, "message": "巡检课程失败"}), 500
+            logger.error(f"读取课程结构失败: {exc}")
+            return jsonify({"success": False, "message": "读取课程结构失败"}), 500
 
     @app.route("/api/resources/publish", methods=["POST"])
     @require_capability("resource:write")

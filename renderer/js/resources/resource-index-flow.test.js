@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { buildLocalCourseFileUrl } from "./file-utils.js";
 import { loadResourcesIndexFlow } from "./resource-index-flow.js";
 
 function makeDeps(overrides = {}) {
@@ -155,6 +156,43 @@ test("loadResourcesIndexFlow continues with cached courses when disk refresh tim
 
   assert.equal(appliedCourses.length, 1);
   assert.equal(appliedCourses[0].id, "cached-course");
+});
+
+test("loadResourcesIndexFlow reapplies a late disk refresh with a usable local cover handle", async () => {
+  const cachedCourse = {
+    id: "local-course",
+    title: "本地课程",
+    source: "local",
+    local_path: "/tmp/local-course",
+    cover: "cover.png",
+    resource_handle: "stale-handle",
+  };
+  let resolveRefresh;
+  const refreshPromise = new Promise((resolve) => {
+    resolveRefresh = resolve;
+  });
+  const appliedCoverUrls = [];
+  const deps = makeDeps({
+    initialLocalCourses: [cachedCourse],
+    localRefreshTimeoutMs: 5,
+    refreshLocalCoursesFromDisk: () => refreshPromise,
+    applyResourcesIndex: () => {
+      appliedCoverUrls.push(buildLocalCourseFileUrl(deps.localCourses()[0], "cover.png"));
+    },
+  });
+
+  await loadResourcesIndexFlow(deps);
+  resolveRefresh([{
+    ...cachedCourse,
+    resource_handle: "fresh-handle",
+  }]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(
+    appliedCoverUrls.at(-1),
+    "http://127.0.0.1:5123/api/resources/local-file/fresh-handle/cover.png",
+  );
+  assert.equal(appliedCoverUrls.length, 2);
 });
 
 test("loadResourcesIndexFlow continues when local migration times out", async () => {

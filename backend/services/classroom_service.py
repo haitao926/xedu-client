@@ -9,6 +9,7 @@ Provides broadcast discovery, local course index building, and package generatio
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -22,16 +23,27 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from urllib import error as urlerror, request as urlrequest
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 from utils.logger import get_logger
+
+try:
+    import psutil
+except ImportError:  # pragma: no cover - optional fallback for minimal environments
+    psutil = None
 
 logger = get_logger(__name__)
 
 DISCOVERY_PORT = 39527
 BROADCAST_INTERVAL = 2.0
+DEFAULT_DISCOVERY_TIMEOUT = 3.5
+MAX_DISCOVERY_TIMEOUT = 10.0
+DEFAULT_DISCOVERY_MAX_RESULTS = 6
+MAX_DISCOVERY_RESULTS = 20
+DISCOVERY_PROBE_INTERVAL = 0.9
+DISCOVERY_SOCKET_POLL_SECONDS = 0.25
 MAX_CLASSROOM_PACKAGE_BYTES = 256 * 1024 * 1024
 MAX_CLASSROOM_EXPANDED_BYTES = 1024 * 1024 * 1024
 MAX_CLASSROOM_ARCHIVE_MEMBERS = 10_000
@@ -52,6 +64,97 @@ DEFAULT_EXCLUDES = {
 
 class ClassroomServiceError(RuntimeError):
     pass
+
+
+def _normalize_classroom_code(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _iter_local_ipv4_addresses() -> List[str]:
+    addresses: Set[str] = set()
+    for host, port in (("8.8.8.8", 80), ("1.1.1.1", 80), ("223.5.5.5", 80)):
+        probe = None
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            probe.connect((host, port))
+            local_ip = probe.getsockname()[0]
+            if local_ip and not local_ip.startswith("127."):
+                addresses.add(local_ip)
+        except Exception:
+            continue
+        finally:
+            try:
+                if probe is not None:
+                    probe.close()
+            except Exception:
+                pass
+    try:
+        hostname = socket.gethostname()
+        for family, _socktype, _proto, _canonname, sockaddr in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            if family != socket.AF_INET:
+                continue
+            host = sockaddr[0]
+            if host and not host.startswith("127."):
+                addresses.add(host)
+    except Exception:
+        pass
+    return sorted(addresses)
+
+
+def _iter_discovery_broadcast_targets() -> List[str]:
+    targets: Set[str] = {"255.255.255.255"}
+    if psutil is not None:
+        try:
+            for interface_addresses in psutil.net_if_addrs().values():
+                for address in interface_addresses:
+                    if address.family != socket.AF_INET or not address.address or address.address.startswith("127."):
+                        continue
+                    if not address.netmask:
+                        continue
+                    try:
+                        network = ipaddress.IPv4Network(f"{address.address}/{address.netmask}", strict=False)
+                    except ValueError:
+                        continue
+                    targets.add(str(network.broadcast_address))
+        except Exception:
+            pass
+    for host in _iter_local_ipv4_addresses():
+        try:
+            network = ipaddress.IPv4Network(f"{host}/24", strict=False)
+        except ValueError:
+            continue
+        targets.add(str(network.broadcast_address))
+    return sorted(targets)
+
+
+def _resolve_first_course_url(base_url: str, index: Dict[str, Any]) -> str:
+    resources = index.get("resources")
+    if not isinstance(resources, list) or not resources:
+        return ""
+    classroom = index.get("classroom") if isinstance(index.get("classroom"), dict) else {}
+    active_course_ids = {
+        str(classroom.get("active_course_id") or "").strip(),
+        str(classroom.get("active_course_origin_id") or "").strip(),
+    }
+    selected: Optional[Dict[str, Any]] = None
+    for item in resources:
+        if not isinstance(item, dict):
+            continue
+        resource_ids = {
+            str(item.get("id") or "").strip(),
+            str(item.get("origin_id") or "").strip(),
+        }
+        if active_course_ids.intersection(resource_ids) - {""}:
+            selected = item
+            break
+        if selected is None:
+            selected = item
+    if not selected:
+        return ""
+    course_url = str(selected.get("course_url") or "").strip()
+    if not course_url:
+        return ""
+    return urljoin(f"{base_url.rstrip('/')}/", course_url)
 
 
 def _validate_package_url(package_url: str) -> str:
@@ -245,6 +348,28 @@ def _iter_course_files(base: Path):
             yield file_path, rel
 
 
+def _ensure_safe_course_tree(base: Path) -> None:
+    """Reject links before a classroom package or digest reads local files."""
+    try:
+        root_stat = base.lstat()
+    except OSError as exc:
+        raise ClassroomServiceError("课程目录不可读取") from exc
+    if stat.S_ISLNK(root_stat.st_mode):
+        raise ClassroomServiceError("课程目录不能是符号链接")
+
+    for root, dirs, files in os.walk(base, followlinks=False):
+        for name in (*dirs, *files):
+            candidate = Path(root) / name
+            try:
+                candidate_stat = candidate.lstat()
+            except OSError as exc:
+                raise ClassroomServiceError("课程目录不可读取") from exc
+            if stat.S_ISLNK(candidate_stat.st_mode):
+                raise ClassroomServiceError("课程目录包含不安全的符号链接")
+            if stat.S_ISREG(candidate_stat.st_mode) and candidate_stat.st_nlink > 1:
+                raise ClassroomServiceError("课程目录包含不安全的硬链接")
+
+
 @dataclass
 class ClassroomConfig:
     active: bool = False
@@ -281,6 +406,7 @@ class ClassroomService:
         self._course_map: Dict[str, Dict[str, Any]] = {}
         self._course_id_map: Dict[str, str] = {}
         self._broadcast_thread: Optional[threading.Thread] = None
+        self._discovery_thread: Optional[threading.Thread] = None
         self._broadcast_stop = threading.Event()
         self._server_id = f"srv-{int(time.time())}-{os.getpid()}"
         self._last_broadcast_at: Optional[float] = None
@@ -385,6 +511,13 @@ class ClassroomService:
                     daemon=True,
                 )
                 self._broadcast_thread.start()
+            if not self._discovery_thread or not self._discovery_thread.is_alive():
+                self._discovery_thread = threading.Thread(
+                    target=self._discovery_responder_loop,
+                    name="classroom-discovery-responder",
+                    daemon=True,
+                )
+                self._discovery_thread.start()
 
         return self.status()
 
@@ -434,11 +567,63 @@ class ClassroomService:
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    sock.sendto(data, ("255.255.255.255", DISCOVERY_PORT))
+                    for target in _iter_discovery_broadcast_targets():
+                        try:
+                            sock.sendto(data, (target, DISCOVERY_PORT))
+                        except Exception as exc:
+                            logger.debug(f"课堂广播发送失败 {target}: {exc}")
                 self._last_broadcast_at = time.time()
             except Exception as exc:
                 logger.warning(f"课堂广播失败: {exc}")
             time.sleep(BROADCAST_INTERVAL)
+
+    def _discovery_responder_loop(self) -> None:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        except OSError as exc:
+            logger.warning(f"课堂发现监听失败: {exc}")
+            return
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except Exception:
+                pass
+            try:
+                sock.bind(("", DISCOVERY_PORT))
+            except Exception as exc:
+                logger.warning(f"课堂发现端口占用: {exc}")
+                return
+            sock.settimeout(DISCOVERY_SOCKET_POLL_SECONDS)
+            while not self._broadcast_stop.is_set():
+                try:
+                    data, addr = sock.recvfrom(4096)
+                except socket.timeout:
+                    continue
+                except Exception:
+                    break
+                try:
+                    payload = json.loads(data.decode("utf-8"))
+                except Exception:
+                    continue
+                if not isinstance(payload, dict) or payload.get("type") != "xedu-classroom-probe":
+                    continue
+                requested_code = _normalize_classroom_code(payload.get("code"))
+                with self._lock:
+                    classroom_code = _normalize_classroom_code(self._config.code)
+                if requested_code and classroom_code and requested_code != classroom_code:
+                    continue
+                response = self._build_broadcast_payload()
+                try:
+                    sock.sendto(json.dumps(response, ensure_ascii=False).encode("utf-8"), addr)
+                except Exception as exc:
+                    logger.debug(f"课堂发现响应失败: {exc}")
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
 
     def _build_broadcast_payload(self) -> Dict[str, Any]:
         with self._lock:
@@ -753,6 +938,7 @@ class ClassroomService:
         local_path = Path(course.get("local_path") or "")
         if not local_path.exists() or not local_path.is_dir():
             raise ClassroomServiceError("课程目录不存在")
+        _ensure_safe_course_tree(local_path)
 
         data = self._load_course_data(course)
         data["id"] = data.get("id") or share_id
@@ -792,22 +978,51 @@ class ClassroomService:
         base = Path(course.get("local_path") or "")
         if not base.exists() or not base.is_dir():
             raise ClassroomServiceError("课程目录不存在")
+        if base.is_symlink():
+            raise ClassroomServiceError("课程目录不能是符号链接")
+        base = base.resolve()
         clean_rel = (rel_path or "").replace("\\", "/").lstrip("/")
         if ".." in clean_rel.split("/"):
             raise ClassroomServiceError("非法路径")
-        target = (base / clean_rel).resolve()
-        if not str(target).startswith(str(base.resolve())):
+        candidate = base / clean_rel
+        current = base
+        for part in PurePosixPath(clean_rel).parts:
+            current = current / part
+            if current.is_symlink():
+                raise ClassroomServiceError("课程文件不能是符号链接")
+        target = candidate.resolve()
+        try:
+            within_base = os.path.commonpath([str(base), str(target)]) == str(base)
+        except ValueError:
+            within_base = False
+        if not within_base:
             raise ClassroomServiceError("非法路径")
+        if target.is_file() and target.stat().st_nlink > 1:
+            raise ClassroomServiceError("课程文件不能是硬链接")
         return target
 
     @staticmethod
-    def discover(timeout: float = 1.5, max_results: int = 6) -> List[Dict[str, Any]]:
+    def discover(
+        timeout: float = DEFAULT_DISCOVERY_TIMEOUT,
+        max_results: int = DEFAULT_DISCOVERY_MAX_RESULTS,
+        classroom_code: str = "",
+    ) -> List[Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
-        end_time = time.time() + max(0.2, timeout)
+        try:
+            listen_timeout = min(MAX_DISCOVERY_TIMEOUT, max(0.5, float(timeout)))
+        except (TypeError, ValueError):
+            listen_timeout = DEFAULT_DISCOVERY_TIMEOUT
+        try:
+            result_limit = min(MAX_DISCOVERY_RESULTS, max(1, int(max_results)))
+        except (TypeError, ValueError):
+            result_limit = DEFAULT_DISCOVERY_MAX_RESULTS
+        end_time = time.monotonic() + listen_timeout
+        requested_code = _normalize_classroom_code(classroom_code)
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             try:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             except Exception:
@@ -816,9 +1031,25 @@ class ClassroomService:
                 sock.bind(("", DISCOVERY_PORT))
             except Exception:
                 return []
-            sock.settimeout(0.3)
+            sock.settimeout(DISCOVERY_SOCKET_POLL_SECONDS)
+            next_probe_at = 0.0
 
-            while time.time() < end_time and len(results) < max_results:
+            while time.monotonic() < end_time and len(results) < result_limit:
+                now = time.monotonic()
+                if now >= next_probe_at:
+                    probe_payload = {
+                        "type": "xedu-classroom-probe",
+                        "timestamp": int(time.time()),
+                        "code": requested_code,
+                    }
+                    probe_data = json.dumps(probe_payload, ensure_ascii=False).encode("utf-8")
+                    for target in _iter_discovery_broadcast_targets():
+                        try:
+                            sock.sendto(probe_data, (target, DISCOVERY_PORT))
+                        except Exception:
+                            continue
+                    next_probe_at = now + DISCOVERY_PROBE_INTERVAL
+
                 try:
                     data, addr = sock.recvfrom(4096)
                 except socket.timeout:
@@ -831,19 +1062,37 @@ class ClassroomService:
                     continue
                 if not isinstance(payload, dict) or payload.get("type") != "xedu-classroom":
                     continue
+                classroom_code_value = _normalize_classroom_code(payload.get("code"))
+                if requested_code and classroom_code_value and classroom_code_value != requested_code:
+                    continue
 
                 host = addr[0]
+                try:
+                    port = int(payload.get("port") or 5123)
+                    course_count = max(0, int(payload.get("course_count") or 0))
+                except (TypeError, ValueError):
+                    continue
+                if not host or not 1 <= port <= 65535:
+                    continue
                 server_id = payload.get("server_id") or f"{host}:{payload.get('port')}"
-                if server_id in results:
-                    results[server_id]["last_seen"] = int(time.time())
+                existing = results.get(server_id)
+                if existing:
+                    existing.update({
+                        "name": payload.get("name") or existing.get("name") or "课堂",
+                        "code": str(payload.get("code") or existing.get("code") or "").strip(),
+                        "host": host or existing.get("host"),
+                        "port": port,
+                        "course_count": max(existing.get("course_count", 0), course_count),
+                        "last_seen": int(time.time()),
+                    })
                     continue
                 results[server_id] = {
                     "server_id": server_id,
                     "name": payload.get("name") or "课堂",
                     "code": str(payload.get("code") or "").strip(),
                     "host": host,
-                    "port": int(payload.get("port") or 5123),
-                    "course_count": int(payload.get("course_count") or 0),
+                    "port": port,
+                    "course_count": course_count,
                     "last_seen": int(time.time()),
                 }
         finally:
@@ -855,7 +1104,7 @@ class ClassroomService:
         return list(results.values())
 
     @staticmethod
-    def fetch_index(base_url: str) -> Dict[str, Any]:
+    def fetch_index(base_url: str, classroom_code: str = "") -> Dict[str, Any]:
         if not base_url:
             raise ClassroomServiceError("课堂地址为空")
         base = base_url.rstrip("/")
@@ -871,6 +1120,25 @@ class ClassroomService:
             index = payload.get("index")
             if not isinstance(index, dict):
                 raise ClassroomServiceError("课堂索引格式错误")
+            classroom = index.get("classroom") if isinstance(index.get("classroom"), dict) else {}
+            requested_code = _normalize_classroom_code(classroom_code)
+            classroom_code_value = _normalize_classroom_code(classroom.get("code"))
+            if requested_code and classroom_code_value and requested_code != classroom_code_value:
+                raise ClassroomServiceError("课堂码不匹配")
+            course_url = _resolve_first_course_url(base, index)
+            if course_url:
+                course_req = urlrequest.Request(course_url)
+                try:
+                    with urlrequest.urlopen(course_req, timeout=10) as course_resp:
+                        course_payload = json.loads(course_resp.read().decode("utf-8"))
+                    if not isinstance(course_payload, dict):
+                        raise ClassroomServiceError("课堂课程不可达")
+                except ClassroomServiceError:
+                    raise
+                except urlerror.HTTPError as exc:
+                    raise ClassroomServiceError(f"课堂课程不可达: HTTP {exc.code}") from exc
+                except (urlerror.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+                    raise ClassroomServiceError("课堂课程不可达") from exc
             return {
                 "index": index,
                 "source_url": payload.get("source_url") or f"{base}/api/classroom/index",

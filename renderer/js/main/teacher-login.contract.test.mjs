@@ -58,19 +58,17 @@ test('teacher setup and teacher login are separate flows', () => {
     assert.match(resourcesSource, /title:\s*["']退出教师模式["'][\s\S]{0,360}?exitTeacherMode\(\)/);
 });
 
-test('teacher login stays session-only and app startup remains in student mode', () => {
-    assert.match(mainSource, /clearTeacherModeSession\(\)/);
-    assert.doesNotMatch(mainSource, /restoreTeacherModeState/);
-    assert.match(mainSource, /onConfigurationReset:\s*async[\s\S]*?clearTeacherModeSession\(\)/);
-    assert.match(systemConfigSource, /writeTeacherModeState\(code1\)/);
-    assert.match(systemConfigSource, /writeTeacherModeState\(classroomTeacherCodeInput\)/);
-    assert.match(resourcesSource, /writeTeacherModeState\(code\)/);
-    assert.doesNotMatch(mainSource, /forgetTeacherMode/);
-    assert.doesNotMatch(systemConfigSource, /rememberTeacherMode|saveTeacherCredential|loadTeacherCredential|clearTeacherCredential/);
-    assert.doesNotMatch(resourcesSource, /rememberTeacherMode|forgetTeacherMode|restoreTeacherModeState/);
-    assert.doesNotMatch(resourcesSource, /sessionStorage\.setItem\(TEACHER_MODE_CODE_KEY/);
+test('teacher login restores the saved credential while exit remains session-only', () => {
+    assert.match(mainSource, /restoreTeacherModeState/);
+    assert.match(mainSource, /onConfigurationReset:\s*async[\s\S]*?forgetTeacherMode\(\)/);
+    assert.match(systemConfigSource, /rememberTeacherMode/);
+    assert.match(systemConfigSource, /forgetTeacherMode/);
+    assert.match(resourcesSource, /rememberTeacherMode/);
+    assert.doesNotMatch(resourcesSource, /restoreTeacherModeState/);
     assert.doesNotMatch(systemConfigSource, /detail:\s*\{\s*code\s*:/);
-    assert.doesNotMatch(preloadSource, /loadTeacherCredential|saveTeacherCredential|clearTeacherCredential/);
+    assert.match(preloadSource, /loadTeacherCredential/);
+    assert.match(preloadSource, /saveTeacherCredential/);
+    assert.match(preloadSource, /clearTeacherCredential/);
 });
 
 test('confirming local Python restarts the backend for first-run initialization', () => {

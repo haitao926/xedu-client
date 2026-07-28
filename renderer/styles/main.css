@@ -4869,6 +4869,55 @@ body.focus-mode {
     gap: 10px;
 }
 .resources-create-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.resources-import-drop-zone {
+    margin-bottom: 14px;
+    padding: 16px 18px;
+    border: 1.5px solid rgba(15, 118, 110, 0.14);
+    border-radius: 16px;
+    background:
+        radial-gradient(circle at 8% 20%, rgba(45, 212, 191, 0.14), transparent 30%),
+        linear-gradient(145deg, rgba(236, 253, 245, 0.96), rgba(248, 250, 252, 0.98));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    box-shadow: 0 10px 22px -18px rgba(15, 118, 110, 0.7);
+    transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+.resources-import-drop-zone:hover,
+.resources-import-drop-zone:focus-visible {
+    border-color: rgba(15, 118, 110, 0.35);
+    box-shadow: 0 14px 30px -20px rgba(15, 118, 110, 0.75);
+    outline: none;
+}
+.resources-import-drop-zone.is-dragging {
+    border-style: solid;
+    transform: translateY(-1px);
+    box-shadow: 0 18px 34px -20px rgba(15, 118, 110, 0.9);
+}
+.resources-import-drop-zone.is-busy {
+    opacity: 0.72;
+    pointer-events: none;
+}
+.resources-import-drop-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+.resources-import-drop-copy strong {
+    color: #115e59;
+    font-size: 14px;
+}
+.resources-import-drop-copy span {
+    color: #64748b;
+    font-size: 12px;
+}
+.resources-import-drop-status {
+    min-width: 280px;
+    max-width: 420px;
+    margin: 0;
+}
 .resources-package-drop-zone {
     min-height: 164px;
     padding: 22px 18px;
@@ -5684,6 +5733,14 @@ body.focus-mode {
     .resources-create-rail-card { position: static; top: auto; }
     .resources-cloud-detail-header { flex-direction: column; }
     .resources-cloud-detail-stats { width: 100%; min-width: 0; }
+    .resources-import-drop-zone {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .resources-import-drop-status {
+        min-width: 0;
+        max-width: none;
+    }
     .resources-local-path-panel {
         grid-template-columns: 1fr;
         grid-template-areas:

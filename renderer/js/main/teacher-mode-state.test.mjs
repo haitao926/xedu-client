@@ -60,7 +60,7 @@ test('exiting teacher mode clears only the current session', () => {
     assert.deepEqual(readTeacherModeState(storage), { unlocked: false, code: '' });
 });
 
-test('manual teacher login writes only session state and never persists credentials', async () => {
+test('manual teacher login writes session state and persists the credential', async () => {
     assert.equal(typeof teacherModeState.rememberTeacherMode, 'function');
     const storage = createStorage();
     let loadAttempts = 0;
@@ -83,7 +83,7 @@ test('manual teacher login writes only session state and never persists credenti
     assert.deepEqual(remembered, {
         unlocked: true,
         code: 'teacher-code',
-        persisted: false,
+        persisted: true,
         error: undefined,
     });
     assert.deepEqual(readTeacherModeState(storage), {
@@ -91,10 +91,10 @@ test('manual teacher login writes only session state and never persists credenti
         code: 'teacher-code',
     });
     assert.equal(loadAttempts, 0);
-    assert.equal(saveAttempts, 0);
+    assert.equal(saveAttempts, 1);
 });
 
-test('teacher mode keeps startup in student mode and does not auto-restore credentials', async () => {
+test('teacher mode restores a persisted credential only after backend verification', async () => {
     assert.equal(typeof teacherModeState.restoreTeacherModeState, 'function');
     const storage = createStorage();
     let verifyAttempts = 0;
@@ -112,27 +112,37 @@ test('teacher mode keeps startup in student mode and does not auto-restore crede
         },
     });
 
-    assert.deepEqual(restored, { unlocked: false, code: '' });
+    assert.deepEqual(restored, { unlocked: true, code: 'remembered-code' });
     assert.deepEqual(readTeacherModeState(storage), restored);
-    assert.equal(verifyAttempts, 0);
+    assert.equal(verifyAttempts, 1);
 });
 
-test('restoreTeacherModeState preserves an already unlocked session from sessionStorage only', async () => {
+test('restoreTeacherModeState preserves an already unlocked session without reloading credentials', async () => {
     assert.equal(typeof teacherModeState.restoreTeacherModeState, 'function');
     const storage = createStorage({
         xedu_teacher_mode: 'true',
         xedu_teacher_mode_code: 'teacher-code',
     });
 
-    const restored = await teacherModeState.restoreTeacherModeState({ storage });
+    let loadAttempts = 0;
+    const restored = await teacherModeState.restoreTeacherModeState({
+        storage,
+        credentialApi: {
+            async loadTeacherCredential() {
+                loadAttempts += 1;
+                return { success: true, code: 'different-code' };
+            },
+        },
+    });
 
     assert.deepEqual(restored, {
         unlocked: true,
         code: 'teacher-code',
     });
+    assert.equal(loadAttempts, 0);
 });
 
-test('forgetting teacher access clears only the renderer session', async () => {
+test('forgetting teacher access clears the renderer session and saved credential', async () => {
     assert.equal(typeof teacherModeState.forgetTeacherMode, 'function');
     const storage = createStorage({
         xedu_teacher_mode: 'true',
@@ -156,7 +166,7 @@ test('forgetting teacher access clears only the renderer session', async () => {
         cleared: true,
         error: undefined,
     });
-    assert.equal(clearAttempts, 0);
+    assert.equal(clearAttempts, 1);
     assert.deepEqual(readTeacherModeState(storage), { unlocked: false, code: '' });
 });
 

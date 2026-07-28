@@ -276,6 +276,32 @@ test("Scratch iframe load timeout shows feedback and schedules an automatic retr
   }
 });
 
+test("Scratch does not post to the iframe before its HTTP document has loaded", async () => {
+  const postedMessages = [];
+  const childWindow = {
+    postMessage(message, targetOrigin) {
+      postedMessages.push({ message, targetOrigin });
+    },
+  };
+  const harness = createScratchHarness({ contentWindow: childWindow });
+  const originalRequest = apiClient.request;
+
+  apiClient.request = async () => new Response("{}", { status: 200 });
+
+  try {
+    harness.controller.openScratchWorkspace({ sourceLabel: "课程任务中心" });
+    await flushAsyncWork();
+
+    harness.document.getElementById("scratch-workspace").classList.remove("active");
+    harness.controller.renderWorkspacePages();
+
+    assert.equal(postedMessages.length, 0);
+  } finally {
+    apiClient.request = originalRequest;
+    harness.restore();
+  }
+});
+
 test("Scratch iframe successful load clears the pending load timeout", async () => {
   const timers = createFakeTimers();
   const restoreTimers = timers.install();

@@ -7,6 +7,28 @@ const repoRoot = new URL('../../', import.meta.url);
 const readRepoFile = (relativePath) => readFile(new URL(relativePath, repoRoot), 'utf8');
 const require = createRequire(import.meta.url);
 
+function loadReleaseConfig() {
+  const previousEnv = { ...process.env };
+  Object.assign(process.env, {
+    CSC_LINK: 'file:///tmp/mac-cert.p12',
+    CSC_KEY_PASSWORD: 'test-password',
+    APPLE_ID: 'teacher-release@example.com',
+    APPLE_APP_SPECIFIC_PASSWORD: 'app-specific-password',
+    APPLE_TEAM_ID: 'ABCDE12345',
+  });
+  const configPath = require.resolve('../../electron-builder.release.cjs');
+  delete require.cache[configPath];
+  try {
+    return require(configPath);
+  } finally {
+    delete require.cache[configPath];
+    for (const key of Object.keys(process.env)) {
+      if (!(key in previousEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, previousEnv);
+  }
+}
+
 test('release package keeps runtime backend outside asar and filters test data', async () => {
   const packageJson = JSON.parse(await readRepoFile('package.json'));
   const files = packageJson.build.files;
@@ -32,11 +54,13 @@ test('release package keeps runtime backend outside asar and filters test data',
   ]);
 });
 
-test('release package requires a teacher-selected local Python environment', async () => {
-  const packageJson = JSON.parse(await readRepoFile('package.json'));
-  const buildText = JSON.stringify(packageJson.build);
+test('official release package includes the canonical minimal Python runtime', () => {
+  const releaseConfig = loadReleaseConfig();
+  const pythonResource = releaseConfig.extraResources.find(({ to }) => to === 'python_env');
 
-  assert.doesNotMatch(buildText, /python_env(?:_win)?/);
+  assert.equal(pythonResource?.from, 'python_env_minimal');
+  assert.equal(pythonResource?.filter.includes('!**/*.onnx'), true);
+  assert.equal(pythonResource?.filter.includes('!**/*.pth'), true);
 });
 
 test('bundled-Python package includes its runtime but excludes checkpoint models', () => {
@@ -96,6 +120,7 @@ test('external-Python package remains an explicitly named optional variant', () 
     'components/**/*',
     'teacher/**/*',
   ]);
+  assert.equal(buildConfig.mac.identity, '-');
   assert.equal(buildConfig.mac.artifactName, '${productName}-${version}-external-python-${arch}.${ext}');
   assert.equal(buildConfig.win.artifactName, '${productName}-${version}-external-python-${arch}.${ext}');
 });
@@ -129,4 +154,7 @@ test('macOS release produces both drag-install and archive artifacts', async () 
   assert.equal(packageJson.build.mac.hardenedRuntime, true);
   assert.equal(packageJson.build.mac.entitlements, 'resources/entitlements.mac.plist');
   assert.match(entitlements, /com\.apple\.security\.cs\.allow-jit/);
+  assert.match(entitlements, /com\.apple\.security\.device\.camera/);
+  assert.match(packageJson.build.mac.extendInfo.NSCameraUsageDescription, /摄像头/);
+  assert.match(packageJson.build.mac.extendInfo.NSLocalNetworkUsageDescription, /局域网|网络/);
 });

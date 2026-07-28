@@ -5,10 +5,16 @@ import { resolve } from 'path'
 const rendererPort = Number.parseInt(process.env.XEDU_RENDERER_PORT || '3002', 10) || 3002
 const rendererAssetDir = resolve(__dirname, 'renderer/assets')
 const buildAssetDir = resolve(__dirname, 'build/assets')
+const devApiCapability = process.env.XEDU_CLIENT_CAPABILITY || 'xedu-dev-capability'
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   root: 'renderer',
   base: './',
+  define: command === 'serve'
+    ? {
+        'import.meta.env.VITE_XEDU_CLIENT_CAPABILITY': JSON.stringify(devApiCapability),
+      }
+    : undefined,
   plugins: [
     {
       name: 'copy-renderer-static-assets',
@@ -53,4 +59,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))

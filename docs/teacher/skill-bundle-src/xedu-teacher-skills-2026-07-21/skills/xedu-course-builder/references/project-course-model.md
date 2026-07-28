@@ -44,7 +44,7 @@ Use `lessonN/expM/scratch/*.sb3` for new Scratch projects. Preserve existing val
 
 ## Resource Status
 
-There is no mandatory three-form loop. Determine intended forms from the course plan or handoff, then report which intended files are present or missing. Separately report `ready`/`partial`/`broken` file-existence results from `inspect_course()`. If an existing experiment has only Blockly, mark a Scratch migration gap; do not treat that as a reason to generate Blockly.
+There is no mandatory three-form loop. Determine intended forms from the course plan or handoff, then preserve and report the resources declared by the course structure. If an existing experiment has only Blockly, mark a Scratch migration gap; do not treat that as a reason to generate Blockly.
 
 ## Packaging
 

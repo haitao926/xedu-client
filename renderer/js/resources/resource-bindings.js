@@ -18,7 +18,6 @@ export function bindResourcesUI(deps = {}) {
     importRemoteCourse,
     deleteCourse,
     currentResource,
-    inspectCourseResource,
     toggleDetailMoreMenu,
     bindDetailMoreMenu,
     startClassroomForResource,
@@ -43,6 +42,7 @@ export function bindResourcesUI(deps = {}) {
     useDefaultSampleCourse,
     importLocalPackageToPath,
     handlePackageDrop,
+    handleCourseImportDrop,
     pickLocalCourse,
     loadCloudCourseOptions,
     importCloudCourseAndSave,
@@ -68,7 +68,6 @@ export function bindResourcesUI(deps = {}) {
   const detailPullBtn = documentRef.getElementById('resources-detail-pull');
   const detailDeleteBtn = documentRef.getElementById('resources-detail-delete');
   const detailRepoBtn = documentRef.getElementById('resources-detail-repo');
-  const detailInspectBtn = documentRef.getElementById('resources-detail-inspect');
   const detailOpenBtn = documentRef.getElementById('resources-detail-open');
   const classroomRefreshBtn = documentRef.getElementById('resources-classroom-refresh');
   const detailClassroomStartBtn = documentRef.getElementById('resources-detail-classroom-start');
@@ -86,6 +85,7 @@ export function bindResourcesUI(deps = {}) {
   const useDefaultSampleBtn = documentRef.getElementById('resources-use-default-sample-btn');
   const packageImportBtn = documentRef.getElementById('resources-package-import-btn');
   const packageDropZone = documentRef.getElementById('resources-package-drop-zone');
+  const resourceDropZone = documentRef.getElementById('resources-import-drop-zone');
   const pickLocalBtn = documentRef.getElementById('resources-pick-local-btn');
   const cloudRefreshBtn = documentRef.getElementById('resources-cloud-refresh-btn');
   const cloudImportBtn = documentRef.getElementById('resources-cloud-import-btn');
@@ -204,11 +204,6 @@ export function bindResourcesUI(deps = {}) {
     detailMoreMenu.addEventListener('click', () => { detailMoreMenu.classList.remove('is-open'); });
     bindDetailMoreMenu();
   }
-  if (detailInspectBtn) detailInspectBtn.addEventListener('click', () => {
-    const resource = typeof currentResource === 'function' ? currentResource() : currentResource;
-    if (resource) inspectCourseResource(resource);
-  });
-
   if (detailClassroomStartBtn) {
     detailClassroomStartBtn.addEventListener('click', async () => {
       if (currentResource()) await startClassroomForResource(currentResource());
@@ -275,6 +270,25 @@ export function bindResourcesUI(deps = {}) {
       if (!['Enter', ' '].includes(event.key) || packageDropZone.getAttribute('aria-disabled') === 'true') return;
       event.preventDefault();
       pickLocalPackage?.();
+    });
+  }
+  if (resourceDropZone) {
+    resourceDropZone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      if (resourceDropZone.getAttribute('aria-busy') === 'true') return;
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      resourceDropZone.classList.add('is-dragging');
+    });
+    resourceDropZone.addEventListener('dragleave', (event) => {
+      if (!event.relatedTarget || !resourceDropZone.contains(event.relatedTarget)) {
+        resourceDropZone.classList.remove('is-dragging');
+      }
+    });
+    resourceDropZone.addEventListener('drop', async (event) => {
+      event.preventDefault();
+      resourceDropZone.classList.remove('is-dragging');
+      if (resourceDropZone.getAttribute('aria-busy') === 'true') return;
+      await handleCourseImportDrop?.(event);
     });
   }
   if (pickLocalBtn) pickLocalBtn.addEventListener('click', pickLocalCourse);

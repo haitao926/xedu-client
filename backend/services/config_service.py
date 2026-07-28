@@ -210,8 +210,12 @@ class ConfigService:
         Returns:
             Dict[str, Any]: 迁移后的配置数据
         """
-        # 检查配置版本
-        version = data.get('version', '1.0.0')
+        # Some 2.0 config files were written without a version marker. Their
+        # nested sections are authoritative and must not be flattened as v1.
+        version = data.get('version')
+        if version is None and all(isinstance(data.get(section), dict) for section in ('jupyter', 'ui', 'ai')):
+            return {**data, 'version': '2.0.0'}
+        version = version or '1.0.0'
 
         if version == '1.0.0':
             # 从旧版本配置迁移

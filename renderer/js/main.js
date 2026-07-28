@@ -6,14 +6,15 @@ import { registerNamespace } from './app-context.js';
 import { ProjectWizard } from './project-wizard.js';
 import { createWorkspaceController } from './main/workspace-context.js';
 import { createDashboardController } from './main/dashboard.js';
-import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, selectPythonEnvironment, scanPythonEnvironments, confirmPythonEnvironment, repairXeduEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
+import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, forgetStoredTeacherCredential, selectPythonEnvironment, scanPythonEnvironments, confirmPythonEnvironment, repairXeduEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
 import { getExperienceMode, getPageCopy } from './experience-config.js';
 import { installUnhandledRejectionHandler } from './main/error-boundary.js';
 import {
-    clearTeacherModeSession,
     createTeacherCodeInitializationRunner,
+    forgetTeacherMode,
     isTeacherModeUnlocked,
     readTeacherModeState,
+    restoreTeacherModeState,
 } from './main/teacher-mode-state.js';
 import { createBackendStartupSupport } from './main/backend-startup-support.js';
 import { initSidebarCollapseToggle, showSettingsTab } from './main/shell-ui.js';
@@ -22,6 +23,7 @@ import './action-dispatcher.js';
 
 let resourcesModule = null;
 let resourcesModulePromise = null;
+let projectWizard = null;
 
 installUnhandledRejectionHandler({
     notify: (...args) => {
@@ -42,6 +44,13 @@ function loadResourcesModule() {
             });
     }
     return resourcesModulePromise;
+}
+
+function ensureProjectWizard() {
+    if (!projectWizard) {
+        projectWizard = new ProjectWizard(apiClient);
+    }
+    return projectWizard;
 }
 
 async function initResourcesPage(...args) {
@@ -102,7 +111,7 @@ const {
     apiClient,
     applySystemConfigToInputs,
     onConfigurationReset: async () => {
-        clearTeacherModeSession();
+        await forgetTeacherMode();
         window.dispatchEvent(new CustomEvent('xedu:teacher-credential-cleared'));
         updateSettingsVisibility(false, { allowPythonSetup: true });
     },
@@ -111,8 +120,23 @@ const {
 const initializeTeacherCode = createTeacherCodeInitializationRunner({
     ensureTeacherCode: ensureTeacherCodeInitialized,
     applyConfig: applySystemConfigToInputs,
+    restoreTeacherMode: async () => restoreTeacherModeState({
+        verifyCode: async (code) => {
+            try {
+                const response = await apiClient.post('/api/classroom/verify-teacher', {
+                    teacher_code: code,
+                });
+                return Boolean(response?.success);
+            } catch (_) {
+                return false;
+            }
+        },
+    }),
     applyTeacherMode: (state) => {
         updateSettingsVisibility(Boolean(state?.unlocked));
+        if (state?.unlocked) {
+            window.dispatchEvent(new CustomEvent('xedu:teacher-credential-updated'));
+        }
     },
 });
 
@@ -126,13 +150,13 @@ function handleBackendStartupState(state) {
         showSettingsTab('python');
     }
     if (state?.status === 'ready') {
+        if (document.readyState !== 'loading') ensureProjectWizard();
         initializeTeacherCode().catch((error) => {
             console.warn('后端就绪后初始化教师口令失败:', error);
         });
     }
 }
 
-new ProjectWizard(apiClient);
 const workspaceController = createWorkspaceController({ showTab, openNotebookFile });
 const {
     openResourcesOrClassroomSource,
@@ -278,6 +302,7 @@ registerNamespace('workspace', {
 registerNamespace('system', {
     saveSystemConfig,
     resetSystemConfig,
+    forgetStoredTeacherCredential,
     selectPythonEnvironment,
     scanPythonEnvironments,
     confirmPythonEnvironment,
@@ -300,9 +325,42 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const startup = async () => {
-        clearTeacherModeSession();
+    async function waitForBackendReady(timeoutMs = 125000) {
+        if (!window.electronAPI?.getBackendStartupState) {
+            const deadline = Date.now() + Math.min(timeoutMs, 30000);
+            while (Date.now() < deadline) {
+                try {
+                    const response = await apiClient.get('/api/health');
+                    if (response?.status === 'ok') return true;
+                } catch (_) {
+                    // The development server may start the API a little later.
+                }
+                await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+            return false;
+        }
 
+        const initial = await getBackendStartupState();
+        if (initial.status === 'ready') return true;
+        if (initial.status === 'error') return false;
+
+        return new Promise((resolve) => {
+            let settled = false;
+            const timer = setTimeout(() => finish(false), timeoutMs);
+            const finish = (ready) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve(ready);
+            };
+            window.electronAPI.onBackendStartupState((state) => {
+                if (state?.status === 'ready') finish(true);
+                else if (state?.status === 'error') finish(false);
+            });
+        });
+    }
+
+    const startup = async () => {
         // 加载 Python 路径
         const savedPythonPath = localStorage.getItem('python_path');
         if (savedPythonPath) {
@@ -329,11 +387,20 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         showSettingsTab('python');
 
-        try {
-            await initializeTeacherCode();
-        } catch (error) {
-            console.warn('初始化教师口令失败:', error);
+        const backendReady = await waitForBackendReady();
+        if (backendReady) {
+            try {
+                await initializeTeacherCode();
+            } catch (error) {
+                console.warn('初始化教师口令失败:', error);
+            }
+        } else {
+            console.warn('后端尚未就绪，跳过启动阶段的教师口令初始化');
         }
+
+        // Do not let the project wizard issue API requests while the backend
+        // is still bootstrapping or while Python setup is required.
+        if (backendReady) ensureProjectWizard();
 
         const dashboardInputConfirmBtn = document.getElementById('dashboard-input-confirm-btn');
         const dashboardInputClearBtn = document.getElementById('project-path-clear-btn');

@@ -19,6 +19,7 @@ module.exports = {
     },
     mac: {
         ...bundledPythonConfig.mac,
+        identity: '-',
         artifactName: '${productName}-${version}-external-python-${arch}.${ext}',
     },
 };

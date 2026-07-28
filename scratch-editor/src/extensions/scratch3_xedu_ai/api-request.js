@@ -45,7 +45,8 @@ function requestThroughHost(url, options = {}) {
             requestId,
             path: `${parsed.pathname}${parsed.search}`,
             method: String(options.method || 'GET').toUpperCase(),
-            body: options.body == null ? '' : String(options.body),
+            body: options.body == null ? '' : options.body,
+            headers: options.headers || {},
         }, '*');
         void timeoutId;
     });

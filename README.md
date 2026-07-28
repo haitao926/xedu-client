@@ -19,7 +19,7 @@ XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Ju
 ### 1. 做 Jupyter / Python 实验
 
 - 启动、停止、重启本地 Jupyter
-- 选择并检测本机 Python 3.10+ 解释器
+- 选择并检测本机 Python 3.8+ 解释器
 - 打开 Notebook 或 Python 文件继续实验
 - 从课程资源或课堂入口落到当前实验
 - 控制 Jupyter 是否允许局域网访问
@@ -31,7 +31,7 @@ XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Ju
 - `POST /api/restart`
 - `GET /api/detect_python`
 
-教师版发布包不内置 `python_env`。首次启动时，请在“Python”设置中选择本机的 `python.exe`（Windows）或 `bin/python3` / `bin/python`（macOS），再安装或确认项目依赖。选择结果保存到用户配置目录，不写入安装目录。
+教师版发布包不内置 `python_env`。首次启动时，请在“Python”设置中选择本机的 `python.exe`（Windows）或 `bin/python3` / `bin/python`（macOS），再安装或确认项目依赖。选择结果保存到用户配置目录，不写入安装目录。即使所选环境没有 Flask，“修复兼容性”也会先通过独立标准库脚本直接修复 XEdu/Jupyter；后端启动时再单独补齐 Flask 等服务依赖。
 
 ### 2. 做 Scratch 图形化实验
 

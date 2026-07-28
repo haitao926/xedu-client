@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectPython: () => ipcRenderer.invoke('select-python'),
     scanPythonEnvironments: () => ipcRenderer.invoke('scan-python-environments'),
     setPythonExecutable: (targetPath) => ipcRenderer.invoke('set-python', targetPath),
+    savePythonExecutable: (targetPath) => ipcRenderer.invoke('python:save-selection', targetPath),
+    inspectPythonEnvironment: (targetPath) => ipcRenderer.invoke('python:inspect-environment', targetPath),
+    repairPythonEnvironment: (targetPath) => ipcRenderer.invoke('python:repair-environment', targetPath),
     selectCoursePackage: () => ipcRenderer.invoke('select-course-package'),
     getPathForFile: (file) => {
         if (!file || typeof webUtils?.getPathForFile !== 'function') return '';
@@ -29,6 +32,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
             return '';
         }
     },
+    approveLocalPath: (targetPath) => ipcRenderer.invoke('approve-local-path', targetPath),
     isDirectory: (targetPath) => ipcRenderer.invoke('path-is-directory', targetPath),
     selectImageFile: () => ipcRenderer.invoke('select-image-file'),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
@@ -39,8 +43,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restartBackend: () => ipcRenderer.invoke('backend:restart'),
     getBackendStartupState: () => ipcRenderer.invoke('backend:get-startup-state'),
     onBackendStartupState: (callback) => ipcRenderer.on('backend-startup-state', (event, payload) => callback(payload)),
+    loadTeacherCredential: () => ipcRenderer.invoke('teacher-credential:load'),
+    saveTeacherCredential: (code) => ipcRenderer.invoke('teacher-credential:save', code),
+    clearTeacherCredential: () => ipcRenderer.invoke('teacher-credential:clear'),
     getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
     jupyterCreateView: (url, bounds) => ipcRenderer.invoke('jupyter:create-view', url, bounds),
+    jupyterGetState: () => ipcRenderer.invoke('jupyter:get-state'),
     jupyterUpdateBounds: (bounds) => ipcRenderer.invoke('jupyter:update-bounds', bounds),
     jupyterSetVisibility: (visible) => ipcRenderer.invoke('jupyter:set-visibility', visible),
     jupyterDestroyView: () => ipcRenderer.invoke('jupyter:destroy-view'),

@@ -32,6 +32,8 @@ test('Python setup keeps select, confirm, test, and repair available together', 
   assert.match(systemConfig, /scanPythonEnvironments/);
   assert.match(systemConfig, /confirmPythonEnvironment/);
   assert.match(systemConfig, /setPythonExecutable/);
+  assert.match(systemConfig, /inspectPythonEnvironment/);
+  assert.match(systemConfig, /savePythonExecutable/);
   assert.match(systemConfig, /window\.electronAPI\?\.scanPythonEnvironments/);
   assert.match(systemConfig, /getBackendStartupState/);
   assert.match(systemConfig, /configuredPythonPath = String\(response\.config\?\.jupyter\?\.python_executable/);
@@ -41,6 +43,13 @@ test('Python setup keeps select, confirm, test, and repair available together', 
   assert.match(systemConfig, /testButton\.disabled = false/);
   assert.match(systemConfig, /repairButton\.disabled = isRepairingPython/);
   assert.match(systemConfig, /timeoutMs: 330000/);
+  assert.match(systemConfig, /repairPythonEnvironment/);
+  assert.match(systemConfig, /独立修复 XEdu 环境/);
+  assert.match(systemConfig, /不要求预先安装 Flask/);
+  assert.match(systemConfig, /result\.backend_ready === false \? ['"]warning['"] : ['"]success['"]/);
+  assert.match(systemConfig, /独立检测 Python 环境/);
+  assert.match(jupyter, /inspectPythonEnvironment/);
+  assert.match(jupyter, /pythonPath && typeof standaloneInspect === ['"]function['"]/);
   assert.match(systemConfig, /allow_remote_access: false/);
   assert.match(systemConfig, /请先确认 Python 环境，再保存设置/);
   assert.match(systemConfig, /JSON\.parse\(error\.details\)/);
@@ -91,4 +100,5 @@ test('confirming Python makes the packaged backend restart before dependent flow
   assert.match(confirmPythonSource, /restartBackend/);
   assert.match(confirmPythonSource, /restartResult\?\.success/);
   assert.match(confirmPythonSource, /startupState\?\.status\s*!==\s*['"]ready['"][\s\S]*?restartBackend/);
+  assert.match(systemConfig, /hasStandalonePythonFlow[\s\S]*?apiClient\.get\(`\/api\/detect_python/);
 });

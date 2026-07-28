@@ -1,4 +1,4 @@
-"""Course normalization, inspection and local package scanning."""
+"""Course normalization and local package scanning."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,15 +29,28 @@ DEFAULT_EXCLUDES = {
 
 MAX_FILE_SIZE = 100 * 1024 * 1024
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
-TESTABLE_FILE_EXTENSIONS = (
-    ".html",
-    ".htm",
-    ".sb3",
-    ".blockly.xml",
-    ".blockly.json",
-    ".ipynb",
-    ".py",
-)
+
+
+def _ensure_safe_course_tree(base: Path) -> None:
+    """Reject links before scanners or package builders can follow them."""
+    try:
+        root_stat = base.lstat()
+    except OSError as exc:
+        raise GiteaServiceError("课程目录不可读取") from exc
+    if stat.S_ISLNK(root_stat.st_mode):
+        raise GiteaServiceError("课程目录不能是符号链接")
+
+    for root, dirs, files in os.walk(base, followlinks=False):
+        for name in (*dirs, *files):
+            candidate = Path(root) / name
+            try:
+                candidate_stat = candidate.lstat()
+            except OSError as exc:
+                raise GiteaServiceError("课程目录不可读取") from exc
+            if stat.S_ISLNK(candidate_stat.st_mode):
+                raise GiteaServiceError("课程目录包含不安全的符号链接")
+            if stat.S_ISREG(candidate_stat.st_mode) and candidate_stat.st_nlink > 1:
+                raise GiteaServiceError("课程目录包含不安全的硬链接")
 
 
 @dataclass
@@ -254,200 +268,16 @@ def _summarize_course(course: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def normalize_course_data(course: Dict[str, Any]) -> Dict[str, Any]:
+    return _normalize_course_data(course)
+
+
+def summarize_course(course: Dict[str, Any]) -> Dict[str, Any]:
+    return _summarize_course(course)
+
+
 def _normalize_course_path(path: Any) -> str:
     return str(path or "").strip().replace("\\", "/").lstrip("/")
-
-
-def _is_external_course_path(path: str) -> bool:
-    return path.startswith("http://") or path.startswith("https://")
-
-
-def _is_directory_entry(file_entry: Dict[str, Any]) -> bool:
-    raw_type = str(file_entry.get("type") or file_entry.get("kind") or "").strip().lower()
-    path = _normalize_course_path(file_entry.get("path") or file_entry.get("name"))
-    return raw_type in {"dir", "directory", "folder"} or path.endswith("/")
-
-
-def _is_testable_course_file(path: str) -> bool:
-    lower = path.lower()
-    return any(lower.endswith(ext) for ext in TESTABLE_FILE_EXTENSIONS)
-
-
-def _entry_kind_for_course_file(path: str, file_entry: Dict[str, Any]) -> str:
-    raw_type = str(file_entry.get("type") or file_entry.get("kind") or "").strip().lower()
-    lower = path.lower()
-    if raw_type in {"html", "htm"} or lower.endswith((".html", ".htm")):
-        return "html"
-    if raw_type == "blockly" or lower.endswith((".blockly.xml", ".blockly.json")):
-        return "blockly"
-    if raw_type == "scratch" or lower.endswith(".sb3"):
-        return "scratch"
-    if raw_type in {"ipynb", "notebook"} or lower.endswith(".ipynb"):
-        return "notebook"
-    if raw_type in {"py", "python"} or lower.endswith(".py"):
-        return "python"
-    return raw_type or "file"
-
-
-def _flatten_course_files(files: Any, bucket: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
-    items = bucket if bucket is not None else []
-    if not isinstance(files, list):
-        return items
-    for item in files:
-        if isinstance(item, str):
-            items.append({"path": item})
-            continue
-        if not isinstance(item, dict):
-            continue
-        items.append(item)
-        children = item.get("children")
-        if isinstance(children, list):
-            _flatten_course_files(children, items)
-    return items
-
-
-def _course_file_exists(
-    *,
-    path: str,
-    local_base: Optional[Path] = None,
-    remote_paths: Optional[set[str]] = None,
-) -> bool:
-    clean_path = _normalize_course_path(path)
-    if not clean_path:
-        return False
-    if _is_external_course_path(clean_path):
-        return True
-    if local_base is not None:
-        target = (local_base / clean_path).resolve()
-        try:
-            base = local_base.resolve()
-            if target != base and base not in target.parents:
-                return False
-        except OSError:
-            return False
-        return target.exists() and target.is_file()
-    if remote_paths is not None:
-        return clean_path in remote_paths
-    return True
-
-
-def _inspect_course_experiment(
-    *,
-    experiment: Dict[str, Any],
-    section_index: int,
-    experiment_index: int,
-    local_base: Optional[Path] = None,
-    remote_paths: Optional[set[str]] = None,
-) -> Dict[str, Any]:
-    files = _flatten_course_files(experiment.get("files") or experiment.get("items") or experiment.get("resources") or [])
-    file_entries = []
-    entries = []
-    missing_files = []
-
-    for file_entry in files:
-        if not isinstance(file_entry, dict) or _is_directory_entry(file_entry):
-            continue
-        path = _normalize_course_path(file_entry.get("path") or file_entry.get("url") or file_entry.get("name"))
-        if not path:
-            continue
-        exists = _course_file_exists(path=path, local_base=local_base, remote_paths=remote_paths)
-        kind = _entry_kind_for_course_file(path, file_entry)
-        file_entries.append({"path": path, "kind": kind, "exists": exists})
-        if not exists:
-            missing_files.append(path)
-        if _is_testable_course_file(path):
-            entries.append({"path": path, "kind": kind, "exists": exists})
-
-    issues: List[str] = []
-    if not file_entries:
-        issues.append("实验未配置文件")
-    if missing_files:
-        issues.append("存在缺失文件")
-    if file_entries and not entries:
-        issues.append("未配置可测试入口")
-    if entries and not any(entry.get("exists") for entry in entries):
-        issues.append("可测试入口文件缺失")
-
-    if not file_entries or missing_files or (entries and not any(entry.get("exists") for entry in entries)):
-        status = "broken"
-    elif not entries:
-        status = "partial"
-    else:
-        status = "ready"
-
-    return {
-        "section_index": section_index,
-        "experiment_index": experiment_index,
-        "title": experiment.get("title") or experiment.get("name") or f"实验 {experiment_index + 1}",
-        "status": status,
-        "issues": issues,
-        "entries": entries,
-        "missing_files": missing_files,
-        "file_count": len(file_entries),
-    }
-
-
-def inspect_course(
-    course: Dict[str, Any],
-    *,
-    local_path: str = "",
-    remote_tree: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
-    normalized = _normalize_course_data(course)
-    local_base = Path(local_path).resolve() if local_path else None
-    remote_paths: Optional[set[str]] = None
-    if remote_tree is not None:
-        remote_paths = {
-            _normalize_course_path(item.get("path"))
-            for item in remote_tree
-            if isinstance(item, dict)
-            and str(item.get("type") or "").lower() == "blob"
-            and _normalize_course_path(item.get("path"))
-        }
-
-    section_results = []
-    ready_count = 0
-    partial_count = 0
-    broken_count = 0
-
-    sections = normalized.get("sections") or []
-    for section_index, section in enumerate(sections):
-        experiments = section.get("experiments") or section.get("items") or []
-        experiment_results = []
-        if isinstance(experiments, list):
-            for experiment_index, experiment in enumerate(experiments):
-                if not isinstance(experiment, dict):
-                    continue
-                result = _inspect_course_experiment(
-                    experiment=experiment,
-                    section_index=section_index,
-                    experiment_index=experiment_index,
-                    local_base=local_base,
-                    remote_paths=remote_paths,
-                )
-                ready_count += 1 if result["status"] == "ready" else 0
-                partial_count += 1 if result["status"] == "partial" else 0
-                broken_count += 1 if result["status"] == "broken" else 0
-                experiment_results.append(result)
-        section_results.append({
-            "section_index": section_index,
-            "title": section.get("title") or section.get("name") or f"第 {section_index + 1} 课",
-            "experiments": experiment_results,
-        })
-
-    summary = _summarize_course(normalized)
-    summary.update({
-        "ready_count": ready_count,
-        "partial_count": partial_count,
-        "broken_count": broken_count,
-    })
-    return {
-        "course": normalized,
-        "summary": summary,
-        "inspection": {
-            "sections": section_results,
-        },
-    }
 
 
 def _normalize_tags_from_meta(value: Any) -> List[str]:
@@ -651,6 +481,7 @@ def scan_course(
     base = Path(local_path or "")
     if not base.exists() or not base.is_dir():
         raise GiteaServiceError("课程目录不存在")
+    _ensure_safe_course_tree(base)
 
     course_file = base / "course.json"
     initialized = False
@@ -705,6 +536,7 @@ def save_course_json(local_path: str, course_data: Dict[str, Any]) -> CourseScan
     base = Path(local_path or "")
     if not base.exists() or not base.is_dir():
         raise GiteaServiceError("课程目录不存在")
+    _ensure_safe_course_tree(base)
 
     if not course_data.get("title"):
         raise GiteaServiceError("课程名称不能为空")
@@ -736,6 +568,7 @@ def scan_folder(base_path: str, folder_path: str) -> List[Dict[str, Any]]:
         raise GiteaServiceError("课程目录不存在")
     if not folder.exists() or not folder.is_dir():
         raise GiteaServiceError("材料目录不存在")
+    _ensure_safe_course_tree(base)
     if base not in folder.parents and folder != base:
         raise GiteaServiceError("材料目录必须在课程目录内")
 
