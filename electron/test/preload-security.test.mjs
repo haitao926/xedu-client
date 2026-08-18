@@ -96,7 +96,7 @@ test('teacher recovery bridge exposes named startup support capabilities only', 
   assert.match(source, /selectPython:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('select-python'\)/);
   assert.match(source, /scanPythonEnvironments:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('scan-python-environments'\)/);
   assert.match(source, /setPythonExecutable:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('set-python', targetPath\)/);
-  assert.match(source, /savePythonExecutable:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('python:save-selection', targetPath\)/);
+  assert.doesNotMatch(source, /savePythonExecutable|python:save-selection/);
   assert.match(source, /inspectPythonEnvironment:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('python:inspect-environment', targetPath\)/);
   assert.match(source, /repairPythonEnvironment:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('python:repair-environment', targetPath\)/);
   assert.match(source, /copyBackendDiagnosticSummary:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:copy-diagnostic-summary'\)/);
@@ -105,6 +105,34 @@ test('teacher recovery bridge exposes named startup support capabilities only', 
   assert.match(source, /getBackendStartupState:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('backend:get-startup-state'\)/);
   assert.match(source, /onBackendStartupState:\s*\(callback\)\s*=>\s*ipcRenderer\.on\('backend-startup-state'/);
   assert.doesNotMatch(source, /backend:\s*\{[\s\S]*invoke/i);
+});
+
+test('testing a Python path does not select it until confirmation or successful repair', async () => {
+  const source = await readFile(mainProcessPath, 'utf8');
+  const inspectStart = source.indexOf("ipcMain.handle('python:inspect-environment'");
+  const repairStart = source.indexOf("ipcMain.handle('python:repair-environment'");
+  const scanStart = source.indexOf("ipcMain.handle('scan-python-environments'");
+  const inspectHandler = source.slice(inspectStart, repairStart);
+  const repairHandler = source.slice(repairStart, scanStart);
+
+  assert.ok(inspectStart >= 0 && repairStart > inspectStart && scanStart > repairStart);
+  assert.doesNotMatch(inspectHandler, /selectedPythonExecutable\s*=/);
+  assert.match(repairHandler, /if \(result\.success\) \{[\s\S]*?const effectivePath = result\.path \|\| resolvedPath;[\s\S]*?selectedPythonExecutable = effectivePath;/);
+  assert.match(repairHandler, /repairPythonWithBundledFallback/);
+  assert.doesNotMatch(repairHandler, /promoteBootstrapBackendIfNeeded/);
+});
+
+test('packaged backend runtime is isolated from the configurable experiment runtime', async () => {
+  const source = await readFile(mainProcessPath, 'utf8');
+  const startupStart = source.indexOf('function startBackendServer');
+  const startupEnd = source.indexOf('// --- Jupyter BrowserView Management ---');
+  const startup = source.slice(startupStart, startupEnd);
+
+  assert.match(startup, /const backendPython = resolveBackendPythonExecutable\(/);
+  assert.match(startup, /pythonExecutable: backendPython/);
+  assert.match(startup, /XEDU_PYTHON_EXECUTABLE: backendPython/);
+  assert.match(startup, /backendProcess = spawn\(backendPython, args,/);
+  assert.doesNotMatch(startup, /experimentPython|selectedPythonExecutable|getXEduProResourceDirectories|XEDU_PRO_ROOT/);
 });
 
 test('teacher verification code persists only through the encrypted named bridge', async () => {

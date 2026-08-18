@@ -228,6 +228,13 @@ test("Electron Jupyter BrowserView is not attached by create-view unless visible
   assert.match(main, /isJupyterViewVisible = false;[\s\S]*?mainWindow\.removeBrowserView\(jupyterView\);/);
 });
 
+test("Electron fully disposes stale Jupyter BrowserViews", () => {
+  const main = readRepoFile("electron/main/main.js");
+  assert.match(main, /function disposeJupyterView\([\s\S]*?view\.webContents\.destroy\(\);[\s\S]*?\}/);
+  assert.match(main, /复用旧 Jupyter 视图失败[\s\S]*?disposeJupyterView\(\);/);
+  assert.match(main, /ipcMain\.handle\('jupyter:destroy-view'[\s\S]*?disposeJupyterView\(\);/);
+});
+
 test("student Python is allowed to use main Jupyter page without reopening the total console", () => {
   const ui = readRepoFile("renderer/js/ui.js");
   const workspace = readRepoFile("renderer/js/main/workspace-context.js");

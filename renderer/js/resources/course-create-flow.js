@@ -63,7 +63,6 @@ export async function importLocalCourseFromPathFlow(path, deps = {}) {
     renderStructurePreview,
     renderCoursePreview,
     updateCreateFormState,
-    renderCreateGuide,
     alertUser = alert,
     setImportStatus = () => {},
   } = deps;
@@ -93,7 +92,6 @@ export async function importLocalCourseFromPathFlow(path, deps = {}) {
     return true;
   } catch (error) {
     setScanError(error?.message || '读取本地课程失败');
-    renderCreateGuide();
     setImportStatus('error', error?.message || '读取本地课程失败');
     alertUser(error?.message || '读取本地课程失败');
     return false;
@@ -197,7 +195,6 @@ export async function importLocalPackageToPathFlow(deps = {}) {
     renderCoursePreview,
     renderLocalPathSummary,
     updateCreateFormState,
-    renderCreateGuide,
     addCourse,
     onImported = async () => {},
     pollIntervalMs = 500,
@@ -257,7 +254,6 @@ export async function importLocalPackageToPathFlow(deps = {}) {
     return true;
   } catch (error) {
     setScanError(error?.message || '导入课程包失败');
-    renderCreateGuide();
     updateCreateFormState();
     setImportStatus('error', error?.message || '导入课程包失败');
     alertUser(error?.message || '导入课程包失败');

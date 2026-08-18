@@ -6,11 +6,13 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 const {
+    buildPythonChildEnvironment,
     discoverPythonEnvironments,
     getPythonDialogFilters,
     isUsablePythonExecutable,
     readConfiguredPythonExecutable,
-    resolvePythonExecutable,
+    repairPythonWithBundledFallback,
+    resolveBackendPythonExecutable,
     validatePythonExecutable,
 } = require('./python-runtime');
 const { resolveBackendBindHost, resolveBackendConnectHost } = require('./backend-network-config');
@@ -224,49 +226,13 @@ function getBackendConfigFile() {
     }
 }
 
-function persistPythonSelection(targetPath) {
-    const configPath = getBackendConfigFile();
-    if (!configPath) {
-        return { success: false, error: '无法定位用户配置目录。' };
-    }
-
-    try {
-        let config = {};
-        if (fs.existsSync(configPath)) {
-            config = JSON.parse(fs.readFileSync(configPath, 'utf8')) || {};
-        }
-        if (!config || typeof config !== 'object' || Array.isArray(config)) {
-            return { success: false, error: '用户配置文件格式无效。' };
-        }
-        config.jupyter = {
-            ...(config.jupyter && typeof config.jupyter === 'object' ? config.jupyter : {}),
-            python_executable: targetPath,
-        };
-
-        const configDir = path.dirname(configPath);
-        fs.mkdirSync(configDir, { recursive: true });
-        const tempPath = `${configPath}.python-selection-${process.pid}-${Date.now()}.tmp`;
-        fs.writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
-        try {
-            fs.renameSync(tempPath, configPath);
-        } catch (renameError) {
-            // Windows may refuse to replace an existing file with renameSync.
-            fs.copyFileSync(tempPath, configPath);
-            fs.unlinkSync(tempPath);
-        }
-        return { success: true, path: targetPath };
-    } catch (error) {
-        return { success: false, error: `保存 Python 配置失败: ${error?.message || error}` };
-    }
-}
-
 function getPythonBootstrapScript() {
     return app.isPackaged
         ? path.join(process.resourcesPath, 'backend', 'utils', 'python_bootstrap.py')
         : path.resolve(__dirname, '../../backend/utils/python_bootstrap.py');
 }
 
-function getPythonBootstrapEnvironment() {
+function getPythonBootstrapEnvironment(pythonExecutable) {
     let useMirror = true;
     try {
         const configPath = getBackendConfigFile();
@@ -275,14 +241,19 @@ function getPythonBootstrapEnvironment() {
     } catch (_) {
         // The bootstrap has its own fallback when configuration is unavailable.
     }
-    return {
+    return buildPythonChildEnvironment({
+        pythonExecutable,
+        platform: process.platform,
+        fsImpl: fs,
+        baseEnv: {
         ...process.env,
         PYTHONIOENCODING: 'utf-8',
         PYTHONUTF8: '1',
         XEDU_PIP_INDEX_URL: useMirror
             ? 'https://pypi.tuna.tsinghua.edu.cn/simple'
             : 'https://pypi.org/simple',
-    };
+        },
+    });
 }
 
 function readBackendHealth(timeoutMs = 1500) {
@@ -387,82 +358,9 @@ function readAuthenticatedBackendStatus(timeoutMs = 1500) {
     });
 }
 
-async function promoteBootstrapBackendIfNeeded() {
-    const health = await readBackendHealth();
-    // /api/health is intentionally public, so it cannot prove that the
-    // process on this port belongs to this Electron instance. Require the
-    // capability-protected status response before reusing a full backend.
-    // Otherwise an old backend can make a successful repair appear complete
-    // while all subsequent renderer requests still receive 401.
-    if (health && !health.bootstrap_only) {
-        const authenticated = await readAuthenticatedBackendStatus();
-        if (authenticated?.status === 200) {
-            // A running backend may have imported XEdu before the repair. A
-            // managed child must be restarted so the newly installed modules
-            // are visible to the next request.
-            if (!backendProcess) {
-                return { restarted: false, error: '' };
-            }
-            try {
-                await stopManagedBackend();
-                await startBackendServer({ force: true, reason: 'python-repaired' });
-                return { restarted: true, error: '' };
-            } catch (error) {
-                return {
-                    restarted: false,
-                    error: error?.message || '完整后端重启失败',
-                };
-            }
-        }
-    }
-
-    try {
-        const configuredPython = readConfiguredPythonExecutable(getBackendConfigFile(), fs);
-        const pythonExecutable = selectedPythonExecutable || configuredPython;
-        if (!pythonExecutable) {
-            return {
-                restarted: false,
-                error: '已完成 XEdu 修复，但尚未确定用于启动后端的 Python 解释器。',
-            };
-        }
-
-        const scriptPath = getPythonBootstrapScript();
-        if (!fs.existsSync(scriptPath)) {
-            return { restarted: false, error: '未找到 Python 后端依赖修复程序。' };
-        }
-
-        const backendDependencies = await runPythonBootstrap({
-            pythonExecutable,
-            scriptPath,
-            args: ['--repair'],
-            env: getPythonBootstrapEnvironment(),
-            onOutput: (text, isError) => {
-                const output = String(text || '').trim();
-                if (!output) return;
-                console[isError ? 'warn' : 'log'](`[backend-bootstrap] ${output}`);
-            },
-        });
-        if (!backendDependencies?.success) {
-            return {
-                restarted: false,
-                error: backendDependencies?.message || '无法补齐 Flask 等后端基础依赖。',
-            };
-        }
-
-        await stopManagedBackend();
-        await startBackendServer({ force: true, reason: 'python-repaired' });
-        return { restarted: true, error: '' };
-    } catch (error) {
-        return {
-            restarted: false,
-            error: error?.message || '完整后端仍未准备好',
-        };
-    }
-}
-
 function createPythonSetupRequiredError() {
-    const error = new Error('尚未选择本机 Python 解释器，请在 Python 设置中选择可用的 Python 3.8+ 环境。');
-    error.code = 'XEDU_PYTHON_REQUIRED';
+    const error = new Error('安装包内置 Python 缺失或不可用，请重新安装 XEdu Client。');
+    error.code = 'XEDU_BUNDLED_RUNTIME_MISSING';
     return error;
 }
 
@@ -769,8 +667,8 @@ function createWindow() {
     });
 
     mainWindow.on('closed', () => {
+        disposeJupyterView();
         mainWindow = null;
-        jupyterView = null;
     });
 }
 
@@ -1024,23 +922,6 @@ ipcMain.handle('set-python', async (event, targetPath) => {
     return { success: true, path: resolvedPath };
 });
 
-ipcMain.handle('python:save-selection', async (event, targetPath) => {
-    if (!isTrustedRenderer(event) || typeof targetPath !== 'string' || !targetPath.trim()) {
-        return { success: false, error: 'forbidden' };
-    }
-
-    const selectedPath = path.resolve(targetPath.trim());
-    const validation = validatePythonExecutable(selectedPath, { platform: process.platform, fsImpl: fs });
-    if (!validation.success) {
-        return { success: false, error: validation.message };
-    }
-
-    const resolvedPath = validation.resolvedPath || selectedPath;
-    selectedPythonExecutable = resolvedPath;
-    rememberApprovedPath(resolvedPath);
-    return persistPythonSelection(resolvedPath);
-});
-
 ipcMain.handle('python:inspect-environment', async (event, targetPath) => {
     if (!isTrustedRenderer(event) || typeof targetPath !== 'string' || !targetPath.trim()) {
         return { success: false, error: 'forbidden' };
@@ -1053,8 +934,6 @@ ipcMain.handle('python:inspect-environment', async (event, targetPath) => {
     }
 
     const resolvedPath = validation.resolvedPath || selectedPath;
-    selectedPythonExecutable = resolvedPath;
-    rememberApprovedPath(resolvedPath);
     const scriptPath = getPythonBootstrapScript();
     if (!fs.existsSync(scriptPath)) {
         return { success: false, error: '未找到 Python 环境探针，请检查安装包完整性。' };
@@ -1064,7 +943,7 @@ ipcMain.handle('python:inspect-environment', async (event, targetPath) => {
         pythonExecutable: resolvedPath,
         scriptPath,
         args: ['--inspect-xedu'],
-        env: getPythonBootstrapEnvironment(),
+        env: getPythonBootstrapEnvironment(resolvedPath),
     });
     return {
         ...result,
@@ -1084,37 +963,37 @@ ipcMain.handle('python:repair-environment', async (event, targetPath) => {
     }
 
     const resolvedPath = validation.resolvedPath || selectedPath;
-    selectedPythonExecutable = resolvedPath;
-    rememberApprovedPath(resolvedPath);
     const scriptPath = getPythonBootstrapScript();
     if (!fs.existsSync(scriptPath)) {
         return { success: false, error: '未找到 Python 依赖修复程序，请检查安装包完整性。' };
     }
 
-    const result = await runPythonBootstrap({
-        pythonExecutable: resolvedPath,
-        scriptPath,
-        args: ['--repair-xedu'],
-        env: getPythonBootstrapEnvironment(),
-        onOutput: (text, isError) => {
-            const output = String(text || '').trim();
-            if (!output) return;
-            console[isError ? 'warn' : 'log'](`[python-repair] ${output}`);
-        },
+    const result = await repairPythonWithBundledFallback({
+        selectedPath: resolvedPath,
+        platform: process.platform,
+        packaged: app.isPackaged,
+        bundledPythonBaseDir: app.isPackaged ? path.join(process.resourcesPath, 'python_env') : '',
+        fsImpl: fs,
+        repair: (pythonExecutable) => runPythonBootstrap({
+            pythonExecutable,
+            scriptPath,
+            args: ['--repair-xedu'],
+            env: getPythonBootstrapEnvironment(pythonExecutable),
+            onOutput: (text, isError) => {
+                const output = String(text || '').trim();
+                if (!output) return;
+                console[isError ? 'warn' : 'log'](`[python-repair] ${output}`);
+            },
+        }),
     });
     if (result.success) {
-        const promotion = await promoteBootstrapBackendIfNeeded();
-        if (promotion.error) {
-            result.backend_ready = false;
-            result.backend_message = promotion.error;
-            result.message = `${result.message || 'Python 环境已修复'}，但完整后端尚未启动：${promotion.error}`;
-        } else if (promotion.restarted) {
-            result.backend_ready = true;
-        }
+        const effectivePath = result.path || resolvedPath;
+        selectedPythonExecutable = effectivePath;
+        rememberApprovedPath(effectivePath);
     }
     return {
         ...result,
-        path: resolvedPath,
+        path: result.path || resolvedPath,
     };
 });
 
@@ -1123,13 +1002,18 @@ ipcMain.handle('scan-python-environments', async (event) => {
         return { success: false, error: 'forbidden' };
     }
 
-    const configuredPath = readConfiguredPythonExecutable(getBackendConfigFile(), fs);
+    const configuredPath = readConfiguredPythonExecutable(
+        getBackendConfigFile(),
+        fs,
+        { requireConfirmed: app.isPackaged },
+    );
     const projectRoot = app.isPackaged ? '' : process.cwd();
     const homeDir = app.getPath('home');
     const environments = discoverPythonEnvironments({
         platform: process.platform,
         projectRoot,
         homeDir,
+        bundledPythonBaseDir: app.isPackaged ? path.join(process.resourcesPath, 'python_env') : '',
         configuredPath,
         selectedPath: selectedPythonExecutable,
         envPath: process.env.PATH || '',
@@ -1672,19 +1556,15 @@ function startBackendServer(options = {}) {
         return backendReadyPromise;
     }
 
-    const configuredPython = readConfiguredPythonExecutable(getBackendConfigFile(), fs);
-    const pythonCmd = resolvePythonExecutable({
+    const backendPython = resolveBackendPythonExecutable({
         platform: process.platform,
         packaged: app.isPackaged,
-        configuredPath: configuredPython,
-        selectedPath: selectedPythonExecutable,
-        envPath: process.env.XEDU_PYTHON_EXECUTABLE || '',
+        backendOverridePath: process.env.XEDU_BACKEND_PYTHON_EXECUTABLE || '',
         projectRoot: path.resolve(__dirname, '../..'),
         bundledPythonBaseDir: app.isPackaged ? path.join(process.resourcesPath, 'python_env') : '',
         fsImpl: fs,
     });
-
-    if (!pythonCmd) {
+    if (!backendPython) {
         const setupError = app.isPackaged
             ? createPythonSetupRequiredError()
             : new Error('未找到可用的 Python 解释器，请确认开发环境已安装 Python。');
@@ -1698,10 +1578,10 @@ function startBackendServer(options = {}) {
         return Promise.reject(setupError);
     }
 
-    const pythonValidation = validatePythonExecutable(pythonCmd, { platform: process.platform, fsImpl: fs });
+    const pythonValidation = validatePythonExecutable(backendPython, { platform: process.platform, fsImpl: fs });
     if (!pythonValidation.success) {
         const setupError = new Error(pythonValidation.message);
-        setupError.code = 'XEDU_PYTHON_REQUIRED';
+        setupError.code = app.isPackaged ? 'XEDU_BUNDLED_RUNTIME_INVALID' : 'XEDU_PYTHON_REQUIRED';
         updateBackendStartupState({
             status: 'error',
             message: setupError.message,
@@ -1711,7 +1591,7 @@ function startBackendServer(options = {}) {
         return Promise.reject(setupError);
     }
 
-    console.log(`使用 Python 解释器 ${pythonCmd}`);
+    console.log(`后端使用内置 Python 解释器 ${backendPython}`);
 
     let serverScript;
     if (app.isPackaged) {
@@ -1738,7 +1618,7 @@ function startBackendServer(options = {}) {
     }
 
     const args = [serverScript];
-    console.log(`启动命令: ${pythonCmd} ${args.join(' ')}`);
+    console.log(`启动命令: ${backendPython} ${args.join(' ')}`);
     console.log(`后端脚本路径: ${serverScript}`);
 
     const launchBackend = () => {
@@ -1785,8 +1665,11 @@ function startBackendServer(options = {}) {
                 path.resolve(__dirname, '../../checkpoint'),
                 path.resolve(__dirname, '../../backend/checkpoint'),
             ];
-
-        const env = {
+        const env = buildPythonChildEnvironment({
+            pythonExecutable: backendPython,
+            platform: process.platform,
+            fsImpl: fs,
+            baseEnv: {
             ...process.env,
             PYTHONIOENCODING: 'utf-8',
             PYTHONUTF8: '1',
@@ -1800,21 +1683,14 @@ function startBackendServer(options = {}) {
             XEDU_BACKEND_CONNECT_HOST: BACKEND_CONNECT_HOST,
             XEDU_CLIENT_CAPABILITY: backendCapability,
             XEDU_CHECKPOINT_DIRS: checkpointDirs.join(path.delimiter),
-            XEDU_PYTHON_EXECUTABLE: pythonCmd,
+            XEDU_PYTHON_EXECUTABLE: backendPython,
             PYTHONPATH: path.dirname(serverScript),
             PYTHONHOME: '',
-        };
+            },
+        });
         delete env.XEDU_BACKEND_HOST;
         delete env.XEDU_API_HOST;
-        const pythonEnvDir = path.dirname(pythonCmd);
-        if (process.platform === 'win32') {
-            env.PATH = [
-                pythonEnvDir,
-                path.join(pythonEnvDir, 'Scripts'),
-                env.PATH || ''
-            ].filter(Boolean).join(path.delimiter);
-        }
-        backendProcess = spawn(pythonCmd, args, {
+        backendProcess = spawn(backendPython, args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: path.dirname(serverScript),
             env
@@ -1983,14 +1859,39 @@ let jupyterView = null;
 let isJupyterViewVisible = false;
 const { BrowserView } = require('electron');
 
+function disposeJupyterView() {
+    const view = jupyterView;
+    jupyterView = null;
+    isJupyterViewVisible = false;
+    if (!view) return;
+
+    try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.removeBrowserView(view);
+            if (mainWindow.getBrowserView() === view) {
+                mainWindow.setBrowserView(null);
+            }
+        }
+    } catch (error) {
+        console.warn('移除 Jupyter 视图失败:', error?.message || error);
+    }
+
+    try {
+        if (view.webContents && !view.webContents.isDestroyed()) {
+            view.webContents.destroy();
+        }
+    } catch (error) {
+        console.warn('销毁 Jupyter 视图失败:', error?.message || error);
+    }
+}
+
 function setupJupyterView() {
     const hasValidWindow = () => Boolean(mainWindow && !mainWindow.isDestroyed());
     const hasValidView = () =>
         Boolean(jupyterView && jupyterView.webContents && !jupyterView.webContents.isDestroyed());
     const ensureValidViewRef = () => {
         if (!hasValidView()) {
-            jupyterView = null;
-            isJupyterViewVisible = false;
+            disposeJupyterView();
             return false;
         }
         return true;
@@ -2014,6 +1915,7 @@ function setupJupyterView() {
                 isJupyterViewVisible = false;
             }
         });
+        jupyterView = view;
 
         if (bounds) {
             view.setBounds(bounds);
@@ -2024,7 +1926,6 @@ function setupJupyterView() {
         } catch (e) {
             console.error('Failed to load Jupyter URL:', e);
         }
-        jupyterView = view;
         if (isJupyterViewVisible) {
             if (mainWindow.getBrowserView() && mainWindow.getBrowserView() !== view) {
                 mainWindow.setBrowserView(null);
@@ -2062,7 +1963,7 @@ function setupJupyterView() {
                 return { success: true, reused: true };
             } catch (error) {
                 console.warn('复用旧 Jupyter 视图失败，准备重建:', error?.message || error);
-                jupyterView = null;
+                disposeJupyterView();
             }
         }
 
@@ -2072,7 +1973,7 @@ function setupJupyterView() {
                 return { success: true, recreated: true, attempt };
             } catch (error) {
                 console.error('创建 Jupyter 视图失败:', error);
-                jupyterView = null;
+                disposeJupyterView();
                 if (!isDestroyedViewError(error) || attempt === 1) {
                     return { success: false, error: error?.message || 'create-view-failed' };
                 }
@@ -2095,7 +1996,7 @@ function setupJupyterView() {
             jupyterView.setBounds(bounds);
         } catch (e) {
             console.error('更新视图位置失败:', e);
-            jupyterView = null;
+            disposeJupyterView();
         }
     });
 
@@ -2141,20 +2042,8 @@ function setupJupyterView() {
 
     ipcMain.handle('jupyter:destroy-view', (event) => {
         if (!isTrustedRenderer(event)) return { success: false, error: 'forbidden' };
-        if (!ensureValidViewRef()) return { success: true };
         console.log('销毁 Jupyter 视图');
-        isJupyterViewVisible = false;
-        try {
-            if (hasValidWindow()) {
-                mainWindow.removeBrowserView(jupyterView);
-            }
-        } catch (e) {
-            console.warn('移除 Jupyter 视图失败:', e?.message || e);
-            if (hasValidWindow() && mainWindow.getBrowserView() === jupyterView) {
-                mainWindow.setBrowserView(null);
-            }
-        }
-        jupyterView = null;
+        disposeJupyterView();
         return { success: true };
     });
 

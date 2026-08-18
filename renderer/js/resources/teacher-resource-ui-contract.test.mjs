@@ -74,6 +74,29 @@ test("teacher resources bindings wire both import menu actions", () => {
   assert.match(bindings, /chooseCreateEntryMode\(['"]pack-import['"]\)/);
   assert.match(bindings, /chooseCreateEntryMode\(['"]cloud-import['"]\)/);
   assert.match(bindings, /resources-cloud-import-btn/);
+  assert.doesNotMatch(bindings, /cloudDetailImportBtn/);
+  assert.doesNotMatch(bindings, /cloudRefreshBtn/);
+});
+
+test("cloud import presents one linear read-select-import flow", () => {
+  const html = readRepoFile("renderer/index.html");
+
+  assert.match(html, /resources-cloud-flow/);
+  assert.match(html, /id="resources-cloud-temp-load-btn"[^>]*>读取课程/);
+  assert.match(html, /id="resources-cloud-import-btn"[^>]*>导入到本地/);
+  assert.doesNotMatch(html, /resources-cloud-refresh-btn/);
+  assert.doesNotMatch(html, /resources-cloud-detail-import-btn/);
+});
+
+test("local ZIP import collapses the hidden structure column", () => {
+  const html = readRepoFile("renderer/index.html");
+  const resources = readRepoFile("renderer/js/resources.js");
+  const css = readRepoFile("renderer/styles/main.css");
+
+  assert.doesNotMatch(html, /resources-create-guide/);
+  assert.doesNotMatch(html, /课程指南|导入指南/);
+  assert.match(resources, /step2Grid\.classList\.toggle\("is-single", isCloud \|\| resourcesState\.createEntryMode === "pack-import"\)/);
+  assert.match(css, /#resources-create-step2-grid\.is-cloud,[\s\S]*?#resources-create-step2-grid\.is-single/);
 });
 
 test("repository URL import detects indexed and root-course repositories from their contents", () => {

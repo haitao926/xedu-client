@@ -19,6 +19,7 @@ from flask import Response, jsonify, request, stream_with_context
 from api.security import require_capability
 from services.xeduhub_support import SMOKE_CHECKPOINT_MAP
 from runtime.sample_assets import resolve_checkpoint_file
+from utils.python_runtime import augment_conda_environment, resolve_pip_command
 
 PYTHON_OUTPUT_LIMIT_BYTES = 1024 * 1024
 _OUTPUT_TRUNCATION_NOTICE = "\n...[{stream} 输出已截断，已达到 1 MiB 上限]"
@@ -372,7 +373,7 @@ def register_python_routes(app, services: dict):
         elif app_config.jupyter.project_dir and os.path.isdir(app_config.jupyter.project_dir):
             cwd = app_config.jupyter.project_dir
 
-        env = dict(os.environ)
+        env = augment_conda_environment(python_path, dict(os.environ))
         env.setdefault("PYTHONIOENCODING", "utf-8")
         env.setdefault("MPLBACKEND", "Agg")
         backend_dir = str(Path(__file__).resolve().parents[2])
@@ -486,7 +487,8 @@ def register_python_routes(app, services: dict):
             or sys.executable
         )
 
-        cmd = [python_path, "-m", "pip"]
+        cmd = resolve_pip_command(python_path) or [python_path, "-m", "pip"]
+        env = augment_conda_environment(python_path, dict(os.environ))
         if action == "install":
             cmd += ["install", package]
         elif action == "upgrade":
@@ -511,6 +513,7 @@ def register_python_routes(app, services: dict):
                         text=True,
                         bufsize=1,
                         universal_newlines=True,
+                        env=env,
                     )
                     if proc.stdout:
                         for line in proc.stdout:
@@ -529,7 +532,7 @@ def register_python_routes(app, services: dict):
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300, check=False
+                cmd, capture_output=True, text=True, timeout=300, check=False, env=env
             )
             success = result.returncode == 0
             return (

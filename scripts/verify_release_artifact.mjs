@@ -52,6 +52,7 @@ const FORBIDDEN_ASAR_PATHS = [
   ...FORBIDDEN_ARTIFACT_PATHS.map((pattern) => new RegExp(pattern.source.replace(/^\(\^\|\/\)/, '^\\/?'))),
 ];
 const execFileAsync = promisify(execFile);
+const REQUIRED_BUNDLED_PYTHON_VERSION = '3.12.8';
 
 async function exists(target, mode = constants.F_OK) {
   try {
@@ -124,8 +125,13 @@ async function validateBundledPythonRuntime(resourcesPath, platform) {
   const metadata = await readJson(path.join(runtimePath, '.portable_runtime.json'));
   if (!metadata) {
     errors.push('bundled Python runtime metadata missing: python_env/.portable_runtime.json');
-  } else if (metadata.models_bundled !== false) {
-    errors.push('bundled Python runtime must declare models_bundled=false');
+  } else {
+    if (metadata.python_version !== REQUIRED_BUNDLED_PYTHON_VERSION) {
+      errors.push(`bundled Python runtime must be Python ${REQUIRED_BUNDLED_PYTHON_VERSION}`);
+    }
+    if (metadata.models_bundled !== false) {
+      errors.push('bundled Python runtime must declare models_bundled=false');
+    }
   }
 
   const executableCandidates = platform === 'win32'
@@ -138,6 +144,23 @@ async function validateBundledPythonRuntime(resourcesPath, platform) {
   )).some(Boolean);
   if (!executableFound) {
     errors.push(`bundled Python executable missing: expected one of ${executableCandidates.join(', ')}`);
+  }
+
+  const sitePackagesCandidates = platform === 'win32'
+    ? [path.join(runtimePath, 'Lib', 'site-packages')]
+    : platform === 'darwin'
+      ? [path.join(runtimePath, 'lib', 'python3.12', 'site-packages')]
+      : [
+        path.join(runtimePath, 'Lib', 'site-packages'),
+        path.join(runtimePath, 'lib', 'python3.12', 'site-packages'),
+      ];
+  const languagePackFound = (await Promise.all(
+    sitePackagesCandidates.map((sitePackages) => (
+      isDirectory(path.join(sitePackages, 'jupyterlab_language_pack_zh_CN'))
+    )),
+  )).some(Boolean);
+  if (!languagePackFound) {
+    errors.push('bundled Python runtime is missing the Simplified Chinese JupyterLab language pack');
   }
   return errors;
 }

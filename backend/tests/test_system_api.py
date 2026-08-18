@@ -84,6 +84,9 @@ class SystemApiTestCase(unittest.TestCase):
                 "success": True,
                 "python_version": "3.12.8",
                 "python_executable": sys.executable,
+                "ssl_available": False,
+                "ssl_version": None,
+                "ssl_error": "ImportError: DLL load failed while importing _ssl",
                 "xedu_version": "2.0.0",
                 "xedu_version_ok": True,
                 "xedu_runtime_ok": True,
@@ -100,6 +103,8 @@ class SystemApiTestCase(unittest.TestCase):
         self.assertEqual(data["info"]["xedu_version"], "2.0.0")
         self.assertTrue(data["info"]["xedu_version_ok"])
         self.assertTrue(data["info"]["xedu_runtime_ok"])
+        self.assertFalse(data["info"]["ssl_available"])
+        self.assertIn("_ssl", data["info"]["ssl_error"])
 
     def test_detect_python_rejects_missing_executable(self):
         response = self.client.get("/api/detect_python?python_executable=/tmp/not-a-python-executable")

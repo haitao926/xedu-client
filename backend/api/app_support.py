@@ -132,8 +132,14 @@ def collect_system_info(python_executable: str | None = None) -> SystemInfo:
     if environment.get("success"):
         info.python_version = environment.get("python_version") or info.python_version
         info.python_executable = environment.get("python_executable") or info.python_executable
+        info.ssl_available = environment.get("ssl_available")
+        info.ssl_version = environment.get("ssl_version")
+        info.ssl_error = environment.get("ssl_error") or ""
         info.jupyterlab_version = environment.get("jupyterlab_version")
         info.jupyterlab_installed = bool(info.jupyterlab_version)
+        info.jupyterlab_language_pack_zh_cn_version = environment.get(
+            "jupyterlab_language_pack_zh_cn_version"
+        )
         info.jupyter_notebook_version = environment.get("jupyter_notebook_version")
         info.xedu_version = environment.get("xedu_version")
         info.xedu_version_ok = bool(environment.get("xedu_version_ok"))

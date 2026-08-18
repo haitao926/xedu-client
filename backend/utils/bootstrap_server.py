@@ -19,6 +19,12 @@ from urllib.parse import parse_qs, urlsplit
 CAPABILITY_HEADER = "X-XEdu-Client-Token"
 MAX_REQUEST_BYTES = 64 * 1024
 DEFAULT_PIP_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
+NORMAL_API_PATHS = frozenset({
+    "/api/status",
+    "/api/start",
+    "/api/stop",
+    "/api/restart",
+})
 
 
 def _json_bytes(payload: dict[str, Any]) -> bytes:
@@ -80,6 +86,18 @@ class BootstrapRequestHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _send_bootstrap_mode(self) -> None:
+        self._send_json(
+            503,
+            {
+                "success": False,
+                "code": "XEDU_BOOTSTRAP_MODE",
+                "message": "Python 后端仍处于恢复模式，请先修复并启动完整后端。",
+                "bootstrap_only": True,
+                "backend_ready": False,
+            },
+        )
+
     def do_OPTIONS(self) -> None:
         if not self._is_allowed_origin():
             self._send_json(403, {"success": False, "message": "forbidden"})
@@ -108,6 +126,11 @@ class BootstrapRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path in NORMAL_API_PATHS:
+            if self._require_access():
+                self._send_bootstrap_mode()
+            return
+
         if path != "/api/detect_python" or not self._require_access():
             if path != "/api/detect_python":
                 self._send_json(404, {"success": False, "message": "not found"})
@@ -132,6 +155,10 @@ class BootstrapRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
+        if path in NORMAL_API_PATHS:
+            if self._require_access():
+                self._send_bootstrap_mode()
+            return
         if path != "/api/repair_xedu":
             self._send_json(404, {"success": False, "message": "not found"})
             return

@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu Build Course"
+  short_description: "Plan and organize complete XEdu courses"
+  default_prompt: "Use $xedu-build-course to plan or repair an XEdu course and route lab or packaging work."

@@ -237,6 +237,11 @@ const resourcesModalState = {
     cleanup: null,
 };
 
+window.addEventListener("xedu:modal-dismiss", (event) => {
+    if (event.detail?.modalId !== "resources-action-modal") return;
+    finishResourcesActionModal({ confirmed: false, values: {} });
+});
+
 function getResourcesActionModalElements() {
     const modal = document.getElementById("resources-action-modal");
     const titleEl = document.getElementById("resources-action-title");
@@ -864,23 +869,17 @@ function buildSourceOverrideFromCourseMeta(courseLike = {}) {
 }
 
 function setCloudStatus(message, isError = false) {
-    ["resources-cloud-status", "resources-cloud-detail-status"].forEach((id) => {
-        const status = document.getElementById(id);
-        if (!status) return;
-        status.textContent = message || "";
-        status.classList.toggle("error", Boolean(isError));
-        status.classList.toggle("success", Boolean(message) && !isError);
-    });
+    const status = document.getElementById("resources-cloud-status");
+    if (!status) return;
+    status.textContent = message || "";
+    status.classList.toggle("error", Boolean(isError));
+    status.classList.toggle("success", Boolean(message) && !isError);
 }
 
 function updateCloudSourceActionUI() {
     const loadBtn = document.getElementById("resources-cloud-temp-load-btn");
-    const clearBtn = document.getElementById("resources-cloud-temp-clear-btn");
     const addressInput = document.getElementById("resources-cloud-repo-address");
-    const tokenInput = document.getElementById("resources-cloud-temp-token");
     const hasAddress = Boolean((addressInput?.value || "").trim());
-    const hasToken = Boolean((tokenInput?.value || "").trim());
-    const usingCustomSource = Boolean(resourcesState.cloudTempSource);
 
     if (loadBtn) {
         if (hasAddress) {
@@ -890,12 +889,6 @@ function updateCloudSourceActionUI() {
         } else {
             loadBtn.textContent = "读取课程";
         }
-    }
-
-    if (clearBtn) {
-        clearBtn.textContent = usingCustomSource ? "返回默认课程源" : "清空地址";
-        clearBtn.style.display = hasAddress || hasToken || usingCustomSource ? "inline-flex" : "none";
-        clearBtn.disabled = !hasAddress && !hasToken && !usingCustomSource;
     }
 }
 
@@ -1116,12 +1109,6 @@ function renderLocalStructureSummary() {
     `;
 }
 
-function shouldShowCloudLocalPathPanel() {
-    const selectedValue = document.getElementById("resources-cloud-course-select")?.value || "";
-    const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
-    return Boolean(selectedValue || localPath || resourcesState.scannedCourse || resourcesState.cloudImported);
-}
-
 function updateLocalPathVisibility() {
     const localGroup = document.getElementById("resources-local-group");
     if (!localGroup) return;
@@ -1129,11 +1116,7 @@ function updateLocalPathVisibility() {
         localGroup.style.display = "none";
         return;
     }
-    if (resourcesState.createSource !== "cloud") {
-        localGroup.style.display = "block";
-        return;
-    }
-    localGroup.style.display = shouldShowCloudLocalPathPanel() ? "block" : "none";
+    localGroup.style.display = resourcesState.createSource === "cloud" ? "none" : "block";
 }
 
 function updateCreateStep3UI() {
@@ -1233,15 +1216,6 @@ function getCloudTempSourceFromInputs() {
     return { source, token };
 }
 
-function clearCloudTempSourceState() {
-    resourcesState.cloudTempSource = null;
-    resourcesState.cloudTempToken = "";
-    const addressInput = document.getElementById("resources-cloud-repo-address");
-    const tokenInput = document.getElementById("resources-cloud-temp-token");
-    if (addressInput) addressInput.value = "";
-    if (tokenInput) tokenInput.value = "";
-}
-
 function renderCloudCourseOptions() {
     const select = document.getElementById("resources-cloud-course-select");
     if (!select) return;
@@ -1275,38 +1249,39 @@ function renderCloudCourseOptions() {
 
 function renderCloudCoursePreview() {
     const preview = document.getElementById("resources-cloud-course-preview");
-    const detailPreview = document.getElementById("resources-cloud-detail-preview");
+    const flow = document.getElementById("resources-cloud-group");
     const select = document.getElementById("resources-cloud-course-select");
     const label = document.getElementById("resources-cloud-course-label");
-    if (!preview || !detailPreview || !select || !label) return;
+    if (!preview || !select || !label) return;
 
     const selectedValue = select.value || "";
     const selectedCourse = resourcesState.cloudCourseOptions.find((item) => (item.id || item.package_url || item.course_url) === selectedValue) || null;
     const isSingleRepoCourse = Boolean(selectedCourse?.single_course_repo) && resourcesState.cloudCourseOptions.length === 1;
+
+    if (flow) {
+        flow.classList.toggle("has-course", Boolean(selectedCourse));
+        const step = flow.querySelector(".resources-cloud-flow-step");
+        if (step) step.textContent = selectedCourse ? "步骤 2 / 2" : "步骤 1 / 2";
+    }
 
     label.textContent = isSingleRepoCourse ? "当前仓库课程" : "云端课程";
 
     if (!selectedCourse) {
         label.style.display = resourcesState.cloudCourseOptions.length ? "" : "none";
         select.style.display = resourcesState.cloudCourseOptions.length ? "" : "none";
-        [preview, detailPreview].forEach((node) => {
-            node.style.display = "none";
-            node.classList.remove("is-single");
-            node.innerHTML = "";
-        });
+        preview.style.display = "none";
+        preview.classList.remove("is-single");
+        preview.innerHTML = "";
         updateLocalPathVisibility();
         return;
     }
 
-    const summaryMarkup = buildCloudCoursePreviewMarkup(selectedCourse);
-    const detailMarkup = buildCloudCourseDetailMarkup(selectedCourse);
+    const summaryMarkup = selectedCourse._detailsLoaded
+        ? buildCloudCourseDetailMarkup(selectedCourse)
+        : buildCloudCoursePreviewMarkup(selectedCourse);
     preview.classList.toggle("is-single", isSingleRepoCourse);
     preview.innerHTML = summaryMarkup;
-    preview.style.display = resourcesState.createSource === "cloud" ? "none" : "block";
-
-    detailPreview.classList.toggle("is-single", isSingleRepoCourse);
-    detailPreview.innerHTML = detailMarkup;
-    detailPreview.style.display = "block";
+    preview.style.display = "block";
 
     const shouldHideSelector = resourcesState.createSource === "cloud" && resourcesState.cloudCourseOptions.length <= 1;
     label.style.display = shouldHideSelector ? "none" : "";
@@ -1527,227 +1502,20 @@ async function loadCloudCoursesFromTempSource() {
     await loadCloudCourseOptions();
 }
 
-async function clearCloudTempSourceAndReload() {
-    const hadCustomSource = Boolean(resourcesState.cloudTempSource);
-    const hadInput =
-        Boolean((document.getElementById("resources-cloud-repo-address")?.value || "").trim()) ||
-        Boolean((document.getElementById("resources-cloud-temp-token")?.value || "").trim());
-    clearCloudTempSourceState();
-    updateCloudSourceActionUI();
-    if (resourcesState.defaultCloudSourceConfigured) {
-        if (hadCustomSource) {
-            setCloudStatus("已返回默认课程源，正在刷新课程列表...");
-            await loadCloudCourseOptions();
-        } else if (hadInput) {
-            setCloudStatus("已清空输入内容。");
-        }
-        return;
-    }
-    resourcesState.cloudCourseOptions = [];
-    renderCloudCourseOptions();
-    if (hadCustomSource || hadInput) {
-        setCloudStatus("已清空仓库地址，请重新输入后读取课程。");
-    } else {
-        setCloudStatus("请先输入课程仓库地址，然后读取课程。");
-    }
-}
-
-function renderCreateGuide() {
-    const guideBody = document.getElementById("resources-create-guide-body");
-    const guideTitle = document.querySelector("#resources-create-guide .resources-guide-title");
-    if (!guideBody) return;
-    guideBody.innerHTML = "";
-
-    if (resourcesState.createSource === "cloud") {
-        if (guideTitle) {
-            guideTitle.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="16" x2="12" y2="12"></line>
-                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                </svg>
-                云端导入
-            `;
-        }
-        const note = document.createElement("div");
-        note.className = "resources-guide-note";
-        if (resourcesState.cloudImported && resourcesState.scannedCourse) {
-            const { sectionCount, experimentCount } = getSectionStats();
-            note.textContent = `已读取课程内容：${sectionCount} 课 / ${experimentCount} 个实验。选择本地目录后即可导入。`;
-        } else if (resourcesState.scanError) {
-            note.textContent = `读取失败：${resourcesState.scanError}`;
-        } else {
-            note.textContent = "输入课程仓库地址，读取 course.json 后直接导入为本地课程目录。";
-        }
-        guideBody.appendChild(note);
-        return;
-    }
-
-    if (guideTitle) {
-        guideTitle.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
-            课程指南
-        `;
-    }
-
-    const items = [];
-    const notes = [];
-    const localPath = document.getElementById("resources-create-local-path")?.value.trim() || "";
-    const { sectionCount, experimentCount } = getSectionStats();
-
-    if (resourcesState.createStep === 1) {
-        if (resourcesState.createSource === "cloud") {
-            items.push({ done: true, text: "云端导入模式无需手工逐项填写课程信息" });
-            notes.push("课程元信息将从课程仓库中的 course.json 自动读取并填充。");
-            notes.push("下一步选择云端课程后导入课程文件。");
-            items.forEach((item) => {
-                const row = document.createElement("div");
-                row.className = `resources-guide-item${item.done ? " is-done" : ""}`;
-                const status = document.createElement("div");
-                status.className = "resources-guide-status";
-                status.textContent = item.done ? "✓" : "•";
-                row.appendChild(status);
-                const text = document.createElement("div");
-                text.className = "resources-guide-text";
-                text.textContent = item.text;
-                row.appendChild(text);
-                guideBody.appendChild(row);
-            });
-            if (notes.length) {
-                const note = document.createElement("div");
-                note.className = "resources-guide-note";
-                note.textContent = notes.join(" ");
-                guideBody.appendChild(note);
-            }
-            return;
-        }
-        if (resourcesState.createEntryMode === "pack-import") {
-            items.push({ done: true, text: "本地导入模式无需手工填写课程信息" });
-            notes.push("课程信息会从课程包中的 course.json 自动读取并填充。");
-            notes.push("仅支持 xedu-pack 生成的 zip 课程包或已解压目录。");
-            items.forEach((item) => {
-                const row = document.createElement("div");
-                row.className = `resources-guide-item${item.done ? " is-done" : ""}`;
-                const status = document.createElement("div");
-                status.className = "resources-guide-status";
-                status.textContent = item.done ? "✓" : "•";
-                row.appendChild(status);
-                const text = document.createElement("div");
-                text.className = "resources-guide-text";
-                text.textContent = item.text;
-                row.appendChild(text);
-                guideBody.appendChild(row);
-            });
-            if (notes.length) {
-                const note = document.createElement("div");
-                note.className = "resources-guide-note";
-                note.textContent = notes.join(" ");
-                guideBody.appendChild(note);
-            }
-            return;
-        }
-        const titleValue = document.getElementById("resources-create-title")?.value.trim() || "";
-        const note = document.createElement("div");
-        note.className = "resources-guide-note";
-        note.textContent = titleValue
-            ? "课程名称已填写，其他信息可按需补充。"
-            : "先填写课程名称，其他信息可后补。";
-        guideBody.appendChild(note);
-        return;
-    } else if (resourcesState.createStep === 2) {
-        if (resourcesState.createSource !== "cloud") {
-            if (resourcesState.createEntryMode === "pack-import") {
-                const packagePath = document.getElementById("resources-create-package-path")?.value.trim() || "";
-                items.push({ done: Boolean(packagePath), text: "选择本地课程包" });
-                items.push({ done: Boolean(localPath), text: "选择本地保存位置" });
-                items.push({ done: Boolean(resourcesState.scannedCourse && !resourcesState.scanError), text: "导入课程包并读取课程结构" });
-                if (resourcesState.scanError) {
-                    notes.push(`导入失败：${resourcesState.scanError}`);
-                } else if (resourcesState.scannedCourse) {
-                    notes.push(`已导入 ${sectionCount} 课 / ${experimentCount} 个实验。可继续下一步保存。`);
-                } else {
-                    notes.push("先选择本地课程包，再选择本地保存位置并执行导入。");
-                }
-            } else {
-                items.push({ done: Boolean(localPath), text: "选择课程根目录" });
-                items.push({ done: resourcesState.draftSections.length > 0, text: "按需添加课节与实验" });
-                if (resourcesState.draftSections.length > 0) {
-                    notes.push(`当前已配置 ${sectionCount} 课 / ${experimentCount} 个实验。`);
-                } else {
-                    notes.push("本步可直接跳过；保存时会自动补 1 课 1 实验，并写入 course.json。");
-                }
-            }
-        }
-    } else {
-        items.push({ done: isStep1Complete(), text: "课程信息已完善" });
-        items.push({
-            done: isStep2Complete(),
-            text: resourcesState.createSource === "cloud" ? "课程结构已读取" : "课程根目录已选择（结构可后补）"
-        });
-        items.push({
-            done: isStep1Complete() && isStep2Complete(),
-            text: "可保存为本地课程或发布到 Gitea"
-        });
-        if (resourcesState.createSource === "cloud") {
-            notes.push("云端课程已是完整结构，确认后直接保存为本地课程即可。");
-        } else if (resourcesState.createEntryMode === "pack-import") {
-            notes.push("本地课程包已导入后可直接保存到课程列表，再按需编辑或发布。");
-        } else {
-            notes.push("可以一个实验一个实验添加：点击每课下方“添加实验”。");
-            notes.push("每个实验建议关联一个材料文件夹，可包含 Notebook、HTML、Scratch、图片和数据文件。");
-            notes.push("若未配置结构，保存时会自动生成 1 课 1 实验。");
-        }
-    }
-
-    items.forEach((item) => {
-        const row = document.createElement("div");
-        row.className = `resources-guide-item${item.done ? " is-done" : ""}`;
-
-        const status = document.createElement("div");
-        status.className = "resources-guide-status";
-        status.textContent = item.done ? "✓" : "•";
-        row.appendChild(status);
-
-        const text = document.createElement("div");
-        text.className = "resources-guide-text";
-        text.textContent = item.text;
-        row.appendChild(text);
-
-        guideBody.appendChild(row);
-    });
-
-    if (notes.length) {
-        const note = document.createElement("div");
-        note.className = "resources-guide-note";
-        note.textContent = notes.join(" ");
-        guideBody.appendChild(note);
-    }
-}
-
 function updateCreateFlowLayout() {
     const stepsWrap = document.getElementById("resources-create-steps");
     const footer = document.querySelector("#resources-create-view .resources-create-footer");
-    const guideCard = document.getElementById("resources-create-guide");
     const step2Grid = document.getElementById("resources-create-step2-grid");
     const isCloud = resourcesState.createSource === "cloud";
-    const hideGuide = false;
     if (stepsWrap) {
         stepsWrap.style.display = isCloud ? "none" : "flex";
     }
     if (footer) {
         footer.style.display = isCloud ? "none" : "flex";
     }
-    if (guideCard) {
-        guideCard.style.display = isCloud || hideGuide ? "none" : "flex";
-    }
     if (step2Grid) {
         step2Grid.classList.toggle("is-cloud", isCloud);
+        step2Grid.classList.toggle("is-single", isCloud || resourcesState.createEntryMode === "pack-import");
     }
     updateLocalPathVisibility();
 }
@@ -1809,7 +1577,6 @@ function updateStepperUI() {
         }
     }
 
-    renderCreateGuide();
 }
 
 function setCreateStep(step) {
@@ -3006,15 +2773,11 @@ function updateTeacherModeUI() {
     });
     const addBtn = document.getElementById("resources-add-btn");
     const submitBtn = document.getElementById("resources-submit-btn");
-    const createSubmitBtn = document.getElementById("resources-create-submit-btn");
     if (addBtn) {
         addBtn.style.display = resourcesState.teacherMode.unlocked ? "inline-flex" : "none";
     }
     if (submitBtn) {
         submitBtn.style.display = resourcesState.teacherMode.unlocked ? "inline-flex" : "none";
-    }
-    if (createSubmitBtn) {
-        createSubmitBtn.style.display = resourcesState.teacherMode.unlocked ? "inline-flex" : "none";
     }
     if (!resourcesState.teacherMode.unlocked) {
         closeCreateEntryMenu();
@@ -3036,6 +2799,7 @@ function updateTeacherModeUI() {
 }
 
 function exitTeacherMode() {
+    invalidateStudentNavigation();
     resourcesState.teacherMode = clearTeacherModeSession();
     updateTeacherModeUI();
 }
@@ -3083,6 +2847,8 @@ async function ensureTeacherModeReady(force = false) {
 
 async function unlockTeacherMode() {
     if (resourcesState.teacherMode.unlocked) return true;
+    invalidateStudentNavigation();
+    await window.app?.jupyter?.setVisibility?.(false);
     const ready = await ensureTeacherModeReady();
     if (!ready) {
         openPythonSetup();
@@ -4199,7 +3965,21 @@ function buildStudentHtmlExperienceView(context) {
     return wrap;
 }
 
-async function openStudentPythonWorkspace(course, context = null) {
+function invalidateStudentNavigation() {
+    resourcesState.studentNavigationRevision += 1;
+}
+
+function isCurrentStudentNavigation(revision) {
+    return revision === resourcesState.studentNavigationRevision
+        && !document.querySelector('.modal-overlay.show');
+}
+
+async function openStudentPythonWorkspace(
+    course,
+    context = null,
+    navigationRevision = resourcesState.studentNavigationRevision,
+) {
+    if (!isCurrentStudentNavigation(navigationRevision)) return null;
     const resource = course || pickStudentCurrentCourse();
     if (!resource) return null;
     const target = context || findFirstExperimentWithWorkspaceFiles(resource, "python");
@@ -4225,12 +4005,17 @@ async function openStudentPythonWorkspace(course, context = null) {
     });
     const openWorkspace = window.app?.workspace?.openJupyterWorkspace;
     if (openWorkspace) {
+        if (!isCurrentStudentNavigation(navigationRevision)) return null;
         await openWorkspace({
             projectDir: workspaceTarget.projectDir,
             filePath: workspaceTarget.filePath,
             sourceLabel,
             sourcePage: "student-python",
         }, { force: true });
+        if (!isCurrentStudentNavigation(navigationRevision)) {
+            await window.app?.jupyter?.setVisibility?.(false);
+            return null;
+        }
         return resource;
     }
     if (file) {
@@ -5245,7 +5030,6 @@ function setCreateImportStatus(state, message = "", progress = null) {
         document.getElementById("resources-pick-local-btn"),
         document.getElementById("resources-package-import-btn"),
         document.getElementById("resources-cloud-import-btn"),
-        document.getElementById("resources-cloud-detail-import-btn"),
     ].filter(Boolean).forEach((button) => {
         if (busy) {
             if (!("importPreviousDisabled" in button.dataset)) {
@@ -6353,7 +6137,6 @@ function setCreateSource(source) {
     const sourceTitleText = document.getElementById("resources-create-source-title-text");
     const structureCard = document.getElementById("resources-structure-card");
     const structureEditorPane = document.getElementById("resources-structure-editor-pane");
-    const cloudDetailPanel = document.getElementById("resources-cloud-detail-panel");
     const cloudInlineActions = document.getElementById("resources-cloud-inline-actions");
     const structureSaveRow = document.getElementById("resources-structure-save-row");
     const sourceHint = document.getElementById("resources-create-source-hint");
@@ -6364,9 +6147,9 @@ function setCreateSource(source) {
     const packImportMode = effectiveEntryMode === "pack-import";
 
     if (packageGroup) packageGroup.style.display = source === "local" && packImportMode ? "block" : "none";
-    if (localGroup) localGroup.style.display = packImportMode ? "none" : "block";
+    if (localGroup) localGroup.style.display = source === "cloud" || packImportMode ? "none" : "block";
     if (cloudGroup) cloudGroup.style.display = source === "cloud" ? "block" : "none";
-    if (switchRow) switchRow.style.display = "flex";
+    if (switchRow) switchRow.style.display = "none";
     if (step2ModeHint) {
         step2ModeHint.style.display = source === "cloud" ? "none" : "block";
         step2ModeHint.textContent = packImportMode ? "本地导入" : "课程目录与结构（先选整门课程根目录，再补课节结构）";
@@ -6374,10 +6157,9 @@ function setCreateSource(source) {
     if (sourceTitleText) {
         sourceTitleText.textContent = source === "cloud" ? "云端导入" : packImportMode ? "本地导入" : "课程目录";
     }
-    if (structureCard) structureCard.style.display = (!packImportMode && (source === "local" || source === "cloud")) ? "block" : "none";
+    if (structureCard) structureCard.style.display = source === "local" && !packImportMode ? "block" : "none";
     if (structureEditorPane) structureEditorPane.style.display = source === "local" && !packImportMode ? "block" : "none";
-    if (cloudDetailPanel) cloudDetailPanel.style.display = source === "cloud" ? "flex" : "none";
-    if (cloudInlineActions) cloudInlineActions.style.display = source === "cloud" ? "none" : "flex";
+    if (cloudInlineActions) cloudInlineActions.style.display = source === "cloud" ? "flex" : "none";
     if (structureSaveRow) structureSaveRow.style.display = source === "local" && !packImportMode ? "flex" : "none";
     if (sourceHint) {
         sourceHint.textContent =
@@ -6447,8 +6229,8 @@ function chooseCreateEntryMode(mode) {
         setCreateSource("cloud");
         setCreateStep(2);
         window.setTimeout(() => {
-            const select = document.getElementById("resources-cloud-course-select");
-            if (select) select.focus();
+            const address = document.getElementById("resources-cloud-repo-address");
+            if (address) address.focus();
         }, 80);
     } else if (mode === "pack-import") {
         setCreateSource("local");
@@ -6672,7 +6454,6 @@ async function importLocalCourseFromPath(path) {
         renderStructurePreview,
         renderCoursePreview,
         updateCreateFormState,
-        renderCreateGuide,
         setImportStatus: setCreateImportStatus,
     });
 }
@@ -6693,7 +6474,6 @@ async function importLocalPackageToPath() {
         renderCoursePreview,
         renderLocalPathSummary,
         updateCreateFormState,
-        renderCreateGuide,
         addCourse,
         onImported: async () => { await loadResourcesIndex(); },
         setImportStatus: setCreateImportStatus,
@@ -7249,10 +7029,8 @@ function bindEvents() {
         handlePackageDrop,
         handleCourseImportDrop,
         pickLocalCourse,
-        loadCloudCourseOptions,
         importCloudCourseAndSave,
         loadCloudCoursesFromTempSource,
-        clearCloudTempSourceAndReload,
         updateCloudSourceActionUI,
         addResourceSourceRow,
         saveResourceSourcesConfig,
@@ -7304,6 +7082,8 @@ export async function initResourcesPage() {
 }
 
 export async function openStudentLessonTab(tabId = "route", navItem = null) {
+    const navigationRevision = resourcesState.studentNavigationRevision;
+    if (!isCurrentStudentNavigation(navigationRevision)) return null;
     resourcesState.openingStudentLessonTab = true;
     resourcesState.activeCourseWorkspaceTab = normalizeWorkspaceTabId(tabId);
     syncStudentPageBodyState(resourcesState.activeCourseWorkspaceTab);
@@ -7311,6 +7091,7 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
         if (shouldHideJupyterForStudentTab(resourcesState.activeCourseWorkspaceTab)) {
             await window.app?.jupyter?.setVisibility?.(false);
         }
+        if (!isCurrentStudentNavigation(navigationRevision)) return null;
         if (navItem) {
             document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
             navItem.classList.add("active");
@@ -7328,12 +7109,13 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
                 console.warn("后台刷新课程资源失败:", error);
             });
             if (resourcesState.activeCourseWorkspaceTab === "python") {
-                return openStudentPythonWorkspace(cachedCourse);
+                return openStudentPythonWorkspace(cachedCourse, null, navigationRevision);
             }
             return openStudentVisualWorkspace(cachedCourse);
         }
 
         await initResourcesPage();
+        if (!isCurrentStudentNavigation(navigationRevision)) return null;
         const currentCourse = pickStudentCurrentCourse();
         if (!currentCourse && (resourcesState.activeCourseWorkspaceTab === "python" || resourcesState.activeCourseWorkspaceTab === "visual")) {
             return openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
@@ -7343,7 +7125,7 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
             return null;
         }
         if (resourcesState.activeCourseWorkspaceTab === "python") {
-            return openStudentPythonWorkspace(currentCourse);
+            return openStudentPythonWorkspace(currentCourse, null, navigationRevision);
         }
         if (resourcesState.activeCourseWorkspaceTab === "visual") {
             return openStudentVisualWorkspace(currentCourse);

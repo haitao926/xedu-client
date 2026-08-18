@@ -122,6 +122,28 @@ class BootstrapServerTestCase(unittest.TestCase):
         self.assertEqual(self.repair_calls, [("/tmp/python", True)])
         self.assertTrue(self.promotion.wait(timeout=2))
 
+    def test_normal_api_routes_report_recovery_mode_instead_of_not_found(self):
+        status, payload = self._request(
+            "/api/status",
+            token="test-capability",
+            origin="http://127.0.0.1:3002",
+        )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(payload["code"], "XEDU_BOOTSTRAP_MODE")
+        self.assertFalse(payload["backend_ready"])
+
+        status, payload = self._request(
+            "/api/start",
+            method="POST",
+            payload={},
+            token="test-capability",
+            origin="http://127.0.0.1:3002",
+        )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(payload["code"], "XEDU_BOOTSTRAP_MODE")
+
     def test_untrusted_browser_origin_is_rejected(self):
         status, payload = self._request(
             "/api/repair_xedu",

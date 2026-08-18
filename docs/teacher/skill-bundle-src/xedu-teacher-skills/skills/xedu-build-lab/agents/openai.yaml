@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu Build Lab"
+  short_description: "Build HTML, Scratch, or Jupyter labs"
+  default_prompt: "Use $xedu-build-lab to create or repair one XEdu HTML, Scratch, or Jupyter lab."

@@ -18,9 +18,20 @@ async function createArtifactFixture({ bundledPython = true } = {}) {
   await mkdir(path.join(resources, 'checkpoint'), { recursive: true });
   if (bundledPython) {
     await mkdir(path.join(resources, 'python_env', 'bin'), { recursive: true });
+    await mkdir(
+      path.join(
+        resources,
+        'python_env',
+        'lib',
+        'python3.12',
+        'site-packages',
+        'jupyterlab_language_pack_zh_CN',
+      ),
+      { recursive: true },
+    );
     await writeFile(
       path.join(resources, 'python_env', '.portable_runtime.json'),
-      JSON.stringify({ models_bundled: false }),
+      JSON.stringify({ python_version: '3.12.8', models_bundled: false }),
     );
     await writeFile(path.join(resources, 'python_env', 'bin', 'python3'), 'python');
   }
@@ -105,6 +116,46 @@ test('release artifact verifier rejects a package without a usable bundled Pytho
     const result = await verifyReleaseArtifact(root, { expectedVersion: '2.0.0' });
     assert.equal(result.ok, false);
     assert.match(result.errors.join('\n'), /required directory missing: python_env/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('release artifact verifier requires the bundled Python 3.12.8 runtime', async () => {
+  const root = await createArtifactFixture();
+  try {
+    await writeFile(
+      path.join(root, 'resources', 'python_env', '.portable_runtime.json'),
+      JSON.stringify({ python_version: '3.11.9', models_bundled: false }),
+    );
+    const result = await verifyReleaseArtifact(root, {
+      expectedVersion: '2.0.0',
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('\n'), /Python 3\.12\.8/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('release artifact verifier requires the Simplified Chinese JupyterLab language pack', async () => {
+  const root = await createArtifactFixture();
+  try {
+    await rm(
+      path.join(
+        root,
+        'resources',
+        'python_env',
+        'lib',
+        'python3.12',
+        'site-packages',
+        'jupyterlab_language_pack_zh_CN',
+      ),
+      { recursive: true },
+    );
+    const result = await verifyReleaseArtifact(root, { expectedVersion: '2.0.0' });
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('\n'), /Simplified Chinese JupyterLab language pack/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

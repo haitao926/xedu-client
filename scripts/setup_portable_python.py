@@ -56,6 +56,7 @@ WINDOWS_FALLBACK_DEPENDENCIES = {
 }
 NO_DEPS_REQUIREMENTS = {"xedu-python"}
 XEDU_PYTHON_SPEC = f"xedu-python=={XEDU_PYTHON_VERSION}"
+WINDOWS_BOOTSTRAP_REQUIREMENTS = ("pip==24.3.1",)
 # Keep xedu-python out of normal requirements resolution. Version 2.0.0
 # advertises Pillow/ONNX Runtime upper bounds that are incompatible with the
 # audited Python 3.12 profile, so the installer applies a narrow, recorded
@@ -231,6 +232,12 @@ def download_windows_wheels(requirements_file: Path, wheelhouse: Path):
     wheelhouse.mkdir(parents=True, exist_ok=True)
     target_cfg = TARGETS["windows-x64"]["pip_download"]
     primary_specs, fallback_specs, no_deps_specs = split_windows_requirements(requirements_file)
+    primary_names = {requirement_name(spec) for spec in primary_specs}
+    primary_specs.extend(
+        spec
+        for spec in WINDOWS_BOOTSTRAP_REQUIREMENTS
+        if requirement_name(spec) not in primary_names
+    )
     fallback_dependency_specs = []
     for spec in fallback_specs:
         fallback_dependency_specs.extend(

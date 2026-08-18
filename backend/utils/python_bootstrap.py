@@ -17,6 +17,54 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from utils.python_runtime import (  # noqa: E402
+    _conda_activation_path_entries,
+    _conda_prefix_for_executable,
+    find_sibling_pip_command,
+    resolve_pip_command,
+)
+
+_conda_dll_directories_added = False
+
+
+def _ensure_conda_dll_directories() -> None:
+    """Expose this interpreter's Conda DLL directories to its own loader.
+
+    The bootstrap runs *inside* the teacher-selected interpreter, so a parent
+    PATH tweak cannot help it. When that interpreter is a Conda/XEdu environment
+    launched without activation, register its ``Library\\bin`` (and siblings) via
+    ``os.add_dll_directory`` so ``import ssl`` and pip's HTTPS stack resolve the
+    OpenSSL DLLs exactly as an activated shell would.
+    """
+    global _conda_dll_directories_added
+    if _conda_dll_directories_added:
+        return
+    _conda_dll_directories_added = True
+
+    prefix = _conda_prefix_for_executable(sys.executable)
+    if not prefix:
+        return
+    entries = _conda_activation_path_entries(prefix)
+    if not entries:
+        return
+
+    current_path = os.environ.get("PATH", "")
+    path_parts = current_path.split(os.pathsep) if current_path else []
+    seen = {os.path.normcase(part) for part in path_parts}
+    prepend: list[str] = []
+    for entry in entries:
+        if os.path.normcase(entry) not in seen:
+            prepend.append(entry)
+            seen.add(os.path.normcase(entry))
+        if hasattr(os, "add_dll_directory"):
+            try:
+                os.add_dll_directory(entry)
+            except (OSError, FileNotFoundError):
+                pass
+    os.environ["PATH"] = os.pathsep.join([*prepend, *path_parts])
+    os.environ.setdefault("CONDA_PREFIX", str(prefix))
+
+
 
 _BOOTSTRAP_MODULES = (
     ("flask", "Flask"),
@@ -45,7 +93,7 @@ def _bootstrap_specs() -> list[str]:
         ]
     return [
         "Flask==3.1.3",
-        "requests==2.33.0",
+        "requests==2.32.5",
         "python-dotenv==1.2.2",
         "Pillow==12.3.0",
         "psutil==5.9.8",
@@ -84,33 +132,78 @@ def _run(command: list[str], *, timeout: int = 300) -> subprocess.CompletedProce
 
 
 def _ensure_pip() -> tuple[bool, str]:
+    _ensure_conda_dll_directories()
     probe = _run([sys.executable, "-m", "pip", "--version"], timeout=30)
     if probe.returncode == 0:
         return True, ""
 
+    if find_sibling_pip_command(sys.executable, runner=_run):
+        return True, ""
+
     ensurepip = _run([sys.executable, "-m", "ensurepip", "--upgrade"], timeout=120)
     if ensurepip.returncode != 0:
-        detail = (ensurepip.stderr or ensurepip.stdout or probe.stderr or "").strip()
-        return False, f"当前 Python 没有可用 pip，无法自动安装后端依赖。{detail}"
-    return True, ""
+        probe_detail = " ".join((probe.stderr or probe.stdout or "").split())[-600:] or "未返回详细错误"
+        ensure_detail = " ".join((ensurepip.stderr or ensurepip.stdout or "").split())[-600:] or "未返回详细错误"
+        return False, (
+            "所选 Python 没有可用 pip，且无法通过 ensurepip 自动补齐。"
+            f"pip 检测: {probe_detail}；ensurepip: {ensure_detail}"
+        )
+
+    reprobe = _run([sys.executable, "-m", "pip", "--version"], timeout=30)
+    if reprobe.returncode == 0:
+        return True, ""
+    detail = " ".join((reprobe.stderr or reprobe.stdout or "").split())[-600:] or "未返回详细错误"
+    return False, f"ensurepip 已执行，但所选 Python 仍无法使用 pip。{detail}"
+
+
+def _ssl_support_error() -> str:
+    _ensure_conda_dll_directories()
+    try:
+        import ssl
+
+        ssl.create_default_context()
+        return ""
+    except Exception as exc:
+        return f"{type(exc).__name__}: {exc}"
+
+
+def _ssl_unavailable_result(detail: str, *, missing: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "success": False,
+        "changed": False,
+        "error_code": "ssl_unavailable",
+        "message": (
+            "所选 Python 缺少 SSL 支持，pip 无法连接 HTTPS 软件源。请改用完整安装版 Python、"
+            "Conda 环境或 XEdu Client 自带 Python；这不是 xedu-python 版本问题。"
+            f"检测详情：{detail}"
+        ),
+        "missing": missing or [],
+    }
 
 
 def _install_missing(packages: list[str]) -> dict[str, Any]:
+    ssl_error = _ssl_support_error()
+    if ssl_error:
+        return _ssl_unavailable_result(ssl_error, missing=packages)
+
     pip_ok, pip_message = _ensure_pip()
     if not pip_ok:
         return {"success": False, "message": pip_message, "missing": packages}
 
+    pip_command = resolve_pip_command(sys.executable) or [sys.executable, "-m", "pip"]
     command = [
-        sys.executable,
-        "-m",
-        "pip",
+        *pip_command,
         "install",
         "--disable-pip-version-check",
         "--no-input",
     ]
     # A system interpreter cannot normally write its global site-packages.
     # User installs remain visible to that interpreter and avoid requiring sudo.
-    if sys.prefix == sys.base_prefix and not os.environ.get("VIRTUAL_ENV"):
+    if (
+        sys.prefix == sys.base_prefix
+        and not os.environ.get("VIRTUAL_ENV")
+        and _conda_prefix_for_executable(sys.executable) is None
+    ):
         command.append("--user")
     stdlib = Path(sysconfig.get_path("stdlib") or "")
     if (stdlib / "EXTERNALLY-MANAGED").is_file():
@@ -167,6 +260,10 @@ def ensure_backend_dependencies() -> dict[str, Any]:
 
 def repair_xedu_environment_standalone() -> dict[str, Any]:
     """Repair XEdu/Jupyter in the selected interpreter without importing Flask."""
+    ssl_error = _ssl_support_error()
+    if ssl_error:
+        return _ssl_unavailable_result(ssl_error)
+
     pip_ok, pip_message = _ensure_pip()
     if not pip_ok:
         return {"success": False, "changed": False, "message": pip_message}

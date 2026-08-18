@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const [indexSource, mainSource, preloadSource, resourcesSource, systemConfigSource] = await Promise.all([
+const [indexSource, mainSource, preloadSource, resourcesSource, systemConfigSource, uiSource] = await Promise.all([
     readFile(new URL('../../index.html', import.meta.url), 'utf8'),
     readFile(new URL('../main.js', import.meta.url), 'utf8'),
     readFile(new URL('../../../electron/preload/index.js', import.meta.url), 'utf8'),
     readFile(new URL('../resources.js', import.meta.url), 'utf8'),
     readFile(new URL('./system-config.js', import.meta.url), 'utf8'),
+    readFile(new URL('../ui.js', import.meta.url), 'utf8'),
 ]);
 const confirmPythonSource = systemConfigSource.slice(
     systemConfigSource.indexOf('export async function confirmPythonEnvironment'),
@@ -71,9 +72,14 @@ test('teacher login restores the saved credential while exit remains session-onl
     assert.match(preloadSource, /clearTeacherCredential/);
 });
 
-test('confirming local Python restarts the backend for first-run initialization', () => {
-    assert.match(
-        confirmPythonSource,
-        /export async function confirmPythonEnvironment\(\)[\s\S]*?restartBackend[\s\S]*?restartResult/,
-    );
+test('global modal dismissal resolves the resources form so teacher login is reusable', () => {
+    assert.match(uiSource, /xedu:modal-dismiss/);
+    assert.match(resourcesSource, /xedu:modal-dismiss/);
+    assert.match(resourcesSource, /finishResourcesActionModal\(\{ confirmed: false, values: \{\} \}\)/);
+});
+
+test('confirming local Python updates only the isolated experiment configuration', () => {
+    assert.doesNotMatch(confirmPythonSource, /restartBackend|restartResult/);
+    assert.match(confirmPythonSource, /apiClient\.saveConfig\(/);
+    assert.match(confirmPythonSource, /python_selection_confirmed:\s*true/);
 });

@@ -3,11 +3,12 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 test('Python setup keeps select, confirm, test, and repair available together', async () => {
-  const [html, systemConfig, jupyter, dispatcher] = await Promise.all([
+  const [html, systemConfig, jupyter, dispatcher, readiness] = await Promise.all([
     readFile(new URL('../../index.html', import.meta.url), 'utf8'),
     readFile(new URL('./system-config.js', import.meta.url), 'utf8'),
     readFile(new URL('../jupyter.js', import.meta.url), 'utf8'),
     readFile(new URL('../action-dispatcher.js', import.meta.url), 'utf8'),
+    readFile(new URL('./python-environment-readiness.js', import.meta.url), 'utf8'),
   ]);
 
   assert.match(html, /settings-tab active" data-tab="python"/);
@@ -33,9 +34,8 @@ test('Python setup keeps select, confirm, test, and repair available together', 
   assert.match(systemConfig, /confirmPythonEnvironment/);
   assert.match(systemConfig, /setPythonExecutable/);
   assert.match(systemConfig, /inspectPythonEnvironment/);
-  assert.match(systemConfig, /savePythonExecutable/);
+  assert.doesNotMatch(systemConfig, /savePythonExecutable/);
   assert.match(systemConfig, /window\.electronAPI\?\.scanPythonEnvironments/);
-  assert.match(systemConfig, /getBackendStartupState/);
   assert.match(systemConfig, /configuredPythonPath = String\(response\.config\?\.jupyter\?\.python_executable/);
   assert.match(systemConfig, /已扫描到 .* 个 Python 环境/);
   assert.match(systemConfig, /await apiClient\.saveConfig\(\{/);
@@ -46,16 +46,22 @@ test('Python setup keeps select, confirm, test, and repair available together', 
   assert.match(systemConfig, /repairPythonEnvironment/);
   assert.match(systemConfig, /独立修复 XEdu 环境/);
   assert.match(systemConfig, /不要求预先安装 Flask/);
-  assert.match(systemConfig, /result\.backend_ready === false \? ['"]warning['"] : ['"]success['"]/);
+  assert.match(systemConfig, /optionalWarnings\.length \? ['"]warning['"] : ['"]success['"]/);
   assert.match(systemConfig, /独立检测 Python 环境/);
+  assert.match(systemConfig, /getPythonEnvironmentReadinessIssues/);
+  assert.match(systemConfig, /环境尚未就绪/);
+  assert.match(systemConfig, /readinessInfo\?\.ssl_available === false/);
+  assert.match(systemConfig, /const bootstrap = await directRepair\(pythonPath\);[\s\S]*?await setPythonExecutable\(repairedPath\)/);
   assert.match(jupyter, /inspectPythonEnvironment/);
   assert.match(jupyter, /pythonPath && typeof standaloneInspect === ['"]function['"]/);
   assert.match(systemConfig, /allow_remote_access: false/);
   assert.match(systemConfig, /请先确认 Python 环境，再保存设置/);
   assert.match(systemConfig, /JSON\.parse\(error\.details\)/);
-  assert.match(jupyter, /const jupyterReady = Boolean\(info\.jupyterlab_version\)/);
+  assert.match(jupyter, /getPythonEnvironmentOptionalWarnings/);
   assert.doesNotMatch(jupyter, /repairBtn\.style\.display/);
-  assert.match(jupyter, /点击修复安装 JupyterLab/);
+  assert.match(jupyter, /formatPythonEnvironmentReadinessMessage/);
+  assert.match(readiness, /点击修复安装 JupyterLab/);
+  assert.doesNotMatch(readiness, /issues\.push\(['"]XEdu 运行组件['"]\)/);
   assert.match(dispatcher, /system\.confirmPythonEnvironment/);
   assert.match(dispatcher, /system\.scanPythonEnvironments/);
 });
@@ -91,14 +97,16 @@ test('classroom settings use direct controls without instructional copy', async 
     assert.match(systemConfig, /classroom_auto_discover: classroomAutoDiscoverInput/);
 });
 
-test('confirming Python makes the packaged backend restart before dependent flows', async () => {
+test('confirming an experiment Python does not restart the isolated packaged backend', async () => {
   const systemConfig = await readFile(new URL('./system-config.js', import.meta.url), 'utf8');
   const confirmPythonSource = systemConfig.slice(
     systemConfig.indexOf('export async function confirmPythonEnvironment'),
     systemConfig.indexOf('export async function repairXeduEnvironment'),
   );
-  assert.match(confirmPythonSource, /restartBackend/);
-  assert.match(confirmPythonSource, /restartResult\?\.success/);
-  assert.match(confirmPythonSource, /startupState\?\.status\s*!==\s*['"]ready['"][\s\S]*?restartBackend/);
-  assert.match(systemConfig, /hasStandalonePythonFlow[\s\S]*?apiClient\.get\(`\/api\/detect_python/);
+  assert.doesNotMatch(confirmPythonSource, /restartBackend/);
+  assert.doesNotMatch(confirmPythonSource, /getBackendStartupState/);
+  assert.doesNotMatch(confirmPythonSource, /savePythonExecutable/);
+  assert.match(confirmPythonSource, /python_selection_confirmed:\s*true/);
+  assert.match(confirmPythonSource, /await apiClient\.saveConfig\(/);
+  assert.match(systemConfig, /hasStandalonePythonFlow[\s\S]*?API_ENDPOINTS\.PYTHON_DETECT/);
 });

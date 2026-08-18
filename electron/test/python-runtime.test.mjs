@@ -1,13 +1,302 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildPythonChildEnvironment,
   discoverPythonEnvironments,
   getPythonDialogFilters,
   getPythonExecutableCandidates,
+  getXEduProResourceDirectories,
+  parseWindowsPythonLauncherPaths,
+  readConfiguredPythonExecutable,
+  repairPythonWithBundledFallback,
+  resolveBackendPythonExecutable,
   resolvePythonSelectionTarget,
   resolvePythonExecutable,
   validatePythonExecutable,
 } from '../main/python-runtime.js';
+
+test('packaged backend always uses the bundled Python independently of the experiment selection', () => {
+  const bundledPython = 'C:\\Program Files\\XEdu Client\\resources\\python_env\\python.exe';
+  const externalPython = 'E:\\XEdu\\env\\python.exe';
+  const fsImpl = {
+    statSync: (target) => ({
+      isFile: () => target === bundledPython || target === externalPython,
+    }),
+  };
+
+  assert.equal(
+    resolveBackendPythonExecutable({
+      platform: 'win32',
+      packaged: true,
+      bundledPythonBaseDir: 'C:\\Program Files\\XEdu Client\\resources\\python_env',
+      configuredPath: externalPython,
+      selectedPath: externalPython,
+      envPath: externalPython,
+      fsImpl,
+    }),
+    bundledPython,
+  );
+});
+
+test('development backend can use an explicit backend-only interpreter override', () => {
+  const backendPython = '/opt/xedu/backend/bin/python3';
+  const fsImpl = {
+    statSync: (target) => ({ isFile: () => target === backendPython, mode: 0o755 }),
+    accessSync: () => undefined,
+  };
+
+  assert.equal(
+    resolveBackendPythonExecutable({
+      platform: 'darwin',
+      packaged: false,
+      backendOverridePath: backendPython,
+      projectRoot: '/repo',
+      fsImpl,
+    }),
+    backendPython,
+  );
+});
+
+test('XEduPro conda-pack Python receives the activation PATH required by its DLLs', () => {
+  const environmentRoot = 'E:\\XEdu\\env';
+  const existingDirectories = new Set([
+    `${environmentRoot}\\conda-meta`,
+    `${environmentRoot}\\Library`,
+  ]);
+  const fsImpl = {
+    statSync: (target) => ({
+      isDirectory: () => existingDirectories.has(target),
+    }),
+  };
+
+  const env = buildPythonChildEnvironment({
+    pythonExecutable: `${environmentRoot}\\python.exe`,
+    platform: 'win32',
+    baseEnv: { Path: 'C:\\Windows\\System32;E:\\XEdu\\env\\Scripts' },
+    fsImpl,
+  });
+
+  assert.equal(env.CONDA_PREFIX, environmentRoot);
+  assert.equal(
+    env.Path,
+    [
+      environmentRoot,
+      `${environmentRoot}\\Library\\mingw-w64\\bin`,
+      `${environmentRoot}\\Library\\usr\\bin`,
+      `${environmentRoot}\\Library\\bin`,
+      `${environmentRoot}\\Scripts`,
+      'C:\\Windows\\System32',
+    ].join(';'),
+  );
+  assert.equal(Object.hasOwn(env, 'PATH'), false);
+});
+
+test('ordinary Windows venv uses its root and Scripts directory without conda variables', () => {
+  const env = buildPythonChildEnvironment({
+    pythonExecutable: 'D:\\teacher env\\Scripts\\python.exe',
+    platform: 'win32',
+    baseEnv: { PATH: 'C:\\Windows\\System32' },
+    fsImpl: {
+      statSync: () => ({ isDirectory: () => false }),
+    },
+  });
+
+  assert.equal(
+    env.PATH,
+    'D:\\teacher env;D:\\teacher env\\Scripts;C:\\Windows\\System32',
+  );
+  assert.equal(Object.hasOwn(env, 'CONDA_PREFIX'), false);
+});
+
+test('XEduPro root launchers expose bundled checkpoint directories to the client', () => {
+  const existingFiles = new Set([
+    'E:\\XEdu\\Jupyter编辑器.bat',
+    'E:\\XEdu\\启动cmd.bat',
+  ]);
+  const existingDirectories = new Set([
+    'E:\\XEdu\\checkpoints',
+    'E:\\XEdu\\my_checkpoints',
+    'E:\\XEdu\\EasyDL',
+  ]);
+  const fsImpl = {
+    statSync: (target) => ({
+      isFile: () => existingFiles.has(target),
+      isDirectory: () => existingDirectories.has(target),
+    }),
+  };
+
+  assert.deepEqual(
+    getXEduProResourceDirectories('E:\\XEdu\\env\\python.exe', {
+      platform: 'win32',
+      fsImpl,
+    }),
+    {
+      root: 'E:\\XEdu',
+      checkpoints: [
+        'E:\\XEdu\\checkpoints',
+        'E:\\XEdu\\my_checkpoints',
+      ],
+    },
+  );
+});
+
+test('ordinary Conda environments are not treated as an XEduPro installation', () => {
+  assert.deepEqual(
+    getXEduProResourceDirectories('C:\\Miniconda\\envs\\course\\python.exe', {
+      platform: 'win32',
+      fsImpl: { statSync: () => ({ isFile: () => false, isDirectory: () => false }) },
+    }),
+    { root: '', checkpoints: [] },
+  );
+});
+
+test('non-Windows Python child environments preserve the caller environment', () => {
+  const baseEnv = { PATH: '/usr/local/bin:/usr/bin', CUSTOM_VALUE: 'kept' };
+
+  assert.deepEqual(
+    buildPythonChildEnvironment({
+      pythonExecutable: '/Users/teacher/.venv/bin/python3',
+      platform: 'darwin',
+      baseEnv,
+    }),
+    baseEnv,
+  );
+});
+
+test('SSL failure falls back to the verified bundled Python in packaged builds', async () => {
+  const selectedPath = 'E:\\XEdu\\env\\python.exe';
+  const bundledPath = 'C:\\Program Files\\XEdu Client\\resources\\python_env\\python.exe';
+  const existingFiles = new Set([bundledPath]);
+  const fsImpl = {
+    statSync: (target) => ({
+      isDirectory: () => false,
+      isFile: () => existingFiles.has(target),
+    }),
+  };
+  const attempted = [];
+
+  const repaired = await repairPythonWithBundledFallback({
+    selectedPath,
+    platform: 'win32',
+    packaged: true,
+    bundledPythonBaseDir: 'C:\\Program Files\\XEdu Client\\resources\\python_env',
+    fsImpl,
+    repair: async (target) => {
+      attempted.push(target);
+      if (target === selectedPath) {
+        return { success: false, error_code: 'ssl_unavailable', message: '缺少 SSL' };
+      }
+      return { success: true, message: 'Python 环境已就绪', warnings: [] };
+    },
+  });
+
+  assert.deepEqual(attempted, [selectedPath, bundledPath]);
+  assert.equal(repaired.success, true);
+  assert.equal(repaired.path, bundledPath);
+  assert.equal(repaired.fallback_used, true);
+  assert.equal(repaired.fallback_from, selectedPath);
+  assert.match(repaired.message, /已自动改用应用内置 Python/);
+});
+
+test('optional XEdu failure never switches away from the selected Python', async () => {
+  const selectedPath = 'E:\\XEdu\\env\\python.exe';
+  let attempts = 0;
+  const original = {
+    success: true,
+    message: 'Jupyter 环境已就绪，XEdu 增强功能暂不可用。',
+    warnings: ['xedu-python 安装失败'],
+  };
+
+  const repaired = await repairPythonWithBundledFallback({
+    selectedPath,
+    platform: 'win32',
+    packaged: true,
+    bundledPythonBaseDir: 'C:\\Program Files\\XEdu Client\\resources\\python_env',
+    fsImpl: { statSync: () => ({ isDirectory: () => false, isFile: () => true }) },
+    repair: async () => {
+      attempts += 1;
+      return original;
+    },
+  });
+
+  assert.equal(attempts, 1);
+  assert.equal(repaired, original);
+});
+
+test('Python environment scanning always includes the bundled runtime first', () => {
+  const bundledPython = '/Applications/XEdu Client.app/Contents/Resources/python_env/bin/python3';
+  const systemPython = '/usr/local/bin/python3';
+  const existingDirectories = new Set([
+    '/Applications/XEdu Client.app/Contents/Resources/python_env',
+  ]);
+  const existingFiles = new Set([bundledPython, systemPython]);
+  const fsImpl = {
+    statSync: (target) => ({
+      isDirectory: () => existingDirectories.has(target),
+      isFile: () => existingFiles.has(target),
+      mode: 0o755,
+    }),
+    readdirSync: () => [],
+    accessSync: () => undefined,
+    constants: { X_OK: 1 },
+  };
+
+  const environments = discoverPythonEnvironments({
+    platform: 'darwin',
+    bundledPythonBaseDir: '/Applications/XEdu Client.app/Contents/Resources/python_env',
+    envPath: '/usr/local/bin',
+    fsImpl,
+    runner: () => ({ status: 0, stdout: 'Python 3.12.8', stderr: '' }),
+  });
+
+  assert.equal(environments[0].path, bundledPython);
+  assert.equal(environments[0].source, 'bundled');
+  assert.match(environments[0].label, /应用内置 Python/);
+});
+
+test('Windows Python Launcher output contributes registered interpreter paths', () => {
+  assert.deepEqual(
+    parseWindowsPythonLauncherPaths(`
+ -V:3.12 *        C:\\Users\\teacher\\AppData\\Local\\Programs\\Python\\Python312\\python.exe
+ -V:3.11          D:\\Python311\\python.exe
+`),
+    [
+      'C:\\Users\\teacher\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
+      'D:\\Python311\\python.exe',
+    ],
+  );
+});
+
+test('packaged startup ignores Python paths that predate explicit selection confirmation', () => {
+  const configPath = 'C:\\Users\\teacher\\AppData\\Roaming\\xedu-client\\config\\config.json';
+  const fsImpl = {
+    readFileSync: () => JSON.stringify({
+      jupyter: { python_executable: 'E:\\XEdu\\env\\python.exe' },
+    }),
+  };
+
+  assert.equal(
+    readConfiguredPythonExecutable(configPath, fsImpl, { requireConfirmed: true }),
+    '',
+  );
+});
+
+test('packaged startup preserves a Python path confirmed by the current selection flow', () => {
+  const configPath = 'C:\\Users\\teacher\\AppData\\Roaming\\xedu-client\\config\\config.json';
+  const fsImpl = {
+    readFileSync: () => JSON.stringify({
+      jupyter: {
+        python_executable: 'E:\\XEdu\\env\\python.exe',
+        python_selection_confirmed: true,
+      },
+    }),
+  };
+
+  assert.equal(
+    readConfiguredPythonExecutable(configPath, fsImpl, { requireConfirmed: true }),
+    'E:\\XEdu\\env\\python.exe',
+  );
+});
 
 test('Windows Python selection accepts the executable layout used by installed environments', () => {
   const candidates = getPythonExecutableCandidates({

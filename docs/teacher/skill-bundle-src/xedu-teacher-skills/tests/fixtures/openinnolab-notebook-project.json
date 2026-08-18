@@ -1,0 +1,22 @@
+{
+  "errorCode": "1000",
+  "errorMsg": "操作成功",
+  "data": {
+    "id": "68864154fbfda12af0d7cf44",
+    "updateTimeStamp": 1753629012263,
+    "title": "用代码实现给照片抠图并更换背景-副本",
+    "description": "使用 XEduHub 图像分割模型完成照片背景更换。",
+    "type": "NOTEBOOK",
+    "runEnv": "PY_SERVER",
+    "framework": "XEDU",
+    "isPrivate": true,
+    "creator": "王海涛",
+    "creatorId": "63df1171f0ab90040be2e2b1",
+    "userTags": [
+      "计算机视觉",
+      "XEduHub",
+      "图像分割"
+    ],
+    "versions": []
+  }
+}

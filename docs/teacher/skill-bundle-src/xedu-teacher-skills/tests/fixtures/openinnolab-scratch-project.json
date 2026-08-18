@@ -1,0 +1,23 @@
+{
+  "errorCode": "1000",
+  "errorMsg": "操作成功",
+  "data": {
+    "id": "6a5ec62657d9265a66252660",
+    "updateTimeStamp": 1784596006385,
+    "title": "AI小游戏-大象接苹果-副本",
+    "description": "使用训练的图像模型控制大象接苹果。",
+    "type": "SCRATCH",
+    "runEnv": "SCRATCH",
+    "framework": "OTHERS",
+    "isPrivate": true,
+    "creator": "王海涛",
+    "creatorId": "63df1171f0ab90040be2e2b1",
+    "userTags": [
+      "创意积木",
+      "人工智能"
+    ],
+    "versions": [
+      "1.0.0"
+    ]
+  }
+}

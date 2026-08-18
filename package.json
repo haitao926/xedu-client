@@ -138,7 +138,7 @@
         }
       ],
       "forceCodeSigning": false,
-      "signAndEditExecutable": false,
+      "signAndEditExecutable": true,
       "icon": "resources/xedu-logo.ico"
     },
     "mac": {

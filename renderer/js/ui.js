@@ -35,6 +35,19 @@ function syncJupyterVisibilityForModalState() {
     setJupyterVisibilitySafely(shouldShowJupyterView());
 }
 
+function dismissModalElement(modal) {
+    if (!modal) return false;
+    const wasVisible = modal.classList.contains('show');
+    modal.classList.remove('show');
+    modal.removeAttribute('style');
+    if (wasVisible) {
+        window.dispatchEvent(new CustomEvent('xedu:modal-dismiss', {
+            detail: { modalId: modal.id },
+        }));
+    }
+    return wasVisible;
+}
+
 // 日志函数
 export function log(message, type = 'info') {
     const displayMessage = typeof message === 'object' ? JSON.stringify(message) : message;
@@ -195,17 +208,14 @@ export function hideModal(modalId) {
     if (modalId) {
         const modal = document.getElementById(modalId);
         if (modal) {
-            modal.classList.remove('show');
-            // 清除所有内联样式，让 CSS 默认样式生效
-            modal.removeAttribute('style');
+            dismissModalElement(modal);
             syncJupyterVisibilityForModalState();
         }
     } else {
         // 如果没有传 ID，尝试关闭所有打开的模态框
         const modals = document.querySelectorAll('.modal-overlay.show');
         modals.forEach(modal => {
-            modal.classList.remove('show');
-            modal.removeAttribute('style');
+            dismissModalElement(modal);
         });
         syncJupyterVisibilityForModalState();
     }
@@ -221,7 +231,7 @@ export function initModalListeners() {
             if (modal.dataset.lockModal === 'true') return;
             // 如果点击的是模态框遮罩层本身（即外部区域），则关闭
             if (event.target === modal) {
-                modal.classList.remove('show');
+                dismissModalElement(modal);
                 syncJupyterVisibilityForModalState();
             }
         });
@@ -234,7 +244,7 @@ export function initModalListeners() {
             if (modals.length > 0) {
                 modals.forEach(modal => {
                     if (modal.dataset.lockModal === 'true') return;
-                    modal.classList.remove('show');
+                    dismissModalElement(modal);
                 });
                 syncJupyterVisibilityForModalState();
             }

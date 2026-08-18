@@ -1,3 +1,5 @@
+import os
+import json
 import sys
 import tempfile
 import unittest
@@ -32,7 +34,7 @@ class JupyterManagerUnitTestCase(unittest.TestCase):
             "success": True,
             "message": "started",
             "port": 18888,
-            "url": "http://localhost:18888/lab?locale=en",
+            "url": "http://localhost:18888/lab",
             "pid": 321,
             "auto_restart": False,
             "external": False,
@@ -51,13 +53,128 @@ class JupyterManagerUnitTestCase(unittest.TestCase):
         self.assertEqual(manager.config.port, 18888)
         self.assertFalse(manager._manually_stopped)  # noqa: SLF001
 
+    def test_start_restarts_only_jupyter_when_python_environment_changes(self):
+        manager = self.make_manager(python_executable="/old/python")
+        manager._running_config = JupyterConfig(  # noqa: SLF001
+            port=18888,
+            auto_restart=False,
+            python_executable="/old/python",
+        )
+        start_result = {
+            "success": True,
+            "message": "started",
+            "port": 18888,
+            "url": "http://localhost:18888/lab",
+            "pid": 654,
+            "auto_restart": False,
+            "external": False,
+        }
+
+        with patch.object(JupyterConfig, "validate", return_value=(True, [])):
+            with patch.object(manager, "is_running", return_value=True):
+                with patch.object(manager, "_stop_impl", return_value={"success": True}) as stop_impl:
+                    with patch.object(manager, "_is_port_occupied", return_value=False):
+                        with patch.object(manager, "_validate_environment", return_value=True):
+                            with patch.object(manager, "_start_process", return_value=start_result) as start_process:
+                                result = manager.start(python_executable="/new/python")
+
+        self.assertEqual(result, start_result)
+        stop_impl.assert_called_once()
+        self.assertEqual(start_process.call_args.args[0].python_executable, "/new/python")
+
+    def test_prepare_environment_handles_default_python_without_activation_script(self):
+        manager = self.make_manager(python_executable="", activate_script="")
+
+        environment = manager._prepare_environment(manager.config)  # noqa: SLF001
+
+        self.assertIsInstance(environment, dict)
+        self.assertEqual(environment["JUPYTER_TOKEN"], "")
+
+    def test_prepare_environment_defaults_lab_to_simplified_chinese(self):
+        manager = self.make_manager(python_executable="", activate_script="")
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(
+            os.environ,
+            {"XEDU_DATA_DIR": tmp_dir},
+            clear=False,
+        ):
+            environment = manager._prepare_environment(manager.config)  # noqa: SLF001
+            settings_file = (
+                Path(environment["JUPYTER_CONFIG_DIR"])
+                / "labconfig"
+                / "default_setting_overrides.json"
+            )
+            settings = json.loads(settings_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            settings,
+            {"@jupyterlab/translation-extension:plugin": {"locale": "zh_CN"}},
+        )
+        self.assertEqual(manager._get_jupyter_url(), "http://localhost:18888/lab")  # noqa: SLF001
+
+    def test_prepare_environment_preserves_a_user_selected_lab_locale(self):
+        manager = self.make_manager(python_executable="", activate_script="")
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(
+            os.environ,
+            {"XEDU_DATA_DIR": tmp_dir},
+            clear=False,
+        ):
+            user_settings_file = (
+                Path(tmp_dir)
+                / "jupyter_config"
+                / "lab"
+                / "user-settings"
+                / "@jupyterlab"
+                / "translation-extension"
+                / "plugin.jupyterlab-settings"
+            )
+            user_settings_file.parent.mkdir(parents=True)
+            user_settings_file.write_text('{"locale": "en"}\n', encoding="utf-8")
+
+            manager._prepare_environment(manager.config)  # noqa: SLF001
+
+            user_settings = json.loads(user_settings_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(user_settings, {"locale": "en"})
+
+    def test_xedupro_jupyter_inherits_activated_environment_and_selected_kernel(self):
+        manager = self.make_manager(python_executable="E:/XEdu/env/python.exe")
+        activated = {
+            **os.environ,
+            "PATH": "E:/XEdu/env;E:/XEdu/env/Library/bin;E:/XEdu/env/Scripts",
+            "CONDA_PREFIX": "E:/XEdu/env",
+        }
+        with patch("pathlib.Path.exists", return_value=True), patch(
+            "pathlib.Path.is_file",
+            return_value=False,
+        ), patch(
+            "utils.python_runtime._conda_prefix_for_executable",
+            return_value=Path("E:/XEdu/env"),
+        ), patch(
+            "utils.python_runtime.augment_conda_environment",
+            return_value=activated,
+        ):
+            environment = manager._prepare_environment(manager.config)  # noqa: SLF001
+
+        self.assertEqual(environment["CONDA_PREFIX"], "E:/XEdu/env")
+        self.assertIn("E:/XEdu/env/Scripts", environment["PATH"])
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            environment["XEDU_DATA_DIR"] = tmp_dir
+            manager._ensure_default_kernel("E:/XEdu/env/python.exe", environment)  # noqa: SLF001
+            kernel = Path(environment["JUPYTER_PATH"]) / "python3" / "kernel.json"
+            kernel_data = kernel.read_text(encoding="utf-8")
+
+        self.assertIn("E:/XEdu/env/python.exe", kernel_data)
+
     def test_start_switches_to_available_port_when_requested_port_is_occupied(self):
         manager = self.make_manager(port=18888)
         start_result = {
             "success": True,
             "message": "started",
             "port": 18890,
-            "url": "http://localhost:18890/lab?locale=en",
+            "url": "http://localhost:18890/lab",
             "pid": 654,
             "auto_restart": False,
             "external": False,
@@ -98,6 +215,25 @@ class JupyterManagerUnitTestCase(unittest.TestCase):
         self.assertIsNone(manager.managed_pid)
         self.assertIsNone(manager.external_pid)
         self.assertTrue(manager._manually_stopped)  # noqa: SLF001
+
+    def test_stop_waits_for_the_running_port_after_config_changes(self):
+        manager = self.make_manager(port=19999)
+        manager._running_config = JupyterConfig(  # noqa: SLF001
+            port=18888,
+            auto_restart=False,
+            python_executable="/old/python",
+        )
+        manager.managed_pid = 111
+
+        with patch.object(manager, "_stop_protection"):
+            with patch.object(manager, "_stop_process_by_pid", return_value=True):
+                with patch.object(manager, "_is_port_occupied", return_value=False) as is_port_occupied:
+                    with patch.object(manager, "_cleanup"):
+                        with patch("services.jupyter_service.time.sleep", return_value=None):
+                            result = manager.stop()
+
+        self.assertTrue(result["success"])
+        is_port_occupied.assert_called_once_with(18888)
 
     def test_restart_stops_then_starts_with_same_kwargs(self):
         manager = self.make_manager()

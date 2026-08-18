@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -14,6 +15,66 @@ from services.config_service import ConfigService  # noqa: E402
 
 
 class ConfigPersistenceTestCase(unittest.TestCase):
+    def test_unconfirmed_legacy_python_path_migrates_to_electron_runtime(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            legacy_python = config_dir / "legacy" / "python.exe"
+            bundled_python = config_dir / "resources" / "python_env" / "python.exe"
+            legacy_python.parent.mkdir(parents=True)
+            bundled_python.parent.mkdir(parents=True)
+            legacy_python.touch()
+            bundled_python.touch()
+            (config_dir / "config.json").write_text(
+                json.dumps({
+                    "version": "2.0.0",
+                    "jupyter": {"python_executable": str(legacy_python)},
+                    "ui": {},
+                    "ai": {},
+                }),
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {"XEDU_PYTHON_EXECUTABLE": str(bundled_python)},
+                clear=False,
+            ):
+                reloaded = ConfigService(config_dir).load_config()
+
+        self.assertEqual(reloaded.jupyter.python_executable, str(bundled_python.resolve()))
+
+    def test_confirmed_external_python_path_survives_reload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            external_python = config_dir / "external" / "python.exe"
+            bundled_python = config_dir / "resources" / "python_env" / "python.exe"
+            external_python.parent.mkdir(parents=True)
+            bundled_python.parent.mkdir(parents=True)
+            external_python.touch()
+            bundled_python.touch()
+            (config_dir / "config.json").write_text(
+                json.dumps({
+                    "version": "2.0.0",
+                    "jupyter": {
+                        "python_executable": str(external_python),
+                        "python_selection_confirmed": True,
+                    },
+                    "ui": {},
+                    "ai": {},
+                }),
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {"XEDU_PYTHON_EXECUTABLE": str(bundled_python)},
+                clear=False,
+            ):
+                reloaded = ConfigService(config_dir).load_config()
+
+        self.assertEqual(reloaded.jupyter.python_executable, str(external_python))
+        self.assertTrue(reloaded.jupyter.python_selection_confirmed)
+
     def test_saved_teacher_code_survives_a_fresh_service_load(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)

@@ -77,36 +77,20 @@ function normalizeRelativePath(value = '') {
     return String(value).trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
 }
 
-function getRelativeDirectory(filePath = '') {
-    const segments = normalizeRelativePath(filePath).split('/').filter(Boolean);
-    segments.pop();
-    return segments.join('/');
-}
-
-function joinLocalPath(basePath = '', relativePath = '') {
-    const base = String(basePath).trim().replace(/[\\/]+$/, '');
-    const relative = normalizeRelativePath(relativePath);
-    if (!base) return '';
-    if (!relative) return base;
-    const separator = base.includes('\\') && !base.includes('/') ? '\\' : '/';
-    return `${base}${separator}${relative.split('/').join(separator)}`;
-}
-
 export function resolveJupyterWorkspaceTarget({ coursePath = '', experimentPath = '', filePath = '' } = {}) {
     const normalizedFilePath = normalizeRelativePath(filePath);
     const normalizedExperimentPath = normalizeRelativePath(experimentPath);
-    const fileDirectory = getRelativeDirectory(normalizedFilePath);
-    const workspaceDirectory = normalizedExperimentPath || fileDirectory;
-    const fileInsideWorkspace = workspaceDirectory && (
-        normalizedFilePath === workspaceDirectory ||
-        normalizedFilePath.startsWith(`${workspaceDirectory}/`)
+    const fileInsideExperiment = normalizedExperimentPath && (
+        normalizedFilePath === normalizedExperimentPath ||
+        normalizedFilePath.startsWith(`${normalizedExperimentPath}/`)
     );
+    const courseRelativeFile = normalizedExperimentPath && normalizedFilePath && !fileInsideExperiment
+        ? `${normalizedExperimentPath}/${normalizedFilePath}`
+        : normalizedFilePath;
 
     return {
-        projectDir: joinLocalPath(coursePath, workspaceDirectory),
-        filePath: fileInsideWorkspace
-            ? normalizedFilePath.slice(workspaceDirectory.length).replace(/^\/+/, '')
-            : normalizedFilePath,
+        projectDir: String(coursePath || '').trim().replace(/[\\/]+$/, ''),
+        filePath: courseRelativeFile,
     };
 }
 

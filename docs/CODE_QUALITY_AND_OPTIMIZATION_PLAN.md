@@ -109,7 +109,7 @@ Step 5: 验证
 | ✅ backend 移出 asar（双重打包已消除） | `package.json` files 仅含 build/electron |
 | ✅ extraResources 过滤 tests/`__pycache__`/`.pytest_cache` | `package.json:53` filter 规则 |
 | ✅ 重复 checkpoint 已过滤 | package.json filter |
-| ✅ 三份 requirements 公共依赖统一 | 三份均为 Flask==3.1.3、requests==2.33.0、Pillow==12.3.0 等安全 pin |
+| ✅ 三份 requirements 公共依赖统一 | 三份均为 Flask==3.1.3、requests==2.32.5、Pillow==12.3.0 等安全 pin |
 | ✅ Flask-CORS 死依赖已删除 | requirements 中已无此项 |
 | ✅ `/api/python/pip` 已加鉴权 | `python.py:227-229` |
 | ✅ Electron sandbox + webSecurity 已启用 | 主窗口和 Jupyter 视图 |

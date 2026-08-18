@@ -212,10 +212,6 @@
       "title": "第5课：AI魔法师"
     }
   ],
-  "quickform_defaults": {
-    "enabled": false,
-    "html_path": ""
-  },
   "origin": {
     "source_id": "override",
     "base_url": "http://8.145.44.54:3000",
@@ -227,8 +223,5 @@
     "course_url": "course.json",
     "package_url": "",
     "single_course_repo": true
-  },
-  "sync": {
-    "last_local_fingerprint": "{\"author\":\"王海涛\",\"cloud_url\":\"\",\"cover\":\"\",\"description\":\"基于张江科学城建筑的图像识别项目式学习，从像素到AI应用的完整体验\",\"grade\":\"七年级\",\"id\":\"zhangjiang-image-recognition\",\"package_url\":\"\",\"quickform_defaults\":{\"enabled\":false,\"html_path\":\"\"},\"sections\":[{\"description\":\"理解图像数字化，掌握像素和RGB色彩模型\",\"experiments\":[{\"description\":\"用Python读取图像、查看像素、修改颜色\",\"files\":[{\"path\":\"lesson1/exp1/main.ipynb\",\"type\":\"ipynb\"},{\"path\":\"lesson1/exp1/index.html\",\"type\":\"html\"}],\"title\":\"实验1：像素魔术师\"}],\"title\":\"第1课：像素魔术师\"},{\"description\":\"掌握图像标准化、二值化、数据增强的方法\",\"experiments\":[{\"description\":\"图像标准化、灰度转换、二值化、数据增强\",\"files\":[{\"path\":\"lesson2/exp1/main.ipynb\",\"type\":\"ipynb\"},{\"path\":\"lesson2/exp1/index.html\",\"type\":\"html\"}],\"title\":\"实验1：图像预处理\"},{\"description\":\"采集手绘建筑图，进行标准化处理\",\"files\":[{\"path\":\"lesson2/exp2/index.html\",\"type\":\"html\"}],\"title\":\"实验2：数据采集\"}],\"title\":\"第2课：图像预处理\"},{\"description\":\"理解神经网络结构，训练识别模型\",\"experiments\":[{\"description\":\"TensorFlow Playground式的可视化演示\",\"files\":[{\"path\":\"lesson3/exp1/main.ipynb\",\"type\":\"ipynb\"},{\"path\":\"lesson3/exp1/index.html\",\"type\":\"html\"}],\"title\":\"实验1：神经网络结构\"},{\"description\":\"配置训练参数，启动训练，观察Loss和Accuracy变化\",\"files\":[{\"path\":\"lesson3/exp2/index.html\",\"type\":\"html\"}],\"title\":\"实验2：模型训练\"},{\"description\":\"测试预训练模型的效果\",\"files\":[{\"path\":\"lesson3/exp3/index.html\",\"type\":\"html\"}],\"title\":\"实验3：通用模型测试\"},{\"description\":\"使用训练好的模型进行推理\",\"files\":[{\"path\":\"lesson3/exp4/index.html\",\"type\":\"html\"}],\"title\":\"实验4：模型推理\"}],\"title\":\"第3课：训练AI大脑\"},{\"description\":\"理解模型推理，学会优化模型性能\",\"experiments\":[{\"description\":\"调整网络结构，观察对训练效果的影响\",\"files\":[{\"path\":\"lesson4/exp1/main.ipynb\",\"type\":\"ipynb\"},{\"path\":\"lesson4/exp1/index.html\",\"type\":\"html\"}],\"title\":\"实验1：神经网络结构探索\"},{\"description\":\"尝试不同的训练参数组合\",\"files\":[{\"path\":\"lesson4/exp2/index.html\",\"type\":\"html\"}],\"title\":\"实验2：模型训练优化\"},{\"description\":\"加载模型，对新图片进行预测\",\"files\":[{\"path\":\"lesson4/exp3/index.html\",\"type\":\"html\"}],\"title\":\"实验3：全流程推理\"}],\"title\":\"第4课：模型优化\"},{\"description\":\"多模态交互，从判别式AI到生成式AI\",\"experiments\":[{\"description\":\"识别+TTS、风格迁移、AIGC生成\",\"files\":[{\"path\":\"lesson5/exp1/main.ipynb\",\"type\":\"ipynb\"}],\"title\":\"实验1：AI魔法应用\"}],\"title\":\"第5课：AI魔法师\"}],\"source\":\"local\",\"subject\":\"人工智能\",\"tags\":[\"图像识别\",\"张江\",\"项目式学习\",\"神经网络\"],\"title\":\"AI看张江：手绘建筑识别师\",\"version\":\"1.0\"}"
   }
 }

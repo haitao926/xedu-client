@@ -27,6 +27,25 @@ class SetupPortablePythonTestCase(unittest.TestCase):
         self.assertEqual(setup_portable_python.XEDU_PYTHON_SPEC, "xedu-python==2.0.0")
         self.assertEqual(setup_portable_python.NO_DEPS_REQUIREMENT_SPECS, ("xedu-python==2.0.0",))
 
+    def test_windows_runtime_always_bundles_pip(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            requirements_file = Path(temp_dir) / "requirements.txt"
+            requirements_file.write_text("requests==2.32.5\n", encoding="utf-8")
+            wheelhouse = Path(temp_dir) / "wheelhouse_win"
+            downloaded_requirements = []
+
+            def capture_run(command):
+                if "-r" in command:
+                    requirements_index = command.index("-r") + 1
+                    downloaded_requirements.extend(
+                        Path(command[requirements_index]).read_text(encoding="utf-8").splitlines()
+                    )
+
+            with patch.object(setup_portable_python, "run", side_effect=capture_run):
+                setup_portable_python.download_windows_wheels(requirements_file, wheelhouse)
+
+            self.assertIn("pip==24.3.1", downloaded_requirements)
+
     def test_validate_windows_xedu_runtime_rejects_stale_xedu_metadata(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             env_dir = Path(temp_dir)

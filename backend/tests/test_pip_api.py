@@ -70,6 +70,41 @@ class PipApiTestCase(unittest.TestCase):
             ],
         )
 
+    def test_install_uses_sibling_pip_launcher_when_python_module_is_missing(self):
+        completed = SimpleNamespace(returncode=0, stdout='ok', stderr='')
+        sibling_pip = '/tmp/python-env/Scripts/pip.exe'
+        with patch(
+            'api.routes.python.resolve_pip_command',
+            return_value=[sibling_pip],
+        ), patch('api.routes.python.subprocess.run', return_value=completed) as run_mock:
+            response = self.post({
+                'action': 'install',
+                'package': 'pyfiglet==1.0.4',
+                'use_mirror': False,
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            run_mock.call_args.args[0],
+            [sibling_pip, 'install', 'pyfiglet==1.0.4'],
+        )
+
+    def test_pip_uses_the_selected_environment_activation_variables(self):
+        completed = SimpleNamespace(returncode=0, stdout='ok', stderr='')
+        activated_env = {**os.environ, 'CONDA_PREFIX': '/tmp/teacher-env'}
+        with patch(
+            'api.routes.python.augment_conda_environment',
+            return_value=activated_env,
+        ) as augment_mock, patch(
+            'api.routes.python.subprocess.run',
+            return_value=completed,
+        ) as run_mock:
+            response = self.post({'action': 'list'})
+
+        self.assertEqual(response.status_code, 200)
+        augment_mock.assert_called_once()
+        self.assertIs(run_mock.call_args.kwargs['env'], activated_env)
+
     def test_upgrade_uses_upgrade_flag(self):
         completed = SimpleNamespace(returncode=0, stdout='ok', stderr='')
         with patch('api.routes.python.subprocess.run', return_value=completed) as run_mock:
@@ -120,7 +155,10 @@ class PipApiTestCase(unittest.TestCase):
 
     def test_stream_response_includes_machine_readable_result(self):
         fake_proc = FakePopen(['line 1\n', 'line 2\n'], 1)
-        with patch('api.routes.python.subprocess.Popen', return_value=fake_proc):
+        with patch(
+            'api.routes.python.resolve_pip_command',
+            return_value=[self.python_path, '-m', 'pip'],
+        ), patch('api.routes.python.subprocess.Popen', return_value=fake_proc):
             response = self.post({
                 'action': 'install',
                 'package': 'missing-package',
@@ -211,6 +249,28 @@ class PipApiTestCase(unittest.TestCase):
         pythonpath = env.get('PYTHONPATH', '')
         self.assertIn(str(BACKEND_DIR), pythonpath.split(os.pathsep))
         self.assertEqual(env.get('MPLBACKEND'), 'Agg')
+
+    def test_run_python_uses_the_selected_environment_activation_variables(self):
+        completed = {
+            'return_code': 0,
+            'stdout': 'ok\n',
+            'stderr': '',
+            'resource_events': [],
+            'timed_out': False,
+        }
+        activated_env = {**os.environ, 'CONDA_PREFIX': '/tmp/teacher-env'}
+        with patch(
+            'api.routes.python.augment_conda_environment',
+            return_value=activated_env,
+        ) as augment_mock, patch(
+            'api.routes.python._run_python_subprocess',
+            return_value=completed,
+        ) as run_mock:
+            response = self.post_run({'code': "print('ok')"})
+
+        self.assertEqual(response.status_code, 200)
+        augment_mock.assert_called_once()
+        self.assertEqual(run_mock.call_args.kwargs['env']['CONDA_PREFIX'], '/tmp/teacher-env')
 
     def test_run_python_stream_payload_is_structured_for_camera_permission_failure(self):
         completed = SimpleNamespace(

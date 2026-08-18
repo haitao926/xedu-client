@@ -8,6 +8,91 @@ function joinForPlatform(platform, ...parts) {
     return platform === 'win32' ? path.win32.join(...parts) : path.posix.join(...parts);
 }
 
+function isDirectory(target, fsImpl = fs) {
+    try {
+        return fsImpl.statSync(target).isDirectory();
+    } catch (_) {
+        return false;
+    }
+}
+
+function getWindowsPythonEnvironmentRoot(pythonExecutable) {
+    const normalizedExecutable = path.win32.normalize(String(pythonExecutable || ''));
+    const executableDir = path.win32.dirname(normalizedExecutable);
+    return path.win32.basename(executableDir).toLowerCase() === 'scripts'
+        ? path.win32.dirname(executableDir)
+        : executableDir;
+}
+
+function isFile(target, fsImpl = fs) {
+    try {
+        return fsImpl.statSync(target).isFile();
+    } catch (_) {
+        return false;
+    }
+}
+
+function getXEduProResourceDirectories(pythonExecutable, {
+    platform = process.platform,
+    fsImpl = fs,
+} = {}) {
+    const empty = { root: '', checkpoints: [] };
+    if (platform !== 'win32' || !pythonExecutable) return empty;
+
+    const environmentRoot = getWindowsPythonEnvironmentRoot(pythonExecutable);
+    if (path.win32.basename(environmentRoot).toLowerCase() !== 'env') return empty;
+    const xeduProRoot = path.win32.dirname(environmentRoot);
+    const launcherFiles = [
+        path.win32.join(xeduProRoot, 'Jupyter编辑器.bat'),
+        path.win32.join(xeduProRoot, '启动cmd.bat'),
+    ];
+    if (!launcherFiles.every((target) => isFile(target, fsImpl))) return empty;
+
+    const checkpoints = ['checkpoints', 'my_checkpoints']
+        .map((name) => path.win32.join(xeduProRoot, name))
+        .filter((target) => isDirectory(target, fsImpl));
+    return { root: xeduProRoot, checkpoints };
+}
+
+function buildPythonChildEnvironment({
+    pythonExecutable,
+    platform = process.platform,
+    baseEnv = process.env,
+    fsImpl = fs,
+} = {}) {
+    const env = { ...baseEnv };
+    if (platform !== 'win32' || !pythonExecutable) return env;
+
+    const environmentRoot = getWindowsPythonEnvironmentRoot(pythonExecutable);
+    const isCondaEnvironment = isDirectory(path.win32.join(environmentRoot, 'conda-meta'), fsImpl)
+        || isDirectory(path.win32.join(environmentRoot, 'Library'), fsImpl);
+    const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') || 'Path';
+    const activationEntries = isCondaEnvironment
+        ? [
+            environmentRoot,
+            path.win32.join(environmentRoot, 'Library', 'mingw-w64', 'bin'),
+            path.win32.join(environmentRoot, 'Library', 'usr', 'bin'),
+            path.win32.join(environmentRoot, 'Library', 'bin'),
+            path.win32.join(environmentRoot, 'Scripts'),
+        ]
+        : [environmentRoot, path.win32.join(environmentRoot, 'Scripts')];
+    const existingEntries = String(env[pathKey] || '').split(';').filter(Boolean);
+    const seen = new Set();
+    env[pathKey] = [...activationEntries, ...existingEntries]
+        .filter((entry) => {
+            const key = path.win32.normalize(entry).toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .join(';');
+
+    if (isCondaEnvironment) {
+        env.CONDA_PREFIX = environmentRoot;
+    }
+    return env;
+}
+
 function formatPythonVersion(version) {
     return version.join('.');
 }
@@ -179,6 +264,19 @@ function addExecutableCandidatesFromPath(envPath, executableCandidates, platform
     }
 }
 
+function parseWindowsPythonLauncherPaths(output) {
+    const paths = [];
+    const seen = new Set();
+    for (const line of String(output || '').split(/\r?\n/)) {
+        const match = line.match(/([A-Za-z]:[\\/].*?python(?:\d+(?:\.\d+)*)?\.exe)\s*$/i);
+        const target = match?.[1]?.trim();
+        if (!target || seen.has(target.toLowerCase())) continue;
+        seen.add(target.toLowerCase());
+        paths.push(target);
+    }
+    return paths;
+}
+
 function buildPythonEnvironmentLabel(resolvedPath, {
     source = 'detected',
     version = '',
@@ -193,7 +291,9 @@ function buildPythonEnvironmentLabel(resolvedPath, {
     let prefix = '检测到的 Python';
     let name = environmentDir;
 
-    if (source === 'configured') {
+    if (source === 'bundled') {
+        return version ? `应用内置 Python · Python ${version}` : '应用内置 Python';
+    } else if (source === 'configured') {
         prefix = '当前配置';
     } else if (source === 'selected') {
         prefix = '当前选择';
@@ -221,6 +321,7 @@ function discoverPythonEnvironments({
     homeDir = '',
     configuredPath = '',
     selectedPath = '',
+    bundledPythonBaseDir = '',
     envPath = process.env.PATH || '',
     fsImpl = fs,
     runner = spawnSync,
@@ -242,6 +343,7 @@ function discoverPythonEnvironments({
         addCandidatePath(executableCandidates, normalizedTarget, source);
     };
 
+    addKnownTarget(bundledPythonBaseDir, 'bundled');
     addKnownTarget(configuredPath, 'configured');
     addKnownTarget(selectedPath, 'selected');
 
@@ -278,12 +380,38 @@ function discoverPythonEnvironments({
     if (platform === 'win32') {
         const userProfile = homeDir || process.env.USERPROFILE || '';
         const localAppData = process.env.LOCALAPPDATA || '';
+        const programFiles = [
+            process.env.ProgramFiles,
+            process.env['ProgramFiles(x86)'],
+        ].filter(Boolean);
         [
             path.join(userProfile, '.venv'),
             path.join(userProfile, 'venv'),
             path.join(localAppData, 'Programs', 'Python'),
+            ...programFiles,
         ].forEach((target) => addCandidatePath(directoryCandidates, target, 'system'));
+        [
+            path.join(localAppData, 'Programs', 'Python'),
+            ...programFiles,
+        ].forEach((target) => addEnvironmentRootCandidates(target, directoryCandidates, 'system', {
+            fsImpl,
+            matcher: (name) => /^Python\d+(?:\.\d+)?$/i.test(String(name || '')),
+        }));
         addExecutableCandidatesFromPath(envPath, executableCandidates, platform);
+        try {
+            const launcher = runner('py', ['-0p'], {
+                encoding: 'utf8',
+                timeout: 5000,
+                windowsHide: true,
+            });
+            if (!launcher?.error && launcher.status === 0) {
+                parseWindowsPythonLauncherPaths(launcher.stdout).forEach((target) => {
+                    addCandidatePath(executableCandidates, target, 'launcher');
+                });
+            }
+        } catch (_) {
+            // The launcher is optional; PATH and standard roots remain available.
+        }
     } else {
         [
             '/opt/homebrew/bin/python3',
@@ -323,12 +451,14 @@ function discoverPythonEnvironments({
     }
 
     const priority = {
-        configured: 0,
-        selected: 1,
-        project: 2,
-        home: 3,
-        path: 4,
-        system: 5,
+        bundled: 0,
+        configured: 1,
+        selected: 2,
+        project: 3,
+        home: 4,
+        launcher: 5,
+        path: 6,
+        system: 7,
     };
 
     return [...discovered.values()].sort((left, right) => {
@@ -369,10 +499,94 @@ function resolvePythonExecutable({
     return uniqueCandidates.find((candidate) => isUsablePythonExecutable(candidate, { platform, fsImpl })) || null;
 }
 
-function readConfiguredPythonExecutable(configPath, fsImpl = fs) {
+function resolveBackendPythonExecutable({
+    platform = process.platform,
+    packaged = false,
+    backendOverridePath = '',
+    bundledPythonBaseDir = '',
+    projectRoot = '',
+    fsImpl = fs,
+} = {}) {
+    // The backend is an application dependency. In packaged builds it must
+    // never inherit the teacher's experiment interpreter or stale config.
+    if (packaged) {
+        return resolvePythonExecutable({
+            platform,
+            packaged: true,
+            bundledPythonBaseDir,
+            fsImpl,
+        });
+    }
+    return resolvePythonExecutable({
+        platform,
+        packaged: false,
+        envPath: backendOverridePath,
+        projectRoot,
+        fsImpl,
+    });
+}
+
+async function repairPythonWithBundledFallback({
+    selectedPath,
+    platform = process.platform,
+    packaged = false,
+    bundledPythonBaseDir = '',
+    fsImpl = fs,
+    repair,
+}) {
+    const initialResult = await repair(selectedPath);
+    if (initialResult?.success || initialResult?.error_code !== 'ssl_unavailable' || !packaged) {
+        return initialResult;
+    }
+
+    const bundledPath = resolvePythonExecutable({
+        platform,
+        packaged: true,
+        bundledPythonBaseDir,
+        fsImpl,
+    });
+    if (!bundledPath || bundledPath === selectedPath) {
+        return {
+            ...initialResult,
+            fallback_attempted: true,
+            fallback_error: '未找到可用的应用内置 Python。',
+        };
+    }
+
+    const fallbackResult = await repair(bundledPath);
+    if (!fallbackResult?.success) {
+        return {
+            ...initialResult,
+            fallback_attempted: true,
+            fallback_error: fallbackResult?.message || fallbackResult?.error || '应用内置 Python 修复失败。',
+        };
+    }
+
+    const fallbackNotice = `所选 Python 缺少 SSL，已自动改用应用内置 Python：${bundledPath}`;
+    return {
+        ...fallbackResult,
+        path: bundledPath,
+        fallback_used: true,
+        fallback_from: selectedPath,
+        message: `${fallbackResult.message || 'Python 环境已就绪'}；${fallbackNotice}`,
+        warnings: [
+            ...(Array.isArray(fallbackResult.warnings) ? fallbackResult.warnings : []),
+            fallbackNotice,
+        ],
+    };
+}
+
+function readConfiguredPythonExecutable(
+    configPath,
+    fsImpl = fs,
+    { requireConfirmed = false } = {},
+) {
     if (!configPath) return '';
     try {
         const data = JSON.parse(fsImpl.readFileSync(configPath, 'utf8'));
+        if (requireConfirmed && data?.jupyter?.python_selection_confirmed !== true) {
+            return '';
+        }
         const value = data?.jupyter?.python_executable;
         return typeof value === 'string' ? value.trim() : '';
     } catch (_) {
@@ -381,12 +595,17 @@ function readConfiguredPythonExecutable(configPath, fsImpl = fs) {
 }
 
 module.exports = {
+    buildPythonChildEnvironment,
     buildPythonEnvironmentLabel,
     discoverPythonEnvironments,
     getPythonDialogFilters,
     getPythonExecutableCandidates,
+    getXEduProResourceDirectories,
     isUsablePythonExecutable,
+    parseWindowsPythonLauncherPaths,
     readConfiguredPythonExecutable,
+    repairPythonWithBundledFallback,
+    resolveBackendPythonExecutable,
     resolvePythonSelectionTarget,
     resolvePythonExecutable,
     validatePythonExecutable,

@@ -72,7 +72,6 @@ export function updateSourceInfoFlow({ documentRef = document, isMockData, remot
   const hint = documentRef.getElementById('resources-source-hint');
   const repoBtn = documentRef.getElementById('resources-repo-btn');
   const submitBtn = documentRef.getElementById('resources-submit-btn');
-  const createSubmitBtn = documentRef.getElementById('resources-create-submit-btn');
 
   if (hint) {
     if (isMockData) {
@@ -94,9 +93,6 @@ export function updateSourceInfoFlow({ documentRef = document, isMockData, remot
     submitBtn.disabled = isMockData || !submitUrl;
   }
 
-  if (createSubmitBtn) {
-    createSubmitBtn.disabled = isMockData || !submitUrl;
-  }
 }
 
 export function renderEmptyStateFlow(message, { documentRef = document } = {}) {

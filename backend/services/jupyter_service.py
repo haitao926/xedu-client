@@ -3,6 +3,8 @@ Jupyter 服务管理模块
 提供 Jupyter Notebook/Lab 的启动、停止、状态监控等功能
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import time
@@ -13,7 +15,6 @@ import threading
 import json
 import psutil
 import socket
-import importlib.util
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
@@ -27,6 +28,7 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 _JUPYTER_MANAGER_ATEXIT_REGISTERED = False
+_JUPYTER_DEFAULT_LOCALE = "zh_CN"
 
 
 class JupyterManager:
@@ -38,6 +40,7 @@ class JupyterManager:
         self.process: Optional[subprocess.Popen] = None
         self.managed_pid: Optional[int] = None  # 我们启动的进程PID
         self.external_pid: Optional[int] = None  # 外部已有的Jupyter进程PID
+        self._running_config: Optional[JupyterConfig] = None
         self.start_time: Optional[float] = None
         self.auto_restart = config.auto_restart
         self.check_interval = config.check_interval / 1000  # 转换为秒
@@ -98,30 +101,12 @@ class JupyterManager:
 
         # 如果我们自己管理的进程已在运行
         if self.is_running():
-            actual_port = self._get_actual_jupyter_port() or self.config.port or merged_config.port
-
-            # 若用户更改了项目路径，先停止再按新目录重启
-            current_dir = self.config.project_dir
-            target_dir = merged_config.project_dir
-            if current_dir and target_dir:
-                try:
-                    if Path(current_dir).resolve() != Path(target_dir).resolve():
-                        logger.info("Project directory changed, restarting Jupyter with new directory")
-                        self._stop_impl()
-                    else:
-                        return {
-                            "success": True,
-                            "message": "Jupyter 已在运行，直接挂载",
-                            "port": actual_port,
-                            "url": self._get_jupyter_url(actual_port),
-                            "pid": self.managed_pid or self.external_pid,
-                            "auto_restart": self.auto_restart,
-                            "external": bool(self.external_pid and not self.managed_pid),
-                        }
-                except Exception:
-                    # 如果路径解析异常，回退到重启
-                    self._stop_impl()
+            running_config = self._running_config or self.config
+            if self._runtime_config_changed(running_config, merged_config):
+                logger.info("Jupyter runtime configuration changed, restarting the experiment process")
+                self._stop_impl()
             else:
+                actual_port = self._get_actual_jupyter_port() or running_config.port or merged_config.port
                 return {
                     "success": True,
                     "message": "Jupyter 已在运行，直接挂载",
@@ -171,6 +156,7 @@ class JupyterManager:
             result = self._start_process(merged_config)
             if result["success"]:
                 self.config = merged_config
+                self._running_config = JupyterConfig.from_dict(merged_config.to_dict())
                 self._manually_stopped = False  # 清除手动停止标志
 
                 # 快速重启时减少等待时间
@@ -200,6 +186,11 @@ class JupyterManager:
         logger.info("Stopping Jupyter...")
 
         try:
+            running_port = (
+                self._running_config.port
+                if self._running_config is not None
+                else self.config.port
+            )
             # 停止进程保护
             self._stop_protection()
 
@@ -232,8 +223,8 @@ class JupyterManager:
                     time.sleep(0.3)  # 每300ms检查一次
 
                     # 检查我们管理的端口是否还被占用
-                    if not self._is_port_occupied(self.config.port):
-                        logger.info(f"Port {self.config.port} is now free after {(i+1)*0.3:.1f}s")
+                    if not self._is_port_occupied(running_port):
+                        logger.info(f"Port {running_port} is now free after {(i+1)*0.3:.1f}s")
                         port_released = True
                         break
 
@@ -249,8 +240,8 @@ class JupyterManager:
 
                 # 如果端口还没有释放，尝试强制释放
                 if not port_released:
-                    logger.warning(f"Port {self.config.port} still occupied, forcing cleanup...")
-                    self._force_release_port(self.config.port)
+                    logger.warning(f"Port {running_port} still occupied, forcing cleanup...")
+                    self._force_release_port(running_port)
 
             # 清理状态
             self._cleanup()
@@ -551,6 +542,23 @@ class JupyterManager:
         """合并启动参数"""
         return merge_jupyter_config(self.config, kwargs)
 
+    @staticmethod
+    def _runtime_config_changed(current: JupyterConfig, target: JupyterConfig) -> bool:
+        def normalized_path(value: str) -> str:
+            if not value:
+                return ""
+            try:
+                return os.path.normcase(str(Path(value).expanduser().resolve()))
+            except Exception:
+                return os.path.normcase(str(value))
+
+        return any((
+            normalized_path(current.python_executable) != normalized_path(target.python_executable),
+            normalized_path(current.project_dir) != normalized_path(target.project_dir),
+            current.port != target.port,
+            current.use_notebook != target.use_notebook,
+        ))
+
     def _validate_environment(self, config: JupyterConfig) -> bool:
         """验证运行环境（带缓存优化）"""
         logger.debug("Validating environment...")
@@ -710,6 +718,7 @@ class JupyterManager:
     def _prepare_environment(self, config: JupyterConfig) -> dict:
         """准备环境变量"""
         env = os.environ.copy()
+        venv_root = None
 
         # 如果配置指向标准虚拟环境，设置必要的环境变量。
         if config.python_executable:
@@ -732,6 +741,25 @@ class JupyterManager:
                 env['PATH'] = current_path
 
                 logger.info(f"虚拟环境环境变量设置完成: VIRTUAL_ENV={venv_root}")
+
+            else:
+                # Conda/XEdu environments are not standard venvs (no pyvenv.cfg).
+                # Launching their python.exe directly skips activate.bat, so the
+                # OpenSSL and other DLLs under Library\bin never reach the loader
+                # search path and Jupyter kernels fail to import ssl. Reproduce
+                # the activation PATH so the launched server behaves as if the
+                # environment had been activated in a shell.
+                from utils.python_runtime import (
+                    _conda_prefix_for_executable,
+                    augment_conda_environment,
+                )
+
+                if _conda_prefix_for_executable(config.python_executable):
+                    env = augment_conda_environment(config.python_executable, env)
+                    logger.info(
+                        "检测到 Conda/XEdu 环境，已补齐 DLL 搜索路径: "
+                        f"{env.get('CONDA_PREFIX')}"
+                    )
 
         # 如果配置了激活脚本（兼容旧配置）
         if not venv_root and config.activate_script:
@@ -757,12 +785,10 @@ class JupyterManager:
         if config.env:
             env.update(config.env)
 
-        # 统一语言环境，避免 JupyterLab 读取到 Windows 的非标准语言字符串（如 "Chinese (Simplified)_China"）导致语言包报错
+        # Keep process locale stable on Windows. JupyterLab UI language is
+        # controlled by its translation-extension setting below.
         env["LANG"] = "en_US.UTF-8"
         env["LC_ALL"] = "en_US.UTF-8"
-        env["LANGUAGE"] = "en"
-        app_language = self._resolve_jupyter_locale()
-        env["JUPYTER_CONFIG_DATA"] = json.dumps({"appLanguage": app_language})
         # 本地回环不走代理，避免健康检查被代理截断
         env["NO_PROXY"] = "127.0.0.1,localhost"
         # 让 Jupyter 优先使用当前环境的 kernelspec
@@ -784,10 +810,33 @@ class JupyterManager:
                 runtime_dir.mkdir(parents=True, exist_ok=True)
                 env['JUPYTER_CONFIG_DIR'] = str(cfg_dir)
                 env['JUPYTER_RUNTIME_DIR'] = str(runtime_dir)
+                self._write_jupyterlab_locale_default(cfg_dir)
             except Exception as e:
                 logger.warning(f"Failed to prepare Jupyter config/runtime dirs: {e}")
 
         return env
+
+    @staticmethod
+    def _write_jupyterlab_locale_default(config_dir: Path) -> None:
+        """Set the application default without replacing the user's choice."""
+        settings_file = (
+            config_dir
+            / "labconfig"
+            / "default_setting_overrides.json"
+        )
+        settings_file.parent.mkdir(parents=True, exist_ok=True)
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "@jupyterlab/translation-extension:plugin": {
+                        "locale": _JUPYTER_DEFAULT_LOCALE,
+                    }
+                },
+                ensure_ascii=False,
+                indent=2,
+            ) + "\n",
+            encoding="utf-8",
+        )
 
     def _ensure_default_kernel(self, python_exe: str, env: dict) -> None:
         """
@@ -1175,6 +1224,7 @@ env
         self.process = None
         self.managed_pid = None
         self.external_pid = None
+        self._running_config = None
         self.start_time = None
         self.restart_count = 0
         self._close_jupyter_logs()
@@ -1212,21 +1262,7 @@ env
         suffix = "/tree" if self.config.use_notebook else "/lab"
         # 使用指定的端口或配置的端口
         actual_port = port or self.config.port
-        locale = self._resolve_jupyter_locale()
-        return f"http://localhost:{actual_port}{suffix}?locale={locale}"
-
-    def _resolve_jupyter_locale(self) -> str:
-        """Resolve locale for JupyterLab/Notebook UI."""
-        env_locale = os.environ.get("XEDU_JUPYTER_LOCALE") or os.environ.get("JUPYTER_LOCALE")
-        locale = (env_locale or "zh-CN").strip() or "en"
-
-        if locale.lower().startswith("zh"):
-            if importlib.util.find_spec("jupyterlab_language_pack_zh_CN") is None:
-                logger.warning("未检测到中文语言包，回退到英文界面")
-                return "en"
-            return "zh-CN"
-
-        return locale
+        return f"http://localhost:{actual_port}{suffix}"
 
     def _start_protection(self):
         """启动进程保护线程"""

@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu Package Course"
+  short_description: "Inspect, convert, and package XEdu courses"
+  default_prompt: "Use $xedu-package-course to inspect, convert, stage, build, or publish an XEdu course safely."

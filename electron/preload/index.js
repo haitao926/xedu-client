@@ -20,7 +20,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectPython: () => ipcRenderer.invoke('select-python'),
     scanPythonEnvironments: () => ipcRenderer.invoke('scan-python-environments'),
     setPythonExecutable: (targetPath) => ipcRenderer.invoke('set-python', targetPath),
-    savePythonExecutable: (targetPath) => ipcRenderer.invoke('python:save-selection', targetPath),
     inspectPythonEnvironment: (targetPath) => ipcRenderer.invoke('python:inspect-environment', targetPath),
     repairPythonEnvironment: (targetPath) => ipcRenderer.invoke('python:repair-environment', targetPath),
     selectCoursePackage: () => ipcRenderer.invoke('select-course-package'),

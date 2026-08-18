@@ -29,7 +29,6 @@ export function updateCreateFormStateFlow(deps = {}) {
   const rescanBtn = documentRef.getElementById('resources-rescan-btn');
   const structureSaveBtn = documentRef.getElementById('resources-structure-save-btn');
   const importCloudBtn = documentRef.getElementById('resources-cloud-import-btn');
-  const importCloudDetailBtn = documentRef.getElementById('resources-cloud-detail-import-btn');
   const importPackageBtn = documentRef.getElementById('resources-package-import-btn');
   const cloudSelect = documentRef.getElementById('resources-cloud-course-select');
   const packagePathInput = documentRef.getElementById('resources-create-package-path');
@@ -72,10 +71,6 @@ export function updateCreateFormStateFlow(deps = {}) {
   if (importCloudBtn) {
     const selected = cloudSelect?.value || '';
     importCloudBtn.disabled = createSource !== 'cloud' || !selected;
-  }
-  if (importCloudDetailBtn) {
-    const selected = cloudSelect?.value || '';
-    importCloudDetailBtn.disabled = createSource !== 'cloud' || !selected;
   }
   if (importPackageBtn) {
     importPackageBtn.disabled = createEntryMode !== 'pack-import' || !packagePath;

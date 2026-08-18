@@ -203,7 +203,7 @@ test('backend requirement files share pinned direct dependencies without Flask-C
   const contents = await Promise.all(files.map(readRepoFile));
   const sharedPins = [
     'Flask==3.1.3',
-    'requests==2.33.0',
+    'requests==2.32.5',
     'python-dotenv==1.2.2',
     'Pillow==12.3.0',
     'psutil==5.9.8',

@@ -15,6 +15,7 @@ import threading
 import time
 import tempfile
 import traceback
+import sys
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
@@ -144,15 +145,6 @@ def _force_noninteractive_matplotlib_backend() -> None:
             matplotlib.use("Agg", force=True)
     except Exception:
         return
-
-def _bundled_python_executables() -> List[Path]:
-    candidates = [
-        REPO_ROOT / "python_env" / "bin" / "python3",
-        REPO_ROOT / "python_env" / "bin" / "python",
-        REPO_ROOT / "python_env" / "Scripts" / "python.exe",
-    ]
-    return [candidate for candidate in candidates if candidate.exists()]
-
 
 HIDDEN_TASK_FALLBACKS: Dict[str, str] = {
     "det_body_l": "det_body",
@@ -554,46 +546,41 @@ def _get_runtime_supported_tasks_locked() -> List[str]:
 
     def probe() -> None:
         try:
-            executables = _bundled_python_executables()
-            if not executables:
-                result_queue.put([])
-                return
             probe_code = (
                 "import json\n"
                 "from XEdu.hub import Workflow as wf\n"
                 "print(json.dumps(wf.support_task(), ensure_ascii=False))\n"
             )
-            for executable in executables:
-                try:
-                    completed = subprocess.run(
-                        [str(executable), "-c", probe_code],
-                        capture_output=True,
-                        text=True,
-                        timeout=timeout,
-                        cwd=str(REPO_ROOT),
-                    )
-                except Exception:
+            completed = subprocess.run(
+                [sys.executable, "-c", probe_code],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(REPO_ROOT),
+            )
+            if completed.returncode != 0:
+                result_queue.put([])
+                return
+            lines = [line.strip() for line in str(completed.stdout or "").splitlines() if line.strip()]
+            if not lines:
+                result_queue.put([])
+                return
+            try:
+                supported = json.loads(lines[-1])
+            except Exception:
+                result_queue.put([])
+                return
+            if not isinstance(supported, (list, tuple)):
+                result_queue.put([])
+                return
+            normalized: List[str] = []
+            for item in supported:
+                text = str(item).strip()
+                if not text:
                     continue
-                if completed.returncode != 0:
-                    continue
-                lines = [line.strip() for line in str(completed.stdout or "").splitlines() if line.strip()]
-                if not lines:
-                    continue
-                try:
-                    supported = json.loads(lines[-1])
-                except Exception:
-                    continue
-                if isinstance(supported, (list, tuple)):
-                    normalized: List[str] = []
-                    for item in supported:
-                        text = str(item).strip()
-                        if not text:
-                            continue
-                        runtime_task_id = _resolve_runtime_task_id(text)
-                        normalized.append(runtime_task_id or text)
-                    result_queue.put(list(dict.fromkeys(normalized)))
-                    return
-            result_queue.put([])
+                runtime_task_id = _resolve_runtime_task_id(text)
+                normalized.append(runtime_task_id or text)
+            result_queue.put(list(dict.fromkeys(normalized)))
         except Exception:
             result_queue.put([])
 

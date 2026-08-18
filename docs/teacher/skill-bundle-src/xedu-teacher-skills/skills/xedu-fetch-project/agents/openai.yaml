@@ -1,0 +1,4 @@
+interface:
+  display_name: "XEdu Fetch Project"
+  short_description: "Fetch OpenInnoLab Scratch and Jupyter projects"
+  default_prompt: "Use $xedu-fetch-project to download this OpenInnoLab Scratch or Jupyter project into a verified native source snapshot."

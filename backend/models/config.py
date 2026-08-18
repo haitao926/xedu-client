@@ -3,6 +3,8 @@
 统一管理应用配置相关的数据结构和验证
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, Any, List
 import json
@@ -17,6 +19,7 @@ class JupyterConfig:
     """Jupyter 配置模型"""
     port: int = 8888
     python_executable: str = ""  # 将在__post_init__中自动设置
+    python_selection_confirmed: bool = False
     project_dir: str = ""
     activate_script: str = ""  # 虚拟环境激活脚本
     use_notebook: bool = False
@@ -31,22 +34,18 @@ class JupyterConfig:
 
     def __post_init__(self):
         """初始化后的处理"""
-        # 如果没有指定 Python 解释器，优先使用 Electron 传入的解释器。
-        if not self.python_executable:
-            # 获取项目根目录
-            try:
-                # 获取当前文件的路径并向上查找项目根目录
-                env_python = os.environ.get("XEDU_PYTHON_EXECUTABLE", "").strip()
-                if env_python and Path(env_python).is_file():
-                    self.python_executable = str(Path(env_python).resolve())
-                    return
-                # The lightweight release does not ship a Python runtime. Keep
-                # the default empty so the manager uses its own interpreter;
-                # packaged or Electron-managed interpreters must be explicit.
-                self.python_executable = ""
-            except Exception:
-                # 如果检测失败，保持为空字符串
-                pass
+        # Unmarked paths predate the packaged-runtime selection flow. Let the
+        # Electron-selected interpreter migrate those stale configurations.
+        try:
+            env_python = os.environ.get("XEDU_PYTHON_EXECUTABLE", "").strip()
+            if (
+                env_python
+                and Path(env_python).is_file()
+                and (not self.python_executable or not self.python_selection_confirmed)
+            ):
+                self.python_executable = str(Path(env_python).resolve())
+        except Exception:
+            pass
 
     def validate(self) -> tuple[bool, list[str]]:
         """验证配置"""
@@ -73,6 +72,9 @@ class JupyterConfig:
 
         if isinstance(self.allow_remote_access, bool) is False:
             errors.append("Jupyter 远程访问开关必须为布尔值")
+
+        if isinstance(self.python_selection_confirmed, bool) is False:
+            errors.append("Python 环境确认标记必须为布尔值")
 
         return len(errors) == 0, errors
 
@@ -354,8 +356,12 @@ class SystemInfo:
     python_version: str = ""
     python_executable: str = ""
     platform: str = ""
+    ssl_available: Optional[bool] = None
+    ssl_version: Optional[str] = None
+    ssl_error: Optional[str] = None
     jupyterlab_installed: bool = False
     jupyterlab_version: Optional[str] = None
+    jupyterlab_language_pack_zh_cn_version: Optional[str] = None
     jupyter_notebook_version: Optional[str] = None
     xedu_version: Optional[str] = None
     xedu_expected_version: Optional[str] = None

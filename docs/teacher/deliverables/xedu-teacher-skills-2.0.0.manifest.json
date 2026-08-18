@@ -1,0 +1,40 @@
+{
+  "schema": "xedu-skill-packages/v1",
+  "version": "2.0.0",
+  "created_at": "2026-08-06T08:56:46+00:00",
+  "commit": "ba0bc7819e92a0c29877a330f9221d07f930b8a2",
+  "packages": [
+    {
+      "name": "xedu-build-course-2.0.0.zip",
+      "skill": "xedu-build-course",
+      "size": 3493,
+      "sha256": "18397b60aa677c94b311c7bbe659f1f05d3e6656f2adf917f0dd013088303e25",
+      "source_sha256": "356d2d1151643cf21a5f2c7a69fdc1159cf5f9ff7b1d707bcf2480e9e4ae5e5f",
+      "files": 3
+    },
+    {
+      "name": "xedu-build-lab-2.0.0.zip",
+      "skill": "xedu-build-lab",
+      "size": 4167,
+      "sha256": "c1f5b24b9bbf224b15f18e02dcd1567f4dd7ee971aeed9e0258460e060232137",
+      "source_sha256": "504a9b83adfce7169f9d494dd06a90a8427f3649aa382615bf8bec42c36fcefc",
+      "files": 5
+    },
+    {
+      "name": "xedu-package-course-2.0.0.zip",
+      "skill": "xedu-package-course",
+      "size": 7713,
+      "sha256": "ffaecec332fe4a08c6a2f4151a5adb58e9a379178293f33e5276d997fd8f4e7c",
+      "source_sha256": "5676d6ad778f77e32385d8bca16eda70e4cce31e7d247c697701ae8207ee6a05",
+      "files": 5
+    },
+    {
+      "name": "xedu-fetch-project-2.0.0.zip",
+      "skill": "xedu-fetch-project",
+      "size": 13022,
+      "sha256": "73fff74074e09ade31b0b8630daee5bbb820524606287eda8933d41bd5c49af3",
+      "source_sha256": "80efe538abdfca71f56278106dd1a09aae36ddd617253565cae41e2e3872ab38",
+      "files": 4
+    }
+  ]
+}

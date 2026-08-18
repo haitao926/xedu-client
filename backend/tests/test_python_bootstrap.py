@@ -14,6 +14,68 @@ from utils import python_bootstrap
 
 
 class PythonBootstrapTestCase(unittest.TestCase):
+    def test_backend_dependency_repair_stops_before_pip_when_ssl_is_missing(self):
+        completed = type("Completed", (), {"returncode": 0, "stdout": "installed", "stderr": ""})()
+        original_import = __import__
+
+        def import_without_ssl(name, *args, **kwargs):
+            if name == "ssl":
+                raise ImportError("DLL load failed while importing _ssl")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=import_without_ssl), patch(
+            "utils.python_bootstrap._ensure_pip",
+            return_value=(True, ""),
+        ), patch("utils.python_bootstrap._run", return_value=completed) as run_mock:
+            result = python_bootstrap._install_missing(["Flask"])
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "ssl_unavailable")
+        self.assertIn("缺少 SSL", result["message"])
+        run_mock.assert_not_called()
+
+    def test_ensure_pip_rechecks_the_selected_interpreter_after_bootstrap(self):
+        missing = type("Completed", (), {"returncode": 1, "stdout": "", "stderr": "No module named pip"})()
+        bootstrapped = type("Completed", (), {"returncode": 0, "stdout": "installed pip", "stderr": ""})()
+        ready = type("Completed", (), {"returncode": 0, "stdout": "pip 24.3.1", "stderr": ""})()
+        with patch("utils.python_bootstrap._run", side_effect=[missing, bootstrapped, ready]) as run_mock, patch(
+            "utils.python_bootstrap.find_sibling_pip_command",
+            return_value=None,
+        ):
+            result = python_bootstrap._ensure_pip()
+
+        self.assertEqual(result, (True, ""))
+        self.assertEqual(run_mock.call_count, 3)
+
+    def test_ensure_pip_accepts_a_sibling_windows_launcher(self):
+        missing = type("Completed", (), {"returncode": 1, "stdout": "", "stderr": "No module named pip"})()
+        with patch("utils.python_bootstrap._run", return_value=missing) as run_mock, patch(
+            "utils.python_bootstrap.find_sibling_pip_command",
+            return_value=["C:/Python312/Scripts/pip.exe"],
+        ):
+            result = python_bootstrap._ensure_pip()
+
+        self.assertEqual(result, (True, ""))
+        self.assertEqual(run_mock.call_count, 1)
+
+    def test_bootstrap_preserves_activate_bat_path_order(self):
+        entries = [
+            "/xedu/env",
+            "/xedu/env/Library/bin",
+            "/xedu/env/Scripts",
+        ]
+        with patch.object(python_bootstrap, "_conda_dll_directories_added", False), patch(
+            "utils.python_bootstrap._conda_prefix_for_executable",
+            return_value=Path("/xedu/env"),
+        ), patch(
+            "utils.python_bootstrap._conda_activation_path_entries",
+            return_value=entries,
+        ), patch.dict(os.environ, {"PATH": "/existing"}, clear=False):
+            python_bootstrap._ensure_conda_dll_directories()
+            result = os.environ["PATH"].split(os.pathsep)
+
+        self.assertEqual(result, [*entries, "/existing"])
+
     def test_missing_backend_packages_are_repaired_before_flask_import(self):
         with patch(
             "utils.python_bootstrap.missing_backend_packages",
@@ -33,6 +95,20 @@ class PythonBootstrapTestCase(unittest.TestCase):
         self.assertEqual(command[:4], [sys.executable, "-m", "pip", "install"])
         self.assertIn("Flask==", " ".join(command))
         self.assertIn("Pillow==", " ".join(command))
+
+    def test_conda_backend_dependencies_install_into_the_selected_prefix(self):
+        completed = type("Completed", (), {"returncode": 0, "stdout": "installed", "stderr": ""})()
+        with patch("utils.python_bootstrap._ssl_support_error", return_value=""), patch(
+            "utils.python_bootstrap._ensure_pip",
+            return_value=(True, ""),
+        ), patch(
+            "utils.python_bootstrap._conda_prefix_for_executable",
+            return_value=Path("E:/XEdu/env"),
+        ), patch("utils.python_bootstrap._run", return_value=completed) as run_mock:
+            result = python_bootstrap._install_missing(["Flask"])
+
+        self.assertTrue(result["success"], result)
+        self.assertNotIn("--user", run_mock.call_args.args[0])
 
     def test_failed_mirror_install_falls_back_to_pypi(self):
         failed = type("Completed", (), {"returncode": 1, "stdout": "", "stderr": "mirror 403"})()
@@ -112,6 +188,13 @@ class PythonBootstrapTestCase(unittest.TestCase):
             specs = python_bootstrap._bootstrap_specs()
 
         self.assertIn("requests==2.32.3", specs)
+        self.assertNotIn("requests==2.33.0", specs)
+
+    def test_python_310_uses_existing_requests_release(self):
+        with patch.object(python_bootstrap.sys, "version_info", (3, 10, 20)):
+            specs = python_bootstrap._bootstrap_specs()
+
+        self.assertIn("requests==2.32.5", specs)
         self.assertNotIn("requests==2.33.0", specs)
 
     def test_standalone_bootstrap_module_does_not_import_flask(self):

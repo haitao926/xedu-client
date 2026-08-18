@@ -54,6 +54,18 @@ test('release package keeps runtime backend outside asar and filters test data',
   ]);
 });
 
+test('Windows executable editing stays enabled so the application icon reaches shortcuts', async () => {
+  const [packageJson, icon] = await Promise.all([
+    readRepoFile('package.json').then((text) => JSON.parse(text)),
+    readFile(new URL('../../resources/xedu-logo.ico', import.meta.url)),
+  ]);
+
+  assert.equal(packageJson.build.win.icon, 'resources/xedu-logo.ico');
+  assert.notEqual(packageJson.build.win.signAndEditExecutable, false);
+  assert.equal(icon.readUInt16LE(0), 0);
+  assert.equal(icon.readUInt16LE(2), 1);
+});
+
 test('official release package includes the canonical minimal Python runtime', () => {
   const releaseConfig = loadReleaseConfig();
   const pythonResource = releaseConfig.extraResources.find(({ to }) => to === 'python_env');

@@ -44,10 +44,8 @@ export function bindResourcesUI(deps = {}) {
     handlePackageDrop,
     handleCourseImportDrop,
     pickLocalCourse,
-    loadCloudCourseOptions,
     importCloudCourseAndSave,
     loadCloudCoursesFromTempSource,
-    clearCloudTempSourceAndReload,
     updateCloudSourceActionUI,
     teacherUnlocked = () => false,
   } = deps;
@@ -87,12 +85,9 @@ export function bindResourcesUI(deps = {}) {
   const packageDropZone = documentRef.getElementById('resources-package-drop-zone');
   const resourceDropZone = documentRef.getElementById('resources-import-drop-zone');
   const pickLocalBtn = documentRef.getElementById('resources-pick-local-btn');
-  const cloudRefreshBtn = documentRef.getElementById('resources-cloud-refresh-btn');
   const cloudImportBtn = documentRef.getElementById('resources-cloud-import-btn');
-  const cloudDetailImportBtn = documentRef.getElementById('resources-cloud-detail-import-btn');
   const cloudCourseSelect = documentRef.getElementById('resources-cloud-course-select');
   const cloudTempLoadBtn = documentRef.getElementById('resources-cloud-temp-load-btn');
-  const cloudTempClearBtn = documentRef.getElementById('resources-cloud-temp-clear-btn');
   const createPackagePathInput = documentRef.getElementById('resources-create-package-path');
   const createLocalPathInput = documentRef.getElementById('resources-create-local-path');
   const createTitleInput = documentRef.getElementById('resources-create-title');
@@ -292,16 +287,13 @@ export function bindResourcesUI(deps = {}) {
     });
   }
   if (pickLocalBtn) pickLocalBtn.addEventListener('click', pickLocalCourse);
-  if (cloudRefreshBtn) cloudRefreshBtn.addEventListener('click', loadCloudCourseOptions);
   if (cloudImportBtn) cloudImportBtn.addEventListener('click', importCloudCourseAndSave);
-  if (cloudDetailImportBtn) cloudDetailImportBtn.addEventListener('click', importCloudCourseAndSave);
   if (cloudCourseSelect) cloudCourseSelect.addEventListener('change', () => {
     renderCloudCoursePreview();
     updateCreateFormState();
     loadSelectedCloudCourseDetails();
   });
   if (cloudTempLoadBtn) cloudTempLoadBtn.addEventListener('click', loadCloudCoursesFromTempSource);
-  if (cloudTempClearBtn) cloudTempClearBtn.addEventListener('click', clearCloudTempSourceAndReload);
   if (cloudRepoAddressInput) cloudRepoAddressInput.addEventListener('input', updateCloudSourceActionUI);
   if (cloudRepoTokenInput) cloudRepoTokenInput.addEventListener('input', updateCloudSourceActionUI);
   [createTitleInput, createDescInput, createGradeInput, createSubjectInput].forEach((input) => {

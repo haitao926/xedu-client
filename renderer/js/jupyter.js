@@ -1,5 +1,10 @@
 import apiClient from './api.js';
 import { log, showModal, hideModal } from './ui.js';
+import {
+    formatPythonEnvironmentReadinessMessage,
+    getPythonEnvironmentOptionalWarnings,
+    getPythonEnvironmentReadinessIssues,
+} from './main/python-environment-readiness.js';
 
 let checkTimer = null;
 let currentJupyterUrl = '';
@@ -14,6 +19,8 @@ const LAST_PROJECT_KEY = 'xedu-last-project-dir';
 let lastProjectDir = loadLastProjectDir();
 let lastStatusErrorKey = '';
 let lastStatusErrorAt = 0;
+let notebookOpenRevision = 0;
+let notebookOpenSequence = Promise.resolve();
 
 function readJupyterViewIntent(storage = globalThis.sessionStorage) {
     try {
@@ -34,12 +41,18 @@ function writeJupyterViewIntent(value, storage = globalThis.sessionStorage) {
 }
 
 function getApiErrorMessage(error, fallback = '操作失败') {
-    if (error?.details) {
+    for (const candidate of [error?.details, error?.message]) {
+        if (!candidate) continue;
         try {
-            const parsed = JSON.parse(error.details);
-            if (parsed?.message) return parsed.message;
+            const parsed = JSON.parse(candidate);
+            if (typeof parsed?.message === 'string' && parsed.message.trim()) {
+                return parsed.message.trim();
+            }
+            if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+                return parsed.error.trim();
+            }
         } catch (_) {
-            return String(error.details);
+            if (candidate === error?.details) return String(candidate);
         }
     }
     return error?.message || fallback;
@@ -95,13 +108,31 @@ function normalizeJupyterUrl(url) {
 let statusFailureCount = 0; // 新增：状态检查失败计数器
 
 function shouldDisplayEmbeddedJupyter() {
-    const workspaceActive = Boolean(document.getElementById('main')?.classList.contains('active'));
-    const hasVisibleModal = Boolean(document.querySelector('.modal-overlay.show'));
-    if (Date.now() < suppressVisibleUntil) return false;
-    if (document.body.classList.contains('student-mode')) {
-        return workspaceActive && document.body.classList.contains('student-page-python') && !hasVisibleModal;
-    }
-    return workspaceActive && !hasVisibleModal;
+    return shouldDisplayEmbeddedJupyterState({
+        workspaceActive: Boolean(document.getElementById('main')?.classList.contains('active')),
+        studentMode: document.body.classList.contains('student-mode'),
+        studentPythonPage: document.body.classList.contains('student-page-python'),
+        studentPythonNavActive: document.getElementById('nav-student-python-item')?.classList.contains('active'),
+        hasVisibleModal: Boolean(document.querySelector('.modal-overlay.show')),
+        suppressUntil: suppressVisibleUntil,
+        now: Date.now(),
+    });
+}
+
+export function shouldDisplayEmbeddedJupyterState({
+    workspaceActive = false,
+    studentMode = false,
+    studentPythonPage = false,
+    studentPythonNavActive = false,
+    hasVisibleModal = false,
+    suppressUntil = 0,
+    now = Date.now(),
+} = {}) {
+    if (!workspaceActive || hasVisibleModal || now < suppressUntil) return false;
+    if (!studentMode) return true;
+    // The navigation item is the source of truth during the async student
+    // workspace transition; the body class may be updated a tick later.
+    return studentPythonPage || studentPythonNavActive;
 }
 
 const STATUS_FETCH_TIMEOUT_MS = 2000;
@@ -114,7 +145,7 @@ const apiFetch = (path, options = {}) => {
     });
 };
 
-function setBackendDisconnectedStatus() {
+function setBackendDisconnectedStatus(startupState = null) {
     const statusEl = document.getElementById('jupyter-status');
     const valueEl = document.getElementById('status-value');
     const portEl = document.getElementById('port-value');
@@ -123,11 +154,11 @@ function setBackendDisconnectedStatus() {
     const restartBtn = document.getElementById('restart-btn');
 
     if (statusEl) {
-        statusEl.textContent = '后端未连接';
+        statusEl.textContent = startupState?.status === 'starting' ? '后端启动中' : '后端未就绪';
         statusEl.className = 'badge badge-stopped';
     }
     if (valueEl) {
-        valueEl.textContent = 'Disconnected';
+        valueEl.textContent = startupState?.message || 'Backend unavailable';
         valueEl.style.color = 'var(--danger-color, #ef4444)';
     }
     if (portEl) portEl.textContent = '-';
@@ -199,6 +230,37 @@ export function shouldRestoreJupyterView({
     isAttaching: attaching,
 } = {}) {
     return Boolean(running && url && pageVisible && intent && !viewAttached && !attaching);
+}
+
+export function isBackendReadyForJupyterState(state) {
+    return !state || state.status === 'ready';
+}
+
+async function readBackendReadiness() {
+    const getBackendStartupState = window.electronAPI?.getBackendStartupState;
+    if (typeof getBackendStartupState !== 'function') {
+        return { ready: true, state: null };
+    }
+    try {
+        const result = await getBackendStartupState();
+        const state = result?.state || null;
+        return { ready: isBackendReadyForJupyterState(state), state };
+    } catch (_) {
+        return {
+            ready: false,
+            state: { status: 'error', message: '无法读取后端启动状态。' },
+        };
+    }
+}
+
+async function ensureBackendReadyForJupyter() {
+    const readiness = await readBackendReadiness();
+    if (!readiness.ready) {
+        setBackendDisconnectedStatus(readiness.state);
+        log(readiness.state?.message || '后端尚未就绪，暂不能使用 Jupyter。', 'warning');
+        return false;
+    }
+    return true;
 }
 
 function startViewSync() {
@@ -281,6 +343,11 @@ async function attachJupyterView(url, options = {}) {
     try {
         // 给一点时间让 CSS Flex 布局完全稳定
         await new Promise(r => setTimeout(r, 100));
+
+        // BrowserView 位于 DOM 之上，modal 打开期间不能继续挂载它。
+        if (!shouldDisplayEmbeddedJupyter()) {
+            return;
+        }
 
         const bounds = getPlaceholderBounds();
         
@@ -403,6 +470,13 @@ function normalizePathForCompare(path) {
     return (path || '').toString().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 }
 
+export function shouldRestartJupyterForProject({ running, targetProjectDir, statusProjectDir } = {}) {
+    if (!running) return true;
+    if (!targetProjectDir) return false;
+    if (!statusProjectDir) return true;
+    return normalizePathForCompare(targetProjectDir) !== normalizePathForCompare(statusProjectDir);
+}
+
 function normalizeNotebookPath(filePath, projectDir) {
     if (!filePath) return '';
     let normalized = filePath.toString().replace(/\\/g, '/');
@@ -432,12 +506,13 @@ function buildNotebookUrl(baseUrl, filePath) {
     }
 }
 
-export async function openNotebookFile(filePath, projectDir) {
-    if (!filePath) return;
+async function openNotebookFileRequest(filePath, projectDir, revision) {
+    if (!filePath || revision !== notebookOpenRevision) return false;
+    if (!await ensureBackendReadyForJupyter() || revision !== notebookOpenRevision) return false;
     writeJupyterViewIntent(true);
 
     const normalizedPath = normalizeNotebookPath(filePath, projectDir);
-    if (!normalizedPath) return;
+    if (!normalizedPath) return false;
 
     if (projectDir) {
         const input = document.getElementById('project-path');
@@ -457,13 +532,21 @@ export async function openNotebookFile(filePath, projectDir) {
         // ignore
     }
 
+    if (revision !== notebookOpenRevision) return false;
     const statusProjectDir = statusData?.config?.project_dir || '';
-    const needsRestart = projectDir && statusProjectDir
-        ? normalizePathForCompare(projectDir) !== normalizePathForCompare(statusProjectDir)
-        : false;
+    const needsRestart = shouldRestartJupyterForProject({
+        running: statusData?.running,
+        targetProjectDir: projectDir,
+        statusProjectDir,
+    });
 
-    if (!statusData?.running || needsRestart) {
-        await startJupyter();
+    if (needsRestart) {
+        if (isViewAttached) {
+            await detachJupyterView();
+        }
+        if (revision !== notebookOpenRevision) return false;
+        const started = await startJupyter({ attachView: false });
+        if (!started || revision !== notebookOpenRevision) return false;
         try {
             const refreshed = await apiFetch('/api/status', {
                 cache: 'no-store',
@@ -479,16 +562,34 @@ export async function openNotebookFile(filePath, projectDir) {
         await attachJupyterView(statusData.url, { force: true });
     }
 
+    if (revision !== notebookOpenRevision) return false;
+    const actualProjectDir = statusData?.config?.project_dir || '';
+    if (projectDir && normalizePathForCompare(projectDir) !== normalizePathForCompare(actualProjectDir)) {
+        throw new Error('Jupyter 工作目录切换失败，请重新打开当前实验。');
+    }
+
     const baseUrl = statusData?.url || currentJupyterUrl;
-    if (!baseUrl) return;
+    if (!baseUrl) return false;
 
     const fileUrl = buildNotebookUrl(baseUrl, normalizedPath);
+    if (revision !== notebookOpenRevision) return false;
     await attachJupyterView(fileUrl, { force: true });
+    return revision === notebookOpenRevision;
+}
+
+export function openNotebookFile(filePath, projectDir) {
+    const revision = ++notebookOpenRevision;
+    const openTask = notebookOpenSequence
+        .catch(() => false)
+        .then(() => openNotebookFileRequest(filePath, projectDir, revision));
+    notebookOpenSequence = openTask.catch(() => false);
+    return openTask;
 }
 
 // --- Core Jupyter Logic ---
 
-export async function startJupyter() {
+export async function startJupyter(options = {}) {
+    if (!await ensureBackendReadyForJupyter()) return false;
     writeJupyterViewIntent(true);
     const btn = document.getElementById('start-btn');
     if (btn) {
@@ -595,7 +696,9 @@ export async function startJupyter() {
                         if (finalStep) finalStep.classList.add('completed');
                         
                         // Attach View
-                        await attachJupyterView(statusData.url);
+                        if (options.attachView !== false) {
+                            await attachJupyterView(statusData.url);
+                        }
                         
                         setTimeout(() => {
                             if (progressContainer) progressContainer.classList.remove('show');
@@ -612,7 +715,7 @@ export async function startJupyter() {
             };
             
             await waitForReady();
-            refreshStatus();
+            return true;
             
         } else {
             throw new Error(data.message || '启动失败');
@@ -623,13 +726,14 @@ export async function startJupyter() {
         alert('启动失败: ' + error.message);
         const progressContainer = document.getElementById('startup-progress');
         if (progressContainer) progressContainer.classList.remove('show');
+        return false;
     } finally {
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = '<span>▶</span> 启动 Jupyter Lab';
             btn.classList.remove('btn-loading');
         }
-        refreshStatus();
+        await refreshStatus({ restoreView: options.attachView !== false });
     }
 }
 
@@ -668,8 +772,13 @@ export async function restartJupyter() {
     setTimeout(() => startJupyter(), 1000);
 }
 
-export async function refreshStatus() {
+export async function refreshStatus(options = {}) {
     try {
+        const readiness = await readBackendReadiness();
+        if (!readiness.ready) {
+            setBackendDisconnectedStatus(readiness.state);
+            return;
+        }
         const response = await apiFetch('/api/status', {
             cache: 'no-store',
             timeoutMs: STATUS_FETCH_TIMEOUT_MS,
@@ -713,7 +822,7 @@ export async function refreshStatus() {
             if (stopBtn) stopBtn.disabled = false;
             if (restartBtn) restartBtn.disabled = false;
             
-            if (shouldRestoreJupyterView({
+            if (options.restoreView !== false && shouldRestoreJupyterView({
                 running: data.running,
                 url: data.url,
                 pageVisible: shouldDisplayEmbeddedJupyter(),
@@ -855,20 +964,23 @@ export async function testPythonEnvironment() {
             info = response.info;
         }
 
-        const jupyterReady = Boolean(info.jupyterlab_version);
         const xeduReady = Boolean(info.xedu_version_ok && info.xedu_runtime_ok);
+        const readinessIssues = getPythonEnvironmentReadinessIssues(info);
+        const optionalWarnings = getPythonEnvironmentOptionalWarnings(info);
         const message = [
             `Python ${info.python_version || '未知'}`,
+            `pip ${info.pip_version || (info.pip_available === false && info.pip_launcher_available !== true ? '未安装' : '可用')}`,
             `JupyterLab ${info.jupyterlab_version || '未安装'}`,
-            `XEdu ${xeduReady ? '就绪' : '需检查'}`,
-            !jupyterReady ? '点击修复安装 JupyterLab' : '',
+            `XEdu ${xeduReady ? '就绪' : '未就绪（可选）'}`,
+            readinessIssues.length ? formatPythonEnvironmentReadinessMessage(readinessIssues) : '',
+            !readinessIssues.length ? optionalWarnings.join('；') : '',
         ].filter(Boolean).join(' | ');
 
         if (resultEl) {
             resultEl.textContent = message;
-            resultEl.dataset.state = jupyterReady && xeduReady ? 'success' : 'warning';
+            resultEl.dataset.state = readinessIssues.length === 0 ? 'success' : 'warning';
         }
-        log(message, jupyterReady && xeduReady ? 'success' : 'warning');
+        log(message, readinessIssues.length === 0 ? 'success' : 'warning');
     } catch (error) {
         const message = `Python 环境检测失败: ${getApiErrorMessage(error)}`;
         if (resultEl) {
@@ -883,3 +995,5 @@ export async function testPythonEnvironment() {
 export function openBrowser() {
     openExternal();
 }
+
+export { getApiErrorMessage };

@@ -378,7 +378,7 @@
                         <div id="resources-import-drop-zone" class="resources-import-drop-zone" role="region" aria-label="拖入课程 ZIP 或课程文件夹直接导入">
                             <div class="resources-import-drop-copy">
                                 <strong>拖入 ZIP 或课程文件夹</strong>
-                                <span>会自动校验 course.json，导入后刷新资源列表</span>
+                                <span>松开后自动导入</span>
                             </div>
                             <div id="resources-import-drop-status" class="resources-detail-import-status resources-import-drop-status" role="status" aria-live="polite">
                                 <span class="resources-transfer-status-message">等待拖入课程</span>
@@ -513,7 +513,6 @@
                                             <span class="resources-transfer-progress-detail"></span>
                                         </div>
                                     </div>
-                                    <button id="resources-create-submit-btn" class="btn btn-primary btn-sm" type="button" disabled>打开投稿页面</button>
                                 </div>
                             </div>
                             <div class="resources-detail-content resources-create-layout">
@@ -521,10 +520,6 @@
                                     <div class="resources-step active" data-step="1" id="resources-step-label-1">1 课程信息</div>
                                     <div class="resources-step" data-step="2" id="resources-step-label-2">2 课程结构</div>
                                     <div class="resources-step" data-step="3" id="resources-step-label-3">3 材料整理</div>
-                                </div>
-                                <div class="resources-create-guide" id="resources-create-guide">
-                                    <div class="resources-guide-title">导入指南</div>
-                                    <div class="resources-guide-body" id="resources-create-guide-body"></div>
                                 </div>
                                 <div class="resources-create-body">
                                     <div class="resources-create-step active" data-step="1">
@@ -553,10 +548,10 @@
                                             <div id="resources-create-source-card" class="resources-create-card">
                                                 <div class="resources-create-title"><span id="resources-create-source-title-text">本地课程包</span></div>
                                                 <div id="resources-create-source-hint" class="resources-create-hint">选择课程来源。</div>
-                                                <div id="resources-create-source-switch-row" class="input-row" style="gap: 8px; margin-bottom: 12px;">
-                                                    <button id="resources-source-local" class="btn btn-primary" type="button">本地导入</button>
-                                                    <button id="resources-source-cloud" class="btn btn-secondary" type="button">云端导入</button>
-                                                </div>
+                                                    <div id="resources-create-source-switch-row" class="input-row" style="display: none; gap: 8px; margin-bottom: 12px;">
+                                                        <button id="resources-source-local" class="btn btn-primary" type="button">本地导入</button>
+                                                        <button id="resources-source-cloud" class="btn btn-secondary" type="button">云端导入</button>
+                                                    </div>
                                                 <div id="resources-package-group" class="input-group" style="display: none;">
                                                     <label class="input-label">本地课程包</label>
                                                     <input id="resources-create-package-path" type="hidden">
@@ -575,22 +570,33 @@
                                                     <div id="resources-package-path-summary" class="resources-local-path-summary">未选择课程包。</div>
                                                     <button id="resources-package-import-btn" class="btn btn-primary" type="button" disabled>导入到本地</button>
                                                 </div>
-                                                <div id="resources-cloud-group" class="input-group" style="display: none;">
-                                                    <label class="input-label">课程仓库地址</label>
-                                                    <input id="resources-cloud-repo-address" class="form-control" type="text" placeholder="https://host/owner/repo">
-                                                    <input id="resources-cloud-temp-token" class="form-control" type="password" placeholder="访问令牌（可选）">
-                                                    <div class="action-row">
-                                                        <button id="resources-cloud-temp-load-btn" class="btn btn-secondary" type="button">读取课程</button>
-                                                        <button id="resources-cloud-temp-clear-btn" class="btn btn-secondary" type="button" style="display: none;">清空地址</button>
+                                                <div id="resources-cloud-group" class="input-group resources-cloud-flow" style="display: none;">
+                                                    <div class="resources-cloud-flow-head">
+                                                        <div>
+                                                            <div class="resources-cloud-flow-title">从课程仓库导入</div>
+                                                            <div class="resources-create-hint">输入地址，读取课程后选择要导入的内容。</div>
+                                                        </div>
+                                                        <span class="resources-cloud-flow-step">步骤 1 / 2</span>
                                                     </div>
-                                                    <label id="resources-cloud-course-label" class="input-label">云端课程</label>
-                                                    <select id="resources-cloud-course-select" class="form-control"><option value="">请选择课程</option></select>
-                                                    <div id="resources-cloud-course-preview" class="resources-cloud-course-preview" style="display: none;"></div>
-                                                    <div id="resources-cloud-inline-actions" class="action-row">
-                                                        <button id="resources-cloud-refresh-btn" class="btn btn-secondary" type="button">刷新课程列表</button>
-                                                        <button id="resources-cloud-import-btn" class="btn btn-primary" type="button" disabled>导入到本地</button>
+                                                    <label class="input-label" for="resources-cloud-repo-address">课程仓库地址</label>
+                                                    <div class="resources-cloud-address-row">
+                                                        <input id="resources-cloud-repo-address" class="form-control" type="text" placeholder="https://host/owner/repo">
+                                                        <button id="resources-cloud-temp-load-btn" class="btn btn-primary resources-cloud-read-btn" type="button">读取课程</button>
                                                     </div>
+                                                    <details class="resources-cloud-access">
+                                                        <summary>需要访问令牌？</summary>
+                                                        <input id="resources-cloud-temp-token" class="form-control" type="password" placeholder="访问令牌（可选）">
+                                                    </details>
                                                     <div id="resources-cloud-status" class="resources-scan-status">请先读取课程仓库。</div>
+                                                    <div class="resources-cloud-selection-block">
+                                                        <div class="resources-cloud-flow-step-label">选择课程</div>
+                                                        <label id="resources-cloud-course-label" class="input-label" for="resources-cloud-course-select">云端课程</label>
+                                                        <select id="resources-cloud-course-select" class="form-control"><option value="">请先读取课程</option></select>
+                                                        <div id="resources-cloud-course-preview" class="resources-cloud-course-preview" style="display: none;"></div>
+                                                    </div>
+                                                    <div id="resources-cloud-inline-actions" class="action-row">
+                                                        <button id="resources-cloud-import-btn" class="btn btn-primary resources-cloud-import-btn" type="button" disabled>导入到本地</button>
+                                                    </div>
                                                 </div>
                                                 <div id="resources-local-group" class="input-group">
                                                     <label id="resources-local-path-label" class="input-label">本地保存位置</label>
@@ -603,7 +609,6 @@
                                             <div id="resources-structure-card" class="resources-create-card">
                                                 <div class="resources-create-title">导入结构</div>
                                                 <div id="resources-structure-editor-pane"><div id="resources-local-structure-intro"></div><div id="resources-local-structure-summary"></div><div id="resources-section-editor"></div></div>
-                                                <div id="resources-cloud-detail-panel" class="resources-cloud-detail-panel" style="display: none;"><div id="resources-cloud-detail-preview" class="resources-cloud-course-preview"></div><button id="resources-cloud-detail-import-btn" class="btn btn-primary" type="button" disabled>导入到本地</button><div id="resources-cloud-detail-status" class="resources-scan-status">请先读取课程仓库。</div></div>
                                             </div>
                                         </div>
                                     </div>
@@ -858,7 +863,7 @@
             </div>
             <div class="about-us-card">
                 <div class="about-us-label">测试贡献者</div>
-                    <div class="about-us-value">刘啸宇<br>洪丹妮<br>郑祥</div>
+                    <div class="about-us-value">刘啸宇<br>洪丹妮<br>郑祥<br>刘正云</div>
             </div>
         </div>
         <div class="modal-actions">

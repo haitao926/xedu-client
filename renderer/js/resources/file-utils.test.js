@@ -24,24 +24,35 @@ test("buildLocalCourseFileUrl rejects incomplete and remote inputs", () => {
     }, "https://example.com/cover.png"), "");
 });
 
-test("resolveJupyterWorkspaceTarget starts a notebook from its experiment directory", () => {
+test("resolveJupyterWorkspaceTarget keeps course lessons under one Jupyter root", () => {
     assert.deepEqual(resolveJupyterWorkspaceTarget({
         coursePath: "/Users/apple/Documents/XeduCourses/human-pose-control-hardware",
         experimentPath: "lesson2/exp1",
         filePath: "lesson2/exp1/main.ipynb",
     }), {
-        projectDir: "/Users/apple/Documents/XeduCourses/human-pose-control-hardware/lesson2/exp1",
-        filePath: "main.ipynb",
+        projectDir: "/Users/apple/Documents/XeduCourses/human-pose-control-hardware",
+        filePath: "lesson2/exp1/main.ipynb",
     });
 });
 
-test("resolveJupyterWorkspaceTarget keeps nested notebooks relative to the experiment", () => {
+test("resolveJupyterWorkspaceTarget keeps nested notebooks relative to the course", () => {
     assert.deepEqual(resolveJupyterWorkspaceTarget({
         coursePath: "C:\\XeduCourses\\pose-control",
         experimentPath: "lesson2/exp1",
         filePath: "lesson2/exp1/notebooks/control.ipynb",
     }), {
-        projectDir: "C:\\XeduCourses\\pose-control\\lesson2\\exp1",
-        filePath: "notebooks/control.ipynb",
+        projectDir: "C:\\XeduCourses\\pose-control",
+        filePath: "lesson2/exp1/notebooks/control.ipynb",
+    });
+});
+
+test("resolveJupyterWorkspaceTarget expands an experiment-relative notebook path", () => {
+    assert.deepEqual(resolveJupyterWorkspaceTarget({
+        coursePath: "C:\\XeduCourses\\pose-control",
+        experimentPath: "lesson2/exp1",
+        filePath: "main.ipynb",
+    }), {
+        projectDir: "C:\\XeduCourses\\pose-control",
+        filePath: "lesson2/exp1/main.ipynb",
     });
 });

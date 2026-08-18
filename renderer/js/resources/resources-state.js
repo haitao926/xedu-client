@@ -41,6 +41,7 @@ export function createResourcesState() {
         activeExperimentIndex: 0,
         activeCourseWorkspaceTab: "route",
         openingStudentLessonTab: false,
+        studentNavigationRevision: 0,
         pendingTeacherModeShellSync: false,
         sectionDetailMode: false,
         runningExperimentKey: "",

@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -287,6 +288,40 @@ class XEduHubSupportTestCase(unittest.TestCase):
             _RUNTIME_SUPPORTED_TASKS_CACHE["value"] = ["cached-task"]
             _RUNTIME_SUPPORTED_TASKS_CACHE["expires_at"] = time.monotonic() + 30
             self.assertEqual(_get_runtime_supported_tasks(), ["cached-task"])
+
+    def test_runtime_supported_tasks_probe_uses_flask_python_on_windows(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            flask_python = repo_root / "python_env" / "python.exe"
+            external_python = repo_root / "external" / "python.exe"
+            flask_python.parent.mkdir(parents=True)
+            external_python.parent.mkdir(parents=True)
+            flask_python.touch()
+            external_python.touch()
+
+            completed = types.SimpleNamespace(
+                returncode=0,
+                stdout='["pose_body17"]\n',
+            )
+            with patch("sys.executable", str(flask_python)), patch(
+                "services.xeduhub_support.REPO_ROOT", repo_root
+            ), patch.dict(
+                "os.environ",
+                {
+                    "XEDU_PYTHON_EXECUTABLE": str(external_python),
+                    "XEDU_RUNTIME_SUPPORT_TIMEOUT": "0.2",
+                },
+                clear=False,
+            ), patch(
+                "services.xeduhub_support.subprocess.run",
+                return_value=completed,
+            ) as run_mock:
+                supported = _get_runtime_supported_tasks()
+
+        self.assertEqual(supported, ["pose_body17"])
+        run_mock.assert_called_once()
+        self.assertEqual(run_mock.call_args.args[0][0], str(flask_python))
+        self.assertNotEqual(run_mock.call_args.args[0][0], str(external_python))
 
     def test_legacy_demo_input_alias_resolves_to_repo_sample(self):
         resolved = Path(resolve_input_path("demo.jpg", str(BACKEND_DIR.parent)))
