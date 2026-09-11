@@ -14,6 +14,8 @@ test('preload exposes named capabilities instead of a generic IPC invoker', asyn
   assert.match(source, /getPathForFile:\s*\(file\)\s*=>/);
   assert.match(source, /webUtils\?\.getPathForFile/);
   assert.match(source, /approveLocalPath:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('approve-local-path', targetPath\)/);
+  assert.match(source, /platformJsonRequest:\s*\(request\)\s*=>\s*ipcRenderer\.invoke\('platform:json-request', request\)/);
+  assert.match(source, /onDeepLinkOpenLocalTask:\s*\(callback\)\s*=>\s*ipcRenderer\.on\('deep-link-open-local-task'/);
   assert.doesNotMatch(source, /invoke:\s*\(channel,/);
 });
 

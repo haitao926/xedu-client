@@ -18,6 +18,8 @@ const {
 const { resolveBackendBindHost, resolveBackendConnectHost } = require('./backend-network-config');
 const { createTeacherCredentialStore } = require('./teacher-credential-store');
 const { runPythonBootstrap } = require('./python-bootstrap');
+const { parseXeduDeepLink } = require('./xedu-protocol');
+const { platformJsonRequest } = require('./platform-json-request');
 
 function isBrokenPipeError(error) {
     return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
@@ -96,7 +98,7 @@ let backendLogFile = null;
 let backendRecentOutput = [];
 let backendLastExit = null;
 let quitting = false;
-let pendingPracticeDeepLink = null;
+let pendingDeepLink = null;
 const gotTheLock = app.requestSingleInstanceLock();
 let jupyterManagedPid = null;
 // Vite injects the stable development capability below when no override is
@@ -654,9 +656,9 @@ function createWindow() {
         clearTimeout(fallbackShowTimer);
         showMainWindow('did-finish-load');
         emitBackendStartupState();
-        if (pendingPracticeDeepLink) {
-            mainWindow.webContents.send('deep-link-open-practice', pendingPracticeDeepLink);
-            pendingPracticeDeepLink = null;
+        if (pendingDeepLink?.channel && pendingDeepLink?.payload) {
+            mainWindow.webContents.send(pendingDeepLink.channel, pendingDeepLink.payload);
+            pendingDeepLink = null;
         }
     });
 
@@ -699,36 +701,24 @@ function registerXeduProtocol() {
     }
 }
 
-function parsePracticeDeepLink(rawUrl) {
-    if (!rawUrl || typeof rawUrl !== 'string') return null;
-    try {
-        const parsed = new URL(rawUrl);
-        if (parsed.protocol !== `${XEDU_PROTOCOL}:`) return null;
-        const action = (parsed.hostname || parsed.pathname.replace(/^\/+/, '') || '').trim();
-        if (action !== 'open-practice') return null;
-        const projectDir = (parsed.searchParams.get('project') || '').trim();
-        const filePath = (parsed.searchParams.get('file') || '').trim();
-        const kind = (parsed.searchParams.get('kind') || '').trim();
-        if (!projectDir || !filePath) return null;
-        return { projectDir, filePath, kind };
-    } catch (_) {
-        return null;
-    }
-}
-
-function dispatchPracticeDeepLink(payload) {
-    if (!payload) return;
+function dispatchTypedDeepLink(channel, payload) {
+    if (!payload || !channel) return;
     if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
+        bringMainWindowToFront();
         if (mainWindow.webContents.isLoading()) {
-            pendingPracticeDeepLink = payload;
+            pendingDeepLink = { channel, payload };
             return;
         }
-        mainWindow.webContents.send('deep-link-open-practice', payload);
+        mainWindow.webContents.send(channel, payload);
         return;
     }
-    pendingPracticeDeepLink = payload;
+    pendingDeepLink = { channel, payload };
+}
+
+function dispatchXeduDeepLink(rawUrl) {
+    const parsed = parseXeduDeepLink(rawUrl);
+    if (!parsed) return;
+    dispatchTypedDeepLink(parsed.channel, parsed.payload);
 }
 
 // 允许在 BrowserView 中嵌入 Jupyter：移除 CSP/X-Frame 限制
@@ -1122,6 +1112,13 @@ ipcMain.handle('get-system-info', () => {
         arch: process.arch,
         version: app.getVersion()
     };
+});
+
+ipcMain.handle('platform:json-request', async (event, request) => {
+    if (!isTrustedRenderer(event) || !request || typeof request !== 'object') {
+        return { status: 403, headers: {}, body: JSON.stringify({ success: false, message: 'forbidden' }) };
+    }
+    return platformJsonRequest(request);
 });
 
 ipcMain.handle('api:request', async (event, request) => {
@@ -2135,7 +2132,7 @@ if (!gotTheLock) {
     app.on('second-instance', (event, argv) => {
         const deepLinkArg = (argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`));
         if (deepLinkArg) {
-            dispatchPracticeDeepLink(parsePracticeDeepLink(deepLinkArg));
+            dispatchXeduDeepLink(deepLinkArg);
         }
         if (mainWindow) {
             bringMainWindowToFront();
@@ -2165,7 +2162,7 @@ if (!gotTheLock) {
 
     app.on('open-url', (event, url) => {
         event.preventDefault();
-        dispatchPracticeDeepLink(parsePracticeDeepLink(url));
+        dispatchXeduDeepLink(url);
     });
 
     app.on('window-all-closed', () => {

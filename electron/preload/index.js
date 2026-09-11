@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onLogUpdate: (callback) => ipcRenderer.on('log-update', (event, log) => callback(log)),
     onDeepLinkOpenPractice: (callback) => ipcRenderer.on('deep-link-open-practice', (event, payload) => callback(payload)),
+    onDeepLinkOpenLocalTask: (callback) => ipcRenderer.on('deep-link-open-local-task', (event, payload) => callback(payload)),
+    platformJsonRequest: (request) => ipcRenderer.invoke('platform:json-request', request),
     selectFolder: () => ipcRenderer.invoke('select-folder'),
     selectPython: () => ipcRenderer.invoke('select-python'),
     scanPythonEnvironments: () => ipcRenderer.invoke('scan-python-environments'),

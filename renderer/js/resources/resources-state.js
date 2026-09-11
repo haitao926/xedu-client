@@ -72,5 +72,6 @@ export function createResourcesState() {
         resourcesPageReady: false,
         resourcesPageInitPromise: null,
         resourcesIndexLoadPromise: null,
+        activePlatformSubmission: null,
     };
 }

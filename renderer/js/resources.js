@@ -156,6 +156,16 @@ import { getExperimentFileOverview } from "./resources/experiment-overview.js";
 import { createResourcesState } from "./resources/resources-state.js";
 import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
 import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
+import {
+    exchangeLocalTaskSubmission,
+    findLocalTaskCourse,
+    getXEduSubmissionContext,
+    locateExperimentForLocalTask,
+    normalizeLocalTaskPayload,
+    normalizePlatformSubmission,
+    submissionMatchesResource,
+} from "./resources/xedu-local-task.js";
+import { createXEduSubmitBridge } from "./resources/xedu-submit-bridge.js";
 
 const resourcesState = createResourcesState();
 const courseAiFrameBridge = createCourseAiFrameBridge({
@@ -166,6 +176,11 @@ const courseAiFrameBridge = createCourseAiFrameBridge({
         }
         return window.electronAPI.scratchApiRequest(request);
     },
+});
+const xeduSubmissionBridge = createXEduSubmitBridge({
+    windowObject: window,
+    submitFetch: (url, options) => requestPlatformJson(url, options),
+    getSubmissionContext: () => resourcesState.activePlatformSubmission,
 });
 window.addEventListener("xedu:teacher-credential-updated", () => {
     const state = readTeacherModeState();
@@ -3556,7 +3571,47 @@ function buildExperimentResourceContext(resource, section, sectionIndex, exp, ex
         exp,
         expIndex,
         overview,
+        submission: getXEduSubmissionContext({
+            submission: resourcesState.activePlatformSubmission,
+        }),
     };
+}
+
+async function requestPlatformJson(url, options = {}) {
+    const method = String(options.method || "POST").toUpperCase();
+    const headers = options.headers && typeof options.headers === "object" ? options.headers : {};
+    const body = options.body == null ? "" : String(options.body);
+    if (typeof window.electronAPI?.platformJsonRequest === "function") {
+        return window.electronAPI.platformJsonRequest({ url, method, headers, body });
+    }
+    const response = await fetch(url, { method, headers, body });
+    return {
+        status: response.status,
+        headers: { "content-type": response.headers.get("content-type") || "application/json" },
+        body: await response.text(),
+    };
+}
+
+function rememberPlatformSubmission(submission, resource = null) {
+    const normalized = normalizePlatformSubmission(submission);
+    if (!normalized) return null;
+    if (resource?.id) {
+        normalized.opened_course_id = String(resource.id);
+    }
+    if (resource?.local_path) {
+        normalized.opened_local_path = String(resource.local_path);
+        if (!normalized.local_path) normalized.local_path = String(resource.local_path);
+    }
+    if (resource?.id && !normalized.course_id) {
+        normalized.course_id = String(resource.id);
+    }
+    resourcesState.activePlatformSubmission = normalized;
+    return normalized;
+}
+
+function clearActivePlatformSubmission() {
+    resourcesState.activePlatformSubmission = null;
+    xeduSubmissionBridge.detach();
 }
 
 function getResourceButtonLabel(file, kind) {
@@ -3618,6 +3673,9 @@ function makeExperimentResourceButton(file, context, options = {}) {
 async function openStudentExperimentPage(tabId, context, file = null) {
     const normalized = normalizeWorkspaceTabId(tabId);
     if (!context?.resource) return null;
+    if (context.submission) {
+        rememberPlatformSubmission(context.submission, context.resource);
+    }
     resourcesState.activeCourseWorkspaceTab = normalized;
     resourcesState.activeSectionIndex = context.sectionIndex;
     resourcesState.activeExperimentIndex = context.expIndex;
@@ -3878,7 +3936,8 @@ function buildStudentExperimentEntryCard(context, tabId = resourcesState.activeC
 
 function buildStudentHtmlExperienceView(context) {
     const htmlFiles = Array.isArray(context?.overview?.htmlFiles) ? context.overview.htmlFiles : [];
-    const primaryHtml = htmlFiles[0] || null;
+    const requestedPath = String(context?.file?.path || context?.file?.name || "").trim();
+    const primaryHtml = (requestedPath && htmlFiles.find((file) => (file.path || file.name) === requestedPath)) || htmlFiles[0] || null;
     const experimentTitle = context?.exp?.title || `实验 ${Number.isFinite(context?.expIndex) ? context.expIndex + 1 : 1}`;
     const experimentDesc = String(context?.exp?.description || "").trim();
     const wrap = document.createElement("section");
@@ -3950,6 +4009,7 @@ function buildStudentHtmlExperienceView(context) {
     frame.loading = "eager";
     frameWrap.appendChild(frame);
     courseAiFrameBridge.attach(frame, frameUrl);
+    xeduSubmissionBridge.attach(frame, frameUrl, getXEduSubmissionContext(context) || resourcesState.activePlatformSubmission);
     wrap.appendChild(frameWrap);
     const openBrowserBtn = document.createElement("button");
     openBrowserBtn.type = "button";
@@ -5063,6 +5123,7 @@ function showListView() {
     if (detailView) detailView.style.display = "none";
     if (createView) createView.style.display = "none";
     resourcesState.currentResource = null;
+    clearActivePlatformSubmission();
 }
 
 function showDetailView(resource, options = {}) {
@@ -5070,6 +5131,9 @@ function showDetailView(resource, options = {}) {
     const detailView = document.getElementById("resources-detail-view");
     if (listView) listView.style.display = "none";
     if (detailView) detailView.style.display = "flex";
+    if (resource && resourcesState.activePlatformSubmission && !submissionMatchesResource(resourcesState.activePlatformSubmission, resource)) {
+        clearActivePlatformSubmission();
+    }
     resourcesState.currentResource = resource;
     resourcesState.sectionDetailMode = false;
     resourcesState.activeCourseWorkspaceTab = normalizeWorkspaceTabId(
@@ -5129,6 +5193,9 @@ function showDetailView(resource, options = {}) {
 
 function renderResourceDetailSplitContent(resource, contentEl) {
     contentEl.innerHTML = "";
+    if (!(isStudentLessonMode() && resourcesState.activeCourseWorkspaceTab === "experience")) {
+        xeduSubmissionBridge.detach();
+    }
     const sections = normalizeSections(resource);
     if (!sections.length) {
         const empty = document.createElement("div");
@@ -7143,6 +7210,75 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
             updateTeacherModeUI();
         }
     }
+}
+
+export async function openStudentLocalTask(payload = {}) {
+    const request = normalizeLocalTaskPayload(payload);
+    await initResourcesPage();
+    const requestJson = async (url, options) => {
+        const result = await requestPlatformJson(url, options);
+        if (!result || Number(result.status) >= 400) {
+            let message = `平台交换失败 (${result?.status || 0})`;
+            try {
+                const parsed = result?.body ? JSON.parse(result.body) : null;
+                if (parsed?.message) message = String(parsed.message);
+            } catch (_) {
+                // Keep the status-based message when the body is not JSON.
+            }
+            throw new Error(message);
+        }
+        if (result.body) {
+            try {
+                return JSON.parse(result.body);
+            } catch (_) {
+                return result;
+            }
+        }
+        return result;
+    };
+    const submission = await exchangeLocalTaskSubmission(request, requestJson);
+    let resource = findLocalTaskCourse(resourcesState.localCourses, { ...request, ...submission });
+    const localPath = submission.local_path || request.local_path;
+    if (!resource && localPath) {
+        const response = await apiClient.post("/api/resources/scan", {
+            local_path: localPath,
+            init_if_missing: false,
+            auto_build: false,
+        });
+        if (response?.success && response.course) {
+            resource = {
+                ...response.course,
+                local_path: localPath,
+                source: "local",
+                updated_at: new Date().toISOString().slice(0, 10),
+            };
+            addCourse(resource);
+        }
+    }
+    if (!resource) {
+        throw new Error("未找到本地任务课程");
+    }
+    const located = locateExperimentForLocalTask(
+        resource,
+        request.file || submission.file,
+        getExperimentFileOverview,
+    );
+    if (!located) {
+        throw new Error("未找到可打开的 HTML 实验");
+    }
+    rememberPlatformSubmission(submission, resource);
+    const context = {
+        ...buildExperimentResourceContext(
+            resource,
+            located.section,
+            located.sectionIndex,
+            located.exp,
+            located.expIndex,
+        ),
+        file: located.file,
+        submission: resourcesState.activePlatformSubmission,
+    };
+    return openStudentExperimentPage("experience", context, located.file);
 }
 
 export async function refreshResources() {

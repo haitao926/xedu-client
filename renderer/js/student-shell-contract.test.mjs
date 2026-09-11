@@ -127,6 +127,9 @@ test("student task center opens HTML pages directly and routes coding tabs to na
   assert.match(resources, /本节暂无实验内容。/);
   assert.doesNotMatch(resources, /当前实验没有配置 Scratch 资源。/);
   assert.match(resources, /function buildStudentHtmlExperienceView\(context\)/);
+  assert.match(resources, /xeduSubmissionBridge\.attach\(frame, frameUrl/);
+  assert.match(resources, /export async function openStudentLocalTask\(/);
+  assert.match(resources, /resourcesState\.activePlatformSubmission/);
   assert.match(resources, /openBrowserBtn\.addEventListener\("click", withAsyncActionErrorBoundary\(async \(\) => \{[\s\S]*await openExternal\(frameUrl\);/);
   assert.doesNotMatch(resources, /window\.app\?\.system\?\.openExternal\?\.\(frameUrl\)/);
   assert.match(resources, /function syncStudentPageBodyState\(tabId = resourcesState\.activeCourseWorkspaceTab\)/);

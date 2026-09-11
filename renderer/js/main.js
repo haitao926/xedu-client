@@ -83,6 +83,11 @@ async function openStudentLessonTab(...args) {
     return mod.openStudentLessonTab(...args);
 }
 
+async function openStudentLocalTask(...args) {
+    const mod = await loadResourcesModule();
+    return mod.openStudentLocalTask(...args);
+}
+
 function getChatContext() {
     const teacherState = readTeacherModeState();
     const isTeacher = teacherState.unlocked;
@@ -254,6 +259,21 @@ function registerPracticeDeepLinkHandler() {
     });
 }
 
+function registerLocalTaskDeepLinkHandler() {
+    if (!window.electronAPI || typeof window.electronAPI.onDeepLinkOpenLocalTask !== 'function') {
+        return;
+    }
+    window.electronAPI.onDeepLinkOpenLocalTask(async (payload) => {
+        try {
+            await openStudentLocalTask(payload);
+            showToast('已打开平台本地任务', 'success');
+        } catch (error) {
+            console.error('处理本地任务深链失败:', error);
+            showToast(error?.message || '打开本地任务失败', 'error');
+        }
+    });
+}
+
 
 registerNamespace('ui', { showTab, showModal, hideModal, log, showToast });
 registerNamespace('jupyter', {
@@ -291,6 +311,7 @@ registerNamespace('resources', {
     syncTeacherModeUI,
     toggleTeacherMode,
     openStudentLessonTab,
+    openStudentLocalTask,
     getChatContext
 });
 
@@ -372,6 +393,7 @@ window.addEventListener('DOMContentLoaded', () => {
         initModalListeners();
         initSidebarCollapseToggle();
         registerPracticeDeepLinkHandler();
+        registerLocalTaskDeepLinkHandler();
         bindBackendStartupSupportActions();
         renderBackendStartupSupport();
         if (window.electronAPI?.onBackendStartupState) {
