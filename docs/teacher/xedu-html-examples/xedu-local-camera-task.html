@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XEdu 本地摄像头任务示例</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #17202a; background: #f4f6f8; }
+    body { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+    main { background: #fff; border: 1px solid #dce2e8; border-radius: 8px; padding: 20px; }
+    .preview { width: 100%; max-width: 640px; aspect-ratio: 4 / 3; background: #18232d; object-fit: contain; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button { border: 0; border-radius: 6px; background: #1264a3; color: #fff; padding: 10px 16px; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    #status { min-height: 1.5em; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>本地摄像头采集任务</h1>
+    <p>请启动摄像头并完成一次采集，再提交 PNG 结果。</p>
+    <video id="preview" class="preview" autoplay muted playsinline></video>
+    <canvas id="snapshot" class="preview" hidden></canvas>
+    <div class="actions">
+      <button id="start" type="button">启动摄像头</button>
+      <button id="capture" type="button" disabled>采集画面</button>
+      <button id="submit" type="button" disabled>提交结果</button>
+    </div>
+    <p id="status" role="status" aria-live="polite">尚未启动摄像头。</p>
+  </main>
+  <script>
+    const video = document.querySelector('#preview');
+    const canvas = document.querySelector('#snapshot');
+    const startButton = document.querySelector('#start');
+    const captureButton = document.querySelector('#capture');
+    const submitButton = document.querySelector('#submit');
+    const status = document.querySelector('#status');
+    let stream = null;
+    let resultBlob = null;
+    let submitting = false;
+
+    function setStatus(message) {
+      status.textContent = message;
+    }
+
+    startButton.addEventListener('click', async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        video.srcObject = stream;
+        captureButton.disabled = false;
+        setStatus('摄像头已启动，请采集一张画面。');
+      } catch (error) {
+        setStatus(`无法启动摄像头：${error.message || '浏览器未授权'}`);
+      }
+    });
+
+    captureButton.addEventListener('click', () => {
+      if (!stream || !video.videoWidth || !video.videoHeight) {
+        setStatus('摄像头画面尚未准备好。');
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      canvas.toBlob((blob) => {
+        resultBlob = blob;
+        submitButton.disabled = !resultBlob;
+        setStatus(resultBlob ? '自查通过，可以提交结果。' : '采集失败，请重试。');
+      }, 'image/png');
+    });
+
+    submitButton.addEventListener('click', () => {
+      if (!resultBlob || submitting) return;
+      const requestId = globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : `camera-${Date.now()}`;
+      submitting = true;
+      submitButton.disabled = true;
+      setStatus('正在提交，等待学习平台确认保存……');
+      window.parent.postMessage({
+        type: 'xedu:submit-request',
+        request_id: requestId,
+        score: 100,
+        passed: true,
+        summary: '摄像头采集自查通过',
+        artifacts: [{ name: 'camera-result.png', mime: 'image/png', blob: resultBlob }],
+      }, '*');
+
+      const onResponse = (event) => {
+        const response = event.data;
+        if (!response || response.type !== 'xedu:submit-response' || response.request_id !== requestId) return;
+        window.removeEventListener('message', onResponse);
+        submitting = false;
+        if (response.ok === true && response.status === 'completed') {
+          setStatus('已完成：学习平台已确认结果保存。');
+          return;
+        }
+        submitButton.disabled = false;
+        setStatus(response.error || '平台未确认保存完成，请重试。');
+      };
+      window.addEventListener('message', onResponse);
+    });
+
+    window.addEventListener('beforeunload', () => {
+      stream?.getTracks?.().forEach((track) => track.stop());
+    });
+  </script>
+</body>
+</html>

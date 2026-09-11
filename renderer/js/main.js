@@ -1,12 +1,12 @@
 import { log, showTab, showModal, hideModal, initModalListeners, showToast } from './ui.js';
-import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility, openNotebookFile, getStoredProjectDir } from './jupyter.js';
+import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility, openNotebookFile, getStoredProjectDir, refreshMicropythonPorts, selectMicropythonPort, uploadMicropythonFile, uploadMicropythonDirectory, uploadMicropythonAndRun } from './jupyter.js';
 import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown, syncModelBadge } from './ai.js';
 import { installPackage, uninstallPackage, updatePackage } from './package-manager.js';
 import { registerNamespace } from './app-context.js';
 import { ProjectWizard } from './project-wizard.js';
 import { createWorkspaceController } from './main/workspace-context.js';
 import { createDashboardController } from './main/dashboard.js';
-import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, forgetStoredTeacherCredential, selectPythonEnvironment, scanPythonEnvironments, confirmPythonEnvironment, repairXeduEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
+import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, forgetStoredTeacherCredential, selectPythonEnvironment, selectCoursesRoot, scanPythonEnvironments, confirmPythonEnvironment, repairXeduEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
 import { getExperienceMode, getPageCopy } from './experience-config.js';
 import { installUnhandledRejectionHandler } from './main/error-boundary.js';
 import {
@@ -235,7 +235,7 @@ function registerPracticeDeepLinkHandler() {
             const kind = (payload?.kind || '').trim();
             if (!projectDir || !filePath) return;
 
-            if ((kind === 'notebook' || filePath.toLowerCase().endsWith('.ipynb')) && window.app?.workspace?.openJupyterWorkspace) {
+            if ((kind === 'notebook' || kind === 'python' || filePath.toLowerCase().endsWith('.ipynb') || filePath.toLowerCase().endsWith('.py')) && window.app?.workspace?.openJupyterWorkspace) {
                 await window.app.workspace.openJupyterWorkspace({
                     projectDir,
                     filePath,
@@ -263,14 +263,11 @@ function registerLocalTaskDeepLinkHandler() {
     if (!window.electronAPI || typeof window.electronAPI.onDeepLinkOpenLocalTask !== 'function') {
         return;
     }
-    window.electronAPI.onDeepLinkOpenLocalTask(async (payload) => {
-        try {
-            await openStudentLocalTask(payload);
-            showToast('已打开平台本地任务', 'success');
-        } catch (error) {
+    window.electronAPI.onDeepLinkOpenLocalTask((payload) => {
+        openStudentLocalTask(payload).catch((error) => {
             console.error('处理本地任务深链失败:', error);
             showToast(error?.message || '打开本地任务失败', 'error');
-        }
+        });
     });
 }
 
@@ -290,7 +287,12 @@ registerNamespace('jupyter', {
     toggleFullscreen,
     setVisibility,
     openNotebookFile,
-    getStoredProjectDir
+    getStoredProjectDir,
+    refreshMicropythonPorts,
+    selectMicropythonPort,
+    uploadMicropythonFile,
+    uploadMicropythonDirectory,
+    uploadMicropythonAndRun,
 });
 registerNamespace('ai', {
     askAI,
@@ -325,6 +327,7 @@ registerNamespace('system', {
     resetSystemConfig,
     forgetStoredTeacherCredential,
     selectPythonEnvironment,
+    selectCoursesRoot,
     scanPythonEnvironments,
     confirmPythonEnvironment,
     repairXeduEnvironment,
@@ -561,6 +564,9 @@ window.addEventListener('DOMContentLoaded', () => {
         hideStartupLoading();
         refreshStatus().catch((error) => {
             console.warn('初始状态检查失败:', error);
+        });
+        refreshMicropythonPorts().catch((error) => {
+            console.warn('初始 MicroPython 串口检查失败:', error);
         });
     };
 

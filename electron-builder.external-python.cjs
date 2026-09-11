@@ -1,6 +1,14 @@
 const bundledPythonConfig = require('./electron-builder.bundled-python-no-models.cjs');
 
 module.exports = {
+
+  protocols: [
+    {
+      name: 'XEdu Client',
+      schemes: ['xedu'],
+    },
+  ],
+
     ...bundledPythonConfig,
     directories: {
         ...bundledPythonConfig.directories,

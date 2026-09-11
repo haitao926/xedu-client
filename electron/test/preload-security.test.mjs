@@ -14,9 +14,30 @@ test('preload exposes named capabilities instead of a generic IPC invoker', asyn
   assert.match(source, /getPathForFile:\s*\(file\)\s*=>/);
   assert.match(source, /webUtils\?\.getPathForFile/);
   assert.match(source, /approveLocalPath:\s*\(targetPath\)\s*=>\s*ipcRenderer\.invoke\('approve-local-path', targetPath\)/);
-  assert.match(source, /platformJsonRequest:\s*\(request\)\s*=>\s*ipcRenderer\.invoke\('platform:json-request', request\)/);
+  assert.match(source, /downloadXEduCoursePackage:\s*\(context\)\s*=>\s*ipcRenderer\.invoke\('xedu:download-course-package', context\)/);
+  assert.match(source, /cleanupXEduCoursePackage:\s*\(cleanupToken\)\s*=>\s*ipcRenderer\.invoke\('xedu:cleanup-course-package', cleanupToken\)/);
   assert.match(source, /onDeepLinkOpenLocalTask:\s*\(callback\)\s*=>\s*ipcRenderer\.on\('deep-link-open-local-task'/);
   assert.doesNotMatch(source, /invoke:\s*\(channel,/);
+});
+
+test('local-task deep links use a fixed HTTPS exchange and never log bearer grants', async () => {
+  const [mainSource, launchSource, resourcesSource] = await Promise.all([
+    readFile(mainProcessPath, 'utf8'),
+    readFile(new URL('../main/xedu-local-task-launch.js', import.meta.url), 'utf8'),
+    readFile(new URL('../../renderer/js/resources.js', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(mainSource, /parseXEduLocalTaskDeepLink/);
+  assert.match(mainSource, /exchangeXEduLocalTaskLaunch/);
+  assert.match(mainSource, /deep-link-open-local-task/);
+  assert.match(launchSource, /\/api\/xedu\/v1\/launch\/exchange/);
+  assert.match(launchSource, /parsed\.protocol !== 'https:'/);
+  assert.match(launchSource, /endpoint\.origin !== platformOrigin/);
+  assert.match(launchSource, /package_url/);
+  assert.match(mainSource, /ipcMain\.handle\('xedu:download-course-package'/);
+  assert.match(mainSource, /ipcMain\.handle\('xedu:cleanup-course-package'/);
+  assert.doesNotMatch(mainSource, /console\.(?:log|info|warn|error)\([^\n]*(?:grant|rawUrl|deepLinkArg)/i);
+  assert.doesNotMatch(resourcesSource, /window\.xeduLaunchContext/);
 });
 
 test('main and Jupyter windows keep sandbox and web security enabled', async () => {
@@ -46,6 +67,27 @@ test('Jupyter external browser bridge only accepts the local Jupyter URL policy'
   assert.doesNotMatch(handler, /isSafeExternalUrl\(url\)/);
 });
 
+test('generic open-external accepts https and local http preview URLs', async () => {
+  const source = await readFile(mainProcessPath, 'utf8');
+  const handler = source.match(/ipcMain\.handle\('open-external',[\s\S]*?\n\s*}\);/)?.[0];
+
+  assert.ok(handler, 'generic open-external handler should be registered');
+  assert.match(handler, /isAllowedOpenExternalUrl\(url\)/);
+  assert.match(source, /function isAllowedOpenExternalUrl\(value\) \{[\s\S]*isSafeExternalUrl\(value\) \|\| isAllowedLocalHttpUrl\(value\)/);
+  assert.match(source, /function isAllowedLocalHttpUrl\(value\) \{[\s\S]*protocol === 'http:' && \['127\.0\.0\.1', 'localhost', '::1'\]/);
+  assert.match(source, /local-course\\\//);
+});
+
+test('generic open-external reports rejected and thrown shell failures', async () => {
+  const source = await readFile(mainProcessPath, 'utf8');
+  const handler = source.match(/ipcMain\.handle\('open-external',[\s\S]*?\n\s*}\);/)?.[0];
+
+  assert.ok(handler, 'generic open-external handler should be registered');
+  assert.match(handler, /result === false/);
+  assert.match(handler, /catch \(error\)/);
+  assert.match(handler, /success: false/);
+});
+
 test('local embedded pages allow the file renderer without opening framing to arbitrary origins', async () => {
   const source = await readFile(mainProcessPath, 'utf8');
 
@@ -59,8 +101,10 @@ test('generic API IPC uses an explicit route allowlist and pip uses a dedicated 
 
   assert.match(source, /API_REQUEST_ALLOWLIST/);
   assert.match(source, /repair_xedu/);
+  assert.match(source, /micropython\\\/upload/);
   assert.match(source, /operations\\\/\[\^\/\]\+/);
   assert.match(source, /!isAllowedApiRequest\(method, relativePath\)/);
+  assert.match(source, /api:request rejected/);
   assert.match(source, /ipcMain\.handle\('api:pip-stream'/);
   assert.match(source, /ipcMain\.handle\('api:scratch-request'/);
   assert.match(source, /ipcMain\.handle\('approve-local-path'/);
@@ -134,6 +178,7 @@ test('packaged backend runtime is isolated from the configurable experiment runt
   assert.match(startup, /pythonExecutable: backendPython/);
   assert.match(startup, /XEDU_PYTHON_EXECUTABLE: backendPython/);
   assert.match(startup, /backendProcess = spawn\(backendPython, args,/);
+  assert.match(startup, /windowsHide: true/);
   assert.doesNotMatch(startup, /experimentPython|selectedPythonExecutable|getXEduProResourceDirectories|XEDU_PRO_ROOT/);
 });
 

@@ -1,6 +1,14 @@
 const baseConfig = require('./electron-builder.bundled-python-no-models.cjs');
 
 module.exports = {
+
+  protocols: [
+    {
+      name: 'XEdu Client',
+      schemes: ['xedu'],
+    },
+  ],
+
     ...baseConfig,
     extraResources: baseConfig.extraResources.map((resource) => (
         resource.to === 'python_env'

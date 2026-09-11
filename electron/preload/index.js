@@ -17,7 +17,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onLogUpdate: (callback) => ipcRenderer.on('log-update', (event, log) => callback(log)),
     onDeepLinkOpenPractice: (callback) => ipcRenderer.on('deep-link-open-practice', (event, payload) => callback(payload)),
     onDeepLinkOpenLocalTask: (callback) => ipcRenderer.on('deep-link-open-local-task', (event, payload) => callback(payload)),
-    platformJsonRequest: (request) => ipcRenderer.invoke('platform:json-request', request),
     selectFolder: () => ipcRenderer.invoke('select-folder'),
     selectPython: () => ipcRenderer.invoke('select-python'),
     scanPythonEnvironments: () => ipcRenderer.invoke('scan-python-environments'),
@@ -34,6 +33,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
     approveLocalPath: (targetPath) => ipcRenderer.invoke('approve-local-path', targetPath),
+    downloadXEduCoursePackage: (context) => ipcRenderer.invoke('xedu:download-course-package', context),
+    cleanupXEduCoursePackage: (cleanupToken) => ipcRenderer.invoke('xedu:cleanup-course-package', cleanupToken),
     isDirectory: (targetPath) => ipcRenderer.invoke('path-is-directory', targetPath),
     selectImageFile: () => ipcRenderer.invoke('select-image-file'),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),

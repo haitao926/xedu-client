@@ -18,8 +18,12 @@ const {
 const { resolveBackendBindHost, resolveBackendConnectHost } = require('./backend-network-config');
 const { createTeacherCredentialStore } = require('./teacher-credential-store');
 const { runPythonBootstrap } = require('./python-bootstrap');
-const { parseXeduDeepLink } = require('./xedu-protocol');
-const { platformJsonRequest } = require('./platform-json-request');
+const {
+    cleanupXEduCoursePackage,
+    downloadXEduCoursePackage,
+    exchangeXEduLocalTaskLaunch,
+    parseXEduLocalTaskDeepLink,
+} = require('./xedu-local-task-launch');
 
 function isBrokenPipeError(error) {
     return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
@@ -98,7 +102,11 @@ let backendLogFile = null;
 let backendRecentOutput = [];
 let backendLastExit = null;
 let quitting = false;
-let pendingDeepLink = null;
+let pendingPracticeDeepLink = null;
+let pendingLocalTaskDeepLink = null;
+/** Raw xedu:// URLs received before handlers/window are ready (macOS open-url can fire pre-ready). */
+let pendingRawDeepLinkUrls = [];
+let deepLinkHandlersReady = false;
 const gotTheLock = app.requestSingleInstanceLock();
 let jupyterManagedPid = null;
 // Vite injects the stable development capability below when no override is
@@ -135,8 +143,8 @@ const DIAGNOSTIC_SECRET_LABELS = [
 const DIAGNOSTIC_BODY_LABELS = ['request_body', 'request-body', 'request body', '请求正文'];
 
 const API_REQUEST_ALLOWLIST = Object.freeze([
-    { method: 'GET', pattern: /^\/api\/(?:health|status|detect_python|load_config|documents(?:\/|$)|classroom\/(?:status|discover|index|course\/|file\/|package\/)|resources\/(?:default-sample|index|local-file\/|scan|inspect-course|scan-folder|operations\/[^/]+)|projects\/templates)(?:\?.*)?$/ },
-    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|repair_xedu|projects\/create|ai\/(?:ask|test_config|save_config)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|inspect-course|publish|pull|ensure-repo|save-course|import-package-local|local-handle|scratch-workspace))(?:\?.*)?$/ },
+    { method: 'GET', pattern: /^\/api\/(?:health|status|detect_python|micropython\/ports|load_config|documents(?:\/|$)|classroom\/(?:status|discover|index|course\/|file\/|package\/)|resources\/(?:default-sample|index|local-file\/|local-course\/|scan|inspect-course|scan-folder|scan-courses-root|operations\/[^/]+)|projects\/templates)(?:\?.*)?$/ },
+    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|repair_xedu|micropython\/upload|projects\/create|ai\/(?:ask|test_config|save_config)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|scan-courses-root|inspect-course|publish|pull|ensure-repo|save-course|merge-lesson-folder|import-package-local|local-handle|scratch-workspace))(?:\?.*)?$/ },
 ]);
 
 const DEV_RENDERER_CANDIDATES = [
@@ -178,6 +186,33 @@ ipcMain.handle('teacher-credential:clear', (event) => {
     return getTeacherCredentialStore()?.clear() || { success: false, error: 'credential-store-unavailable' };
 });
 
+ipcMain.handle('xedu:download-course-package', async (event, context) => {
+    if (!isTrustedRenderer(event) || !context || typeof context !== 'object') {
+        return { success: false, error: 'forbidden' };
+    }
+    try {
+        const result = await downloadXEduCoursePackage(context);
+        // Structured clone cannot transfer functions (e.g. result.cleanup).
+        return {
+            success: Boolean(result?.success),
+            package_path: result?.package_path || '',
+            cleanup_token: result?.cleanup_token || '',
+            error: result?.error || '',
+        };
+    } catch (error) {
+        return { success: false, error: error?.message || '课程包下载失败' };
+    }
+});
+
+ipcMain.handle('xedu:cleanup-course-package', async (event, cleanupToken) => {
+    if (!isTrustedRenderer(event) || typeof cleanupToken !== 'string') return false;
+    try {
+        return await cleanupXEduCoursePackage(cleanupToken);
+    } catch (_) {
+        return false;
+    }
+});
+
 function isAllowedApiRequest(method, relativePath) {
     return API_REQUEST_ALLOWLIST.some((rule) => rule.method === method && rule.pattern.test(relativePath));
 }
@@ -190,13 +225,21 @@ function isSafeExternalUrl(value) {
     }
 }
 
-function isAllowedJupyterUrl(value) {
+function isAllowedLocalHttpUrl(value) {
     try {
         const parsed = new URL(String(value));
         return parsed.protocol === 'http:' && ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname);
     } catch (_) {
         return false;
     }
+}
+
+function isAllowedJupyterUrl(value) {
+    return isAllowedLocalHttpUrl(value);
+}
+
+function isAllowedOpenExternalUrl(value) {
+    return isSafeExternalUrl(value) || isAllowedLocalHttpUrl(value);
 }
 
 function rememberApprovedPath(targetPath) {
@@ -217,6 +260,89 @@ function getBackendLogDirectory() {
         return path.join(app.getPath('userData'), 'logs');
     } catch (_) {
         return null;
+    }
+}
+
+function getDeepLinkLogFile() {
+    const dir = getBackendLogDirectory();
+    return dir ? path.join(dir, 'deep-link.log') : null;
+}
+
+function logDeepLinkEvent(event, detail = {}) {
+    const safe = {};
+    try {
+        for (const [key, value] of Object.entries(detail || {})) {
+            if (value == null) {
+                safe[key] = value;
+                continue;
+            }
+            const lower = String(key).toLowerCase();
+            if (lower.includes('grant') || lower.includes('token') || lower.includes('authorization')) {
+                const textValue = String(value);
+                safe[key] = textValue.length <= 8 ? '[redacted]' : `${textValue.slice(0, 4)}…(len=${textValue.length})`;
+                continue;
+            }
+            if (typeof value === 'string' && value.length > 240) {
+                safe[key] = `${value.slice(0, 240)}…`;
+                continue;
+            }
+            safe[key] = value;
+        }
+    } catch (_) {
+        /* ignore */
+    }
+    const line = `${new Date().toISOString()} [${event}] ${JSON.stringify(safe)}\n`;
+    try {
+        console.log(`[deep-link] ${event}`, safe);
+    } catch (_) {
+        /* ignore */
+    }
+    try {
+        const file = getDeepLinkLogFile();
+        if (!file) return;
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.appendFileSync(file, line, 'utf8');
+    } catch (error) {
+        try {
+            console.warn('deep-link log write failed:', error?.message || error);
+        } catch (_) {
+            /* ignore */
+        }
+    }
+}
+
+function findDeepLinkArg(argv) {
+    return (argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`)) || null;
+}
+
+function handleIncomingDeepLinkUrl(rawUrl, source = 'unknown') {
+    const url = String(rawUrl || '').trim();
+    logDeepLinkEvent('receive', { source, url });
+    if (!url) return;
+    if (!deepLinkHandlersReady && !mainWindow) {
+        pendingRawDeepLinkUrls.push(url);
+        logDeepLinkEvent('queue-raw', { source, queued: pendingRawDeepLinkUrls.length });
+        return;
+    }
+    const localTask = parseXEduLocalTaskDeepLink(url);
+    if (localTask) {
+        void dispatchLocalTaskDeepLink(localTask, source);
+        return;
+    }
+    const practice = parsePracticeDeepLink(url);
+    if (practice) {
+        dispatchPracticeDeepLink(practice);
+        return;
+    }
+    logDeepLinkEvent('unrecognized', { source, url });
+}
+
+function flushPendingRawDeepLinkUrls(source = 'flush') {
+    if (!pendingRawDeepLinkUrls.length) return;
+    const queued = pendingRawDeepLinkUrls.splice(0, pendingRawDeepLinkUrls.length);
+    logDeepLinkEvent('flush-raw', { source, count: queued.length });
+    for (const url of queued) {
+        handleIncomingDeepLinkUrl(url, `${source}:queued`);
     }
 }
 
@@ -656,10 +782,16 @@ function createWindow() {
         clearTimeout(fallbackShowTimer);
         showMainWindow('did-finish-load');
         emitBackendStartupState();
-        if (pendingDeepLink?.channel && pendingDeepLink?.payload) {
-            mainWindow.webContents.send(pendingDeepLink.channel, pendingDeepLink.payload);
-            pendingDeepLink = null;
+        if (pendingPracticeDeepLink) {
+            mainWindow.webContents.send('deep-link-open-practice', pendingPracticeDeepLink);
+            pendingPracticeDeepLink = null;
         }
+        if (pendingLocalTaskDeepLink) {
+            mainWindow.webContents.send('deep-link-open-local-task', pendingLocalTaskDeepLink);
+            logDeepLinkEvent('sent-to-renderer', { source: 'did-finish-load' });
+            pendingLocalTaskDeepLink = null;
+        }
+        flushPendingRawDeepLinkUrls('did-finish-load');
     });
 
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -701,24 +833,85 @@ function registerXeduProtocol() {
     }
 }
 
-function dispatchTypedDeepLink(channel, payload) {
-    if (!payload || !channel) return;
-    if (mainWindow) {
-        bringMainWindowToFront();
-        if (mainWindow.webContents.isLoading()) {
-            pendingDeepLink = { channel, payload };
-            return;
-        }
-        mainWindow.webContents.send(channel, payload);
-        return;
+function parsePracticeDeepLink(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return null;
+    try {
+        const parsed = new URL(rawUrl);
+        if (parsed.protocol !== `${XEDU_PROTOCOL}:`) return null;
+        const action = (parsed.hostname || parsed.pathname.replace(/^\/+/, '') || '').trim();
+        if (action !== 'open-practice') return null;
+        const projectDir = (parsed.searchParams.get('project') || '').trim();
+        const filePath = (parsed.searchParams.get('file') || '').trim();
+        const kind = (parsed.searchParams.get('kind') || '').trim();
+        if (!projectDir || !filePath) return null;
+        return { projectDir, filePath, kind };
+    } catch (_) {
+        return null;
     }
-    pendingDeepLink = { channel, payload };
 }
 
-function dispatchXeduDeepLink(rawUrl) {
-    const parsed = parseXeduDeepLink(rawUrl);
-    if (!parsed) return;
-    dispatchTypedDeepLink(parsed.channel, parsed.payload);
+function dispatchPracticeDeepLink(payload) {
+    if (!payload) return;
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        if (mainWindow.webContents.isLoading()) {
+            pendingPracticeDeepLink = payload;
+            return;
+        }
+        mainWindow.webContents.send('deep-link-open-practice', payload);
+        return;
+    }
+    pendingPracticeDeepLink = payload;
+}
+
+async function dispatchLocalTaskDeepLink(payload, source = 'dispatch') {
+    if (!payload) return;
+    logDeepLinkEvent('exchange-start', {
+        source,
+        platformOrigin: payload.platformOrigin,
+        courseId: payload.courseId,
+        activityId: payload.activityId,
+        resourceId: payload.resourceId,
+        launchGrant: payload.launchGrant,
+    });
+    try {
+        const context = await exchangeXEduLocalTaskLaunch(payload);
+        logDeepLinkEvent('exchange-ok', {
+            source,
+            course_id: context?.course_id,
+            activity_id: context?.activity_id,
+            resource_id: context?.resource_id,
+            hasGrant: Boolean(context?.grant),
+            hasSubmitUrl: Boolean(context?.submit_url),
+        });
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+            if (mainWindow.webContents.isLoading()) {
+                pendingLocalTaskDeepLink = context;
+                logDeepLinkEvent('pending-until-load', { source });
+                return;
+            }
+            mainWindow.webContents.send('deep-link-open-local-task', context);
+            logDeepLinkEvent('sent-to-renderer', { source });
+            return;
+        }
+        pendingLocalTaskDeepLink = context;
+        logDeepLinkEvent('pending-no-window', { source });
+    } catch (error) {
+        logDeepLinkEvent('exchange-fail', {
+            source,
+            error: error?.message || String(error),
+        });
+        console.warn('本地任务深链兑换失败:', error?.message || error);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('deep-link-open-local-task', {
+                ok: false,
+                error: error?.message || '无法打开本地任务',
+            });
+        }
+    }
 }
 
 // 允许在 BrowserView 中嵌入 Jupyter：移除 CSP/X-Frame 限制
@@ -1017,11 +1210,23 @@ ipcMain.handle('scan-python-environments', async (event) => {
 });
 
 ipcMain.handle('open-external', async (event, url) => {
-    if (!isTrustedRenderer(event) || !isSafeExternalUrl(url)) {
+    if (!isTrustedRenderer(event) || !isAllowedOpenExternalUrl(url)) {
         return { success: false, error: 'invalid-url' };
     }
-    await shell.openExternal(url);
-    return { success: true };
+    try {
+        const result = await shell.openExternal(url);
+        if (result === false) {
+            return { success: false, code: 'open-external-rejected', error: '系统未接受外部浏览器打开请求' };
+        }
+        return { success: true };
+    } catch (error) {
+        console.warn('打开外部链接失败:', error);
+        return {
+            success: false,
+            code: 'open-external-failed',
+            error: error?.message || '系统未能启动默认浏览器',
+        };
+    }
 });
 
 ipcMain.handle('open-path', async (event, targetPath) => {
@@ -1114,13 +1319,6 @@ ipcMain.handle('get-system-info', () => {
     };
 });
 
-ipcMain.handle('platform:json-request', async (event, request) => {
-    if (!isTrustedRenderer(event) || !request || typeof request !== 'object') {
-        return { status: 403, headers: {}, body: JSON.stringify({ success: false, message: 'forbidden' }) };
-    }
-    return platformJsonRequest(request);
-});
-
 ipcMain.handle('api:request', async (event, request) => {
     if (!mainWindow || event.sender !== mainWindow.webContents) {
         return { status: 403, headers: {}, body: JSON.stringify({ success: false, message: 'forbidden' }) };
@@ -1133,6 +1331,7 @@ ipcMain.handle('api:request', async (event, request) => {
     const relativePath = String(request.path || '');
     const allowedMethods = new Set(['GET', 'POST']);
     if (!allowedMethods.has(method) || !relativePath.startsWith('/api/') || relativePath.includes('://') || !isAllowedApiRequest(method, relativePath)) {
+        console.warn('api:request rejected', method, relativePath);
         return { status: 400, headers: {}, body: JSON.stringify({ success: false, message: 'invalid request' }) };
     }
     const body = request.body == null ? '' : String(request.body);
@@ -1690,7 +1889,8 @@ function startBackendServer(options = {}) {
         backendProcess = spawn(backendPython, args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: path.dirname(serverScript),
-            env
+            env,
+            windowsHide: true,
         });
 
         const classifyOutput = (text, isError = false) => {
@@ -2129,10 +2329,25 @@ function setupMenu() {
 if (!gotTheLock) {
     app.quit();
 } else {
+    // macOS: open-url can arrive before ready. Register immediately and queue.
+    app.on('open-url', (event, url) => {
+        event.preventDefault();
+        handleIncomingDeepLinkUrl(url, 'open-url');
+    });
+    // Register protocol client as early as possible (Info.plist CFBundleURLTypes also required on macOS).
+    registerXeduProtocol();
+    logDeepLinkEvent('protocol-registered', {
+        platform: process.platform,
+        defaultApp: Boolean(process.defaultApp),
+        isDefault: (() => {
+            try { return app.isDefaultProtocolClient(XEDU_PROTOCOL); } catch (_) { return null; }
+        })(),
+    });
+
     app.on('second-instance', (event, argv) => {
-        const deepLinkArg = (argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`));
+        const deepLinkArg = findDeepLinkArg(argv);
         if (deepLinkArg) {
-            dispatchXeduDeepLink(deepLinkArg);
+            handleIncomingDeepLinkUrl(deepLinkArg, 'second-instance');
         }
         if (mainWindow) {
             bringMainWindowToFront();
@@ -2140,12 +2355,18 @@ if (!gotTheLock) {
     });
 
     app.whenReady().then(async () => {
+        deepLinkHandlersReady = true;
         registerXeduProtocol();
         setupJupyterCspBypass();
         setupTrustedMediaPermissionHandler();
         setupMenu();
         setupJupyterView(); // 初始化 Jupyter 视图管理器
         createWindow();
+        const initialDeepLinkArg = findDeepLinkArg(process.argv);
+        if (initialDeepLinkArg) {
+            handleIncomingDeepLinkUrl(initialDeepLinkArg, 'argv');
+        }
+        flushPendingRawDeepLinkUrls('whenReady');
         startBackendServer().catch((error) => {
             console.error('后端服务器未能正常启动', error);
             const message = error.message || '请查看日志了解详情';
@@ -2158,11 +2379,6 @@ if (!gotTheLock) {
                 dialog.showErrorBox('后端启动失败', message);
             }
         });
-    });
-
-    app.on('open-url', (event, url) => {
-        event.preventDefault();
-        dispatchXeduDeepLink(url);
     });
 
     app.on('window-all-closed', () => {
