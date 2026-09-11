@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, Menu, shell, ipcMain, dialog, clipboard, safeStorage } = require('electron');
+﻿const { app, BrowserWindow, Menu, shell, ipcMain, dialog, clipboard, safeStorage, net } = require('electron');
 const { session } = require('electron');
 const path = require('path');
 const http = require('http');
@@ -191,7 +191,7 @@ ipcMain.handle('xedu:download-course-package', async (event, context) => {
         return { success: false, error: 'forbidden' };
     }
     try {
-        const result = await downloadXEduCoursePackage(context);
+        const result = await downloadXEduCoursePackage(context, { fetchImpl: getPlatformHttpsFetch() });
         // Structured clone cannot transfer functions (e.g. result.cleanup).
         return {
             success: Boolean(result?.success),
@@ -865,6 +865,33 @@ function dispatchPracticeDeepLink(payload) {
     pendingPracticeDeepLink = payload;
 }
 
+
+function getPlatformHttpsFetch() {
+    // Electron net.fetch uses Chromium/macOS trust store (mkcert CA).
+    // Node globalThis.fetch uses OpenSSL and fails UNABLE_TO_VERIFY_LEAF_SIGNATURE for local HTTPS.
+    if (net && typeof net.fetch === 'function') {
+        return net.fetch.bind(net);
+    }
+    return globalThis.fetch;
+}
+
+async function exchangeWithRetry(payload, source, attempts = 3) {
+    let lastError = null;
+    for (let i = 1; i <= attempts; i += 1) {
+        try {
+            return await exchangeXEduLocalTaskLaunch(payload, { fetchImpl: getPlatformHttpsFetch() });
+        } catch (error) {
+            lastError = error;
+            const message = error?.message || String(error);
+            logDeepLinkEvent('exchange-retry', { source, attempt: i, attempts, error: message });
+            if (i < attempts) {
+                await new Promise((resolve) => setTimeout(resolve, 400 * i));
+            }
+        }
+    }
+    throw lastError;
+}
+
 async function dispatchLocalTaskDeepLink(payload, source = 'dispatch') {
     if (!payload) return;
     logDeepLinkEvent('exchange-start', {
@@ -876,7 +903,7 @@ async function dispatchLocalTaskDeepLink(payload, source = 'dispatch') {
         launchGrant: payload.launchGrant,
     });
     try {
-        const context = await exchangeXEduLocalTaskLaunch(payload);
+        const context = await exchangeWithRetry(payload, source);
         logDeepLinkEvent('exchange-ok', {
             source,
             course_id: context?.course_id,
@@ -2366,7 +2393,23 @@ if (!gotTheLock) {
         if (initialDeepLinkArg) {
             handleIncomingDeepLinkUrl(initialDeepLinkArg, 'argv');
         }
-        flushPendingRawDeepLinkUrls('whenReady');
+        // Cold-start: wait briefly so Chromium network/trust stack is ready, then flush.
+        // net.fetch still needs the app session; a short defer avoids first-tick TLS races.
+        let coldStartDeepLinksFlushed = false;
+        const flushColdStartDeepLinks = (reason) => {
+            if (coldStartDeepLinksFlushed) return;
+            coldStartDeepLinksFlushed = true;
+            flushPendingRawDeepLinkUrls(reason);
+        };
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.once('did-finish-load', () => {
+                setTimeout(() => flushColdStartDeepLinks('whenReady+did-finish-load'), 300);
+            });
+            // Fallback if load is slow/fails
+            setTimeout(() => flushColdStartDeepLinks('whenReady+fallback'), 2500);
+        } else {
+            setTimeout(() => flushColdStartDeepLinks('whenReady+no-window'), 800);
+        }
         startBackendServer().catch((error) => {
             console.error('后端服务器未能正常启动', error);
             const message = error.message || '请查看日志了解详情';
