@@ -23,4 +23,5 @@ test("resources state keeps classroom defaults safe for new sessions", () => {
     assert.equal(state.classroomState.active, false);
     assert.equal(state.classroomState.connected, false);
     assert.equal(state.classroomState.activeSectionIndex, null);
+    assert.equal(state.activePlatformSubmission, null);
 });

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XEdu 课程包同步测试任务</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #17202a; background: #f4f6f8; }
+    body { max-width: 720px; margin: 0 auto; padding: 32px 20px; }
+    main { background: #fff; border: 1px solid #dce2e8; border-radius: 8px; padding: 24px; }
+    .check { padding: 14px; background: #eef7f1; border-left: 4px solid #2d8a55; }
+    button { border: 0; border-radius: 6px; background: #1264a3; color: #fff; padding: 10px 16px; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    #status { min-height: 1.5em; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>课程包同步测试任务</h1>
+    <p>这是一个不需要摄像头的 XEdu 本地任务，用于验证平台启动、课程包同步和结果提交。</p>
+    <p class="check">自查内容：当前页面能够被平台启动，说明课程资源已经正确打开。</p>
+    <button id="submit" type="button">提交测试结果</button>
+    <p id="status" role="status" aria-live="polite">等待提交。</p>
+  </main>
+  <script>
+    const submitButton = document.querySelector('#submit');
+    const status = document.querySelector('#status');
+    let submitting = false;
+
+    function setStatus(message) {
+      status.textContent = message;
+    }
+
+    submitButton.addEventListener('click', () => {
+      if (submitting) return;
+      const requestId = globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : `package-sync-${Date.now()}`;
+      submitting = true;
+      submitButton.disabled = true;
+      setStatus('正在提交，等待学习平台确认保存……');
+      window.parent.postMessage({
+        type: 'xedu:submit-request',
+        request_id: requestId,
+        score: 100,
+        passed: true,
+        summary: '课程包同步测试通过，页面已成功打开。',
+        artifacts: [
+          {
+            name: 'course-package-sync-result.json',
+            mime: 'application/json',
+            blob: new Blob([
+              JSON.stringify({ passed: true, checked_at: new Date().toISOString() }),
+            ], { type: 'application/json' }),
+          },
+        ],
+      }, '*');
+
+      const onResponse = (event) => {
+        const response = event.data;
+        if (!response || response.type !== 'xedu:submit-response' || response.request_id !== requestId) return;
+        window.removeEventListener('message', onResponse);
+        submitting = false;
+        if (response.ok === true && response.status === 'completed') {
+          setStatus('已完成：学习平台已确认课程包同步和结果保存。');
+          return;
+        }
+        submitButton.disabled = false;
+        setStatus(response.error || '平台未确认保存完成，请重试。');
+      };
+      window.addEventListener('message', onResponse);
+    });
+  </script>
+</body>
+</html>

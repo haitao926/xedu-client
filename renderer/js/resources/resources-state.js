@@ -21,6 +21,7 @@ export function createResourcesState() {
         currentResource: null,
         isMockData: false,
         localCourses: [],
+        coursesRoot: "",
         createSource: "local",
         createEntryMode: "new",
         editingCourseId: null,
@@ -72,5 +73,7 @@ export function createResourcesState() {
         resourcesPageReady: false,
         resourcesPageInitPromise: null,
         resourcesIndexLoadPromise: null,
+        activePlatformSubmission: null,
+        platformDeepLinkGeneration: 0,
     };
 }

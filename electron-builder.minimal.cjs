@@ -1,6 +1,14 @@
 const portableConfig = require('./electron-builder.bundled-python-no-models.cjs');
 
 module.exports = {
+
+  protocols: [
+    {
+      name: 'XEdu Client',
+      schemes: ['xedu'],
+    },
+  ],
+
     ...portableConfig,
     directories: {
         ...portableConfig.directories,

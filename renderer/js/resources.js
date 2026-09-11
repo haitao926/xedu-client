@@ -25,7 +25,6 @@ import {
 } from "./resources/source-utils.js";
 import {
   connectStudentClassroomByCodeFlow,
-  getStoredProjectDirFallback,
   normalizeClassroomAddress,
   prepareStudentClassroomLaunchFlow,
 } from "./resources/classroom-connect.js";
@@ -78,6 +77,7 @@ import {
     getStudentWorkspaceTabConfig,
     getStudentWorkspaceTabDescription,
     getStudentWorkspaceTabTitle,
+    isRunnableStudentCourse,
     normalizeStudentWorkspaceTabId,
     pickFirstExperimentWithFiles,
     selectStudentCurrentCourse,
@@ -97,6 +97,7 @@ import {
     withCourseSyncFingerprint,
 } from "./resources/course-storage.js";
 import { runCourseTransferFlow } from "./resources/course-transfer.js";
+import { ensureLocalTaskCourse } from "./resources/course-package-sync.js";
 import {
     addCourseFlow,
     buildCourseFromFormFlow,
@@ -129,8 +130,9 @@ import {
 import {
     extractResourcesFromClassroomIndex,
     findFirstNotebookPathInCourse,
+    getSectionDirectoryName,
     pickClassroomLaunchResource,
-    resolveClassroomPullTargetPath,
+    applyClassroomFollowFromIndex,
 } from "./resources/classroom-utils.js";
 import { getExperienceMode, getTeacherToggleLabel } from "./experience-config.js";
 import {
@@ -149,6 +151,7 @@ import {
     isPythonScriptFile,
     isScratchFile,
     normalizeFile,
+    refreshLocalCourseHandle,
     resolveJupyterWorkspaceTarget,
     sortFiles,
 } from "./resources/file-utils.js";
@@ -156,6 +159,7 @@ import { getExperimentFileOverview } from "./resources/experiment-overview.js";
 import { createResourcesState } from "./resources/resources-state.js";
 import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
 import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
+import { createXEduHttpSubmissionTransport, createXEduSubmissionBridge } from "./resources/xedu-submit-bridge.js";
 
 const resourcesState = createResourcesState();
 const courseAiFrameBridge = createCourseAiFrameBridge({
@@ -167,6 +171,36 @@ const courseAiFrameBridge = createCourseAiFrameBridge({
         return window.electronAPI.scratchApiRequest(request);
     },
 });
+const xeduSubmissionTransport = createXEduHttpSubmissionTransport();
+const xeduSubmissionBridge = createXEduSubmissionBridge({
+    windowObject: window,
+    uploadArtifact: xeduSubmissionTransport.uploadArtifact,
+    submitResult: xeduSubmissionTransport.submitResult,
+    lookupSubmission: xeduSubmissionTransport.lookupSubmission,
+});
+
+function getXEduSubmissionContext(context = null) {
+    const candidate = context?.submission
+        || context?.launchContext
+        || resourcesState.activePlatformSubmission;
+    if (!candidate || typeof candidate !== "object") return null;
+    return { ...candidate };
+}
+
+function logPlatformSubmission(event, detail = {}) {
+    try {
+        const payload = {
+            event,
+            hasActiveGrant: Boolean(String(resourcesState.activePlatformSubmission?.grant || "").trim()),
+            activeCourseId: resourcesState.activePlatformSubmission?.course_id || null,
+            deepLinkGeneration: resourcesState.platformDeepLinkGeneration || 0,
+            ...detail,
+        };
+        console.info("[xedu-platform-submission]", payload);
+    } catch (_) {
+        /* ignore */
+    }
+}
 window.addEventListener("xedu:teacher-credential-updated", () => {
     const state = readTeacherModeState();
     if (!state.unlocked) return;
@@ -1004,7 +1038,24 @@ async function handleCourseImportDrop(event) {
             showListView,
             showDetailView,
             setImportStatus: setResourceDropImportStatus,
+            mergeClassroomLessonFolder: async (sourcePath) => {
+                if (!resourcesState.classroomState.connected) return null;
+                const currentCourse = pickStudentCurrentCourse();
+                if (!currentCourse?.local_path) return null;
+                const section = normalizeSections(currentCourse)[getCurrentLessonIndex(currentCourse)] || null;
+                const destName = getSectionDirectoryName(section);
+                const response = await apiClient.post("/api/resources/merge-lesson-folder", {
+                    course_path: currentCourse.local_path,
+                    source_path: sourcePath,
+                    dest_name: destName,
+                });
+                if (!response?.success || !response?.course) return null;
+                return response;
+            },
         });
+        if (result?.course && resourcesState.classroomState.connected && isStudentLessonMode()) {
+            await openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
+        }
         notifyUser(result.message, result.duplicated ? "warning" : "success");
         return true;
     } catch (error) {
@@ -1453,7 +1504,15 @@ async function loadCloudCourseOptions() {
         if (!response?.success) {
             resourcesState.cloudCourseOptions = [];
             renderCloudCourseOptions();
-            setCloudStatus(response?.message || "资源库未配置，请先到设置页填写 Gitea 参数。", true);
+            const sourceMessage = Array.isArray(response?.sources) && response.sources[0]
+                ? (response.sources[0].message || "")
+                : "";
+            const message = sourceMessage || response?.message || "资源库未配置，请先到设置页填写 Gitea 参数。";
+            if (isAuthRelatedErrorMessage(message)) {
+                const tokenDetails = document.querySelector("#resources-cloud-group .resources-cloud-access");
+                if (tokenDetails) tokenDetails.open = true;
+            }
+            setCloudStatus(message, true);
             return;
         }
         resourcesState.remoteSources = Array.isArray(response.sources) ? response.sources : [];
@@ -2615,32 +2674,41 @@ function loadLocalCourses() {
 }
 
 async function refreshLocalCoursesFromDisk(courses = []) {
-    if (!Array.isArray(courses) || !courses.length) return [];
-    const refreshed = await Promise.all(courses.map(async (course) => {
-        const localPath = (course?.local_path || "").toString().trim();
-        if (!localPath) return course;
+    resourcesState.coursesRoot = "";
+    const normalizeLocalPath = (value) => String(value || '')
+        .trim()
+        .replace(/\\/g, '/')
+        .replace(/\/+$/, '');
+    const courseKey = (course) => normalizeLocalPath(course?.local_path);
+
+    const scanDefaultCourses = async () => {
         try {
-            const response = await apiClient.post("/api/resources/scan", {
-                local_path: localPath,
-                init_if_missing: false,
-                auto_build: false,
-            });
-            if (response?.success && response.course) {
-                return stripRemovedIntegrationMetadata({
-                    ...course,
-                    ...response.course,
-                    local_path: localPath,
-                    source: "local",
-                    origin: course.origin || response.course.origin,
-                    sync: course.sync || response.course.sync,
-                });
-            }
+            const response = await apiClient.post('/api/resources/scan-courses-root', {});
+            if (!response?.success || !Array.isArray(response.courses)) return [];
+            resourcesState.coursesRoot = String(
+                response.local_paths?.[0] || response.local_path || '',
+            ).trim();
+            return response.courses
+                .map((entry) => {
+                    const scanned = entry?.course && typeof entry.course === 'object' ? entry.course : {};
+                    return stripRemovedIntegrationMetadata({
+                        ...scanned,
+                        local_path: entry.local_path || scanned.local_path || '',
+                        resource_handle: entry.resource_handle || scanned.resource_handle || '',
+                        source: 'local',
+                    });
+                })
+                .filter((course) => courseKey(course));
         } catch (error) {
-            console.warn("刷新本地课程失败，继续使用缓存:", localPath, error);
+        console.warn('扫描已选择课程文件夹失败，课程列表置空:', error);
+            return [];
         }
-        return course;
-    }));
-    return refreshed;
+    };
+
+    const discovered = await scanDefaultCourses();
+    // The selected folder is authoritative. Old localStorage records may
+    // point at a moved course or at a second legacy root and must not return.
+    return discovered;
 }
 
 function saveLocalCourses(list) {
@@ -2723,7 +2791,6 @@ async function loadClassroomConfig() {
         const uiConfig = response.config?.ui || {};
         resourcesState.classroomConfig = {
             autoDiscover: uiConfig.classroom_auto_discover !== false,
-            name: uiConfig.classroom_name || "",
             teacherCodeConfigured: isTeacherCodeConfigured(response),
         };
         return true;
@@ -2971,15 +3038,8 @@ async function syncClassroomCourses(courses = null) {
         if (!payloadCourses.length) return;
         await apiClient.post("/api/classroom/sync-courses", { courses: payloadCourses });
     } catch (error) {
-        console.warn("同步课堂课程失败:", error);
+        console.warn("同步课堂课程信息失败:", error);
     }
-}
-
-function scheduleClassroomSync(courses = null) {
-    if (resourcesState.classroomSyncTimer) clearTimeout(resourcesState.classroomSyncTimer);
-    resourcesState.classroomSyncTimer = setTimeout(() => {
-        syncClassroomCourses(courses);
-    }, 300);
 }
 
 async function refreshClassroomStatus() {
@@ -3012,12 +3072,17 @@ async function refreshClassroomStatus() {
 
 function isActiveCourse(resource) {
     if (!resource) return false;
-    const resourceId = resource.id;
-    return Boolean(
-        resourcesState.classroomState.active &&
-        resourceId &&
-        (resourceId === resourcesState.classroomState.activeCourseOriginId || resourceId === resourcesState.classroomState.activeCourseId)
-    );
+    const following = resourcesState.classroomState.active || resourcesState.classroomState.connected;
+    if (!following) return false;
+    const activeIds = [
+        resourcesState.classroomState.activeCourseOriginId,
+        resourcesState.classroomState.activeCourseId,
+    ].filter(Boolean);
+    if (!activeIds.length) return false;
+    return [resource.id, resource.origin_id]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .some((id) => activeIds.includes(id));
 }
 
 function resolveLocalCourse(resource) {
@@ -3071,7 +3136,6 @@ async function startClassroomForResource(resource, forcedSectionIndex = null) {
         if (!await ensureClassroomNetworkAccess()) return;
         await syncClassroomCourses([localResource]);
         const response = await apiClient.post("/api/classroom/start", {
-            name: resourcesState.classroomConfig.name,
             teacher_code: teacherCode,
             course_id: localResource.id,
             section_index: sectionIndex
@@ -3080,7 +3144,7 @@ async function startClassroomForResource(resource, forcedSectionIndex = null) {
             throw new Error(response?.message || "开启课堂失败");
         }
         resourcesState.classroomState.active = true;
-        resourcesState.classroomState.name = response.status?.name || resourcesState.classroomConfig.name || "";
+        resourcesState.classroomState.name = response.status?.name || "";
         resourcesState.classroomState.activeCourseId = response.status?.active_course_id || "";
         resourcesState.classroomState.activeCourseOriginId = response.status?.active_course_origin_id || localResource.id || "";
         resourcesState.classroomState.activeCourseTitle = response.status?.active_course_title || localResource.title || "";
@@ -3163,6 +3227,51 @@ function buildClassroomBaseUrl(entry) {
 
 function getClassroomKey(entry) {
     return entry?.server_id || `${entry?.host || ""}:${entry?.port || ""}`;
+}
+
+let studentClassroomCourseSyncPromise = null;
+
+async function syncStudentClassroomCourseFromConnectedSource() {
+    if (!isStudentLessonMode()) return null;
+    if (!resourcesState.coursesRoot) {
+        await loadResourcesIndex();
+    }
+    const source = resourcesState.classroomState.source;
+    const baseUrl = String(source?.base_url || buildClassroomBaseUrl(source) || "").trim();
+    if (!baseUrl) return null;
+    if (studentClassroomCourseSyncPromise) return studentClassroomCourseSyncPromise;
+    studentClassroomCourseSyncPromise = (async () => {
+        let fetchResp = null;
+        try {
+            fetchResp = await apiClient.post("/api/classroom/fetch-index", {
+                base_url: baseUrl,
+                classroom_code: "",
+            });
+        } catch (error) {
+            throw new Error(extractApiErrorMessage(error, "课堂课程不可达"));
+        }
+        if (!fetchResp?.success) {
+            throw new Error(fetchResp?.message || "课堂课程不可达");
+        }
+        applyResourcesIndex(fetchResp.index || {}, {
+            repoUrl: fetchResp.repo_url || baseUrl,
+            rawBaseUrl: fetchResp.raw_base_url || baseUrl,
+            branch: fetchResp.branch || "classroom",
+            sources: [],
+            isMock: false,
+            remoteSource: "classroom",
+        });
+        const launchResource = pickClassroomLaunchResource(fetchResp);
+        applyClassroomFollowFromIndex(resourcesState.classroomState, fetchResp, launchResource);
+        if (!launchResource) return null;
+        const sectionIndex = fetchResp?.index?.classroom?.active_section_index;
+        return prepareStudentClassroomLaunch(launchResource, {
+            sectionIndex: Number.isFinite(Number(sectionIndex)) ? Number(sectionIndex) : null,
+        });
+    })().finally(() => {
+        studentClassroomCourseSyncPromise = null;
+    });
+    return studentClassroomCourseSyncPromise;
 }
 
 async function selectClassroom(list) {
@@ -3254,6 +3363,21 @@ async function discoverClassrooms() {
                     base_url: buildClassroomBaseUrl(selected)
                 };
                 resourcesState.classroomState.connected = true;
+                if (isStudentLessonMode()) {
+                    try {
+                        const launch = await syncStudentClassroomCourseFromConnectedSource();
+                        const canOpenLessonTab = Boolean(
+                            launch?.course
+                            && !resourcesState.openingStudentLessonTab
+                            && !resourcesState.resourcesPageInitPromise
+                        );
+                        if (canOpenLessonTab) {
+                            await openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
+                        }
+                    } catch (error) {
+                        notifyUser(extractApiErrorMessage(error, "同步课堂课程失败"), "error");
+                    }
+                }
             } else {
                 resourcesState.classroomState.source = null;
                 resourcesState.classroomState.connected = false;
@@ -3309,7 +3433,6 @@ async function initClassroom() {
         await ensureTeacherModeReady();
     }
     await refreshClassroomStatus();
-    scheduleClassroomSync();
     if (resourcesState.classroomConfig.autoDiscover) {
         await discoverClassrooms();
     }
@@ -3442,7 +3565,7 @@ function getCurrentLessonIndex(resource) {
     const sections = normalizeSections(resource);
     if (!sections.length) return 0;
     let sectionIndex = resourcesState.activeSectionIndex;
-    if (resourcesState.classroomState.active && isActiveCourse(resource) && resourcesState.classroomState.activeSectionIndex !== null) {
+    if (isActiveCourse(resource) && resourcesState.classroomState.activeSectionIndex !== null) {
         sectionIndex = resourcesState.classroomState.activeSectionIndex;
     }
     if (!Number.isFinite(sectionIndex) || sectionIndex < 0 || sectionIndex >= sections.length) {
@@ -3462,6 +3585,12 @@ function pickStudentCurrentCourse() {
         localCourses: resourcesState.localCourses,
         resourcesCache: resourcesState.resourcesCache,
     });
+}
+
+function ensureRunnableStudentCourse(resource) {
+    if (!isStudentLessonMode() || isRunnableStudentCourse(resource)) return true;
+    notifyUser("当前课堂课程尚未匹配到本机课程，请先在设置中选择正确的课程文件夹。", "warning");
+    return false;
 }
 
 function syncStudentLessonNav(tabId = resourcesState.activeCourseWorkspaceTab) {
@@ -3559,6 +3688,65 @@ function buildExperimentResourceContext(resource, section, sectionIndex, exp, ex
     };
 }
 
+function normalizeTaskResourceId(value) {
+    return String(value || "")
+        .trim()
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "");
+}
+
+function findLocalTaskTarget(taskContext) {
+    const courseId = String(taskContext?.course_id || "").trim();
+    const resourceId = normalizeTaskResourceId(taskContext?.resource_id);
+    if (!courseId || !resourceId) return null;
+    const candidates = [];
+    const seen = new Set();
+    for (const course of resourcesState.localCourses || []) {
+        if (!course || seen.has(course)) continue;
+        seen.add(course);
+        candidates.push(course);
+    }
+    if (resourcesState.currentResource && !seen.has(resourcesState.currentResource)) {
+        candidates.push(resourcesState.currentResource);
+    }
+    const resource = candidates.find((course) => {
+        const ids = [course.id, course.course_id, course.origin_id, course.resource_id]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean);
+        return course.source === "local" && ids.includes(courseId);
+    });
+    if (!resource) return null;
+
+    const sections = normalizeSections(resource);
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+        const experiments = Array.isArray(sections[sectionIndex]?.experiments)
+            ? sections[sectionIndex].experiments
+            : [];
+        for (let expIndex = 0; expIndex < experiments.length; expIndex += 1) {
+            const experiment = experiments[expIndex];
+            const files = getExperimentFileOverview(experiment).htmlFiles || [];
+            const file = files.find((entry) => {
+                const values = [entry.path, entry.name, entry.resource_id, entry.resourceId]
+                    .map(normalizeTaskResourceId)
+                    .filter(Boolean);
+                return values.some((value) => value === resourceId);
+            });
+            if (file) {
+                return {
+                    resource,
+                    section: sections[sectionIndex],
+                    sectionIndex,
+                    exp: experiment,
+                    expIndex,
+                    file,
+                    overview: getExperimentFileOverview(experiment),
+                };
+            }
+        }
+    }
+    return null;
+}
+
 function getResourceButtonLabel(file, kind) {
     if (kind === "html") return "打开体验";
     if (kind === "scratch") return "打开 Scratch";
@@ -3576,6 +3764,7 @@ function makeExperimentResourceButton(file, context, options = {}) {
     button.className = `btn ${options.primary ? "btn-primary" : "btn-secondary"} btn-sm`;
     button.textContent = options.label || getResourceButtonLabel(file, kind);
     button.addEventListener("click", withAsyncActionErrorBoundary(async () => {
+        if (!ensureRunnableStudentCourse(context.resource)) return;
         resourcesState.activeSectionIndex = context.sectionIndex;
         resourcesState.activeExperimentIndex = context.expIndex;
         if (isStudentLessonMode() && (kind === "notebook" || kind === "python")) {
@@ -3618,6 +3807,7 @@ function makeExperimentResourceButton(file, context, options = {}) {
 async function openStudentExperimentPage(tabId, context, file = null) {
     const normalized = normalizeWorkspaceTabId(tabId);
     if (!context?.resource) return null;
+    if (!ensureRunnableStudentCourse(context.resource)) return null;
     resourcesState.activeCourseWorkspaceTab = normalized;
     resourcesState.activeSectionIndex = context.sectionIndex;
     resourcesState.activeExperimentIndex = context.expIndex;
@@ -3884,6 +4074,14 @@ function buildStudentHtmlExperienceView(context) {
     const wrap = document.createElement("section");
     wrap.className = "resources-student-html-experience";
 
+    if (!isRunnableStudentCourse(context?.resource)) {
+        const empty = document.createElement("div");
+        empty.className = "resources-course-empty";
+        empty.textContent = "请先在设置中选择与教师课堂对应的本地课程文件夹。匹配成功后才能打开实验。";
+        wrap.appendChild(empty);
+        return wrap;
+    }
+
     const head = document.createElement("div");
     head.className = "resources-student-html-experience-head";
     const info = document.createElement("div");
@@ -3924,7 +4122,7 @@ function buildStudentHtmlExperienceView(context) {
         return wrap;
     }
 
-    const frameUrl =
+    let frameUrl =
         buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient) ||
         resolveResourceUrl(primaryHtml.path || "", context.resource, {
             repoUrl: resourcesState.repoUrl,
@@ -3942,26 +4140,84 @@ function buildStudentHtmlExperienceView(context) {
 
     const frameWrap = document.createElement("div");
     frameWrap.className = "resources-student-html-frame-wrap";
+    const toolbar = document.createElement("div");
+    toolbar.className = "resources-student-html-experience-toolbar";
+    const submissionContext = getXEduSubmissionContext(context);
+    const hideExternalOpen = Boolean(String(submissionContext?.grant || "").trim());
+    if (!hideExternalOpen) {
+        const authNotice = document.createElement("div");
+        authNotice.className = "resources-student-html-auth-notice";
+        authNotice.setAttribute("role", "status");
+        authNotice.textContent = "当前未连接学习平台提交授权，分数无法回传。请从学习平台点「打开 XEdu Client」重新进入。";
+        toolbar.appendChild(authNotice);
+        if (!resourcesState._platformAuthMissingNotified) {
+            resourcesState._platformAuthMissingNotified = true;
+            notifyUser("当前未连接学习平台提交授权，分数无法回传", "info");
+        }
+    }
+    const openBrowserBtn = document.createElement("button");
+    openBrowserBtn.type = "button";
+    openBrowserBtn.className = "btn btn-secondary btn-sm resources-student-html-open";
+    openBrowserBtn.title = hideExternalOpen
+        ? "平台提交任务请在 XEdu Client 内完成，分数不会通过系统浏览器同步"
+        : "用系统默认浏览器打开当前体验页";
+    openBrowserBtn.setAttribute(
+        "aria-label",
+        hideExternalOpen ? "平台提交仅支持在 XEdu Client 内完成" : "用默认浏览器打开",
+    );
+    const openBrowserIcon = document.createElement("img");
+    openBrowserIcon.className = "resources-student-html-open-icon";
+    openBrowserIcon.src = "assets/icon-external.svg";
+    openBrowserIcon.alt = "";
+    openBrowserIcon.setAttribute("aria-hidden", "true");
+    openBrowserBtn.appendChild(openBrowserIcon);
+    openBrowserBtn.appendChild(document.createTextNode("用默认浏览器打开"));
+    openBrowserBtn.addEventListener("click", withAsyncActionErrorBoundary(async () => {
+        openBrowserBtn.disabled = true;
+        try {
+            if (context.resource?.source === "local" && !isRemotePath(primaryHtml.path || "")) {
+                await refreshLocalCourseHandle(context.resource, apiClient);
+                frameUrl = buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient);
+                if (!frameUrl) {
+                    throw new Error("无法生成稳定的本地课程地址");
+                }
+                frame.src = frameUrl;
+                courseAiFrameBridge.attach(frame, frameUrl);
+                xeduSubmissionBridge.attach(frame, frameUrl, getXEduSubmissionContext(context));
+            }
+            const result = await openExternal(frameUrl);
+            if (result?.success === false) {
+                throw new Error(result.error || "系统未能启动默认浏览器");
+            }
+        } finally {
+            openBrowserBtn.disabled = false;
+        }
+    }, {
+        fallback: "无法用默认浏览器打开体验页",
+        logLabel: "打开互动体验页面失败",
+    }));
+    if (!hideExternalOpen) {
+        toolbar.appendChild(openBrowserBtn);
+    }
     const frame = document.createElement("iframe");
     frame.className = "resources-student-html-frame";
     frame.title = primaryHtml.name || primaryHtml.path || "互动体验";
     frame.allow = "camera *";
     frame.src = frameUrl;
     frame.loading = "eager";
+    if (toolbar.childNodes.length) {
+        frameWrap.appendChild(toolbar);
+    }
     frameWrap.appendChild(frame);
     courseAiFrameBridge.attach(frame, frameUrl);
+    logPlatformSubmission("bridge-attach", {
+        hasGrant: Boolean(String(submissionContext?.grant || "").trim()),
+        hasSubmitUrl: Boolean(String(submissionContext?.submit_url || "").trim()),
+        resourceId: submissionContext?.resource_id || null,
+        frameOrigin: (() => { try { return new URL(frameUrl).origin; } catch (_) { return null; } })(),
+    });
+    xeduSubmissionBridge.attach(frame, frameUrl, submissionContext);
     wrap.appendChild(frameWrap);
-    const openBrowserBtn = document.createElement("button");
-    openBrowserBtn.type = "button";
-    openBrowserBtn.className = "btn btn-secondary btn-sm resources-student-html-open";
-    openBrowserBtn.textContent = "在新窗口打开体验";
-    openBrowserBtn.addEventListener("click", withAsyncActionErrorBoundary(async () => {
-        await openExternal(frameUrl);
-    }, {
-        fallback: "打开互动体验页面失败",
-        logLabel: "打开互动体验页面失败",
-    }));
-    wrap.appendChild(openBrowserBtn);
     return wrap;
 }
 
@@ -3982,6 +4238,7 @@ async function openStudentPythonWorkspace(
     if (!isCurrentStudentNavigation(navigationRevision)) return null;
     const resource = course || pickStudentCurrentCourse();
     if (!resource) return null;
+    if (!ensureRunnableStudentCourse(resource)) return null;
     const target = context || findFirstExperimentWithWorkspaceFiles(resource, "python");
     const sectionIndex = Number.isFinite(target?.sectionIndex) ? target.sectionIndex : getCurrentLessonIndex(resource);
     const expIndex = Number.isFinite(target?.expIndex) ? target.expIndex : 0;
@@ -4033,6 +4290,7 @@ async function openStudentVisualWorkspace(course, context = null) {
     const currentCourse = pickStudentCurrentCourse();
     const resource = currentCourse || course;
     if (!resource) return null;
+    if (!ensureRunnableStudentCourse(resource)) return null;
     const target = context || findFirstExperimentWithWorkspaceFiles(resource, "visual");
     const sectionIndex = Number.isFinite(target?.sectionIndex) ? target.sectionIndex : getCurrentLessonIndex(resource);
     const expIndex = Number.isFinite(target?.expIndex) ? target.expIndex : 0;
@@ -4448,7 +4706,7 @@ function getMutableExperiments(section) {
 }
 
 function persistLocalCoursesState() {
-        persistLocalCourses(resourcesState.localCourses, saveLocalCourses, scheduleClassroomSync);
+    persistLocalCourses(resourcesState.localCourses, saveLocalCourses);
     resourcesState.resourcesCache = resourcesState.localCourses.slice();
 }
 
@@ -4635,6 +4893,14 @@ function renderResources(list = []) {
         if (course) {
             resourcesState.activeSectionIndex = getCurrentLessonIndex(course);
             showDetailView(course, { tabId: resourcesState.activeCourseWorkspaceTab, preserveExperiment: true });
+            const previousHandle = String(course.resource_handle || "");
+            refreshLocalCourseHandle(course, apiClient).then((readyCourse) => {
+                if (pickStudentCurrentCourse() !== course) return;
+                const nextHandle = String(readyCourse?.resource_handle || course.resource_handle || "");
+                if (nextHandle && nextHandle !== previousHandle) {
+                    showDetailView(course, { tabId: resourcesState.activeCourseWorkspaceTab, preserveExperiment: true });
+                }
+            }).catch(() => {});
             return;
         }
         renderStudentLessonEmpty(resourcesState.activeCourseWorkspaceTab);
@@ -4898,7 +5164,7 @@ function renderStudentLessonEmpty(tabId = resourcesState.activeCourseWorkspaceTa
 
     const desc = document.createElement("div");
     desc.className = "resources-student-empty-desc";
-    desc.textContent = `${getWorkspaceTabTitle(tabId)}会在加入课堂后显示；也可以直接把课程 ZIP 或完整课程文件夹拖到上方导入区。`;
+    desc.textContent = "请在“设置 → 课程设置”选择课程文件夹。学习空间只显示并读取该文件夹及其子文件夹中的课程。";
     wrap.appendChild(desc);
 
     const actions = document.createElement("div");
@@ -5366,13 +5632,16 @@ function renderResourceDetailSplitContent(resource, contentEl) {
         mainPane.appendChild(expCard);
     }
 
-    const context = buildExperimentResourceContext(
-        resource,
-        selectedSection,
-        resourcesState.activeSectionIndex,
-        selectedExperiment,
-        resourcesState.activeExperimentIndex
-    );
+    const context = {
+        ...buildExperimentResourceContext(
+            resource,
+            selectedSection,
+            resourcesState.activeSectionIndex,
+            selectedExperiment,
+            resourcesState.activeExperimentIndex
+        ),
+        submission: resourcesState.activePlatformSubmission || null,
+    };
     if (isStudentLessonMode()) {
         mainPane.appendChild(
             resourcesState.activeCourseWorkspaceTab === "experience"
@@ -5888,7 +6157,7 @@ async function openExperimentEntry(file, kind = "file", context = null) {
             resourcesState.runningExperimentKey = buildExperimentStateKey(resource, sectionIndex, expIndex);
         }
     }
-    if (kind === "notebook") {
+    if (kind === "notebook" || kind === "python") {
         const opened = await openNotebookInConsole(file.path);
         if (opened) {
             if (resourcesState.currentResource) {
@@ -5917,6 +6186,7 @@ async function openExperimentEntry(file, kind = "file", context = null) {
         return;
     }
     if (kind === "html" && context?.resource && !isRemotePath(file?.path || "")) {
+        await refreshLocalCourseHandle(context.resource, apiClient);
         const previewUrl = buildLocalCourseFileUrl(context.resource, file.path || "", apiClient);
         if (previewUrl) {
             await openExternal(previewUrl);
@@ -6085,7 +6355,7 @@ function renderFileItem(file, depth = 0) {
                 });
                 return;
             }
-            if (isNotebook && !isRemotePath(filePath)) {
+            if ((isNotebook || isPythonScriptFile(file)) && !isRemotePath(filePath)) {
                 const opened = await openNotebookInConsole(filePath);
                 if (opened) return;
             }
@@ -6821,7 +7091,6 @@ async function loadResourcesIndex() {
         refreshLocalCoursesFromDisk,
         clearDemoCourseBindingIfNeeded,
         persistLocalCoursesState,
-        scheduleClassroomSync,
         classroomState: resourcesState.classroomState,
         buildClassroomBaseUrl,
         apiClient,
@@ -6905,12 +7174,36 @@ async function handleLearningSpaceAction(action) {
         if (classroomCode === null) return;
         const result = await connectStudentClassroomByCode(classroomCode, { showResourcesView: true });
         if (!result?.success && result?.message) {
-            alert(result.message);
+            notifyUser(result.message, "error");
+        } else if (result?.warning) {
+            notifyUser(result.warning, "warning");
         }
         return;
     }
     if (action === "refresh") {
+        if (isStudentLessonMode() && !resourcesState.classroomState.connected) {
+            await discoverClassrooms();
+        }
         await loadResourcesIndex();
+        if (isStudentLessonMode() && resourcesState.classroomState.connected) {
+            try {
+                await syncStudentClassroomCourseFromConnectedSource();
+            } catch (error) {
+                notifyUser(extractApiErrorMessage(error, "同步课堂课程失败"), "error");
+                renderStudentLessonEmpty(resourcesState.activeCourseWorkspaceTab);
+                return;
+            }
+            const course = pickStudentCurrentCourse();
+            if (course?.local_path) {
+                await openStudentLessonTab(
+                    resourcesState.activeCourseWorkspaceTab,
+                    document.getElementById("nav-student-lesson-item"),
+                );
+            } else {
+                renderStudentLessonEmpty(resourcesState.activeCourseWorkspaceTab);
+            }
+        }
+        return;
     }
 }
 
@@ -7069,6 +7362,8 @@ export async function initResourcesPage() {
         await loadResourcesIndex();
         if (!isStudentLessonMode()) {
             showListView();
+        } else if (pickStudentCurrentCourse()?.local_path) {
+            // Student lesson tab will render the synced local course.
         } else if (!resourcesState.currentResource) {
             renderStudentLessonEmpty(resourcesState.activeCourseWorkspaceTab);
         }
@@ -7103,7 +7398,17 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
             window.app.ui.showTab("resources", navItem || document.getElementById("nav-student-lesson-item"));
         }
 
+        if (resourcesState.resourcesPageReady && isStudentLessonMode() && resourcesState.classroomState.connected) {
+            try {
+                await syncStudentClassroomCourseFromConnectedSource();
+            } catch (error) {
+                notifyUser(extractApiErrorMessage(error, "同步课堂课程失败"), "warning");
+            }
+        }
         const cachedCourse = pickStudentCurrentCourse();
+        if (cachedCourse) {
+            await refreshLocalCourseHandle(cachedCourse, apiClient);
+        }
         if (cachedCourse && (resourcesState.activeCourseWorkspaceTab === "python" || resourcesState.activeCourseWorkspaceTab === "visual")) {
             initResourcesPage().catch((error) => {
                 console.warn("后台刷新课程资源失败:", error);
@@ -7116,7 +7421,18 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
 
         await initResourcesPage();
         if (!isCurrentStudentNavigation(navigationRevision)) return null;
+        if (resourcesState.classroomState.connected) {
+            try {
+                await syncStudentClassroomCourseFromConnectedSource();
+            } catch (error) {
+                notifyUser(extractApiErrorMessage(error, "同步课堂课程失败"), "warning");
+            }
+        }
+        if (!isCurrentStudentNavigation(navigationRevision)) return null;
         const currentCourse = pickStudentCurrentCourse();
+        if (currentCourse) {
+            await refreshLocalCourseHandle(currentCourse, apiClient);
+        }
         if (!currentCourse && (resourcesState.activeCourseWorkspaceTab === "python" || resourcesState.activeCourseWorkspaceTab === "visual")) {
             return openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
         }
@@ -7131,6 +7447,13 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
             return openStudentVisualWorkspace(currentCourse);
         }
         resourcesState.activeSectionIndex = getCurrentLessonIndex(currentCourse);
+        // Classroom/lesson sync must not wipe a live platform submission grant.
+        if (resourcesState.activePlatformSubmission?.grant
+            && resourcesState.activeCourseWorkspaceTab === "experience") {
+            logPlatformSubmission("lesson-tab-preserve-grant", {
+                tabId: resourcesState.activeCourseWorkspaceTab,
+            });
+        }
         showDetailView(currentCourse, {
             tabId: resourcesState.activeCourseWorkspaceTab,
             preserveExperiment: true,
@@ -7143,6 +7466,97 @@ export async function openStudentLessonTab(tabId = "route", navItem = null) {
             updateTeacherModeUI();
         }
     }
+}
+
+export async function openStudentLocalTask(taskContext) {
+    if (!taskContext || taskContext.ok === false) {
+        notifyUser(taskContext?.error || "无法打开本地任务", "error");
+        logPlatformSubmission("open-local-task-rejected", { error: taskContext?.error || null });
+        return false;
+    }
+    const submission = taskContext?.grant
+        ? { ...taskContext }
+        : getXEduSubmissionContext(taskContext);
+    if (!submission?.grant || !submission.course_id || !submission.activity_id || !submission.resource_id) {
+        notifyUser("本地任务授权信息不完整", "error");
+        logPlatformSubmission("open-local-task-incomplete", {
+            hasGrant: Boolean(submission?.grant),
+            course_id: submission?.course_id || null,
+        });
+        return false;
+    }
+    // Deep-link must win over concurrent classroom auto-open / lesson sync rebuilds.
+    resourcesState.platformDeepLinkGeneration = Number(resourcesState.platformDeepLinkGeneration || 0) + 1;
+    const deepLinkGeneration = resourcesState.platformDeepLinkGeneration;
+    resourcesState.activePlatformSubmission = { ...submission };
+    resourcesState._platformAuthMissingNotified = false;
+    invalidateStudentNavigation();
+    logPlatformSubmission("open-local-task-start", {
+        course_id: submission.course_id,
+        activity_id: submission.activity_id,
+        resource_id: submission.resource_id,
+        hasSubmitUrl: Boolean(submission.submit_url),
+        deepLinkGeneration,
+    });
+    await initResourcesPage();
+    if (deepLinkGeneration !== resourcesState.platformDeepLinkGeneration) {
+        logPlatformSubmission("open-local-task-superseded-after-init", { deepLinkGeneration });
+        return false;
+    }
+    try {
+        await ensureLocalTaskCourse(submission, {
+            localCourses: resourcesState.localCourses,
+            coursesRoot: resourcesState.coursesRoot,
+            electronAPI: window.electronAPI,
+            apiClient,
+            refreshResources: loadResourcesIndex,
+        });
+    } catch (error) {
+        notifyUser(error?.message || "本地课程准备失败", "error");
+        logPlatformSubmission("open-local-task-course-fail", { error: error?.message || String(error) });
+        return false;
+    }
+    if (deepLinkGeneration !== resourcesState.platformDeepLinkGeneration) {
+        logPlatformSubmission("open-local-task-superseded-after-course", { deepLinkGeneration });
+        return false;
+    }
+    // Re-assert grant in case classroom sync mutated related UI state.
+    resourcesState.activePlatformSubmission = { ...submission };
+    const target = findLocalTaskTarget(submission);
+    if (!target) {
+        notifyUser("找不到该本地任务，请先同步对应课程", "error");
+        logPlatformSubmission("open-local-task-target-missing", { resource_id: submission.resource_id });
+        return false;
+    }
+    const context = {
+        ...buildExperimentResourceContext(
+            target.resource,
+            target.section,
+            target.sectionIndex,
+            target.exp,
+            target.expIndex,
+        ),
+        submission,
+    };
+    resourcesState.activeSectionIndex = target.sectionIndex;
+    resourcesState.activeExperimentIndex = target.expIndex;
+    await openStudentExperimentPage("experience", context, target.file);
+    // Final rebuild with grant still active — beats any classroom showDetailView that raced without it.
+    if (deepLinkGeneration === resourcesState.platformDeepLinkGeneration
+        && resourcesState.activePlatformSubmission?.grant) {
+        showDetailView(target.resource, {
+            tabId: "experience",
+            sectionIndex: target.sectionIndex,
+            expIndex: target.expIndex,
+            preserveSection: true,
+            preserveExperiment: true,
+        });
+    }
+    logPlatformSubmission("open-local-task-done", {
+        deepLinkGeneration,
+        hasActiveGrant: Boolean(resourcesState.activePlatformSubmission?.grant),
+    });
+    return true;
 }
 
 export async function refreshResources() {
@@ -7171,15 +7585,30 @@ export async function toggleTeacherMode() {
 }
 
 async function prepareStudentClassroomLaunch(resource, options = {}) {
+    let lastStatusKey = "";
     return prepareStudentClassroomLaunchFlow(resource, options, {
-        getStoredProjectDirFallback: () => getStoredProjectDirFallback(document),
-        resolveClassroomPullTargetPath,
         apiClient,
         addCourse,
+        localCourses: () => resourcesState.localCourses,
+        coursesRoot: resourcesState.coursesRoot,
         findFirstNotebookPathInCourse,
         normalizeSections,
         getExperimentFileOverview,
         isRemotePath,
+        setImportStatus: (state, message, progress, options = {}) => {
+            renderTransferStatus(
+                document.getElementById("student-classroom-import-status"),
+                state,
+                message,
+                progress,
+            );
+            const text = String(message || "").trim();
+            const key = `${state}:${text.split("·")[0].trim()}`;
+            if (!text || key === lastStatusKey || options.notify === false) return;
+            lastStatusKey = key;
+            const level = state === "success" ? "success" : state === "error" ? "error" : "info";
+            notifyUser(text, level);
+        },
     });
 }
 
@@ -7203,8 +7632,12 @@ export async function connectStudentClassroomByCode(code, options = {}) {
         prepareStudentClassroomLaunch,
         extractApiErrorMessage,
         updateClassroomBanner,
+        openStudentLessonTab,
         showDetailView,
-        showListView,
+        showListView: () => {
+            showListView();
+            renderResources(resourcesState.filteredResources);
+        },
         resourcesCache: () => resourcesState.resourcesCache,
     });
 }

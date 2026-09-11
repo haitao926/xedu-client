@@ -1,6 +1,14 @@
 const externalPythonConfig = require('./electron-builder.external-python.cjs');
 
 module.exports = {
+
+  protocols: [
+    {
+      name: 'XEdu Client',
+      schemes: ['xedu'],
+    },
+  ],
+
     ...externalPythonConfig,
     directories: {
         ...externalPythonConfig.directories,

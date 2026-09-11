@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XEdu 启动测试</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #17202a; background: #f4f6f8; }
+    body { max-width: 760px; margin: 0 auto; padding: 32px 20px; }
+    main { background: #fff; border: 1px solid #dce2e8; border-radius: 8px; padding: 24px; }
+    label { display: block; margin: 14px 0 6px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #b8c2cc; border-radius: 6px; font: inherit; }
+    button { margin-top: 20px; border: 0; border-radius: 6px; background: #1264a3; color: #fff; padding: 10px 16px; cursor: pointer; font: inherit; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    code { overflow-wrap: anywhere; }
+    #status { min-height: 1.5em; margin-top: 16px; }
+    .note { padding: 12px; background: #fff8e6; border-left: 4px solid #d99a00; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>XEdu 启动测试</h1>
+    <p>填写 OpenLearnSite 返回的一次性 grant，点击按钮唤起 XEdu 并打开精确课程资源。</p>
+    <p class="note">本页面不会保存 grant。测试完成后可关闭页面。</p>
+
+    <label for="platform-origin">平台 HTTPS 地址</label>
+    <input id="platform-origin" type="url" value="https://learn.example" autocomplete="off">
+
+    <label for="course-id">课程 ID</label>
+    <input id="course-id" type="text" value="course-2026-01" autocomplete="off">
+
+    <label for="activity-id">活动 ID</label>
+    <input id="activity-id" type="text" value="course-package-sync-test" autocomplete="off">
+
+    <label for="resource-id">精确资源路径</label>
+    <input id="resource-id" type="text" value="lesson1/exp1/xedu-platform-package-sync-test.html" autocomplete="off">
+
+    <label for="grant">一次性启动 grant</label>
+    <input id="grant" type="password" placeholder="粘贴 OpenLearnSite 生成的一次性 grant" autocomplete="off">
+
+    <button id="launch" type="button">唤起 XEdu</button>
+    <p id="status" role="status" aria-live="polite">等待唤起。</p>
+    <p><small>生成的协议：<code id="preview">尚未生成</code></small></p>
+  </main>
+  <script>
+    const fields = {
+      platformOrigin: document.querySelector('#platform-origin'),
+      courseId: document.querySelector('#course-id'),
+      activityId: document.querySelector('#activity-id'),
+      resourceId: document.querySelector('#resource-id'),
+      grant: document.querySelector('#grant'),
+    };
+    const launchButton = document.querySelector('#launch');
+    const status = document.querySelector('#status');
+    const preview = document.querySelector('#preview');
+
+    function readValue(input) {
+      return input.value.trim();
+    }
+
+    function buildLaunchUrl() {
+      const platformOrigin = new URL(readValue(fields.platformOrigin));
+      if (platformOrigin.protocol !== 'https:' || platformOrigin.pathname !== '/' || platformOrigin.search || platformOrigin.hash) {
+        throw new Error('平台地址必须是没有路径和参数的 HTTPS 来源。');
+      }
+      const values = {
+        course_id: readValue(fields.courseId),
+        activity_id: readValue(fields.activityId),
+        resource_id: readValue(fields.resourceId),
+        grant: readValue(fields.grant),
+      };
+      if (Object.values(values).some((value) => !value)) throw new Error('请完整填写课程、活动、资源和 grant。');
+      const launchUrl = new URL('xedu://open-local-task');
+      launchUrl.searchParams.set('platform_origin', platformOrigin.origin);
+      Object.entries(values).forEach(([name, value]) => launchUrl.searchParams.set(name, value));
+      return launchUrl.href;
+    }
+
+    launchButton.addEventListener('click', () => {
+      try {
+        const launchUrl = buildLaunchUrl();
+        preview.textContent = launchUrl;
+        status.textContent = '正在唤起 XEdu……';
+        window.location.assign(launchUrl);
+      } catch (error) {
+        status.textContent = error.message || '启动参数无效。';
+      }
+    });
+  </script>
+</body>
+</html>

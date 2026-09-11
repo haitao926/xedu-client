@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>平台内 HTML 自查任务示例</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #17202a; background: #f4f6f8; }
+    body { max-width: 720px; margin: 0 auto; padding: 32px 20px; }
+    main { background: #fff; border: 1px solid #dce2e8; border-radius: 8px; padding: 24px; }
+    fieldset { border: 0; padding: 0; margin: 20px 0; }
+    label { display: block; margin: 12px 0; }
+    button { border: 0; border-radius: 6px; background: #1264a3; color: #fff; padding: 10px 16px; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    #status { min-height: 1.5em; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>HTML 自查任务</h1>
+    <p>选择正确答案后提交。本页面运行在学习平台 iframe 中。</p>
+    <fieldset>
+      <legend>HTML 中用于放置页面主标题的元素是：</legend>
+      <label><input type="radio" name="answer" value="h1"> h1</label>
+      <label><input type="radio" name="answer" value="title"> title</label>
+      <label><input type="radio" name="answer" value="header"> header</label>
+    </fieldset>
+    <button id="submit" type="button">提交结果</button>
+    <p id="status" role="status" aria-live="polite"></p>
+  </main>
+  <script>
+    const submitButton = document.querySelector('#submit');
+    const status = document.querySelector('#status');
+
+    submitButton.addEventListener('click', () => {
+      const answer = document.querySelector('input[name="answer"]:checked');
+      if (!answer) {
+        status.textContent = '请先完成自查。';
+        return;
+      }
+
+      const score = answer.value === 'h1' ? 100 : 0;
+      const message = { name: 'HTML 标题元素自查', value: score };
+      window.parent.postMessage(JSON.stringify(message), '*');
+      status.textContent = score === 100
+        ? '结果已提交给学习平台，请以平台保存状态为准。'
+        : '结果已提交，请查看平台反馈。';
+    });
+  </script>
+</body>
+</html>

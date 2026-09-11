@@ -37,6 +37,14 @@ const portablePythonFilter = [
 ];
 
 module.exports = {
+
+  protocols: [
+    {
+      name: 'XEdu Client',
+      schemes: ['xedu'],
+    },
+  ],
+
     ...baseBuildConfig,
     directories: {
         ...baseBuildConfig.directories,
