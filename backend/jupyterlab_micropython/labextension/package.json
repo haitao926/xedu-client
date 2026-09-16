@@ -28,7 +28,7 @@
     "extension": true,
     "outputDir": "jupyterlab_micropython/labextension",
     "_build": {
-      "load": "static/remoteEntry.2ff0d189d4738c2c02a6.js",
+      "load": "static/remoteEntry.ed8ef368e9dadd0ee7f3.js",
       "extension": "./extension"
     }
   }

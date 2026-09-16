@@ -15,6 +15,14 @@ COMMANDS = (
     ("python syntax", ["npm", "run", "check:python-syntax"]),
     ("backend tests", [sys.executable, "-m", "pytest", "backend/tests", "-q"]),
     (
+        "ESP32 MicroPython panel tests",
+        ["node", "--test", "jupyterlab_micropython/src/index.test.mjs"],
+    ),
+    (
+        "ESP32 MicroPython package layout",
+        ["node", "--test", "electron/test/micropython-extension-package.test.mjs"],
+    ),
+    (
         "electron security tests",
         [
             "node",
