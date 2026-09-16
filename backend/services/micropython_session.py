@@ -145,7 +145,7 @@ class MicroPythonSessionManager:
             if not _is_safe_port(device):
                 continue
             blob = f"{device} {description}".lower()
-            if "bluetooth" in blob or re.search(r"/dev/ttys\d+$", device.lower()):
+            if "bluetooth" in blob or re.search(r"(?:^|/)ttys\d+$", device.lower()):
                 continue
             ports.append(
                 {
