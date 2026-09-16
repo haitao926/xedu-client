@@ -24,6 +24,8 @@ test('ESP32 MicroPython extension is packaged with the backend runtime', async (
   assert.equal(metadata.jupyterlab.extension, true);
   assert.match(serverSource, /xedu-micropython/);
   assert.match(sessionSource, /class MicroPythonSessionManager/);
+  assert.match(sessionSource, /encode_paste_source/);
+  assert.match(sessionSource, /NO_REPL_MESSAGE/);
 
   const staticFiles = await readdir(new URL('backend/jupyterlab_micropython/labextension/static/', repoRoot));
   assert.ok(staticFiles.some((name) => /^remoteEntry\..+\.js$/.test(name)));

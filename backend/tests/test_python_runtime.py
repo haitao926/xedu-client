@@ -700,13 +700,18 @@ class PythonRuntimeTestCase(unittest.TestCase):
 
         self.assertEqual(
             specs,
-            ["jupyterlab<4.3", "ipykernel<6.30", "jupyterlab-language-pack-zh-CN<4.3"],
+            [
+                "jupyterlab<4.3",
+                "ipykernel<6.30",
+                "jupyterlab-language-pack-zh-CN<4.3",
+                "pyserial==3.5",
+            ],
         )
 
     def test_newer_python_repair_keeps_unpinned_jupyter_specs(self):
         self.assertEqual(
             _jupyter_repair_specs({"python_version": "3.12.8"}),
-            ["jupyterlab", "ipykernel", "jupyterlab-language-pack-zh-CN"],
+            ["jupyterlab", "ipykernel", "jupyterlab-language-pack-zh-CN", "pyserial"],
         )
 
     def test_repair_matches_language_pack_to_existing_jupyterlab_minor_version(self):
@@ -718,6 +723,7 @@ class PythonRuntimeTestCase(unittest.TestCase):
                 "jupyterlab",
                 "ipykernel",
                 "jupyterlab-language-pack-zh-CN>=4.4,<4.5",
+                "pyserial==3.5",
             ],
         )
 

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, copyFileSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,7 +13,10 @@ const corePath = execFileSync(
 ).trim();
 
 mkdirSync(join(extensionRoot, 'lib'), { recursive: true });
-copyFileSync(join(extensionRoot, 'src', 'index.js'), join(extensionRoot, 'lib', 'index.js'));
+for (const fileName of readdirSync(join(extensionRoot, 'src'))) {
+  if (!fileName.endsWith('.js') || fileName.includes('.test.')) continue;
+  copyFileSync(join(extensionRoot, 'src', fileName), join(extensionRoot, 'lib', fileName));
+}
 execFileSync(
   join(extensionRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'build-labextension.cmd' : 'build-labextension'),
   ['.', '--core-path', corePath],
