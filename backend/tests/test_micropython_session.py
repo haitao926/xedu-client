@@ -106,6 +106,24 @@ class MicroPythonSessionTestCase(unittest.TestCase):
                     "Port",
                     (),
                     {
+                        "device": "/dev/ttyUSB0",
+                        "description": "CP2102 USB to UART Bridge Controller",
+                        "hwid": "USB VID:PID=10C4:EA60",
+                    },
+                )(),
+                type(
+                    "Port",
+                    (),
+                    {
+                        "device": "/dev/ttyS0",
+                        "description": "n/a",
+                        "hwid": "n/a",
+                    },
+                )(),
+                type(
+                    "Port",
+                    (),
+                    {
                         "device": "/dev/tty.Bluetooth-Incoming-Port",
                         "description": "Bluetooth-Incoming-Port",
                         "hwid": "n/a",
@@ -116,7 +134,7 @@ class MicroPythonSessionTestCase(unittest.TestCase):
         options.update(kwargs)
         return MicroPythonSessionManager(**options)
 
-    def test_list_ports_skips_bluetooth_and_returns_device_metadata(self):
+    def test_list_ports_skips_bluetooth_platform_uarts_and_returns_usb_metadata(self):
         self.assertEqual(
             self.manager.list_ports(),
             [
@@ -129,6 +147,11 @@ class MicroPythonSessionTestCase(unittest.TestCase):
                     "device": "COM3",
                     "description": "USB-SERIAL CH340",
                     "hwid": "USB VID:PID=1A86:7523",
+                },
+                {
+                    "device": "/dev/ttyUSB0",
+                    "description": "CP2102 USB to UART Bridge Controller",
+                    "hwid": "USB VID:PID=10C4:EA60",
                 },
             ],
         )

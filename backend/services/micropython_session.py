@@ -142,7 +142,10 @@ class MicroPythonSessionManager:
         for port in self._ports_factory() or []:
             device = str(getattr(port, "device", "") or "").strip()
             description = str(getattr(port, "description", "") or "").strip()
-            if not _is_safe_port(device) or "bluetooth" in f"{device} {description}".lower():
+            if not _is_safe_port(device):
+                continue
+            blob = f"{device} {description}".lower()
+            if "bluetooth" in blob or re.search(r"/dev/ttys\d+$", device.lower()):
                 continue
             ports.append(
                 {
