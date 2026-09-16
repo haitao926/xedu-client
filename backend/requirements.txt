@@ -8,6 +8,7 @@ Pygments==2.20.0
 PyYAML==6.0.1
 jupyterlab==4.5.9
 ipykernel==6.29.3
+pyserial==3.5
 jupyterlab-language-pack-zh-CN==4.5.post1
 numpy==1.26.4
 matplotlib==3.10.8

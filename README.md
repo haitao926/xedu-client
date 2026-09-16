@@ -21,6 +21,7 @@ XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Ju
 - 启动、停止、重启本地 Jupyter
 - 选择并检测本机 Python 3.8+ 解释器
 - 打开 Notebook 或 Python 文件继续实验
+- 在 JupyterLab 内通过 ESP32 实验插件编写并运行 MicroPython
 - 从课程资源或课堂入口落到当前实验
 - 控制 Jupyter 是否允许局域网访问
 
@@ -30,6 +31,8 @@ XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Ju
 - `POST /api/stop`
 - `POST /api/restart`
 - `GET /api/detect_python`
+
+ESP32 MicroPython 实验从 JupyterLab 启动器中的“ESP32 实验”进入。它使用当前课程实验目录中的 `.py` 文件，通过 USB 串口连接已刷入 MicroPython 固件的 ESP32，支持运行、停止、重启和查看设备输出。详细流程见 [ESP32 MicroPython 实验快速开始](docs/teacher/micropython-esp32-quickstart.md)。
 
 教师版发布包不内置 `python_env`。首次启动时，请在“Python”设置中选择本机的 `python.exe`（Windows）或 `bin/python3` / `bin/python`（macOS），再安装或确认项目依赖。选择结果保存到用户配置目录，不写入安装目录。即使所选环境没有 Flask，“修复兼容性”也会先通过独立标准库脚本直接修复 XEdu/Jupyter；后端启动时再单独补齐 Flask 等服务依赖。
 

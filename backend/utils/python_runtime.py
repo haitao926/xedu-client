@@ -17,14 +17,17 @@ from utils.xedu_compat import (
 
 
 MIN_PYTHON_VERSION = (3, 8)
+_WINDOWS_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 _VERSION_PATTERN = re.compile(r"Python\s+(\d+)\.(\d+)(?:\.(\d+))?")
 _ENVIRONMENT_MARKER = "__XEDU_ENVIRONMENT__="
 _JUPYTER_MODULES = {"jupyterlab": "JupyterLab", "notebook": "Notebook"}
 _JUPYTERLAB_ZH_CN_PACKAGE = "jupyterlab-language-pack-zh-CN"
+_MICROPYTHON_SERIAL_PACKAGE = "pyserial"
 _JUPYTER_REPAIR_PACKAGES = (
     "jupyterlab",
     "ipykernel",
     _JUPYTERLAB_ZH_CN_PACKAGE,
+    _MICROPYTHON_SERIAL_PACKAGE,
 )
 _JUPYTER_VERSION_PROBE = """
 import importlib.metadata as metadata
@@ -103,6 +106,7 @@ payload = {
     "jupyterlab_language_pack_zh_cn_version": package_version("jupyterlab-language-pack-zh-CN"),
     "jupyter_notebook_version": package_version("notebook"),
     "ipykernel_version": package_version("ipykernel"),
+    "pyserial_version": package_version("pyserial"),
     "xedu_runtime_ok": False,
     "xedu_runtime_message": "",
     "virtual_environment": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
@@ -220,6 +224,28 @@ def augment_conda_environment(
     return result
 
 
+def run_hidden_subprocess(command, **kwargs):
+    """Run a probe without flashing a console in a Windows GUI process.
+
+    Electron-spawned Flask inherits redirected stdio. On Windows, child
+    ``python.exe --version`` then fails with WinError 6 (invalid handle)
+    unless stdin is detached and CREATE_NO_WINDOW is set. macOS does not
+    have this console-handle problem.
+    """
+    kwargs.setdefault("stdin", subprocess.DEVNULL)
+    if os.name == "nt":
+        kwargs["creationflags"] = (
+            kwargs.get("creationflags", 0) | _WINDOWS_CREATE_NO_WINDOW
+        )
+        startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+        if startupinfo_cls is not None:
+            startupinfo = kwargs.get("startupinfo") or startupinfo_cls()
+            startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+            startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+            kwargs["startupinfo"] = startupinfo
+    return subprocess.run(command, **kwargs)
+
+
 def inspect_python_executable(executable: str) -> dict[str, Any]:
     """Return a user-facing validation result without importing the target environment."""
     # Do not call Path.resolve() here. On macOS and Unix virtualenvs, the
@@ -233,7 +259,7 @@ def inspect_python_executable(executable: str) -> dict[str, Any]:
         return {"success": False, "message": f"Python 解释器不可执行: {candidate}"}
 
     try:
-        completed = subprocess.run(
+        completed = run_hidden_subprocess(
             [str(candidate), "--version"],
             capture_output=True,
             text=True,
@@ -277,7 +303,7 @@ def inspect_jupyter_module(executable: str, module: str = "jupyterlab") -> dict[
         return {"success": False, "message": f"不支持检查的 Jupyter 模块: {module}"}
 
     try:
-        completed = subprocess.run(
+        completed = run_hidden_subprocess(
             [
                 validation["executable"],
                 "-c",
@@ -310,7 +336,7 @@ def inspect_jupyter_module(executable: str, module: str = "jupyterlab") -> dict[
 
     if module == "jupyterlab":
         try:
-            language_pack = subprocess.run(
+            language_pack = run_hidden_subprocess(
                 [
                     validation["executable"],
                     "-c",
@@ -367,7 +393,7 @@ def inspect_python_environment(executable: str, timeout_seconds: int = 20) -> di
         return validation
     candidate = validation["executable"]
     try:
-        completed = subprocess.run(
+        completed = run_hidden_subprocess(
             [candidate, "-c", _ENVIRONMENT_PROBE],
             capture_output=True,
             text=True,
@@ -414,6 +440,8 @@ def _missing_jupyter_packages(environment: dict[str, Any]) -> list[str]:
         missing.append("jupyterlab")
     if not environment.get("ipykernel_version"):
         missing.append("ipykernel")
+    if "pyserial_version" in environment and not environment.get("pyserial_version"):
+        missing.append(_MICROPYTHON_SERIAL_PACKAGE)
 
     language_pack_key = "jupyterlab_language_pack_zh_cn_version"
     if (
@@ -439,6 +467,7 @@ def _jupyter_repair_specs(environment: dict[str, Any]) -> list[str]:
             "jupyterlab<4.3",
             "ipykernel<6.30",
             "jupyterlab-language-pack-zh-CN<4.3",
+            "pyserial==3.5",
         ]
     jupyterlab_version = str(environment.get("jupyterlab_version") or "")
     version_match = re.match(r"^(\d+)\.(\d+)", jupyterlab_version)
@@ -448,7 +477,7 @@ def _jupyter_repair_specs(environment: dict[str, Any]) -> list[str]:
             f"jupyterlab-language-pack-zh-CN>={major}.{minor},"
             f"<{major}.{minor + 1}"
         )
-        return ["jupyterlab", "ipykernel", language_pack]
+        return ["jupyterlab", "ipykernel", language_pack, "pyserial==3.5"]
     return list(_JUPYTER_REPAIR_PACKAGES)
 
 
@@ -508,7 +537,7 @@ def _sibling_pip_candidates(executable: str) -> list[Path]:
 
 def find_sibling_pip_command(executable: str, *, runner=None) -> list[str] | None:
     """Return a usable pip launcher next to the selected interpreter."""
-    run = runner or subprocess.run
+    run = runner or run_hidden_subprocess
     env = augment_conda_environment(executable)
     for candidate in _sibling_pip_candidates(executable):
         if not candidate.is_file():
@@ -531,7 +560,7 @@ def find_sibling_pip_command(executable: str, *, runner=None) -> list[str] | Non
 
 def resolve_pip_command(executable: str, *, runner=None) -> list[str] | None:
     """Resolve pip for an interpreter, including Windows/Conda launchers."""
-    run = runner or subprocess.run
+    run = runner or run_hidden_subprocess
     module_command = [executable, "-m", "pip"]
     try:
         result = run(
@@ -562,7 +591,7 @@ def _run_pip_install(command: list[str], *, use_mirror: bool) -> dict[str, Any]:
         if index_url:
             attempt.extend(["-i", index_url])
         try:
-            completed = subprocess.run(
+            completed = run_hidden_subprocess(
                 attempt,
                 capture_output=True,
                 text=True,
@@ -586,7 +615,7 @@ def _ensure_target_pip(executable: str) -> dict[str, Any] | None:
     env = augment_conda_environment(executable)
     probe_error = ""
     try:
-        probe = subprocess.run(
+        probe = run_hidden_subprocess(
             [executable, "-m", "pip", "--version"],
             capture_output=True,
             text=True,
@@ -609,7 +638,7 @@ def _ensure_target_pip(executable: str) -> dict[str, Any] | None:
         return None
 
     try:
-        ensurepip = subprocess.run(
+        ensurepip = run_hidden_subprocess(
             [executable, "-m", "ensurepip", "--upgrade"],
             capture_output=True,
             text=True,
@@ -636,7 +665,7 @@ def _ensure_target_pip(executable: str) -> dict[str, Any] | None:
         }
 
     try:
-        reprobe = subprocess.run(
+        reprobe = run_hidden_subprocess(
             [executable, "-m", "pip", "--version"],
             capture_output=True,
             text=True,

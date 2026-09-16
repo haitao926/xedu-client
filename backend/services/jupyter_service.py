@@ -794,6 +794,12 @@ class JupyterManager:
         # 让 Jupyter 优先使用当前环境的 kernelspec
         env["JUPYTER_PREFER_ENV_PATH"] = "1"
 
+        backend_root = str(Path(__file__).resolve().parent.parent)
+        python_path = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = os.pathsep.join(
+            item for item in (backend_root, python_path) if item
+        )
+
         # 添加 Jupyter 相关的环境变量
         env['JUPYTER_ENABLE_LAB'] = 'yes' if not config.use_notebook else 'no'
         # 显式关闭 token/密码，防止读取旧配置时重新生成
@@ -811,6 +817,12 @@ class JupyterManager:
                 env['JUPYTER_CONFIG_DIR'] = str(cfg_dir)
                 env['JUPYTER_RUNTIME_DIR'] = str(runtime_dir)
                 self._write_jupyterlab_locale_default(cfg_dir)
+                extension_package = Path(__file__).resolve().parent.parent.parent / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension"
+                packaged_extension_package = Path(__file__).resolve().parent.parent / "jupyterlab_micropython" / "labextension"
+                if not extension_package.is_dir() and packaged_extension_package.is_dir():
+                    extension_package = packaged_extension_package
+                extension_path = extension_package.parent
+                self._write_micropython_server_config(cfg_dir, extension_path)
             except Exception as e:
                 logger.warning(f"Failed to prepare Jupyter config/runtime dirs: {e}")
 
@@ -837,6 +849,19 @@ class JupyterManager:
             ) + "\n",
             encoding="utf-8",
         )
+
+    @staticmethod
+    def _write_micropython_server_config(config_dir: Path, extension_path: Path) -> None:
+        config_file = config_dir / "jupyter_server_config.py"
+        lines = [
+            "c = get_config()",
+            "c.ServerApp.jpserver_extensions = {",
+            "    'services.jupyter_micropython_server': True,",
+            "}",
+        ]
+        if extension_path.is_dir():
+            lines.append(f"c.LabApp.extra_labextensions_path = [{str(extension_path)!r}]")
+        config_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def _ensure_default_kernel(self, python_exe: str, env: dict) -> None:
         """

@@ -22,6 +22,7 @@ from utils.python_runtime import (  # noqa: E402
     _conda_prefix_for_executable,
     find_sibling_pip_command,
     resolve_pip_command,
+    run_hidden_subprocess,
 )
 
 _conda_dll_directories_added = False
@@ -122,7 +123,7 @@ def missing_runtime_support_packages() -> list[str]:
 
 
 def _run(command: list[str], *, timeout: int = 300) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_hidden_subprocess(
         command,
         capture_output=True,
         text=True,

@@ -138,6 +138,22 @@ class JupyterManagerUnitTestCase(unittest.TestCase):
 
         self.assertEqual(user_settings, {"locale": "en"})
 
+    def test_prepare_environment_registers_micropython_server_extension(self):
+        manager = self.make_manager(python_executable="", activate_script="")
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(
+            os.environ,
+            {"XEDU_DATA_DIR": tmp_dir},
+            clear=False,
+        ):
+            environment = manager._prepare_environment(manager.config)  # noqa: SLF001
+            config_file = Path(environment["JUPYTER_CONFIG_DIR"]) / "jupyter_server_config.py"
+            config = config_file.read_text(encoding="utf-8")
+
+        self.assertIn("services.jupyter_micropython_server", config)
+        self.assertIn("jupyterlab_micropython'", config)
+        self.assertNotIn("/labextension']", config)
+
     def test_xedupro_jupyter_inherits_activated_environment_and_selected_kernel(self):
         manager = self.make_manager(python_executable="E:/XEdu/env/python.exe")
         activated = {

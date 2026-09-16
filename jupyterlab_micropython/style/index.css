@@ -1,0 +1,99 @@
+.xedu-micropython-panel {
+  min-width: 320px;
+  max-width: 420px;
+  background: var(--jp-layout-color1);
+}
+
+.xedu-micropython-content {
+  padding: 24px 20px 28px;
+  overflow: auto;
+  color: var(--jp-ui-font-color1);
+  font-size: 13px;
+}
+
+.xedu-micropython-eyebrow {
+  color: var(--jp-brand-color1);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+.xedu-micropython-content h2 {
+  margin: 5px 0 6px;
+  font-size: 21px;
+  letter-spacing: -.02em;
+}
+
+.xedu-micropython-lead,
+.xedu-micropython-hint {
+  color: var(--jp-ui-font-color2);
+  line-height: 1.55;
+}
+
+.xedu-micropython-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--jp-border-color2);
+}
+
+.xedu-micropython-section-title {
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.xedu-micropython-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.xedu-micropython-select,
+.xedu-micropython-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.xedu-micropython-button,
+.xedu-micropython-primary {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.xedu-micropython-primary {
+  margin-top: 10px;
+}
+
+.xedu-micropython-connect-actions .xedu-micropython-primary {
+  flex: 1;
+}
+
+.xedu-micropython-status,
+.xedu-micropython-file {
+  margin-top: 10px;
+  color: var(--jp-ui-font-color2);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.xedu-micropython-error {
+  color: var(--jp-error-color1);
+}
+
+.xedu-micropython-console {
+  min-height: 150px;
+  max-height: 260px;
+  margin: 0 0 10px;
+  padding: 12px;
+  overflow: auto;
+  background: var(--jp-layout-color0);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 4px;
+  color: var(--jp-ui-font-color1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.xedu-micropython-hint {
+  margin-top: 18px;
+  font-size: 12px;
+}

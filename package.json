@@ -1,6 +1,6 @@
 {
   "name": "xedu-client",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "专业的 Jupyter Notebook 桌面管理工具 - 重构版本",
   "main": "electron/main/main.js",
   "scripts": {
@@ -36,7 +36,8 @@
     "electron:build:external-python:mac": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.external-python.cjs --mac",
     "electron:build:external-python:win": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.external-python.cjs --win",
     "electron:build:external-python:win32": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.external-python.win32.cjs --win",
-    "electron:pack": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --dir"
+    "electron:pack": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --dir",
+    "build:micropython-extension": "npm run build --prefix jupyterlab_micropython"
   },
   "dependencies": {
     "jszip": "^3.10.1"
@@ -149,7 +150,15 @@
       "entitlementsInherit": "resources/entitlements.mac.plist",
       "extendInfo": {
         "NSCameraUsageDescription": "XEdu 课程中的 HTML 和 Scratch 实验需要使用摄像头。",
-        "NSLocalNetworkUsageDescription": "XEdu 需要访问同一局域网中的课堂设备以自动发现课堂。"
+        "NSLocalNetworkUsageDescription": "XEdu 需要访问同一局域网中的课堂设备以自动发现课堂。",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "com.xeduclient.open",
+            "CFBundleURLSchemes": [
+              "xedu"
+            ]
+          }
+        ]
       },
       "target": [
         {
@@ -165,7 +174,15 @@
           ]
         }
       ]
-    }
+    },
+    "protocols": [
+      {
+        "name": "XEdu Client",
+        "schemes": [
+          "xedu"
+        ]
+      }
+    ]
   },
   "keywords": [
     "jupyter",
