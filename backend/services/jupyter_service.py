@@ -23,6 +23,7 @@ from services.jupyter_environment import (
     build_jupyter_command,
     evaluate_environment_validation,
     merge_jupyter_config,
+    resolve_micropython_labextensions_parent,
 )
 from utils.logger import get_logger
 
@@ -817,11 +818,9 @@ class JupyterManager:
                 env['JUPYTER_CONFIG_DIR'] = str(cfg_dir)
                 env['JUPYTER_RUNTIME_DIR'] = str(runtime_dir)
                 self._write_jupyterlab_locale_default(cfg_dir)
-                extension_package = Path(__file__).resolve().parent.parent.parent / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension"
-                packaged_extension_package = Path(__file__).resolve().parent.parent / "jupyterlab_micropython" / "labextension"
-                if not extension_package.is_dir() and packaged_extension_package.is_dir():
-                    extension_package = packaged_extension_package
-                extension_path = extension_package.parent
+                extension_path = resolve_micropython_labextensions_parent(
+                    Path(__file__).resolve().parent.parent.parent
+                )
                 self._write_micropython_server_config(cfg_dir, extension_path)
             except Exception as e:
                 logger.warning(f"Failed to prepare Jupyter config/runtime dirs: {e}")
@@ -851,15 +850,15 @@ class JupyterManager:
         )
 
     @staticmethod
-    def _write_micropython_server_config(config_dir: Path, extension_path: Path) -> None:
+    def _write_micropython_server_config(config_dir: Path, extension_path: Path | None) -> None:
         config_file = config_dir / "jupyter_server_config.py"
         lines = [
             "c = get_config()",
-            "c.ServerApp.jpserver_extensions = {",
+            "c.ServerApp.jpserver_extensions.update({",
             "    'services.jupyter_micropython_server': True,",
-            "}",
+            "})",
         ]
-        if extension_path.is_dir():
+        if extension_path is not None and extension_path.is_dir():
             lines.append(f"c.LabApp.extra_labextensions_path = [{str(extension_path)!r}]")
         config_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

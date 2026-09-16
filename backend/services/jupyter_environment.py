@@ -110,6 +110,20 @@ def evaluate_environment_validation(
     )
 
 
+def resolve_micropython_labextensions_parent(project_root: Path) -> Path | None:
+    """Return the directory that contains the prebuilt ESP32 labextension package."""
+    candidates = [
+        Path(project_root) / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension",
+        Path(project_root) / "backend" / "jupyterlab_micropython" / "labextension",
+        Path(__file__).resolve().parent.parent.parent / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension",
+        Path(__file__).resolve().parent.parent / "jupyterlab_micropython" / "labextension",
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate.parent
+    return None
+
+
 def build_jupyter_command(
     config: JupyterConfig,
     *,
@@ -164,6 +178,11 @@ def build_jupyter_command(
     if work_dir:
         cmd.append(f"--ServerApp.root_dir={work_dir}")
         cmd.append(f"--ServerApp.notebook_dir={work_dir}")
+
+    cmd.append("--ServerApp.jpserver_extensions={'services.jupyter_micropython_server': True}")
+    labextensions_parent = resolve_micropython_labextensions_parent(project_root)
+    if labextensions_parent is not None:
+        cmd.append(f"--LabApp.extra_labextensions_path={labextensions_parent}")
 
     if config.args:
         cmd.extend(config.args.split())

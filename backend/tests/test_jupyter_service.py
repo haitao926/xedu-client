@@ -151,6 +151,7 @@ class JupyterManagerUnitTestCase(unittest.TestCase):
             config = config_file.read_text(encoding="utf-8")
 
         self.assertIn("services.jupyter_micropython_server", config)
+        self.assertIn("jpserver_extensions.update", config)
         self.assertIn("jupyterlab_micropython'", config)
         self.assertNotIn("/labextension']", config)
 
@@ -410,6 +411,7 @@ class JupyterEnvironmentHelpersTestCase(unittest.TestCase):
         self.assertEqual(command[1:3], ["-m", "jupyterlab"])
         self.assertIn("--ServerApp.ip=127.0.0.1", command)
         self.assertIn("--ServerApp.token=", command)
+        self.assertIn("--ServerApp.jpserver_extensions={'services.jupyter_micropython_server': True}", command)
         self.assertIn(f"--ServerApp.root_dir={work_dir}", command)
         self.assertIn(f"--ServerApp.notebook_dir={work_dir}", command)
         self.assertIn("--Example.flag=1", command)
@@ -434,6 +436,8 @@ class JupyterEnvironmentHelpersTestCase(unittest.TestCase):
         self.assertEqual(command[1:3], ["-m", "notebook"])
         self.assertIn("--ServerApp.ip=127.0.0.1", command)
         self.assertIn("--ServerApp.token=", command)
+        self.assertIn("--ServerApp.jpserver_extensions={'services.jupyter_micropython_server': True}", command)
+        self.assertTrue(any(part.startswith("--LabApp.extra_labextensions_path=") for part in command))
         self.assertFalse(any(part.startswith("--ServerApp.root_dir=") for part in command))
 
 

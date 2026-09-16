@@ -2,6 +2,7 @@
   "name": "jupyterlab-micropython",
   "version": "2.1.0",
   "description": "ESP32 MicroPython experiment workflow for XEdu Client",
+  "type": "module",
   "main": "lib/index.js",
   "files": [
     "lib/**/*",
@@ -12,7 +13,8 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "clean": "node scripts/clean.mjs"
+    "clean": "node scripts/clean.mjs",
+    "test": "node --test src/index.test.mjs"
   },
   "dependencies": {
     "@jupyterlab/application": "^4.6.1",
@@ -28,7 +30,7 @@
     "extension": true,
     "outputDir": "jupyterlab_micropython/labextension",
     "_build": {
-      "load": "static/remoteEntry.2ff0d189d4738c2c02a6.js",
+      "load": "static/remoteEntry.07d802ac1a3e8b1efc3f.js",
       "extension": "./extension"
     }
   }
