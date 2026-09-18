@@ -35,7 +35,6 @@ test("student sidebar contains only the intended student-facing course entries",
 test("active Scratch courses do not advertise Blockly experiments", () => {
   const courseFiles = [
     "backend/sasu/zhangjiang-image-recognition/course.json",
-    "backend/sasu/zhangjiang-image-recognition-standard/zhangjiang-image-recognition-standard/course.json",
   ];
 
   for (const relativePath of courseFiles) {

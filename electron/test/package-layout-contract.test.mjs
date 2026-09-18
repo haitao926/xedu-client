@@ -10,6 +10,8 @@ const require = createRequire(import.meta.url);
 function loadReleaseConfig() {
   const previousEnv = { ...process.env };
   Object.assign(process.env, {
+    WIN_CSC_LINK: 'file:///tmp/windows-cert.p12',
+    WIN_CSC_KEY_PASSWORD: 'test-password',
     CSC_LINK: 'file:///tmp/mac-cert.p12',
     CSC_KEY_PASSWORD: 'test-password',
     APPLE_ID: 'teacher-release@example.com',
