@@ -87,9 +87,9 @@ export function showTab(tabId, navItem, options = {}) {
     }
 
     if (tabId === 'settings') {
-        const settingsNav = document.getElementById('nav-settings-item');
-        const hiddenForStudent = settingsNav && settingsNav.style.display === 'none';
-        if (hiddenForStudent) {
+        const isStudentOnly = document.body.classList.contains('student-mode')
+            && !document.body.classList.contains('teacher-mode');
+        if (isStudentOnly) {
             tabId = 'resources';
             navItem = document.getElementById('nav-student-lesson-item') || navItem;
         }

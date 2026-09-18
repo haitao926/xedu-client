@@ -113,7 +113,7 @@ const {
     onConfigurationReset: async () => {
         await forgetTeacherMode();
         window.dispatchEvent(new CustomEvent('xedu:teacher-credential-cleared'));
-        updateSettingsVisibility(false, { allowPythonSetup: true });
+        updateSettingsVisibility(false);
     },
     refreshStatus,
 });
@@ -140,16 +140,26 @@ const initializeTeacherCode = createTeacherCodeInitializationRunner({
     },
 });
 
+let studentBackendErrorNotified = false;
+
 function handleBackendStartupState(state) {
     onBackendStartupState(state);
     const teacherUnlocked = isTeacherModeUnlocked();
-    const allowPythonSetup = !teacherUnlocked && (state?.status === 'error' || state?.status === 'starting');
-    updateSettingsVisibility(teacherUnlocked, { allowPythonSetup });
-    if (allowPythonSetup && state?.status === 'error') {
-        showTab('settings', document.getElementById('nav-settings-item'));
-        showSettingsTab('python');
+    updateSettingsVisibility(teacherUnlocked);
+    if (teacherUnlocked) {
+        studentBackendErrorNotified = false;
+        if (state?.status === 'error') {
+            showTab('settings', document.getElementById('nav-settings-item'));
+            showSettingsTab('python');
+        }
+    } else if (state?.status === 'error') {
+        if (!studentBackendErrorNotified) {
+            studentBackendErrorNotified = true;
+            showToast(state?.message || '实验环境暂时不可用，请稍后重试或请老师处理。', 'warning');
+        }
     }
     if (state?.status === 'ready') {
+        studentBackendErrorNotified = false;
         if (document.readyState !== 'loading') ensureProjectWizard();
         initializeTeacherCode().catch((error) => {
             console.warn('后端就绪后初始化教师口令失败:', error);

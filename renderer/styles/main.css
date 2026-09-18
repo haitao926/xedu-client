@@ -191,7 +191,8 @@ body {
     display: none;
 }
 
-body.student-mode:not(.teacher-mode) #nav-group-system-title {
+body.student-mode:not(.teacher-mode) #nav-group-system-title,
+body.student-mode:not(.teacher-mode) #nav-settings-item {
     display: none !important;
 }
 body.student-mode .nav-menu {

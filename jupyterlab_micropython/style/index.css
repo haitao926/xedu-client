@@ -93,6 +93,14 @@
   overflow-wrap: anywhere;
 }
 
+.xedu-micropython-button:disabled,
+.xedu-micropython-primary:disabled,
+.xedu-micropython-input:disabled,
+.xedu-micropython-select:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
 .xedu-micropython-hint {
   margin-top: 18px;
   font-size: 12px;

@@ -14,6 +14,7 @@ const corePath = execFileSync(
 
 mkdirSync(join(extensionRoot, 'lib'), { recursive: true });
 copyFileSync(join(extensionRoot, 'src', 'index.js'), join(extensionRoot, 'lib', 'index.js'));
+copyFileSync(join(extensionRoot, 'src', 'panel-logic.js'), join(extensionRoot, 'lib', 'panel-logic.js'));
 execFileSync(
   join(extensionRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'build-labextension.cmd' : 'build-labextension'),
   ['.', '--core-path', corePath],

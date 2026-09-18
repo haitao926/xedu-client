@@ -2734,9 +2734,12 @@ async function loadClassroomConfig() {
 }
 
 function openPythonSetup() {
-    window.app?.system?.updateSettingsVisibility?.(false, { allowPythonSetup: true });
-    window.app?.ui?.showTab?.("settings", document.getElementById("nav-settings-item"));
-    window.app?.system?.showSettingsTab?.("python");
+    if (resourcesState.teacherMode.unlocked) {
+        window.app?.ui?.showTab?.("settings", document.getElementById("nav-settings-item"));
+        window.app?.system?.showSettingsTab?.("python");
+        return;
+    }
+    notifyUser("实验环境还在准备中。Python 配置仅教师可用，请稍后重试或请老师处理。", "warning");
 }
 
 async function isBackendReady() {
@@ -2786,9 +2789,7 @@ function updateTeacherModeUI() {
         if (window.app && window.app.system && typeof window.app.system.updateSettingsVisibility === "function") {
             if (!resourcesState.openingStudentLessonTab) {
                 resourcesState.pendingTeacherModeShellSync = false;
-                window.app.system.updateSettingsVisibility(Boolean(resourcesState.teacherMode.unlocked), {
-                    allowPythonSetup: !resourcesState.teacherMode.unlocked && !resourcesState.teacherModeReady,
-                });
+                window.app.system.updateSettingsVisibility(Boolean(resourcesState.teacherMode.unlocked));
             } else {
                 resourcesState.pendingTeacherModeShellSync = true;
             }
@@ -2852,7 +2853,6 @@ async function unlockTeacherMode() {
     const ready = await ensureTeacherModeReady();
     if (!ready) {
         openPythonSetup();
-        notifyUser("请先在设置中选择并确认本机 Python，后端就绪后再设置教师口令。", "warning");
         return false;
     }
     if (!resourcesState.classroomConfig.teacherCodeConfigured) {
@@ -2860,7 +2860,6 @@ async function unlockTeacherMode() {
         resourcesState.classroomConfig.teacherCodeConfigured = isTeacherCodeConfigured(updated);
         if (!resourcesState.classroomConfig.teacherCodeConfigured) {
             openPythonSetup();
-            notifyUser("请先在设置中选择并确认本机 Python，后端就绪后再设置教师口令。", "warning");
             return false;
         }
         if (resourcesState.teacherMode.unlocked) {
@@ -2917,7 +2916,6 @@ async function handleTeacherModeToggle() {
     await window.app?.jupyter?.setVisibility?.(false);
     if (!await ensureTeacherModeReady()) {
         openPythonSetup();
-        notifyUser("请先在设置中选择并确认本机 Python，后端就绪后再设置教师口令。", "warning");
         return false;
     }
     if (resourcesState.teacherMode.unlocked) {

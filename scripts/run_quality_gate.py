@@ -15,6 +15,11 @@ COMMANDS = (
     ("python syntax", ["npm", "run", "check:python-syntax"]),
     ("backend tests", [sys.executable, "-m", "pytest", "backend/tests", "-q"]),
     (
+        "micropython session tests",
+        [sys.executable, "-m", "unittest", "backend.tests.test_micropython_session", "backend.tests.test_jupyter_micropython_server", "-q"],
+    ),
+    ("micropython panel tests", ["npm", "run", "test:micropython-extension"]),
+    (
         "electron security tests",
         [
             "node",
@@ -86,7 +91,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--release-profile",
-        choices=("release", "minimal", "external-python"),
+        choices=("release", "minimal"),
         default="release",
         help="content profile used when verifying --release-artifact",
     )

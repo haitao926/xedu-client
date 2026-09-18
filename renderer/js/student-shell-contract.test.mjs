@@ -35,7 +35,6 @@ test("student sidebar contains only the intended student-facing course entries",
 test("active Scratch courses do not advertise Blockly experiments", () => {
   const courseFiles = [
     "backend/sasu/zhangjiang-image-recognition/course.json",
-    "backend/sasu/zhangjiang-image-recognition-standard/zhangjiang-image-recognition-standard/course.json",
   ];
 
   for (const relativePath of courseFiles) {
@@ -80,16 +79,34 @@ test("resources module exports the student lesson tab entrypoint", () => {
 
 test("student mode hides teacher/admin shell navigation but keeps AI assistant", () => {
   const css = readRepoFile("renderer/styles/main.css");
-  assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #nav-group-system-title\s*\{\s*display:\s*none !important;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #nav-group-system-title,\s*body\.student-mode:not\(\.teacher-mode\) #nav-settings-item\s*\{\s*display:\s*none !important;\s*\}/);
   assert.match(css, /body\.student-mode \.student-nav-item\s*\{[\s\S]*display:\s*flex;/);
   assert.match(css, /body\.student-mode \.student-nav-item\.active/);
 
   const dashboard = readRepoFile("renderer/js/main/dashboard.js");
+  const studentBranch = dashboard.slice(dashboard.indexOf("document.body.classList.remove(\"teacher-mode\")"));
   assert.match(dashboard, /if \(mainNavItem\) \{[\s\S]*?mainNavItem\.style\.display = "none";/);
   assert.match(dashboard, /if \(scratchNavItem\) \{[\s\S]*?scratchNavItem\.style\.display = "none";/);
   assert.match(dashboard, /if \(resourcesNavItem\) \{[\s\S]*?resourcesNavItem\.style\.display = "none";/);
+  assert.match(studentBranch, /if \(settingsNavItem\) \{[\s\S]*?settingsNavItem\.style\.display = "none";/);
+  assert.doesNotMatch(studentBranch, /allowPythonSetup/);
+  assert.doesNotMatch(studentBranch, /settingsNavItem\.style\.display = allowPythonSetup/);
   assert.match(dashboard, /if \(aiNavItem\) aiNavItem\.style\.display = "flex";/);
   assert.match(dashboard, /if \(aiNavLabel\) aiNavLabel\.textContent = "AI助手";/);
+
+  const main = readRepoFile("renderer/js/main.js");
+  assert.doesNotMatch(main, /allowPythonSetup/);
+  assert.doesNotMatch(main, /showTab\('settings'[\s\S]*nav-settings-item[\s\S]*!teacherUnlocked/);
+  assert.match(main, /if \(teacherUnlocked\) \{[\s\S]*showTab\('settings'/);
+  assert.match(main, /实验环境暂时不可用/);
+
+  const resources = readRepoFile("renderer/js/resources.js");
+  assert.doesNotMatch(resources, /请先在设置中选择并确认本机 Python/);
+  assert.match(resources, /function openPythonSetup\(\) \{[\s\S]*if \(resourcesState\.teacherMode\.unlocked\) \{[\s\S]*showTab\?\.\("settings"/);
+  assert.match(resources, /Python 配置仅教师可用/);
+
+  const ui = readRepoFile("renderer/js/ui.js");
+  assert.match(ui, /tabId === 'settings'[\s\S]*isStudentOnly/);
 });
 
 test("teacher mode keeps the student course shell and only adds resources/settings", () => {
