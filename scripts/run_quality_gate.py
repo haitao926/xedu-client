@@ -91,7 +91,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--release-profile",
-        choices=("release", "minimal", "external-python"),
+        choices=("release", "minimal"),
         default="release",
         help="content profile used when verifying --release-artifact",
     )

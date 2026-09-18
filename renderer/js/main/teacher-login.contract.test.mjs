@@ -20,7 +20,8 @@ test('startup and backend-ready recovery both initialize the teacher code', () =
     assert.match(mainSource, /await initializeTeacherCode\(\)/);
     assert.match(mainSource, /state\?\.status\s*===\s*['"]ready['"][\s\S]{0,240}?initializeTeacherCode\(\)/);
     assert.doesNotMatch(mainSource, /ensureTeacherCodeInitialized\(\{\s*prompt:\s*false\s*\}\)/);
-    assert.match(mainSource, /allowPythonSetup/);
+    assert.doesNotMatch(mainSource, /allowPythonSetup/);
+    assert.match(mainSource, /if \(teacherUnlocked\) \{[\s\S]*showTab\('settings'/);
 });
 
 test('startup derives experience copy from the current teacher-mode state', () => {
@@ -48,6 +49,10 @@ test('teacher login keeps the prompt available after a wrong password', () => {
         /while\s*\(true\)\s*\{[\s\S]*?openResourcesInput\([\s\S]*?教师验证码错误[\s\S]*?continue;/,
     );
     assert.match(resourcesSource, /function openPythonSetup\(\)/);
+    assert.match(resourcesSource, /if \(resourcesState\.teacherMode\.unlocked\)/);
+    assert.doesNotMatch(resourcesSource, /allowPythonSetup/);
+    assert.doesNotMatch(resourcesSource, /请先在设置中选择并确认本机 Python/);
+    assert.match(resourcesSource, /Python 配置仅教师可用/);
     assert.match(resourcesSource, /if\s*\(!await isBackendReady\(\)\)/);
 });
 

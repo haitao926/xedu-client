@@ -116,39 +116,41 @@ test('Windows minimal package maps the Windows runtime to the canonical Python d
   assert.equal(buildConfig.win.artifactName, '${productName}-${version}-minimal-${arch}.${ext}');
 });
 
-test('external-Python package remains an explicitly named optional variant', () => {
-  const buildConfig = require('../../electron-builder.external-python.cjs');
-  const resourceSources = buildConfig.extraResources.map(({ from }) => from);
-  const docsResource = buildConfig.extraResources.find(({ to }) => to === 'docs');
-
-  assert.equal(buildConfig.directories.output, 'dist-external-python');
-  assert.equal(resourceSources.includes('checkpoint'), false);
-  assert.equal(resourceSources.some((source) => /^python_env/.test(source)), false);
-  assert.deepEqual(docsResource?.filter, [
-    'index.json',
-    'overview/project-map.md',
-    'overview/xedu-introduction.md',
-    'overview/quickstart.md',
-    'components/**/*',
-    'teacher/**/*',
-  ]);
-  assert.equal(buildConfig.mac.identity, '-');
-  assert.equal(buildConfig.mac.artifactName, '${productName}-${version}-external-python-${arch}.${ext}');
-  assert.equal(buildConfig.win.artifactName, '${productName}-${version}-external-python-${arch}.${ext}');
+test('shipping packages always include a bundled Python runtime', async () => {
+  const packageJson = JSON.parse(await readRepoFile('package.json'));
+  const scripts = packageJson.scripts;
+  assert.equal(scripts['electron:build:external-python'], undefined);
+  assert.equal(scripts['electron:build:external-python:mac'], undefined);
+  assert.equal(scripts['electron:build:external-python:win'], undefined);
+  assert.equal(scripts['electron:build:external-python:win32'], undefined);
+  assert.match(JSON.stringify(scripts), /electron-builder\.bundled-python-no-models/);
+  assert.match(JSON.stringify(scripts), /electron-builder\.minimal/);
 });
 
-test('32-bit Windows external-Python package targets ia32 without bundled runtime', () => {
-  const buildConfig = require('../../electron-builder.external-python.win32.cjs');
-  const resourceSources = buildConfig.extraResources.map(({ from }) => from);
-
-  assert.equal(buildConfig.directories.output, 'dist-external-python-win32');
-  assert.deepEqual(buildConfig.win.target, [
-    { target: 'nsis', arch: ['ia32'] },
-    { target: 'dir', arch: ['ia32'] },
+test('default docs describe bundled Python as the shipping package', async () => {
+  const [readme, install, troubleshooting] = await Promise.all([
+    readRepoFile('README.md'),
+    readRepoFile('docs/teacher/INSTALL.md'),
+    readRepoFile('docs/teacher/TROUBLESHOOTING.md'),
   ]);
-  assert.equal(buildConfig.win.artifactName, '${productName}-${version}-external-python-win32.${ext}');
-  assert.equal(resourceSources.some((source) => /^python_env/.test(source)), false);
-  assert.equal(resourceSources.includes('checkpoint'), false);
+  assert.doesNotMatch(readme, /不内置 `python_env`/);
+  assert.match(readme, /始终内置便携 Python/);
+  assert.match(install, /安装包携带便携 Python 环境/);
+  assert.match(install, /不再提供“外置 Python \/ 不携带 Python”安装包/);
+  assert.doesNotMatch(troubleshooting, /不包含 `python_env`/);
+  assert.match(troubleshooting, /已内置便携 Python 运行时/);
+});
+
+test('external-Python builder configs are not shipped', async () => {
+  const { access } = await import('node:fs/promises');
+  await assert.rejects(
+    () => access(new URL('../../electron-builder.external-python.cjs', import.meta.url)),
+    { code: 'ENOENT' },
+  );
+  await assert.rejects(
+    () => access(new URL('../../electron-builder.external-python.win32.cjs', import.meta.url)),
+    { code: 'ENOENT' },
+  );
 });
 
 test('macOS release produces both drag-install and archive artifacts', async () => {

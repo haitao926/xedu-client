@@ -87,23 +87,16 @@ test('minimal artifact verifier requires bundled Python and rejects packaged mod
   }
 });
 
-test('external-Python artifact verifier rejects bundled Python', async () => {
+test('artifact verifier rejects the retired external-Python profile', async () => {
   const root = await createArtifactFixture({ bundledPython: false });
   try {
     await rm(path.join(root, 'resources', 'checkpoint'), { recursive: true });
-    const externalResult = await verifyReleaseArtifact(root, {
+    const result = await verifyReleaseArtifact(root, {
       expectedVersion: '2.0.0',
       profile: 'external-python',
     });
-    assert.equal(externalResult.ok, true, externalResult.errors.join('\n'));
-
-    await mkdir(path.join(root, 'resources', 'python_env'), { recursive: true });
-    const invalidResult = await verifyReleaseArtifact(root, {
-      expectedVersion: '2.0.0',
-      profile: 'external-python',
-    });
-    assert.equal(invalidResult.ok, false);
-    assert.match(invalidResult.errors.join('\n'), /bundled Python environment/);
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('\n'), /unknown artifact profile: external-python/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

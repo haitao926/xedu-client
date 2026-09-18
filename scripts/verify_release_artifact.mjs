@@ -24,15 +24,6 @@ const ARTIFACT_PROFILES = {
     bundledPython: true,
     forbidModelFiles: true,
   },
-  'external-python': {
-    requiredDirectories: ['backend'],
-    forbiddenDirectories: [
-      ['python_env', 'bundled Python environment must not be included'],
-      ['python_env_win', 'bundled Python environment must not be included'],
-      ['checkpoint', 'model directory must not be included'],
-    ],
-    forbidModelFiles: true,
-  },
 };
 const REQUIRED_FILES = ['scratch-editor/build/index.html'];
 const FORBIDDEN_ARTIFACT_PATHS = [
@@ -441,7 +432,7 @@ function parseArgs(argv) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { root, expectedVersion, manifest, platform, arch, tag, commit, profile, artifacts } = parseArgs(process.argv.slice(2));
   if (!root) {
-    console.error('Usage: node scripts/verify_release_artifact.mjs <unpacked-artifact> [--version <version>] [--profile <release|minimal|external-python>] [--manifest <path>] [--platform <platform>] [--arch <arch>] [--tag <tag>] [--commit <sha>] [--artifact <file>]...');
+    console.error('Usage: node scripts/verify_release_artifact.mjs <unpacked-artifact> [--version <version>] [--profile <release|minimal>] [--manifest <path>] [--platform <platform>] [--arch <arch>] [--tag <tag>] [--commit <sha>] [--artifact <file>]...');
     process.exitCode = 2;
   } else {
     try {

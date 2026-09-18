@@ -1,6 +1,6 @@
 export function createDashboardController({ showSettingsTab }) {
 
-    function updateSettingsVisibility(isTeacher, { allowPythonSetup = false } = {}) {
+    function updateSettingsVisibility(isTeacher) {
         const modeAlreadyApplied = isTeacher
             ? document.body.classList.contains("teacher-mode") && document.body.classList.contains("student-mode")
             : document.body.classList.contains("student-mode") && !document.body.classList.contains("teacher-mode");
@@ -104,7 +104,7 @@ export function createDashboardController({ showSettingsTab }) {
                 resourcesGroupTitle.style.display = "none";
             }
             if (systemGroupTitle) {
-                systemGroupTitle.style.display = allowPythonSetup ? "" : "none";
+                systemGroupTitle.style.display = "none";
             }
             if (resourcesNavItem) {
                 resourcesNavItem.style.display = "none";
@@ -114,15 +114,16 @@ export function createDashboardController({ showSettingsTab }) {
                 resourcesNavLabel.textContent = "课程资源";
             }
             if (settingsNavItem) {
-                settingsNavItem.style.display = allowPythonSetup ? "flex" : "none";
-                if (!allowPythonSetup) settingsNavItem.classList.remove("active");
+                settingsNavItem.style.display = "none";
+                settingsNavItem.classList.remove("active");
             }
             if (settingsPage) {
-                settingsPage.style.display = allowPythonSetup ? "" : "none";
+                settingsPage.style.display = "none";
+                settingsPage.classList.remove("active");
             }
             const activePage = document.querySelector(".page-section.active");
             const activePageId = activePage?.id || "";
-            if (!modeAlreadyApplied && activePageId !== "ai-assistant") {
+            if (activePageId === "settings" || (!modeAlreadyApplied && activePageId !== "ai-assistant")) {
                 const activeStudentNav = document.querySelector(".student-nav-item.active");
                 const tabId = activeStudentNav?.id === "nav-student-experience-item"
                     ? "experience"
@@ -138,14 +139,12 @@ export function createDashboardController({ showSettingsTab }) {
                 });
             }
             teacherTabs.forEach((btn) => {
-                const isPythonTab = btn.dataset.tab === "python";
-                btn.style.display = allowPythonSetup && isPythonTab ? "inline-flex" : "none";
-                if (!allowPythonSetup || !isPythonTab) btn.classList.remove("active");
+                btn.style.display = "none";
+                btn.classList.remove("active");
             });
             teacherContents.forEach((section) => {
-                const isPythonSection = section.dataset.settingsTab === "python";
-                section.style.display = allowPythonSetup && isPythonSection ? "" : "none";
-                if (!allowPythonSetup || !isPythonSection) section.classList.remove("active");
+                section.style.display = "none";
+                section.classList.remove("active");
             });
         }
         if (!modeAlreadyApplied) {
