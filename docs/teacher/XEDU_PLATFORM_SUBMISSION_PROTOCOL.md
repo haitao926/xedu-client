@@ -1,0 +1,88 @@
+# XEdu Client × LearnSite 3.0 提交协议（Client 侧）
+
+基线日期：2026-09-22。`protocol_version: 1`。`contract_revision: "2026-09-22"`。
+
+这份说明只覆盖 **XEdu Client 已经实现的义务**。LearnSite 服务端、教师内容浏览接口、全桌面截图、跨天自动补交、多题加权都不在本客户端实现里。
+
+若与更早的提交说明冲突，以 2026-09-22 基线为准。
+
+## 学生在焦点栏看到的操作
+
+进入实验后的顶栏保留：返回任务中心、当前任务名、AI 助手。没有进度条。
+
+| 按钮 | 行为 |
+| --- | --- |
+| 保存成绩 | 需要一份成绩草稿。把最新 `name`、`raw_score` 和归一化 `score` 交给平台。 |
+| 截图并上传 | 截取当前实验视图（含 iframe 里的 canvas），不截全桌面。`score` / `raw_score` / `passed` 都是 `null`，平台保留已有分。 |
+| 保存成绩并截图 | 同一次确认里带上冻结成绩和截图。截图或上传失败时不会报组合成功，成绩草稿还在，可以单独保存成绩。 |
+
+完成提示只在平台返回 `status: "completed"` 之后出现。草稿、截图暂存、本地实验进度都不是完成。
+
+## 启动
+
+`xedu://open-local-task?launch_grant=...&platform_origin=https%3A%2F%2F...`
+
+Client 向 `{platform_origin}/api/xedu/v1/launch/exchange` 发送：
+
+```json
+{
+  "protocol_version": 1,
+  "contract_revision": "2026-09-22",
+  "launch_grant": "<一次性启动 grant>"
+}
+```
+
+服务端必须原样确认 `protocol_version` 和 `contract_revision`。不一致就停止，并提示协议版本不一致。Client 不会改用旧版本再试一次。
+
+任务 grant 只留在主进程内存，不进入课件、URL、页面状态或日志。启动 grant 兑换后即丢弃。过期或 401 时清掉任务 grant，但保留成绩草稿，学生需要从学习平台重新打开。只有完整上下文键一致时才恢复草稿：
+
+`(platform_origin, learner_scope, platform_activity_id, course_id, activity_id, resource_id, course_version, package_sha256)`
+
+`learner_scope` 不同就不会看到上一名学生的草稿。
+
+## 课程包
+
+`course_id` 是课程包里 `course.json` 的 `id`，不是 LearnSite 的 Cid。
+
+下载使用兑换结果里的 `package_url`，GET 不带 Bearer。缓存目录按 `(platform_origin, course_id, course_version, package_sha256)` 分开。字节长度必须等于 `package_size`，SHA-256 必须等于 `package_sha256`。通过后才解出课件，并用本机 `127.0.0.1` 静态页打开 `resource_id` 对应的 `.html` / `.htm`。
+
+## 成绩草稿
+
+HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 只接受当前登记 iframe 的 `contentWindow`。
+
+- 无 `type` 时必须刚好是 `{name, value}`
+- 或者 `type: "ols-score/1"`
+- 旧的 `xedu:submit-request` 只会转成草稿
+
+`name` 去掉首尾空白后为 1–200 字。`value` 必须是有限数字，范围 0–100。字符串、`null`、`NaN` 都拒绝，也不把超额分数钳进范围内。0 分是有效分数。`score = floor(raw_score + 0.5)`。`passed` 可以缺省、`null` 或 `false`。
+
+这些消息不会自动提交。保存进行中的新消息留作下一稿。没有草稿时「保存成绩」和「保存成绩并截图」不可用；「截图并上传」仍然可用。
+
+## 上传和提交
+
+1. `POST /api/xedu/v1/artifacts`：原始图片字节，`Content-Type` 为 `image/png`、`image/jpeg` 或 `image/webp`，并带 `X-XEdu-Filename`、`X-XEdu-SHA256`。单张不超过 10MiB。返回的 `upload_id` 只是暂存。
+2. `POST /api/xedu/v1/submissions`：带上 grant 快照里的课程三元组、`course_version`、`package_sha256`，以及分数或至少一个 `upload_id`。
+3. 超时后先 `GET /api/xedu/v1/submissions/status?request_id=`。
+
+同一次保存的 `request_id` 不变，重试时正文也不变。自动重试最多 3 次，间隔 1 秒、2 秒、4 秒。同一任务同时只有一个在途保存。409 冲突、作业锁定、成绩无效、授权过期不会重试。
+
+## 学生会看到的失败
+
+| code | 提示 |
+| --- | --- |
+| `protocol_mismatch` | 学习平台协议版本与客户端不一致，已停止打开。 |
+| `grant_expired` | 任务授权已过期，请从学习平台重新打开。当前成绩草稿已保留。 |
+| `score_invalid` | 成绩无效。请使用 0 到 100 之间的数字，0 分也会保留。 |
+| `work_locked` | 这份作业已锁定，暂时不能再保存。 |
+| `conflict` | 保存发生冲突，请从学习平台重新打开后再试。 |
+| `package_invalid` / `course_id_mismatch` | 课程包校验失败，或 course.json 的 id 与任务不一致。 |
+
+## 还需要真实 LearnSite Mock / T20 确认
+
+客户端用本地 HTTPS 模拟覆盖了兑换、校验、截图上传和提交。下面几项还没有对着真实 LearnSite 跑过：
+
+- 兑换响应里的字段名、`task_grant` 头和 `grant_expires_at` 是否与平台 Mock 完全一致
+- `package_url` 的真实下载主机、重定向和大小字段
+- 提交回执除 `status: "completed"` 之外的中间状态怎么表示
+- 平台侧 409 / 作业锁定 / 成绩无效的最终 `code` 字符串
+- T20 验收里从真实深链打开、保存、截图到平台确认完成的整段路径

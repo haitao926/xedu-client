@@ -156,6 +156,7 @@ import { getExperimentFileOverview } from "./resources/experiment-overview.js";
 import { createResourcesState } from "./resources/resources-state.js";
 import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
 import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
+import { createXeduSubmitBridge } from "./resources/xedu-submit-bridge.js";
 
 const resourcesState = createResourcesState();
 const courseAiFrameBridge = createCourseAiFrameBridge({
@@ -166,6 +167,34 @@ const courseAiFrameBridge = createCourseAiFrameBridge({
         }
         return window.electronAPI.scratchApiRequest(request);
     },
+});
+
+function experimentCaptureBounds() {
+    const frame = document.querySelector(".resources-student-html-frame")
+        || document.querySelector("#resources-detail-view")
+        || document.querySelector(".content-scroll-area");
+    if (!frame || typeof frame.getBoundingClientRect !== "function") return null;
+    const rect = frame.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+}
+
+function xeduTransport() {
+    const api = () => window.electronAPI || {};
+    return {
+        setDraft: (draft) => api().xeduSetScoreDraft?.(draft),
+        saveScore: () => api().xeduSaveScore?.(),
+        uploadScreenshot: (bounds) => api().xeduUploadScreenshot?.(bounds),
+        saveCombined: (bounds) => api().xeduSaveCombined?.(bounds),
+    };
+}
+
+const xeduScoreBridge = createXeduSubmitBridge({
+    windowObject: window,
+    transport: xeduTransport(),
+    captureBounds: experimentCaptureBounds,
+    onDraftChange: () => syncStudentFocusChrome(),
+    onInvalidScore: (parsed) => notifyUser(parsed?.message || "成绩无效。请使用 0 到 100 之间的数字，0 分也会保留。", "error"),
 });
 window.addEventListener("xedu:teacher-credential-updated", () => {
     const state = readTeacherModeState();
@@ -3485,13 +3514,26 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
     document.body.classList.toggle("student-focus-mode", focus);
     const backBtn = document.getElementById("student-focus-back");
     const aiBtn = document.getElementById("student-focus-ai-btn");
-    const submitBtn = document.getElementById("student-submit-result-btn");
+    const saveBtn = document.getElementById("student-save-score-btn");
+    const shotBtn = document.getElementById("student-upload-screenshot-btn");
+    const combinedBtn = document.getElementById("student-save-combined-btn");
+    const statusEl = document.getElementById("student-platform-status");
+    const hasDraft = xeduScoreBridge.hasDraft();
     if (backBtn) backBtn.hidden = !focus;
     if (aiBtn) {
         aiBtn.hidden = !focus;
         aiBtn.setAttribute("aria-expanded", document.body.classList.contains("student-ai-drawer-open") ? "true" : "false");
     }
-    if (submitBtn) submitBtn.hidden = !focus;
+    if (saveBtn) {
+        saveBtn.hidden = !focus;
+        saveBtn.disabled = !hasDraft;
+    }
+    if (shotBtn) shotBtn.hidden = !focus;
+    if (combinedBtn) {
+        combinedBtn.hidden = !focus;
+        combinedBtn.disabled = !hasDraft;
+    }
+    if (statusEl) statusEl.hidden = !focus || !statusEl.textContent;
     if (!focus) {
         document.body.classList.remove("student-ai-drawer-open");
         const backdrop = document.getElementById("student-ai-drawer-backdrop");
@@ -3917,7 +3959,8 @@ function buildStudentExperimentEntryCard(context, tabId = resourcesState.activeC
 
 function buildStudentHtmlExperienceView(context) {
     const htmlFiles = Array.isArray(context?.overview?.htmlFiles) ? context.overview.htmlFiles : [];
-    const primaryHtml = htmlFiles[0] || null;
+    const launchedPath = relativeResourcePath(resourcesState.xeduLaunchResourceId || "");
+    const primaryHtml = htmlFiles.find((file) => relativeResourcePath(file.path) === launchedPath) || htmlFiles[0] || null;
     const experimentTitle = context?.exp?.title || `实验 ${Number.isFinite(context?.expIndex) ? context.expIndex + 1 : 1}`;
     const experimentDesc = String(context?.exp?.description || "").trim();
     const wrap = document.createElement("section");
@@ -3963,9 +4006,11 @@ function buildStudentHtmlExperienceView(context) {
         return wrap;
     }
 
+    const relativeHtmlPath = String(primaryHtml.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
     const frameUrl =
-        buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient) ||
-        resolveResourceUrl(primaryHtml.path || "", context.resource, {
+        resourcesState.xeduLabFrameUrls?.[relativeHtmlPath]
+        || buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient)
+        || resolveResourceUrl(primaryHtml.path || "", context.resource, {
             repoUrl: resourcesState.repoUrl,
             rawBaseUrl: resourcesState.rawBaseUrl,
             indexBranch: resourcesState.indexBranch,
@@ -3989,6 +4034,7 @@ function buildStudentHtmlExperienceView(context) {
     frame.loading = "eager";
     frameWrap.appendChild(frame);
     courseAiFrameBridge.attach(frame, frameUrl);
+    xeduScoreBridge.attach(frame);
     wrap.appendChild(frameWrap);
     const openBrowserBtn = document.createElement("button");
     openBrowserBtn.type = "button";
@@ -7214,15 +7260,102 @@ export function returnToStudentTaskCenter() {
     return openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
 }
 
-export function submitStudentResult() {
-    // TODO: next pass — 提交到平台（OpenLearnSite grant/submit）。
-    // Authoritative completion is platform acknowledgement, not local progress.
-    const message = "提交结果会交给学习平台确认。这一步还在接入中，当前不会把本地进度当作已完成。";
-    if (typeof window.app?.ui?.showToast === "function") {
-        window.app.ui.showToast(message, "info");
-        return;
+function setStudentPlatformStatus(text) {
+    const statusEl = document.getElementById("student-platform-status");
+    if (!statusEl) return;
+    statusEl.textContent = text || "";
+    const focus = document.body.classList.contains("student-focus-mode");
+    statusEl.hidden = !focus || !statusEl.textContent;
+}
+
+function presentPlatformSaveResult(result) {
+    const completed = result?.platform_status === "completed";
+    notifyUser(result?.message || (completed ? "平台已确认完成。" : "保存没有完成，请稍后再试。"), completed ? "success" : "error");
+    if (completed) setStudentPlatformStatus("平台已确认完成");
+    syncStudentFocusChrome();
+    return result;
+}
+
+export async function saveStudentScore() {
+    return presentPlatformSaveResult(await xeduScoreBridge.saveScore());
+}
+
+export async function uploadStudentScreenshot() {
+    return presentPlatformSaveResult(await xeduScoreBridge.uploadScreenshot());
+}
+
+export async function saveStudentScoreAndScreenshot() {
+    return presentPlatformSaveResult(await xeduScoreBridge.saveCombined());
+}
+
+function relativeResourcePath(value) {
+    return String(value || "").replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function findLaunchExperiment(resource, resourceId) {
+    const target = relativeResourcePath(resourceId);
+    const sections = normalizeSections(resource);
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+        const experiments = Array.isArray(sections[sectionIndex]?.experiments) ? sections[sectionIndex].experiments : [];
+        for (let expIndex = 0; expIndex < experiments.length; expIndex += 1) {
+            const files = Array.isArray(experiments[expIndex]?.files) ? experiments[expIndex].files : [];
+            const file = files.find((item) => relativeResourcePath(item?.path) === target);
+            if (file) {
+                return { resource, sectionIndex, expIndex, file };
+            }
+        }
     }
-    console.info(message);
+    return null;
+}
+
+export async function openLaunchedLocalTask(payload) {
+    if (!payload?.lab_url || !payload?.course) {
+        notifyUser(payload?.message || "打开平台任务失败。请从学习平台重新打开。", "error");
+        return payload;
+    }
+    if (payload.grant_expired) {
+        notifyUser(payload.message || "任务授权已过期，请从学习平台重新打开。当前成绩草稿已保留。", "warning");
+    }
+    const resourceId = relativeResourcePath(payload.resource_id);
+    resourcesState.xeduLaunchResourceId = resourceId;
+    resourcesState.xeduLabFrameUrls = {
+        ...(resourcesState.xeduLabFrameUrls || {}),
+        [resourceId]: payload.lab_url,
+    };
+    const course = {
+        ...payload.course,
+        id: payload.course.id || payload.course_id,
+        local_path: payload.course_root || payload.course.local_path || "",
+        source: "local",
+    };
+    let context = findLaunchExperiment(course, resourceId);
+    if (!context) {
+        course.sections = [
+            ...(Array.isArray(course.sections) ? course.sections : []),
+            {
+                title: "平台任务",
+                experiments: [{
+                    title: course.title || "实验",
+                    files: [{ path: resourceId, type: "html", name: resourceId }],
+                }],
+            },
+        ];
+        context = findLaunchExperiment(course, resourceId);
+    }
+    if (payload.restored_draft || payload.draft) {
+        xeduScoreBridge.restoreDraft(payload.restored_draft || payload.draft);
+    } else {
+        xeduScoreBridge.clearDraft();
+    }
+    addCourse(course, { silent: true });
+    if (context) {
+        await openStudentExperimentPage("experience", context, context.file);
+    }
+    if (!payload.grant_expired) {
+        notifyUser(payload.restored_draft ? "已重新打开任务，上次未保存的成绩草稿还在。" : "已打开学习平台任务。", "info");
+    }
+    syncStudentFocusChrome();
+    return payload;
 }
 
 export async function toggleTeacherMode() {

@@ -15,7 +15,11 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.match(html, /id="page-title">课程任务中心</);
   assert.match(topBar, /id="student-focus-back"[^>]*data-action="resources\.returnToStudentTaskCenter"[\s\S]*返回任务中心/);
   assert.match(topBar, /id="student-focus-ai-btn"[^>]*data-action="ai\.toggleStudentAssistant"[\s\S]*AI 助手/);
-  assert.match(topBar, /id="student-submit-result-btn"[^>]*data-action="resources\.submitStudentResult"[\s\S]*提交结果/);
+  assert.match(topBar, /id="student-save-score-btn"[^>]*data-action="resources\.saveStudentScore"[\s\S]*保存成绩/);
+  assert.match(topBar, /id="student-upload-screenshot-btn"[^>]*data-action="resources\.uploadStudentScreenshot"[\s\S]*截图并上传/);
+  assert.match(topBar, /id="student-save-combined-btn"[^>]*data-action="resources\.saveStudentScoreAndScreenshot"[\s\S]*保存成绩并截图/);
+  assert.match(topBar, /id="student-platform-status"/);
+  assert.doesNotMatch(topBar, /提交结果/);
   assert.match(topBar, /id="student-account-menu"/);
   assert.match(topBar, /id="student-account-teacher-btn"[^>]*data-role="teacher-mode-toggle"[\s\S]*data-role="teacher-mode-label">教师登录</);
   assert.match(topBar, /id="student-account-settings-btn"[^>]*hidden>设置/);
@@ -127,8 +131,12 @@ test("student mode hides the sidebar, settings, and AI page nav", () => {
   assert.match(resources, /export function syncStudentShellChrome\(/);
   assert.match(resources, /student-focus-mode/);
   assert.match(resources, /export function returnToStudentTaskCenter\(/);
-  assert.match(resources, /export function submitStudentResult\(/);
-  assert.match(resources, /TODO: next pass — 提交到平台/);
+  assert.match(resources, /export async function saveStudentScore\(/);
+  assert.match(resources, /export async function uploadStudentScreenshot\(/);
+  assert.match(resources, /export async function saveStudentScoreAndScreenshot\(/);
+  assert.match(resources, /platform_status === "completed"/);
+  assert.doesNotMatch(resources, /export function submitStudentResult\(/);
+  assert.doesNotMatch(resources, /TODO: next pass — 提交到平台/);
 });
 
 test("teacher mode keeps the student course shell and only adds resources/settings", () => {

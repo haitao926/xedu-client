@@ -88,9 +88,24 @@ async function returnToStudentTaskCenter(...args) {
     return mod.returnToStudentTaskCenter(...args);
 }
 
-async function submitStudentResult(...args) {
+async function saveStudentScore(...args) {
     const mod = await loadResourcesModule();
-    return mod.submitStudentResult(...args);
+    return mod.saveStudentScore(...args);
+}
+
+async function uploadStudentScreenshot(...args) {
+    const mod = await loadResourcesModule();
+    return mod.uploadStudentScreenshot(...args);
+}
+
+async function saveStudentScoreAndScreenshot(...args) {
+    const mod = await loadResourcesModule();
+    return mod.saveStudentScoreAndScreenshot(...args);
+}
+
+async function openLaunchedLocalTask(...args) {
+    const mod = await loadResourcesModule();
+    return mod.openLaunchedLocalTask(...args);
 }
 
 function syncStudentShellChrome(...args) {
@@ -245,11 +260,34 @@ function applyExperienceCopy(isTeacher) {
     syncActivePageTitle();
 }
 
+function registerLocalTaskDeepLinkHandler() {
+    if (typeof window.electronAPI?.onDeepLinkOpenLocalTask !== 'function') return;
+    window.electronAPI.onDeepLinkOpenLocalTask(async (payload) => {
+        try {
+            await openLaunchedLocalTask(payload);
+        } catch (error) {
+            console.error('打开平台任务失败:', error);
+            showToast(error?.message || '打开平台任务失败', 'error');
+        }
+    });
+}
+
+async function restoreLaunchedLocalTask() {
+    if (typeof window.electronAPI?.xeduGetLocalTask !== 'function') return;
+    try {
+        const state = await window.electronAPI.xeduGetLocalTask();
+        if (!state?.lab_url || !state?.course) return;
+        await openLaunchedLocalTask(state);
+    } catch (error) {
+        console.warn('恢复平台任务失败:', error);
+    }
+}
+
 function registerPracticeDeepLinkHandler() {
     if (!window.electronAPI || typeof window.electronAPI.onDeepLinkOpenPractice !== 'function') {
         return;
     }
-    window.electronAPI.onDeepLinkOpenPractice(async (payload) => {
+    window.electronAPI.onDeepLinkOpenPractice?.(async (payload) => {
         try {
             const projectDir = (payload?.projectDir || '').trim();
             const filePath = (payload?.filePath || '').trim();
@@ -320,7 +358,10 @@ registerNamespace('resources', {
     toggleTeacherMode,
     openStudentLessonTab,
     returnToStudentTaskCenter,
-    submitStudentResult,
+    saveStudentScore,
+    uploadStudentScreenshot,
+    saveStudentScoreAndScreenshot,
+    openLaunchedLocalTask,
     syncStudentShellChrome,
     getChatContext
 });
@@ -404,6 +445,8 @@ window.addEventListener('DOMContentLoaded', () => {
         initSidebarCollapseToggle();
         initStudentAccountMenu();
         registerPracticeDeepLinkHandler();
+        registerLocalTaskDeepLinkHandler();
+        restoreLaunchedLocalTask();
         bindBackendStartupSupportActions();
         renderBackendStartupSupport();
         if (window.electronAPI?.onBackendStartupState) {

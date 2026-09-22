@@ -1,0 +1,689 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import https from 'node:https';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const {
+    CONTRACT_REVISION,
+    PROTOCOL_VERSION,
+    packageCacheDirectory,
+    createLocalTaskSession,
+    normalizeScoreDraft,
+    parseOpenLocalTaskLink,
+} = require('./xedu-local-task-launch.js');
+
+function sha256(buffer) {
+    return createHash('sha256').update(buffer).digest('hex');
+}
+
+function makeStoredZip(files) {
+    const locals = [];
+    const centrals = [];
+    let offset = 0;
+    for (const file of files) {
+        const name = Buffer.from(file.name, 'utf8');
+        const data = Buffer.from(file.data);
+        const local = Buffer.alloc(30 + name.length);
+        local.writeUInt32LE(0x04034b50, 0);
+        local.writeUInt16LE(20, 4);
+        local.writeUInt16LE(0, 8);
+        local.writeUInt32LE(data.length, 18);
+        local.writeUInt32LE(data.length, 22);
+        local.writeUInt16LE(name.length, 26);
+        name.copy(local, 30);
+        locals.push(local, data);
+        const central = Buffer.alloc(46 + name.length);
+        central.writeUInt32LE(0x02014b50, 0);
+        central.writeUInt16LE(20, 4);
+        central.writeUInt16LE(20, 6);
+        central.writeUInt32LE(data.length, 20);
+        central.writeUInt32LE(data.length, 24);
+        central.writeUInt16LE(name.length, 28);
+        central.writeUInt32LE(offset, 42);
+        name.copy(central, 46);
+        centrals.push(central);
+        offset += local.length + data.length;
+    }
+    const centralBuf = Buffer.concat(centrals);
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(files.length, 8);
+    eocd.writeUInt16LE(files.length, 10);
+    eocd.writeUInt32LE(centralBuf.length, 12);
+    eocd.writeUInt32LE(offset, 16);
+    return Buffer.concat([...locals, centralBuf, eocd]);
+}
+
+function makeCert() {
+    const dir = mkdtempSync(path.join(tmpdir(), 'xedu-cert-'));
+    const keyPath = path.join(dir, 'key.pem');
+    const certPath = path.join(dir, 'cert.pem');
+    execFileSync('openssl', [
+        'req', '-x509', '-newkey', 'rsa:2048', '-keyout', keyPath, '-out', certPath,
+        '-days', '1', '-nodes', '-subj', '/CN=127.0.0.1',
+    ], { stdio: 'ignore' });
+    const material = { key: readFileSync(keyPath), cert: readFileSync(certPath) };
+    rmSync(dir, { recursive: true, force: true });
+    return material;
+}
+
+function startMock(cert, handler) {
+    const requests = [];
+    const server = https.createServer({ key: cert.key, cert: cert.cert }, (req, res) => {
+        const chunks = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+            const body = Buffer.concat(chunks);
+            const url = new URL(req.url, 'https://127.0.0.1');
+            const record = { method: req.method, path: `${url.pathname}${url.search}`, headers: req.headers, body };
+            requests.push(record);
+            handler({ req, res, url, body, requests });
+        });
+    });
+    return new Promise((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+            const { port } = server.address();
+            resolve({
+                origin: `https://127.0.0.1:${port}`,
+                requests,
+                close: () => new Promise((done) => server.close(done)),
+            });
+        });
+    });
+}
+
+function httpsRequest() {
+    return ({ url, method = 'GET', headers = {}, body = null, timeoutMs = 5000 }) => new Promise((resolve, reject) => {
+        const req = https.request(url, { method, headers, timeout: timeoutMs, rejectUnauthorized: false }, (res) => {
+            const chunks = [];
+            res.on('data', (chunk) => chunks.push(chunk));
+            res.on('end', () => resolve({ status: res.statusCode || 0, headers: res.headers, body: Buffer.concat(chunks) }));
+        });
+        req.on('timeout', () => req.destroy(Object.assign(new Error('timeout'), { timedOut: true })));
+        req.on('error', reject);
+        if (body) req.write(body);
+        req.end();
+    });
+}
+
+function coursePackage(courseId = 'pkg-course') {
+    const course = {
+        id: courseId,
+        title: '包内课程',
+        sections: [{
+            title: '第 1 课',
+            experiments: [{ title: '实验', files: [{ path: 'labs/quiz.html', type: 'html' }] }],
+        }],
+    };
+    const zip = makeStoredZip([
+        { name: 'course.json', data: JSON.stringify(course) },
+        { name: 'labs/quiz.html', data: '<!doctype html><canvas id="lab"></canvas>' },
+    ]);
+    return { course, zip, sha256: sha256(zip), size: zip.length };
+}
+
+function exchangePayload(origin, pkg, extra = {}) {
+    return {
+        ok: true,
+        protocol_version: PROTOCOL_VERSION,
+        contract_revision: CONTRACT_REVISION,
+        task_grant: 'task-grant-secret',
+        grant_expires_at: '2099-01-01T00:00:00.000Z',
+        learner_scope: 'learner-a',
+        platform_activity_id: 'plat-act-1',
+        course_id: 'pkg-course',
+        cid: 'learnsite-cid-should-not-be-used',
+        activity_id: 'activity-1',
+        resource_id: 'labs/quiz.html',
+        course_version: '3',
+        package_sha256: pkg.sha256,
+        package_size: pkg.size,
+        package_url: `${origin}/packages/course.zip`,
+        ...extra,
+    };
+}
+
+function json(res, status, payload) {
+    const body = JSON.stringify(payload);
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+    res.end(body);
+}
+
+async function openSession({ handler, sleep, createRequestId, pkg }) {
+    const cert = makeCert();
+    const mock = await startMock(cert, handler);
+    const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-cache-'));
+    const delays = [];
+    const session = createLocalTaskSession({
+        cacheRoot,
+        request: httpsRequest(),
+        sleep: sleep || (async (ms) => { delays.push(ms); }),
+        createRequestId: createRequestId || (() => randomUUID()),
+        now: () => Date.parse('2026-09-22T00:00:00.000Z'),
+    });
+    const link = `xedu://open-local-task?launch_grant=${encodeURIComponent('launch-grant-secret')}&platform_origin=${encodeURIComponent(mock.origin)}`;
+    return { mock, session, cacheRoot, delays, link, pkg: pkg || coursePackage() };
+}
+
+test('deep link parser accepts the local task link and rejects practice links', () => {
+    const parsed = parseOpenLocalTaskLink('xedu://open-local-task?launch_grant=abc&platform_origin=https%3A%2F%2Flearn.example');
+    assert.equal(parsed.launchGrant, 'abc');
+    assert.equal(parsed.platformOrigin, 'https://learn.example');
+    assert.equal(parseOpenLocalTaskLink('xedu://open-practice?project=/tmp&file=a.ipynb'), null);
+    assert.equal(parseOpenLocalTaskLink('http://open-local-task?launch_grant=abc&platform_origin=https://learn.example'), null);
+});
+
+test('score normalization keeps 0, rejects non-finite values, and does not clamp', () => {
+    assert.equal(normalizeScoreDraft({ name: ' 第一题 ', value: 0 }).draft.score, 0);
+    assert.equal(normalizeScoreDraft({ name: '第一题', value: 0 }).draft.raw_score, 0);
+    assert.equal(normalizeScoreDraft({ name: '第一题', value: 1.5 }).draft.score, 2);
+    assert.equal(normalizeScoreDraft({ name: '第一题', value: 1.4 }).draft.score, 1);
+    assert.equal(normalizeScoreDraft({ type: 'ols-score/1', name: '题', value: 80, passed: false }).draft.passed, false);
+    assert.equal(normalizeScoreDraft({ name: '题', value: '80' }).code, 'score_invalid');
+    assert.equal(normalizeScoreDraft({ name: '题', value: null }).code, 'score_invalid');
+    assert.equal(normalizeScoreDraft({ name: '题', value: Number.NaN }).code, 'score_invalid');
+    assert.equal(normalizeScoreDraft({ name: '题', value: 120 }).code, 'score_invalid');
+    assert.equal(normalizeScoreDraft({ type: 'xedu:submit-request', name: '旧接口', value: 10 }).draft.source, 'xedu:submit-request');
+});
+
+test('exchange sends contract revision 2026-09-22 and refuses a mismatch without downgrade', async () => {
+    const bodies = [];
+    const { mock, session, link } = await openSession({
+        handler: ({ res, body, url }) => {
+            if (url.pathname === '/api/xedu/v1/launch/exchange') {
+                bodies.push(JSON.parse(body.toString('utf8')));
+                json(res, 200, { ok: true, protocol_version: 1, contract_revision: '2026-01-01', task_grant: 'nope' });
+                return;
+            }
+            json(res, 500, { ok: false, code: 'network' });
+        },
+    });
+    try {
+        const result = await session.openLocalTask(link);
+        assert.equal(result.code, 'protocol_mismatch');
+        assert.equal(result.platform_status, '');
+        assert.equal(bodies.length, 1);
+        assert.deepEqual(bodies[0], {
+            protocol_version: PROTOCOL_VERSION,
+            contract_revision: CONTRACT_REVISION,
+            launch_grant: 'launch-grant-secret',
+        });
+        assert.equal(JSON.stringify(result).includes('launch-grant-secret'), false);
+        assert.equal(JSON.stringify(result).includes('task-grant-secret'), false);
+        const again = await session.saveScore();
+        assert.equal(again.code, 'no_active_task');
+        assert.equal(bodies.length, 1);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('package cache is keyed by origin, course id, version, and sha256', async () => {
+    const pkg = coursePackage('pkg-course');
+    let packageGets = 0;
+    const { mock, session, cacheRoot, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url }) => {
+            if (url.pathname === '/api/xedu/v1/launch/exchange') {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                packageGets += 1;
+                assert.equal(req.headers.authorization, undefined);
+                res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': pkg.size });
+                res.end(pkg.zip);
+                return;
+            }
+            json(res, 404, { ok: false });
+        },
+    });
+    const origin = mock.origin;
+    try {
+        const opened = await session.openLocalTask(link.replace(mock.origin, origin));
+        assert.equal(opened.ok, true, opened.message);
+        assert.equal(opened.course_id, 'pkg-course');
+        assert.notEqual(opened.course_id, 'learnsite-cid-should-not-be-used');
+        assert.equal(opened.course.id, 'pkg-course');
+        const cacheDir = packageCacheDirectory(cacheRoot, {
+            platform_origin: origin,
+            course_id: 'pkg-course',
+            course_version: '3',
+            package_sha256: pkg.sha256,
+        });
+        assert.equal(readFileSync(path.join(cacheDir, 'package.bin')).equals(pkg.zip), true);
+        assert.equal(JSON.parse(readFileSync(path.join(cacheDir, 'extracted', 'course.json'), 'utf8')).id, 'pkg-course');
+        const second = await session.openLocalTask(link);
+        assert.equal(second.ok, true, second.message);
+        assert.equal(packageGets, 1);
+        assert.equal(JSON.stringify(opened).includes('task-grant-secret'), false);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+function mockOrigin(req) {
+    const host = req.headers.host;
+    return `https://${host}`;
+}
+
+test('course.json id mismatch and bad sha are hard errors', async () => {
+    const pkg = coursePackage('other-package');
+    const declared = coursePackage('pkg-course');
+    const { mock, session, link } = await openSession({
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), { ...declared, sha256: sha256(pkg.zip), size: pkg.zip.length }));
+                return;
+            }
+            res.writeHead(200);
+            res.end(pkg.zip);
+        },
+    });
+    try {
+        const mismatch = await session.openLocalTask(link);
+        assert.equal(mismatch.code, 'course_id_mismatch');
+        assert.match(mismatch.message, /course\.json/);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+
+    const bad = coursePackage('pkg-course');
+    const { mock: mock2, session: session2, link: link2 } = await openSession({
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), bad));
+                return;
+            }
+            res.writeHead(200);
+            res.end(Buffer.from('not-the-package'));
+        },
+    });
+    try {
+        const invalid = await session2.openLocalTask(link2);
+        assert.equal(invalid.code, 'package_invalid');
+    } finally {
+        await session2.close();
+        await mock2.close();
+    }
+});
+
+test('screenshot upload is raw bytes plus headers, then a submission that references upload_id', async () => {
+    const pkg = coursePackage();
+    const seen = [];
+    const { mock, session, link } = await openSession({
+        pkg,
+        createRequestId: () => 'req-shot-1',
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.writeHead(200);
+                res.end(pkg.zip);
+                return;
+            }
+            if (url.pathname.endsWith('/artifacts')) {
+                seen.push({
+                    kind: 'artifact',
+                    filename: req.headers['x-xedu-filename'],
+                    sha256: req.headers['x-xedu-sha256'],
+                    type: req.headers['content-type'],
+                    body,
+                    authorization: req.headers.authorization,
+                });
+                json(res, 201, { ok: true, upload_id: 'upl-1' });
+                return;
+            }
+            if (url.pathname.endsWith('/submissions') && req.method === 'POST') {
+                seen.push({ kind: 'submission', body: JSON.parse(body.toString('utf8')) });
+                json(res, 200, { ok: true, status: 'completed', request_id: 'req-shot-1', receipt_id: 'rcpt-1' });
+                return;
+            }
+            json(res, 404, { ok: false });
+        },
+    });
+    try {
+        const opened = await session.openLocalTask(link);
+        assert.equal(opened.ok, true, opened.message);
+        await session.setDraft({ name: '已有分', value: 88 });
+        const png = Buffer.from([137, 80, 78, 71, 1, 2, 3, 4]);
+        const saved = await session.uploadScreenshot({ bytes: png, mime: 'image/png' });
+        assert.equal(saved.platform_status, 'completed');
+        assert.match(saved.message, /平台已确认/);
+        const artifact = seen.find((item) => item.kind === 'artifact');
+        assert.equal(artifact.filename, 'experiment-view.png');
+        assert.equal(artifact.type, 'image/png');
+        assert.equal(artifact.sha256, sha256(png));
+        assert.equal(artifact.body.equals(png), true);
+        assert.equal(artifact.authorization, 'Bearer task-grant-secret');
+        const submission = seen.find((item) => item.kind === 'submission').body;
+        assert.equal(submission.request_id, 'req-shot-1');
+        assert.equal(submission.course_id, 'pkg-course');
+        assert.equal(submission.attachments[0].upload_id, 'upl-1');
+        assert.equal(submission.score, null);
+        assert.equal(submission.raw_score, null);
+        assert.equal(submission.passed, null);
+        assert.equal(session.getDraft().name, '已有分');
+        assert.equal(JSON.stringify(saved).includes('task-grant-secret'), false);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('submission retries use 1s, 2s, and 4s with the same request id and payload', async () => {
+    const pkg = coursePackage();
+    const posts = [];
+    let attempts = 0;
+    const { mock, session, link, delays } = await openSession({
+        pkg,
+        createRequestId: () => 'req-retry-1',
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/submissions')) {
+                attempts += 1;
+                posts.push(body.toString('utf8'));
+                if (attempts < 4) {
+                    json(res, 503, { ok: false, code: 'network', retryable: true, request_id: 'req-retry-1' });
+                    return;
+                }
+                json(res, 200, { ok: true, status: 'completed', request_id: 'req-retry-1', receipt_id: 'same-receipt' });
+            }
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        assert.equal((await session.setDraft({ type: 'ols-score/1', name: '题', value: 0, passed: false })).ok, true);
+        const saved = await session.saveScore();
+        assert.equal(saved.platform_status, 'completed');
+        assert.equal(saved.receipt_id, 'same-receipt');
+        assert.deepEqual(delays, [1000, 2000, 4000]);
+        assert.equal(posts.length, 4);
+        assert.equal(posts.every((body) => body === posts[0]), true);
+        const payload = JSON.parse(posts[0]);
+        assert.equal(payload.request_id, 'req-retry-1');
+        assert.equal(payload.raw_score, 0);
+        assert.equal(payload.score, 0);
+        assert.equal(payload.passed, false);
+        assert.equal(payload.course_id, 'pkg-course');
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('a timed out submission checks status before it is retried', async () => {
+    const pkg = coursePackage();
+    let posts = 0;
+    let statusGets = 0;
+    const { mock, session, link } = await openSession({
+        pkg,
+        createRequestId: () => 'req-status-1',
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (req.method === 'POST') {
+                posts += 1;
+                req.socket.destroy();
+                return;
+            }
+            if (url.pathname.endsWith('/submissions/status')) {
+                statusGets += 1;
+                assert.equal(url.searchParams.get('request_id'), 'req-status-1');
+                json(res, 200, { ok: true, status: 'completed', request_id: 'req-status-1', receipt_id: 'from-status' });
+            }
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        await session.setDraft({ name: '题', value: 10 });
+        const saved = await session.saveScore();
+        assert.equal(saved.platform_status, 'completed');
+        assert.equal(saved.receipt_id, 'from-status');
+        assert.equal(posts, 1);
+        assert.equal(statusGets, 1);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('conflict is not retried and an in-flight save blocks a second save', async () => {
+    const pkg = coursePackage();
+    let posts = 0;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const { mock, session, link, delays } = await openSession({
+        pkg,
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            posts += 1;
+            if (posts === 1) {
+                json(res, 409, { ok: false, status: 409, code: 'conflict', message: 'conflict', retryable: false, request_id: 'req-x' });
+                return;
+            }
+            void gate.then(() => json(res, 200, { ok: true, status: 'completed', request_id: 'req-y', receipt_id: 'rc' }));
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        await session.setDraft({ name: '题', value: 3 });
+        const conflict = await session.saveScore();
+        assert.equal(conflict.code, 'conflict');
+        assert.match(conflict.message, /冲突/);
+        assert.deepEqual(delays, []);
+        assert.equal(posts, 1);
+        await session.setDraft({ name: '题', value: 4 });
+        const first = session.saveScore();
+        const second = await session.saveScore();
+        assert.equal(second.code, 'save_in_flight');
+        assert.match(second.message, /正在保存/);
+        release();
+        assert.equal((await first).platform_status, 'completed');
+        assert.equal(posts, 2);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('grant expiry keeps the draft and a different learner_scope cannot restore it', async () => {
+    const pkg = coursePackage();
+    let mode = 'expire';
+    let posts = 0;
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                const learner = mode === 'other' ? 'learner-b' : 'learner-a';
+                json(res, 200, exchangePayload(mockOrigin(req), pkg, { learner_scope: learner, task_grant: `grant-${learner}` }));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            posts += 1;
+            if (mode === 'expire') {
+                json(res, 401, { ok: false, status: 401, code: 'grant_expired', retryable: false, request_id: 'req-exp' });
+                return;
+            }
+            json(res, 200, { ok: true, status: 'completed', request_id: 'req-ok', receipt_id: 'rc' });
+            req.setTimeout?.(0);
+            void body;
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        await session.setDraft({ name: '甲的草稿', value: 70 });
+        const expired = await session.saveScore();
+        assert.equal(expired.code, 'grant_expired');
+        assert.match(expired.message, /草稿已保留/);
+        assert.equal(session.getDraft().name, '甲的草稿');
+        const blocked = await session.saveScore();
+        assert.equal(blocked.code, 'grant_expired');
+        assert.equal(posts, 1);
+        mode = 'same';
+        const restored = await session.openLocalTask(link);
+        assert.equal(restored.draft.name, '甲的草稿');
+        assert.equal(restored.learner_scope, 'learner-a');
+        mode = 'other';
+        const other = await session.openLocalTask(link);
+        assert.equal(other.learner_scope, 'learner-b');
+        assert.equal(other.draft, null);
+        assert.equal(other.has_draft, false);
+        const missing = await session.saveScore();
+        assert.equal(missing.code, 'no_score_draft');
+        await session.setDraft({ name: '乙的新草稿', value: 5 });
+        mode = 'accept';
+        const saved = await session.saveScore();
+        assert.equal(saved.platform_status, 'completed');
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('combined save does not report success when the screenshot is rejected', async () => {
+    const pkg = coursePackage();
+    let submissions = 0;
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (url.pathname.endsWith('/artifacts')) {
+                json(res, 500, { ok: false, code: 'network', retryable: false });
+                return;
+            }
+            submissions += 1;
+            json(res, 200, { ok: true, status: 'completed', receipt_id: 'should-not-happen' });
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        await session.setDraft({ name: '题', value: 9 });
+        const failed = await session.saveCombined({ bytes: Buffer.from([1, 2, 3]), mime: 'image/png' });
+        assert.notEqual(failed.platform_status, 'completed');
+        assert.equal(failed.ok, false);
+        assert.equal(submissions, 0);
+        assert.equal(session.getDraft().raw_score, 9);
+        const scoreOnly = await session.saveScore();
+        assert.equal(scoreOnly.platform_status, 'completed');
+        assert.equal(submissions, 1);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('messages received during a save become the next draft', async () => {
+    const pkg = coursePackage();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            void gate.then(() => json(res, 200, { ok: true, status: 'completed', receipt_id: 'rc' }));
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        await session.setDraft({ name: '第一稿', value: 1 });
+        const pending = session.saveScore();
+        const queued = session.setDraft({ name: '第二稿', value: 2 });
+        assert.equal(queued.queued, true);
+        release();
+        assert.equal((await pending).platform_status, 'completed');
+        assert.equal(session.getDraft().name, '第二稿');
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('work locked and score invalid responses stay in Chinese', async () => {
+    const pkg = coursePackage();
+    let code = 'work_locked';
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            json(res, code === 'work_locked' ? 423 : 400, {
+                ok: false,
+                code,
+                message: 'raw server text',
+                retryable: false,
+                request_id: 'req-err',
+            });
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        await session.setDraft({ name: '题', value: 6 });
+        const locked = await session.saveScore();
+        assert.equal(locked.code, 'work_locked');
+        assert.match(locked.message, /锁定/);
+        assert.equal(locked.message.includes('raw server text'), false);
+        code = 'score_invalid';
+        await session.setDraft({ name: '题', value: 6 });
+        const invalid = await session.saveScore();
+        assert.equal(invalid.code, 'score_invalid');
+        assert.match(invalid.message, /0 到 100/);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});

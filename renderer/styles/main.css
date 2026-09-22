@@ -531,9 +531,21 @@ body.student-mode:not(.teacher-mode).student-focus-mode .page-subtitle {
     display: none;
 }
 
+body.student-mode:not(.teacher-mode).student-focus-mode .top-bar {
+    height: auto;
+    min-height: 58px;
+}
+
+body.student-mode:not(.teacher-mode).student-focus-mode .top-bar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .student-focus-back,
 .student-focus-ai-btn,
-.student-submit-result-btn {
+.student-save-score-btn,
+.student-upload-screenshot-btn,
+.student-save-combined-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -548,7 +560,10 @@ body.student-mode:not(.teacher-mode).student-focus-mode .page-subtitle {
 }
 .student-focus-back[hidden],
 .student-focus-ai-btn[hidden],
-.student-submit-result-btn[hidden],
+.student-save-score-btn[hidden],
+.student-upload-screenshot-btn[hidden],
+.student-save-combined-btn[hidden],
+.student-platform-status[hidden],
 .student-ai-drawer-close[hidden],
 .student-ai-drawer-backdrop[hidden],
 #student-account-settings-btn[hidden] {
@@ -577,17 +592,46 @@ body.student-mode:not(.teacher-mode).student-focus-mode .page-subtitle {
     color: #fff;
     border-color: #1d4ed8;
 }
-.student-submit-result-btn {
+.student-save-score-btn,
+.student-save-combined-btn {
     border: 1px solid #1d4ed8;
     background: #1d4ed8;
     color: #fff;
 }
-.student-submit-result-btn:hover {
+.student-upload-screenshot-btn {
+    border: 1px solid rgba(37, 99, 235, 0.28);
+    background: #fff;
+    color: #1d4ed8;
+}
+.student-save-score-btn:hover,
+.student-save-combined-btn:hover,
+.student-upload-screenshot-btn:hover {
     background: #1e40af;
+    color: #fff;
+}
+.student-save-score-btn:disabled,
+.student-save-combined-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    background: #1d4ed8;
+    color: #fff;
+}
+.student-platform-status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: #ecfdf3;
+    color: #166534;
+    font-size: 12px;
+    font-weight: 700;
 }
 .student-focus-back:focus-visible,
 .student-focus-ai-btn:focus-visible,
-.student-submit-result-btn:focus-visible,
+.student-save-score-btn:focus-visible,
+.student-upload-screenshot-btn:focus-visible,
+.student-save-combined-btn:focus-visible,
 .student-account-trigger:focus-visible,
 .student-account-item:focus-visible {
     outline: 3px solid rgba(37, 99, 235, 0.22);
@@ -706,7 +750,9 @@ body.student-ai-drawer-open #student-ai-drawer-close {
 @media (max-width: 720px) {
     .student-focus-back,
     .student-focus-ai-btn,
-    .student-submit-result-btn,
+    .student-save-score-btn,
+    .student-upload-screenshot-btn,
+    .student-save-combined-btn,
     .student-account-trigger {
         min-height: 44px;
     }

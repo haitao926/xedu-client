@@ -18,6 +18,11 @@ const {
 const { resolveBackendBindHost, resolveBackendConnectHost } = require('./backend-network-config');
 const { createTeacherCredentialStore } = require('./teacher-credential-store');
 const { runPythonBootstrap } = require('./python-bootstrap');
+const {
+    parseOpenLocalTaskLink,
+    createLocalTaskSession,
+    registerLocalTaskIpc,
+} = require('./xedu-local-task-launch');
 
 function isBrokenPipeError(error) {
     return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
@@ -97,6 +102,8 @@ let backendRecentOutput = [];
 let backendLastExit = null;
 let quitting = false;
 let pendingPracticeDeepLink = null;
+let pendingLocalTaskPayload = null;
+let localTaskSession = null;
 const gotTheLock = app.requestSingleInstanceLock();
 let jupyterManagedPid = null;
 // Vite injects the stable development capability below when no override is
@@ -658,6 +665,10 @@ function createWindow() {
             mainWindow.webContents.send('deep-link-open-practice', pendingPracticeDeepLink);
             pendingPracticeDeepLink = null;
         }
+        if (pendingLocalTaskPayload) {
+            mainWindow.webContents.send('deep-link-open-local-task', pendingLocalTaskPayload);
+            pendingLocalTaskPayload = null;
+        }
     });
 
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -729,6 +740,68 @@ function dispatchPracticeDeepLink(payload) {
         return;
     }
     pendingPracticeDeepLink = payload;
+}
+
+function getLocalTaskSession() {
+    if (!localTaskSession) {
+        localTaskSession = createLocalTaskSession({
+            cacheRoot: path.join(app.getPath('userData'), 'xedu-task-packages'),
+        });
+    }
+    return localTaskSession;
+}
+
+function sendLocalTaskPayload(payload) {
+    if (!payload) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        if (mainWindow.webContents.isLoading()) {
+            pendingLocalTaskPayload = payload;
+            return;
+        }
+        mainWindow.webContents.send('deep-link-open-local-task', payload);
+        return;
+    }
+    pendingLocalTaskPayload = payload;
+}
+
+async function captureExperimentView(bounds) {
+    if (!mainWindow || mainWindow.isDestroyed()) return null;
+    const rect = bounds && Number.isFinite(bounds.width) && Number.isFinite(bounds.height)
+        ? {
+            x: Math.max(0, Math.round(bounds.x || 0)),
+            y: Math.max(0, Math.round(bounds.y || 0)),
+            width: Math.max(1, Math.min(8000, Math.round(bounds.width))),
+            height: Math.max(1, Math.min(8000, Math.round(bounds.height))),
+        }
+        : undefined;
+    try {
+        const image = await mainWindow.webContents.capturePage(rect);
+        const bytes = image.toPNG();
+        if (!bytes?.length) return null;
+        return { bytes, mime: 'image/png', filename: 'experiment-view.png' };
+    } catch (_) {
+        return null;
+    }
+}
+
+async function handleOpenLocalTask(rawUrl) {
+    await app.whenReady();
+    const result = await getLocalTaskSession().openLocalTask(rawUrl);
+    sendLocalTaskPayload(result);
+}
+
+function dispatchIncomingDeepLink(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.startsWith(`${XEDU_PROTOCOL}://`)) return;
+    const practice = parsePracticeDeepLink(rawUrl);
+    if (practice) {
+        dispatchPracticeDeepLink(practice);
+        return;
+    }
+    if (parseOpenLocalTaskLink(rawUrl)) {
+        void handleOpenLocalTask(rawUrl);
+    }
 }
 
 // 允许在 BrowserView 中嵌入 Jupyter：移除 CSP/X-Frame 限制
@@ -2135,7 +2208,7 @@ if (!gotTheLock) {
     app.on('second-instance', (event, argv) => {
         const deepLinkArg = (argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`));
         if (deepLinkArg) {
-            dispatchPracticeDeepLink(parsePracticeDeepLink(deepLinkArg));
+            dispatchIncomingDeepLink(deepLinkArg);
         }
         if (mainWindow) {
             bringMainWindowToFront();
@@ -2144,6 +2217,14 @@ if (!gotTheLock) {
 
     app.whenReady().then(async () => {
         registerXeduProtocol();
+        registerLocalTaskIpc({
+            ipcMain,
+            isTrusted: isTrustedRenderer,
+            session: getLocalTaskSession(),
+            captureExperimentView,
+        });
+        const startupDeepLink = (process.argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`));
+        if (startupDeepLink) dispatchIncomingDeepLink(startupDeepLink);
         setupJupyterCspBypass();
         setupTrustedMediaPermissionHandler();
         setupMenu();
@@ -2165,7 +2246,7 @@ if (!gotTheLock) {
 
     app.on('open-url', (event, url) => {
         event.preventDefault();
-        dispatchPracticeDeepLink(parsePracticeDeepLink(url));
+        dispatchIncomingDeepLink(url);
     });
 
     app.on('window-all-closed', () => {
