@@ -2970,31 +2970,105 @@ body.focus-mode {
     line-height: 1.7;
     color: var(--text-secondary);
 }
-.about-us-modal-content {
-    width: min(500px, calc(100vw - 32px));
+.modal-content.about-us-modal-content {
+    width: min(480px, calc(100vw - 32px));
+    max-height: min(720px, calc(100dvh - 40px));
+    overflow: auto;
+    padding: 22px 22px 18px;
     text-align: left;
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.65), rgba(255, 255, 255, 0) 72px),
+        #fff;
+}
+.modal-content.about-us-modal-content .modal-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-align: left;
+}
+.modal-content.about-us-modal-content .modal-message {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: left;
+}
+.modal-content.about-us-modal-content .modal-actions {
+    justify-content: flex-end;
+    margin-top: 2px;
+}
+.about-us-header {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.95);
 }
 .about-us-body {
     display: grid;
-    gap: 12px;
-    margin-bottom: 20px;
+    gap: 10px;
+    margin-bottom: 16px;
 }
 .about-us-card {
-    padding: 14px 16px;
-    border-radius: 16px;
+    padding: 12px 14px 10px;
+    border-radius: 14px;
     border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(248, 250, 252, 0.92);
+    background: rgba(248, 250, 252, 0.72);
 }
 .about-us-label {
     font-size: 12px;
     font-weight: 700;
     color: var(--text-secondary);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 .about-us-value {
-    font-size: 14px;
-    line-height: 1.8;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.7;
     color: var(--text-heading);
+}
+.about-us-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+.about-us-person {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 7px 0;
+    border-top: 1px solid rgba(226, 232, 240, 0.9);
+}
+.about-us-person:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+.about-us-person:last-child {
+    padding-bottom: 2px;
+}
+.about-us-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-heading);
+    white-space: nowrap;
+}
+.about-us-school {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    text-align: right;
+}
+.about-us-advisor {
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(148, 163, 184, 0.45);
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.about-us-advisor .about-us-name {
+    font-size: 13px;
 }
 .action-footer { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 12px; }
 

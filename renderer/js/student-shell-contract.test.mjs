@@ -368,3 +368,17 @@ test("student task-center workspaces keep route and direct HTML layouts distinct
   assert.match(css, /resources-student-html-frame\s*\{[\s\S]*height:\s*100%;/);
   assert.doesNotMatch(css, /resources-student-gateway/);
 });
+
+test("about us lists software authors and the current testers with schools", () => {
+  const html = readRepoFile("renderer/index.html");
+  const about = html.slice(html.indexOf('id="about-us-modal"'), html.indexOf("<!-- Modal -->"));
+
+  assert.match(about, /data-action="ui\.hideModal" data-action-value="about-us-modal"/);
+  assert.match(about, /王海涛[\s\S]*上海科技大学附属学校/);
+  assert.match(about, /邱奕盛[\s\S]*上海科技大学附属学校/);
+  assert.match(about, /项目指导：[\s\S]*谢作如/);
+  assert.match(about, /郑祥[\s\S]*温州市第十七中学/);
+  assert.match(about, /洪丹妮[\s\S]*温州市绣山中学/);
+  assert.match(about, /刘宜萍[\s\S]*合肥一六八中学/);
+  assert.doesNotMatch(about, /刘啸宇|刘正云/);
+});
