@@ -3631,10 +3631,16 @@ function syncLessonPageTitle(resource, tabId = resourcesState.activeCourseWorksp
     const section = sections[lessonIndex] || null;
     if (titleEl) titleEl.textContent = getCurrentStudentTaskTitle(resource, tabId);
     if (subtitleEl) {
-        subtitleEl.textContent = section
-            ? `${section.title || `第 ${lessonIndex + 1} 课`} / ${resource?.title || "当前课程"}`
-            : "等待课堂课程";
+        subtitleEl.textContent = formatStudentCourseSubtitle(resource, section, lessonIndex);
     }
+}
+
+function formatStudentCourseSubtitle(resource, section, lessonIndex = 0) {
+    if (!section) return "等待课堂课程";
+    const lesson = String(section.title || `第 ${lessonIndex + 1} 课`).trim();
+    const course = String(resource?.title || "").trim();
+    if (course && lesson && course !== lesson) return lesson;
+    return course || lesson || "当前课程";
 }
 
 function getExperimentStudentTasks(exp) {

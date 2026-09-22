@@ -875,13 +875,32 @@ body.student-mode:not(.teacher-mode).student-page-route #resources-list-view {
 }
 
 body.student-mode:not(.teacher-mode).student-page-route .resources-empty {
-    align-items: flex-start;
-    justify-content: flex-start;
-    padding: 28px 32px 40px;
+    align-items: center;
+    justify-content: center;
+    min-height: 100%;
+    padding: 32px 24px 48px;
 }
 
 body.student-mode:not(.teacher-mode).student-page-route .resources-student-empty {
     width: min(560px, 100%);
+    margin-inline: auto;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route .resources-view.is-student-lesson.is-route-page .resources-detail-header {
+    max-width: 800px;
+    width: 100%;
+    margin-inline: auto;
+    box-sizing: border-box;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route .resources-view.is-student-lesson.is-route-page .resources-detail-content {
+    align-items: center;
+    padding: 20px 24px 32px;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route .resources-view.is-student-lesson .resources-course-workspace.is-route-page {
+    width: min(800px, 100%);
+    margin-inline: auto;
 }
 
 body.student-task-center-header #resources-refresh-btn,
@@ -4054,8 +4073,10 @@ body.focus-mode {
 }
 
 .resources-learning-route.is-student-lesson {
-    gap: 28px;
-    max-width: 880px;
+    gap: 24px;
+    max-width: 800px;
+    width: 100%;
+    margin-inline: auto;
 }
 
 .resources-route-section,
@@ -4260,41 +4281,51 @@ body.focus-mode {
     grid-template-columns: 1fr;
     gap: 12px;
     margin-top: 14px;
-    max-width: 880px;
+    max-width: none;
 }
 
 .resources-learning-route.is-student-lesson .resources-course-entry-card {
-    min-height: 122px;
-    grid-template-columns: 54px minmax(0, 1fr) auto;
-    grid-template-rows: auto;
+    display: flex;
     align-items: center;
-    column-gap: 16px;
-    padding: 18px 20px;
-    border-radius: 22px;
+    gap: 14px;
+    min-height: 0;
+    padding: 14px 16px;
+    border-radius: 18px;
     box-shadow: 0 14px 32px -28px rgba(15, 23, 42, 0.36);
 }
 
 .resources-learning-route.is-student-lesson .resources-course-entry-icon {
-    width: 54px;
-    height: 54px;
-    grid-row: auto;
-    border-radius: 18px;
-    font-size: 17px;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    border-radius: 14px;
+    font-size: 15px;
+}
+
+.resources-learning-route.is-student-lesson .resources-course-entry-body {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .resources-learning-route.is-student-lesson .resources-course-entry-title {
-    font-size: 17px;
+    font-size: 15px;
 }
 
 .resources-learning-route.is-student-lesson .resources-course-entry-desc {
-    max-width: 560px;
-    font-size: 13px;
+    max-width: none;
+    font-size: 12.5px;
+}
+
+.resources-learning-route.is-student-lesson .resources-course-entry-meta {
+    margin-top: 6px;
 }
 
 .resources-learning-route.is-student-lesson .resources-course-entry-action {
-    justify-self: end;
-    min-height: 36px;
-    padding: 8px 13px;
+    flex: 0 0 auto;
+    justify-self: auto;
+    min-height: 34px;
+    padding: 7px 12px;
+    white-space: nowrap;
 }
 
 .resources-course-actions {
@@ -6024,20 +6055,21 @@ body.focus-mode {
     .resources-course-entry-grid { grid-template-columns: 1fr; }
     .resources-course-entry-card { min-height: 116px; }
     .resources-learning-route.is-student-lesson .resources-course-entry-card {
-        grid-template-columns: auto minmax(0, 1fr);
-        grid-template-rows: auto auto;
+        flex-wrap: wrap;
         align-items: flex-start;
-        min-height: 128px;
-        padding: 16px;
+        min-height: 0;
+        padding: 14px;
     }
     .resources-learning-route.is-student-lesson .resources-course-entry-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 15px;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+    }
+    .resources-learning-route.is-student-lesson .resources-course-entry-body {
+        flex: 1 1 calc(100% - 54px);
     }
     .resources-learning-route.is-student-lesson .resources-course-entry-action {
-        grid-column: 2;
-        justify-self: start;
+        margin-left: 54px;
     }
     .resources-student-entry-row { align-items: flex-start; flex-direction: column; }
     .resources-student-entry-actions,

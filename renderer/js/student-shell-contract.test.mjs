@@ -169,6 +169,7 @@ test("teacher mode keeps the student course shell and only adds resources/settin
 
 test("student task center opens HTML pages directly and routes coding tabs to native workbenches", () => {
   const resources = readRepoFile("renderer/js/resources.js");
+  const css = readRepoFile("renderer/styles/main.css");
   assert.match(resources, /function makeStudentRouteButton\(tabId, context, options = \{\}\)/);
   assert.match(resources, /function renderResources\(list = \[\]\)/);
   assert.doesNotMatch(resources, /本节实践通道/);
@@ -176,6 +177,12 @@ test("student task center opens HTML pages directly and routes coding tabs to na
   assert.match(resources, /student-task-center-header/);
   assert.doesNotMatch(resources, /只显示当前课程/);
   assert.doesNotMatch(resources, /拖到上方导入区/);
+  assert.match(resources, /function formatStudentCourseSubtitle\(/);
+  assert.match(resources, /if \(course && lesson && course !== lesson\) return lesson;/);
+  assert.doesNotMatch(resources, /\$\{section\.title \|\| `第 \$\{lessonIndex \+ 1\} 课`\} \/ \$\{resource\?\.title/);
+  assert.match(css, /student-page-route \.resources-empty[\s\S]*justify-content:\s*center;/);
+  assert.match(css, /student-page-route[\s\S]*resources-course-workspace\.is-route-page[\s\S]*margin-inline:\s*auto;/);
+  assert.match(css, /\.resources-learning-route\.is-student-lesson[\s\S]*margin-inline:\s*auto;/);
   assert.match(resources, /function renderStudentLessonEmpty[\s\S]*?加入课堂/);
   assert.doesNotMatch(resources, /function renderStudentLessonEmpty[\s\S]*?打开本地课程/);
   assert.match(resources, /加入课堂后，课程会出现在这里。/);
