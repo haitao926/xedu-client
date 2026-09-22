@@ -37,7 +37,9 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.match(css, /student-page-route #resources-list-view \.resources-toolbar\s*\{\s*display:\s*none;\s*\}/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant\.page-section\s*\{/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant \.ai-model-badge\s*\{[^}]*white-space:\s*nowrap;/);
-  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant \.chat-messages:has\(> \.chat-empty-state:only-child\)::after\s*\{[^}]*max-height:\s*28px;/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant\.page-section\s*\{[^}]*height:\s*auto;/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant \.chat-messages\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant \.input-area\s*\{[^}]*flex:\s*0 0 auto;/);
   assert.doesNotMatch(css, /student-focus-progress/);
 
   assert.match(html, /id="nav-student-lesson-item"[^>]*data-action="resources\.openStudentLessonTab"[^>]*data-action-value="route"/);

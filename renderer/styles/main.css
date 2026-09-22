@@ -749,10 +749,17 @@ body.student-mode:not(.teacher-mode).student-ai-drawer-open .top-bar {
 }
 body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant.page-section {
     display: flex;
+    flex-direction: column;
     position: fixed;
     top: 58px;
     right: 0;
     bottom: 0;
+    left: auto;
+    /* Do not use height 100% here: with top offset it extends the drawer past the window and clips the composer. */
+    height: auto;
+    max-height: calc(100dvh - 58px);
+    min-height: 0;
+    overflow: hidden;
     width: min(400px, 100vw);
     z-index: 36;
     margin: 0;
@@ -761,10 +768,14 @@ body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant.page-s
     box-shadow: -18px 0 40px -28px rgba(15, 23, 42, 0.45);
 }
 body.student-ai-drawer-open #ai-assistant .chat-layout {
-    height: 100%;
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    max-height: 100%;
     border: 0;
     border-radius: 0;
     box-shadow: none;
+    overflow: hidden;
 }
 body.student-ai-drawer-open #ai-assistant .chat-sidebar {
     display: none;
@@ -786,7 +797,14 @@ body.student-ai-drawer-open #student-ai-drawer-close {
 }
 
 /* Student drawer chrome only. Full-page student/teacher AI keeps the rules above. */
+body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .chat-main {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    overflow: hidden;
+}
 body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .chat-header {
+    flex: 0 0 auto;
     flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
@@ -842,27 +860,22 @@ body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .ai-ch
     box-shadow: none;
     flex: 0 0 auto;
 }
+body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .chat-messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 14px;
+}
 body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .chat-messages:has(> .chat-empty-state:only-child) {
     justify-content: flex-start;
     gap: 0;
-    padding: 8px 14px 0;
-}
-body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .chat-messages:has(> .chat-empty-state:only-child)::before {
-    content: "";
-    flex: 1 1 8px;
-    min-height: 8px;
-}
-body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .chat-messages:has(> .chat-empty-state:only-child)::after {
-    content: "";
-    flex: 0.2 1 8px;
-    min-height: 12px;
-    max-height: 28px;
 }
 body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .chat-empty-state {
     flex: 0 0 auto;
     width: 100%;
-    margin: 0 auto;
-    padding: 0 2px 2px;
+    margin-block: auto;
+    margin-inline: auto;
+    padding: 0 2px;
     gap: 8px;
     max-width: none;
 }
@@ -890,6 +903,7 @@ body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .chat-
     padding: 7px 14px;
 }
 body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .input-area {
+    flex: 0 0 auto;
     padding: 8px 12px 10px;
 }
 body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .ai-composer-head {
