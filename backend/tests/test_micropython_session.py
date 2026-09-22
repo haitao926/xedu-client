@@ -161,6 +161,49 @@ class MicroPythonSessionTestCase(unittest.TestCase):
         )
         self.assertTrue(all("Bluetooth" not in port["description"] for port in self.manager.list_ports()))
 
+    def test_list_ports_keeps_esp32s3_usb_serial_and_drops_macos_tty_twin(self):
+        serial = FakeMicroPythonSerial()
+        manager = MicroPythonSessionManager(
+            serial_factory=lambda *args, **kwargs: serial,
+            ports_factory=lambda: [
+                SimpleNamespace(
+                    device="/dev/tty.usbmodem1101",
+                    description="USB JTAG/serial debug unit",
+                    hwid="USB VID:PID=303A:1001",
+                    vid=0x303A,
+                ),
+                SimpleNamespace(
+                    device="/dev/cu.usbmodem1101",
+                    description="USB JTAG/serial debug unit",
+                    hwid="USB VID:PID=303A:1001",
+                    vid=0x303A,
+                ),
+                SimpleNamespace(
+                    device="/dev/ttyACM0",
+                    description="USB JTAG/serial debug unit",
+                    hwid="USB VID:PID=303A:1001",
+                    vid=0x303A,
+                ),
+                SimpleNamespace(
+                    device="/dev/cu.Bluetooth-Incoming-Port",
+                    description="Bluetooth",
+                    hwid="n/a",
+                    vid=None,
+                ),
+            ],
+            connect_settle_s=0,
+            repl_timeout_s=0.4,
+            raw_repl_timeout_s=0.8,
+        )
+        try:
+            devices = [port["device"] for port in manager.list_ports()]
+            self.assertEqual(devices, ["/dev/cu.usbmodem1101", "/dev/ttyACM0"])
+            result = manager.connect("/dev/cu.usbmodem1101")
+            self.assertTrue(result["connected"])
+            self.assertEqual(result["port"], "/dev/cu.usbmodem1101")
+        finally:
+            manager.close()
+
     def test_connect_starts_session_and_exposes_output_cursor(self):
         result = self.manager.connect("/dev/cu.usbserial-ESP32")
         self.assertTrue(result["connected"])

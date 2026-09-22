@@ -6,6 +6,8 @@ import {
   PLACEHOLDER_OUTPUT,
   actionAvailability,
   appendConsoleText,
+  panelRequestPath,
+  panelRoute,
   pythonPathFromWidget,
   studentErrorMessage,
   xsrfTokenFromCookie,
@@ -34,6 +36,13 @@ async function request(path, options = {}) {
     throw new Error(payload.message || `ESP32 请求失败（${response.status}）`);
   }
   return payload;
+}
+
+async function requestRoute(action, { body, query } = {}) {
+  const route = panelRoute(action);
+  const options = { method: route.method };
+  if (route.method !== 'GET') options.body = body ?? '{}';
+  return request(panelRequestPath(action, query), options);
 }
 
 class MicroPythonPanel extends Panel {
@@ -125,12 +134,12 @@ class MicroPythonPanel extends Panel {
       if (action === 'disconnect') return await this.disconnect();
       if (action === 'run') return await this.run();
       if (action === 'interrupt') {
-        await request('interrupt', { method: 'POST', body: '{}' });
+        await requestRoute('interrupt');
         this.setStatus('已发送停止指令。');
         return;
       }
       if (action === 'reset') {
-        await request('reset', { method: 'POST', body: '{}' });
+        await requestRoute('reset');
         this.setStatus('正在重启设备…');
         return;
       }
@@ -143,7 +152,7 @@ class MicroPythonPanel extends Panel {
   }
 
   async refreshPorts() {
-    const payload = await request('ports');
+    const payload = await requestRoute('refresh');
     const select = this.node.querySelector('[data-role="port"]');
     const selected = select.value;
     select.innerHTML = '<option value="">请选择 ESP32 串口</option>';
@@ -163,7 +172,7 @@ class MicroPythonPanel extends Panel {
     const port = this.node.querySelector('[data-role="port"]').value;
     if (!port) throw new Error('请先选择 ESP32 串口。');
     this.setStatus(`正在连接 ${port}…`);
-    await request('connect', { method: 'POST', body: JSON.stringify({ port }) });
+    await requestRoute('connect', { body: JSON.stringify({ port }) });
     this.connected = true;
     this.cursor = 0;
     const output = this.node.querySelector('[data-role="output"]');
@@ -174,7 +183,7 @@ class MicroPythonPanel extends Panel {
   }
 
   async disconnect() {
-    await request('disconnect', { method: 'POST', body: '{}' });
+    await requestRoute('disconnect');
     this.connected = false;
     this.stopPolling();
     this.setStatus('已断开 ESP32。');
@@ -188,7 +197,7 @@ class MicroPythonPanel extends Panel {
     if (this.activePythonContext?.save && this.activePythonContext.model?.dirty) {
       await this.activePythonContext.save();
     }
-    await request('run', { method: 'POST', body: JSON.stringify({ file }) });
+    await requestRoute('run', { body: JSON.stringify({ file }) });
     this.setStatus(`正在运行 ${file}`);
     this.updateFileLabel();
     this.updateActionState();
@@ -199,7 +208,7 @@ class MicroPythonPanel extends Panel {
     const text = input.value.trim();
     if (!text) return;
     if (!this.connected) throw new Error('请先连接 ESP32。');
-    await request('input', { method: 'POST', body: JSON.stringify({ text }) });
+    await requestRoute('send', { body: JSON.stringify({ text }) });
     input.value = '';
   }
 
@@ -230,7 +239,7 @@ class MicroPythonPanel extends Panel {
     if (this.pollTimer) return;
     const poll = async () => {
       try {
-        const payload = await request(`output?after=${this.cursor}`);
+        const payload = await requestRoute('poll', { query: `after=${this.cursor}` });
         this.connected = Boolean(payload.connected);
         this.cursor = payload.cursor;
         if (payload.output) {
@@ -267,7 +276,7 @@ class MicroPythonPanel extends Panel {
   dispose() {
     this.stopPolling();
     this.app.shell.currentChanged?.disconnect(this._shellChanged);
-    void request('disconnect', { method: 'POST', body: '{}' }).catch(() => {});
+    void requestRoute('disconnect').catch(() => {});
     super.dispose();
   }
 }

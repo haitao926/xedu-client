@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  PANEL_ROUTES,
   PLACEHOLDER_OUTPUT,
   actionAvailability,
   appendConsoleText,
+  panelRequestPath,
+  panelRoute,
   pythonPathFromWidget,
   studentErrorMessage,
   xsrfTokenFromCookie,
@@ -46,6 +49,29 @@ test('actionAvailability disables run until connected with a .py file', () => {
     reset: true,
     send: true,
   });
+});
+
+test('panel routes match the Jupyter MicroPython actions', () => {
+  assert.deepEqual(Object.keys(PANEL_ROUTES), [
+    'refresh',
+    'connect',
+    'disconnect',
+    'run',
+    'interrupt',
+    'reset',
+    'send',
+    'poll',
+  ]);
+  assert.deepEqual(panelRoute('refresh'), { method: 'GET', path: 'ports' });
+  assert.deepEqual(panelRoute('connect'), { method: 'POST', path: 'connect' });
+  assert.deepEqual(panelRoute('disconnect'), { method: 'POST', path: 'disconnect' });
+  assert.deepEqual(panelRoute('run'), { method: 'POST', path: 'run' });
+  assert.deepEqual(panelRoute('interrupt'), { method: 'POST', path: 'interrupt' });
+  assert.deepEqual(panelRoute('reset'), { method: 'POST', path: 'reset' });
+  assert.deepEqual(panelRoute('send'), { method: 'POST', path: 'input' });
+  assert.deepEqual(panelRoute('poll'), { method: 'GET', path: 'output' });
+  assert.equal(panelRequestPath('poll', 'after=4'), 'output?after=4');
+  assert.throws(() => panelRoute('flash'), /不支持的 MicroPython 请求/);
 });
 
 test('studentErrorMessage keeps Chinese device errors', () => {
