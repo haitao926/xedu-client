@@ -33,6 +33,8 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.match(css, /html\.student-shell-pending body:not\(\.teacher-mode\) \.sidebar,\s*body\.student-mode:not\(\.teacher-mode\) \.sidebar\s*\{\s*display:\s*none;\s*\}/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #settings,\s*body\.student-mode:not\(\.teacher-mode\) #student-account-settings-btn\s*\{\s*display:\s*none !important;\s*\}/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-focus-mode \.page-subtitle\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #resources-import-drop-zone\s*\{\s*display:\s*none !important;\s*\}/);
+  assert.match(css, /student-page-route #resources-list-view \.resources-toolbar\s*\{\s*display:\s*none;\s*\}/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant\.page-section\s*\{/);
   assert.doesNotMatch(css, /student-focus-progress/);
 
@@ -170,10 +172,14 @@ test("student task center opens HTML pages directly and routes coding tabs to na
   assert.match(resources, /function makeStudentRouteButton\(tabId, context, options = \{\}\)/);
   assert.match(resources, /function renderResources\(list = \[\]\)/);
   assert.doesNotMatch(resources, /本节实践通道/);
-  assert.match(resources, /只显示当前课程/);
+  assert.match(resources, /function syncStudentTaskCenterHeader\(/);
+  assert.match(resources, /student-task-center-header/);
+  assert.doesNotMatch(resources, /只显示当前课程/);
+  assert.doesNotMatch(resources, /拖到上方导入区/);
   assert.match(resources, /function renderStudentLessonEmpty[\s\S]*?加入课堂/);
   assert.doesNotMatch(resources, /function renderStudentLessonEmpty[\s\S]*?打开本地课程/);
-  assert.match(resources, /加入课堂后显示；也可以直接把课程 ZIP 或完整课程文件夹拖到上方导入区/);
+  assert.match(resources, /加入课堂后，课程会出现在这里。/);
+  assert.doesNotMatch(resources, /拖入 ZIP 或课程文件夹/);
   assert.match(resources, /label: "进入互动体验"/);
   assert.match(resources, /label: isStudentLessonMode\(\) \? "进入图形编程" : "进入可视化编程"/);
   assert.match(resources, /label: isStudentLessonMode\(\) \? "进入Python实验" : "进入Python编程"/);

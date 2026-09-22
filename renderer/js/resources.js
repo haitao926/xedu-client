@@ -2819,6 +2819,7 @@ function updateTeacherModeUI() {
     if (!resourcesState.teacherMode.unlocked) {
         closeCreateEntryMenu();
     }
+    syncStudentTaskCenterHeader();
     try {
         if (window.app && window.app.system && typeof window.app.system.updateSettingsVisibility === "function") {
             if (!resourcesState.openingStudentLessonTab) {
@@ -3566,6 +3567,36 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
     }
 }
 
+function syncStudentTaskCenterHeader() {
+    const studentHome = document.body.classList.contains("student-mode")
+        && !document.body.classList.contains("teacher-mode")
+        && document.body.classList.contains("student-page-route");
+    document.body.classList.toggle("student-task-center-header", studentHome);
+    const refreshBtn = document.getElementById("resources-refresh-btn");
+    const searchBtn = document.getElementById("resources-search-toggle-btn");
+    const filterBar = document.getElementById("resources-filter-bar");
+    const topActions = document.getElementById("top-bar-actions");
+    const accountMenu = document.getElementById("student-account-menu");
+    const toolbarActions = document.querySelector("#resources-list-view .resources-actions");
+    const listView = document.getElementById("resources-list-view");
+    const resourcesMain = document.querySelector("#resources .resources-main");
+    if (studentHome && topActions && refreshBtn && searchBtn) {
+        const anchor = accountMenu && accountMenu.parentElement === topActions ? accountMenu : null;
+        topActions.insertBefore(refreshBtn, anchor);
+        topActions.insertBefore(searchBtn, anchor);
+        if (filterBar && resourcesMain && listView) {
+            resourcesMain.insertBefore(filterBar, listView);
+        }
+        return;
+    }
+    if (toolbarActions) {
+        if (refreshBtn) toolbarActions.appendChild(refreshBtn);
+        if (searchBtn) toolbarActions.appendChild(searchBtn);
+    }
+    const toolbar = listView?.querySelector(".resources-toolbar");
+    if (filterBar && toolbar) toolbar.insertAdjacentElement("afterend", filterBar);
+}
+
 function syncStudentPageBodyState(tabId = resourcesState.activeCourseWorkspaceTab) {
     const normalized = normalizeWorkspaceTabId(tabId);
     document.body.classList.toggle("student-page-route", normalized === "route");
@@ -3573,6 +3604,7 @@ function syncStudentPageBodyState(tabId = resourcesState.activeCourseWorkspaceTa
     document.body.classList.toggle("student-page-visual", normalized === "visual");
     document.body.classList.toggle("student-page-python", normalized === "python");
     syncStudentFocusChrome(normalized);
+    syncStudentTaskCenterHeader();
 }
 
 export function syncStudentShellChrome() {
@@ -4679,11 +4711,11 @@ function applyFilters() {
     updateResourcesSearchUI();
 }
 
-function setResourcesListToolbarForStudent(tabId = resourcesState.activeCourseWorkspaceTab) {
+function setResourcesListToolbarForStudent() {
     const title = document.querySelector("#resources-list-view .resources-title");
     const count = document.getElementById("resources-count");
-    if (title) title.textContent = getWorkspaceTabTitle(tabId);
-    if (count) count.textContent = "只显示当前课程";
+    if (title) title.textContent = "";
+    if (count) count.textContent = "";
 }
 
 function buildAddCard() {
@@ -5010,7 +5042,7 @@ function renderStudentLessonEmpty(tabId = resourcesState.activeCourseWorkspaceTa
 
     const desc = document.createElement("div");
     desc.className = "resources-student-empty-desc";
-    desc.textContent = `${getWorkspaceTabTitle(tabId)}会在加入课堂后显示；也可以直接把课程 ZIP 或完整课程文件夹拖到上方导入区。`;
+    desc.textContent = "加入课堂后，课程会出现在这里。";
     wrap.appendChild(desc);
 
     const actions = document.createElement("div");

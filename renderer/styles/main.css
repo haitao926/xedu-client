@@ -847,6 +847,48 @@ body.student-mode.student-page-python .content-scroll-area {
     padding: 0;
 }
 
+body.student-mode:not(.teacher-mode) #resources-import-drop-zone {
+    display: none !important;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route .top-bar {
+    height: auto;
+    min-height: 58px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route #resources-list-view .resources-toolbar {
+    display: none;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route .resources-layout {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route .resources-main,
+body.student-mode:not(.teacher-mode).student-page-route #resources-list-view {
+    background: transparent;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route .resources-empty {
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 28px 32px 40px;
+}
+
+body.student-mode:not(.teacher-mode).student-page-route .resources-student-empty {
+    width: min(560px, 100%);
+}
+
+body.student-task-center-header #resources-refresh-btn,
+body.student-task-center-header #resources-search-toggle-btn {
+    min-height: 36px;
+}
+
 .page-section { display: none; height: 100%; min-height: 0; flex-direction: column; }
 .page-section.active { display: flex; }
 #scratch-workspace.page-section {
