@@ -157,6 +157,7 @@ import { createResourcesState } from "./resources/resources-state.js";
 import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
 import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
 import { createXeduSubmitBridge } from "./resources/xedu-submit-bridge.js";
+import { describeStudentSaveChrome, studentSaveMessage } from "./resources/xedu-save-chrome.js";
 
 const resourcesState = createResourcesState();
 const courseAiFrameBridge = createCourseAiFrameBridge({
@@ -188,6 +189,10 @@ function xeduTransport() {
         saveCombined: (bounds) => api().xeduSaveCombined?.(bounds),
     };
 }
+
+let studentSavePhase = "idle";
+let studentSaveResult = null;
+let studentSaveKind = "";
 
 const xeduScoreBridge = createXeduSubmitBridge({
     windowObject: window,
@@ -3517,8 +3522,14 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
     const saveBtn = document.getElementById("student-save-score-btn");
     const shotBtn = document.getElementById("student-upload-screenshot-btn");
     const combinedBtn = document.getElementById("student-save-combined-btn");
+    const draftEl = document.getElementById("student-score-draft");
     const statusEl = document.getElementById("student-platform-status");
-    const hasDraft = xeduScoreBridge.hasDraft();
+    const retryBtn = document.getElementById("student-save-retry-btn");
+    const chrome = describeStudentSaveChrome({
+        draft: xeduScoreBridge.getDraft(),
+        phase: studentSavePhase,
+        result: studentSaveResult,
+    });
     if (backBtn) backBtn.hidden = !focus;
     if (aiBtn) {
         aiBtn.hidden = !focus;
@@ -3526,14 +3537,26 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
     }
     if (saveBtn) {
         saveBtn.hidden = !focus;
-        saveBtn.disabled = !hasDraft;
+        saveBtn.disabled = chrome.saveDisabled;
     }
-    if (shotBtn) shotBtn.hidden = !focus;
+    if (shotBtn) {
+        shotBtn.hidden = !focus;
+        shotBtn.disabled = chrome.screenshotDisabled;
+    }
     if (combinedBtn) {
         combinedBtn.hidden = !focus;
-        combinedBtn.disabled = !hasDraft;
+        combinedBtn.disabled = chrome.combinedDisabled;
     }
-    if (statusEl) statusEl.hidden = !focus || !statusEl.textContent;
+    if (draftEl) {
+        draftEl.textContent = chrome.draftLabel;
+        draftEl.hidden = !focus || !chrome.draftLabel;
+    }
+    if (statusEl) {
+        statusEl.textContent = chrome.statusText;
+        statusEl.dataset.tone = chrome.tone || "";
+        statusEl.hidden = !focus || !chrome.statusText;
+    }
+    if (retryBtn) retryBtn.hidden = !focus || !chrome.retryVisible;
     if (!focus) {
         document.body.classList.remove("student-ai-drawer-open");
         const backdrop = document.getElementById("student-ai-drawer-backdrop");
@@ -7260,32 +7283,63 @@ export function returnToStudentTaskCenter() {
     return openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
 }
 
-function setStudentPlatformStatus(text) {
-    const statusEl = document.getElementById("student-platform-status");
-    if (!statusEl) return;
-    statusEl.textContent = text || "";
-    const focus = document.body.classList.contains("student-focus-mode");
-    statusEl.hidden = !focus || !statusEl.textContent;
-}
-
 function presentPlatformSaveResult(result) {
     const completed = result?.platform_status === "completed";
-    notifyUser(result?.message || (completed ? "平台已确认完成。" : "保存没有完成，请稍后再试。"), completed ? "success" : "error");
-    if (completed) setStudentPlatformStatus("平台已确认完成");
+    studentSaveResult = result || null;
+    studentSavePhase = completed ? "saved" : "failed";
+    const message = completed
+        ? (result?.message || "平台已保存")
+        : studentSaveMessage(result?.code, result?.message);
+    notifyUser(message, completed ? "success" : "error");
     syncStudentFocusChrome();
     return result;
 }
 
+async function runStudentPlatformSave(kind) {
+    if (studentSavePhase === "saving") {
+        return {
+            ok: false,
+            platform_status: "",
+            code: "save_in_flight",
+            message: studentSaveMessage("save_in_flight"),
+        };
+    }
+    studentSaveKind = kind;
+    studentSavePhase = "saving";
+    studentSaveResult = { retryKind: kind };
+    syncStudentFocusChrome();
+    let result;
+    try {
+        if (kind === "screenshot") result = await xeduScoreBridge.uploadScreenshot();
+        else if (kind === "combined") result = await xeduScoreBridge.saveCombined();
+        else result = await xeduScoreBridge.saveScore();
+    } catch (_) {
+        result = {
+            ok: false,
+            platform_status: "",
+            code: "network",
+            message: studentSaveMessage("network"),
+        };
+    }
+    if (result) result.retryKind = kind;
+    return presentPlatformSaveResult(result);
+}
+
 export async function saveStudentScore() {
-    return presentPlatformSaveResult(await xeduScoreBridge.saveScore());
+    return runStudentPlatformSave("score");
 }
 
 export async function uploadStudentScreenshot() {
-    return presentPlatformSaveResult(await xeduScoreBridge.uploadScreenshot());
+    return runStudentPlatformSave("screenshot");
 }
 
 export async function saveStudentScoreAndScreenshot() {
-    return presentPlatformSaveResult(await xeduScoreBridge.saveCombined());
+    return runStudentPlatformSave("combined");
+}
+
+export function retryStudentSave() {
+    const kind = studentSaveResult?.retryKind || studentSaveKind || "score";
+    return runStudentPlatformSave(kind);
 }
 
 function relativeResourcePath(value) {
@@ -7342,6 +7396,11 @@ export async function openLaunchedLocalTask(payload) {
         ];
         context = findLaunchExperiment(course, resourceId);
     }
+    studentSaveKind = "";
+    studentSaveResult = payload?.grant_expired
+        ? { ok: false, platform_status: "", code: "grant_expired" }
+        : null;
+    studentSavePhase = payload?.grant_expired ? "failed" : "idle";
     if (payload.restored_draft || payload.draft) {
         xeduScoreBridge.restoreDraft(payload.restored_draft || payload.draft);
     } else {

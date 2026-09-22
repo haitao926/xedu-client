@@ -545,7 +545,8 @@ body.student-mode:not(.teacher-mode).student-focus-mode .top-bar-actions {
 .student-focus-ai-btn,
 .student-save-score-btn,
 .student-upload-screenshot-btn,
-.student-save-combined-btn {
+.student-save-combined-btn,
+.student-save-retry-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -563,7 +564,9 @@ body.student-mode:not(.teacher-mode).student-focus-mode .top-bar-actions {
 .student-save-score-btn[hidden],
 .student-upload-screenshot-btn[hidden],
 .student-save-combined-btn[hidden],
+.student-score-draft[hidden],
 .student-platform-status[hidden],
+.student-save-retry-btn[hidden],
 .student-ai-drawer-close[hidden],
 .student-ai-drawer-backdrop[hidden],
 #student-account-settings-btn[hidden] {
@@ -610,22 +613,57 @@ body.student-mode:not(.teacher-mode).student-focus-mode .top-bar-actions {
     color: #fff;
 }
 .student-save-score-btn:disabled,
-.student-save-combined-btn:disabled {
+.student-save-combined-btn:disabled,
+.student-upload-screenshot-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+}
+.student-save-score-btn:disabled,
+.student-save-combined-btn:disabled {
     background: #1d4ed8;
     color: #fff;
 }
+.student-upload-screenshot-btn:disabled {
+    background: #fff;
+    color: #1d4ed8;
+}
+.student-save-retry-btn {
+    border: 1px solid #b45309;
+    background: #fff7ed;
+    color: #9a3412;
+}
+.student-save-retry-btn:hover {
+    background: #9a3412;
+    color: #fff;
+}
+.student-score-draft,
 .student-platform-status {
     display: inline-flex;
     align-items: center;
     min-height: 28px;
-    padding: 0 10px;
+    max-width: 280px;
+    padding: 4px 10px;
     border-radius: 999px;
-    background: #ecfdf3;
-    color: #166534;
     font-size: 12px;
     font-weight: 700;
+    line-height: 1.35;
+}
+.student-score-draft {
+    background: #f8fafc;
+    color: #334155;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+}
+.student-platform-status {
+    background: #ecfdf3;
+    color: #166534;
+}
+.student-platform-status[data-tone="progress"] {
+    background: #fff7ed;
+    color: #9a3412;
+}
+.student-platform-status[data-tone="error"] {
+    background: #fef2f2;
+    color: #991b1b;
 }
 .student-focus-back:focus-visible,
 .student-focus-ai-btn:focus-visible,
@@ -753,6 +791,7 @@ body.student-ai-drawer-open #student-ai-drawer-close {
     .student-save-score-btn,
     .student-upload-screenshot-btn,
     .student-save-combined-btn,
+    .student-save-retry-btn,
     .student-account-trigger {
         min-height: 44px;
     }

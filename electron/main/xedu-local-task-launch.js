@@ -27,6 +27,7 @@ const STUDENT_MESSAGES = Object.freeze({
     screenshot_failed: '截图失败，没有上传。成绩草稿还在，可以单独保存成绩。',
     screenshot_too_large: '截图超过 10MB，没有上传。可以单独保存成绩。',
     screenshot_type: '截图格式无效。请使用 PNG、JPEG 或 WebP。',
+    rate_limited: '保存太频繁，请稍后再试。',
     save_in_flight: '正在保存，请稍候再试。',
     no_score_draft: '还没有可保存的成绩。',
     no_active_task: '请从学习平台重新打开这个任务。',
@@ -42,8 +43,43 @@ const SUCCESS_MESSAGES = Object.freeze({
     combined: '成绩和截图已保存，平台已确认完成。',
 });
 
+function canonicalPlatformCode(code) {
+    if (code === 'protocol_unsupported') return 'protocol_mismatch';
+    if (code === 'rate_limit' || code === 'too_many_requests') return 'rate_limited';
+    return code;
+}
+
+function experimentCaptureRect(bounds) {
+    const width = Number(bounds?.width);
+    const height = Number(bounds?.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    return {
+        x: Math.max(0, Math.round(Number(bounds.x) || 0)),
+        y: Math.max(0, Math.round(Number(bounds.y) || 0)),
+        width: Math.max(1, Math.min(8000, Math.round(width))),
+        height: Math.max(1, Math.min(8000, Math.round(height))),
+    };
+}
+
+function createLaunchOpener(openLocalTask) {
+    const jobs = new Map();
+    return async function openOnce(rawUrl) {
+        const key = String(rawUrl || '');
+        const existing = jobs.get(key);
+        if (existing) return { reused: true, result: await existing };
+        const job = Promise.resolve().then(() => openLocalTask(rawUrl));
+        jobs.set(key, job);
+        try {
+            return { reused: false, result: await job };
+        } finally {
+            if (jobs.get(key) === job) jobs.delete(key);
+        }
+    };
+}
+
 function studentMessage(code, fallback = '') {
-    if (STUDENT_MESSAGES[code]) return STUDENT_MESSAGES[code];
+    const canonical = canonicalPlatformCode(code);
+    if (STUDENT_MESSAGES[canonical]) return STUDENT_MESSAGES[canonical];
     const text = String(fallback || '').trim();
     if (text && text.length <= 180 && !/bearer|grant|token/i.test(text)) return text;
     return '保存没有完成，请稍后再试。';
@@ -340,6 +376,8 @@ function createLocalTaskSession(options = {}) {
     let hostRoot = '';
     let labBaseUrl = '';
     let courseRecord = null;
+    let activeLaunchKey = '';
+    const launchJobs = new Map();
 
     function draftForActive() {
         if (!activeKey) return null;
@@ -409,9 +447,10 @@ function createLocalTaskSession(options = {}) {
     function interpretPlatformError(response, requestId) {
         const payload = readJsonBody(response.body) || {};
         const httpStatus = response.networkError ? 0 : response.status;
-        let code = typeof payload.code === 'string' ? payload.code : '';
+        let code = canonicalPlatformCode(typeof payload.code === 'string' ? payload.code : '');
         if (response.timedOut) code = code || 'network';
         if (httpStatus === 401) code = 'grant_expired';
+        if (httpStatus === 429 && (!code || code === 'network' || code === 'rate_limited')) code = 'rate_limited';
         if (httpStatus === 409 && code !== 'work_locked') code = code || 'conflict';
         if (code === 'work_locked' || httpStatus === 423) code = 'work_locked';
         if (!code) code = response.networkError ? 'network' : 'network';
@@ -441,6 +480,22 @@ function createLocalTaskSession(options = {}) {
         if (!link?.launchGrant || !link?.platformOrigin) {
             return failure('no_active_task', { serverMessage: '任务链接不完整，请从学习平台重新打开。' });
         }
+        const launchKey = `${link.platformOrigin}\n${link.launchGrant}`;
+        const pending = launchJobs.get(launchKey);
+        if (pending) return pending;
+        if (activeLaunchKey === launchKey && snapshot && taskGrant && !grantExpired()) {
+            return publicTask();
+        }
+        const job = openExchangedTask(link).finally(() => {
+            if (launchJobs.get(launchKey) === job) launchJobs.delete(launchKey);
+        });
+        launchJobs.set(launchKey, job);
+        const result = await job;
+        if (result?.ok && result.lab_url && taskGrant) activeLaunchKey = launchKey;
+        return result;
+    }
+
+    async function openExchangedTask(link) {
         const exchangeUrl = `${link.platformOrigin}/api/xedu/v1/launch/exchange`;
         const exchangeBody = Buffer.from(JSON.stringify({
             protocol_version: PROTOCOL_VERSION,
@@ -981,6 +1036,8 @@ module.exports = {
     normalizeScoreDraft,
     packageCacheDirectory,
     contextKey,
+    experimentCaptureRect,
+    createLaunchOpener,
     createLocalTaskSession,
     registerLocalTaskIpc,
 };

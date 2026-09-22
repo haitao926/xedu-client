@@ -18,7 +18,9 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.match(topBar, /id="student-save-score-btn"[^>]*data-action="resources\.saveStudentScore"[\s\S]*保存成绩/);
   assert.match(topBar, /id="student-upload-screenshot-btn"[^>]*data-action="resources\.uploadStudentScreenshot"[\s\S]*截图并上传/);
   assert.match(topBar, /id="student-save-combined-btn"[^>]*data-action="resources\.saveStudentScoreAndScreenshot"[\s\S]*保存成绩并截图/);
+  assert.match(topBar, /id="student-score-draft"/);
   assert.match(topBar, /id="student-platform-status"/);
+  assert.match(topBar, /id="student-save-retry-btn"[^>]*data-action="resources\.retryStudentSave"[\s\S]*重试/);
   assert.doesNotMatch(topBar, /提交结果/);
   assert.match(topBar, /id="student-account-menu"/);
   assert.match(topBar, /id="student-account-teacher-btn"[^>]*data-role="teacher-mode-toggle"[\s\S]*data-role="teacher-mode-label">教师登录</);
@@ -135,6 +137,12 @@ test("student mode hides the sidebar, settings, and AI page nav", () => {
   assert.match(resources, /export async function uploadStudentScreenshot\(/);
   assert.match(resources, /export async function saveStudentScoreAndScreenshot\(/);
   assert.match(resources, /platform_status === "completed"/);
+  assert.match(resources, /describeStudentSaveChrome/);
+  const saveChrome = readRepoFile("renderer/js/resources/xedu-save-chrome.js");
+  assert.match(saveChrome, /待保存：/);
+  assert.match(saveChrome, /保存中/);
+  assert.match(saveChrome, /平台已保存/);
+  assert.match(saveChrome, /grant_expired/);
   assert.doesNotMatch(resources, /export function submitStudentResult\(/);
   assert.doesNotMatch(resources, /TODO: next pass — 提交到平台/);
 });

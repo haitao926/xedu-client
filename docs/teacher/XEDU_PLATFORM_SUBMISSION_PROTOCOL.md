@@ -76,6 +76,15 @@ HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 
 | `work_locked` | 这份作业已锁定，暂时不能再保存。 |
 | `conflict` | 保存发生冲突，请从学习平台重新打开后再试。 |
 | `package_invalid` / `course_id_mismatch` | 课程包校验失败，或 course.json 的 id 与任务不一致。 |
+| `grant_invalid` | 学习平台没有返回有效的任务授权，请重新打开。 |
+| `rate_limited` | 保存太频繁，请稍后再试。 |
+| `screenshot_failed` | 截图失败，没有上传。成绩草稿还在，可以单独保存成绩。 |
+
+焦点栏会显示当前草稿（待保存：名称和分数）、保存中、以及只在 `status: "completed"` 之后出现的「平台已保存」。失败时可以点「重试」。授权过期时提示从学习平台重新打开，不提供会再次提交的重试。
+
+同一条尚未完成兑换的 `xedu://open-local-task` 只兑换一次，并回到已经打开的窗口。不同活动的草稿按上下文键分开。
+
+对着 Mock 联调的点击步骤、T06–T14 清单和 Mock 必须返回的字段见 `docs/teacher/XEDU_MOCK_LIAN_DIAO.md`。
 
 ## 还需要真实 LearnSite Mock / T20 确认
 

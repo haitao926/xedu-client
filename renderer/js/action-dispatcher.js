@@ -20,6 +20,7 @@ const ACTIONS = Object.freeze({
     'resources.saveStudentScore': (app) => app.resources?.saveStudentScore?.(),
     'resources.uploadStudentScreenshot': (app) => app.resources?.uploadStudentScreenshot?.(),
     'resources.saveStudentScoreAndScreenshot': (app) => app.resources?.saveStudentScoreAndScreenshot?.(),
+    'resources.retryStudentSave': (app) => app.resources?.retryStudentSave?.(),
     'resources.toggleTeacherMode': (app) => app.resources?.toggleTeacherMode?.(),
     'ai.toggleStudentAssistant': (app) => app.ai?.toggleStudentAssistant?.(),
     'ai.closeStudentAssistant': (app) => app.ai?.closeStudentAssistant?.(),

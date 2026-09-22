@@ -14,6 +14,8 @@ const {
     PROTOCOL_VERSION,
     packageCacheDirectory,
     createLocalTaskSession,
+    createLaunchOpener,
+    experimentCaptureRect,
     normalizeScoreDraft,
     parseOpenLocalTaskLink,
 } = require('./xedu-local-task-launch.js');
@@ -559,7 +561,7 @@ test('grant expiry keeps the draft and a different learner_scope cannot restore 
         assert.equal(restored.draft.name, '甲的草稿');
         assert.equal(restored.learner_scope, 'learner-a');
         mode = 'other';
-        const other = await session.openLocalTask(link);
+        const other = await session.openLocalTask(link.replace('launch-grant-secret', 'launch-grant-other'));
         assert.equal(other.learner_scope, 'learner-b');
         assert.equal(other.draft, null);
         assert.equal(other.has_draft, false);
@@ -686,4 +688,125 @@ test('work locked and score invalid responses stay in Chinese', async () => {
         await session.close();
         await mock.close();
     }
+});
+
+test('the same unfinished launch grant is exchanged once and another activity keeps its own draft', async () => {
+    const pkg = coursePackage();
+    let exchanges = 0;
+    let releaseExchange;
+    const gate = new Promise((resolve) => { releaseExchange = resolve; });
+    let holdFirst = true;
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                exchanges += 1;
+                const incoming = JSON.parse(body.toString('utf8'));
+                const activityId = incoming.launch_grant === 'launch-grant-secret' ? 'activity-1' : 'activity-2';
+                const send = () => json(res, 200, exchangePayload(mockOrigin(req), pkg, {
+                    activity_id: activityId,
+                    task_grant: `grant-${activityId}`,
+                }));
+                if (holdFirst && exchanges === 1) {
+                    holdFirst = false;
+                    gate.then(send);
+                    return;
+                }
+                send();
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            const posted = JSON.parse(body.toString('utf8'));
+            json(res, 200, { ok: true, status: 'completed', request_id: posted.request_id, receipt_id: 'rc' });
+        },
+    });
+    try {
+        const first = session.openLocalTask(link);
+        const second = session.openLocalTask(link);
+        const started = Date.now();
+        while (exchanges < 1 && Date.now() - started < 1000) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.equal(exchanges, 1);
+        releaseExchange();
+        const opened = await first;
+        const replay = await second;
+        assert.equal(opened.ok, true, opened.message);
+        assert.equal(replay.activity_id, opened.activity_id);
+        assert.equal(exchanges, 1);
+        const third = await session.openLocalTask(link);
+        assert.equal(exchanges, 1);
+        assert.equal(third.lab_url, opened.lab_url);
+        await session.setDraft({ name: '活动一', value: 80 });
+        const otherLink = link.replace('launch-grant-secret', 'launch-grant-b');
+        const other = await session.openLocalTask(otherLink);
+        assert.equal(exchanges, 2);
+        assert.equal(other.activity_id, 'activity-2');
+        assert.equal(other.draft, null);
+        await session.setDraft({ name: '活动二', value: 10 });
+        const saved = await session.saveScore();
+        assert.equal(saved.platform_status, 'completed');
+        assert.equal(session.getDraft(), null);
+    } finally {
+        releaseExchange();
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('rate limited saves use the Chinese message', async () => {
+    const pkg = coursePackage();
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            json(res, 429, { ok: false, code: 'rate_limited', message: 'slow down', retryable: false });
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        await session.setDraft({ name: '题', value: 9 });
+        const limited = await session.saveScore();
+        assert.equal(limited.code, 'rate_limited');
+        assert.match(limited.message, /太频繁/);
+        assert.equal(limited.message.includes('slow down'), false);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('experiment capture requires the experiment rectangle and launch opens are shared', async () => {
+    assert.equal(experimentCaptureRect(null), null);
+    assert.equal(experimentCaptureRect({ width: 0, height: 40 }), null);
+    assert.deepEqual(experimentCaptureRect({ x: -4, y: 2.2, width: 9000, height: 30.2 }), {
+        x: 0,
+        y: 2,
+        width: 8000,
+        height: 30,
+    });
+    let calls = 0;
+    const openOnce = createLaunchOpener(async () => {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return { ok: true, lab_url: 'http://127.0.0.1/lab' };
+    });
+    const [first, second] = await Promise.all([
+        openOnce('xedu://open-local-task?same'),
+        openOnce('xedu://open-local-task?same'),
+    ]);
+    assert.equal(calls, 1);
+    assert.equal(first.reused, false);
+    assert.equal(second.reused, true);
+    assert.equal(second.result.lab_url, first.result.lab_url);
 });

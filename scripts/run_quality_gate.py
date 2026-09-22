@@ -52,6 +52,7 @@ COMMANDS = (
             "--test",
             "electron/main/xedu-local-task-launch.test.mjs",
             "renderer/js/resources/xedu-submit-bridge.test.mjs",
+            "renderer/js/resources/xedu-save-chrome.test.mjs",
         ],
     ),
     ("manual classroom connection tests", ["node", "--test", "renderer/js/resources/classroom-connect.test.mjs"]),

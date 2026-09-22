@@ -21,6 +21,8 @@ const { runPythonBootstrap } = require('./python-bootstrap');
 const {
     parseOpenLocalTaskLink,
     createLocalTaskSession,
+    createLaunchOpener,
+    experimentCaptureRect,
     registerLocalTaskIpc,
 } = require('./xedu-local-task-launch');
 
@@ -767,15 +769,8 @@ function sendLocalTaskPayload(payload) {
 }
 
 async function captureExperimentView(bounds) {
-    if (!mainWindow || mainWindow.isDestroyed()) return null;
-    const rect = bounds && Number.isFinite(bounds.width) && Number.isFinite(bounds.height)
-        ? {
-            x: Math.max(0, Math.round(bounds.x || 0)),
-            y: Math.max(0, Math.round(bounds.y || 0)),
-            width: Math.max(1, Math.min(8000, Math.round(bounds.width))),
-            height: Math.max(1, Math.min(8000, Math.round(bounds.height))),
-        }
-        : undefined;
+    const rect = experimentCaptureRect(bounds);
+    if (!rect || !mainWindow || mainWindow.isDestroyed()) return null;
     try {
         const image = await mainWindow.webContents.capturePage(rect);
         const bytes = image.toPNG();
@@ -786,10 +781,16 @@ async function captureExperimentView(bounds) {
     }
 }
 
+const openIncomingLocalTask = createLaunchOpener((rawUrl) => getLocalTaskSession().openLocalTask(rawUrl));
+
 async function handleOpenLocalTask(rawUrl) {
     await app.whenReady();
-    const result = await getLocalTaskSession().openLocalTask(rawUrl);
-    sendLocalTaskPayload(result);
+    const opened = await openIncomingLocalTask(rawUrl);
+    if (opened.reused) {
+        bringMainWindowToFront();
+        return;
+    }
+    sendLocalTaskPayload(opened.result);
 }
 
 function dispatchIncomingDeepLink(rawUrl) {

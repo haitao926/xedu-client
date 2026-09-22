@@ -103,6 +103,11 @@ async function saveStudentScoreAndScreenshot(...args) {
     return mod.saveStudentScoreAndScreenshot(...args);
 }
 
+async function retryStudentSave(...args) {
+    const mod = await loadResourcesModule();
+    return mod.retryStudentSave(...args);
+}
+
 async function openLaunchedLocalTask(...args) {
     const mod = await loadResourcesModule();
     return mod.openLaunchedLocalTask(...args);
@@ -361,6 +366,7 @@ registerNamespace('resources', {
     saveStudentScore,
     uploadStudentScreenshot,
     saveStudentScoreAndScreenshot,
+    retryStudentSave,
     openLaunchedLocalTask,
     syncStudentShellChrome,
     getChatContext
