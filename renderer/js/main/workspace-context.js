@@ -762,8 +762,12 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
                 document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
                 activeNavItem.classList.add('active');
             }
-            if (titleEl) titleEl.textContent = payload?.sourcePage === 'student-visual' ? '图形编程' : 'Scratch 编程';
-            if (subtitleEl) {
+            const keepFocusTitle = document.body.classList.contains('student-focus-mode')
+                && payload?.sourcePage === 'student-visual';
+            if (titleEl && !keepFocusTitle) {
+                titleEl.textContent = payload?.sourcePage === 'student-visual' ? '图形编程' : 'Scratch 编程';
+            }
+            if (subtitleEl && !keepFocusTitle) {
                 subtitleEl.textContent = payload?.sourceLabel || projectName || 'XEdu Client 内置官方 Scratch 编辑器与 XEdu AI 扩展';
             }
         }

@@ -216,6 +216,18 @@ body.student-mode .student-nav-item:focus-visible {
 body.student-mode .student-nav-item.active::before {
     background: linear-gradient(180deg, #2563eb, #38bdf8);
 }
+html.student-shell-pending body:not(.teacher-mode) .sidebar,
+body.student-mode:not(.teacher-mode) .sidebar {
+    display: none;
+}
+html.student-shell-pending body:not(.teacher-mode):not(.student-page-python) #main,
+body.student-mode:not(.teacher-mode):not(.student-page-python) #main {
+    display: none !important;
+}
+body.student-mode:not(.teacher-mode) #settings,
+body.student-mode:not(.teacher-mode) #student-account-settings-btn {
+    display: none !important;
+}
 body.sidebar-collapsed {
     --sidebar-width: 78px;
 }
@@ -376,6 +388,10 @@ body.sidebar-collapsed .sidebar-footer {
 }
 .page-header {
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1 1 auto;
 }
 .page-title-group {
     min-width: 0;
@@ -503,21 +519,200 @@ body.sidebar-collapsed .sidebar-footer {
     cursor: not-allowed;
 }
 
+body.student-mode:not(.teacher-mode).student-focus-mode .top-bar,
 body.student-mode.student-page-experience .top-bar {
-    height: 52px;
+    height: 58px;
     padding: 0 18px;
-    background: rgba(255, 255, 255, 0.92);
-    border-bottom-color: rgba(148, 163, 184, 0.2);
+    background: rgba(255, 255, 255, 0.94);
+    border-bottom-color: rgba(148, 163, 184, 0.22);
 }
 
-body.student-mode.student-page-experience .page-title {
-    font-size: 16px;
+body.student-mode:not(.teacher-mode).student-focus-mode .page-subtitle {
+    display: none;
 }
 
-body.student-mode.student-page-experience .page-subtitle {
-    max-width: min(760px, 60vw);
-    font-size: 11px;
-    margin-top: 2px;
+.student-focus-back,
+.student-focus-ai-btn,
+.student-submit-result-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 36px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.student-focus-back[hidden],
+.student-focus-ai-btn[hidden],
+.student-submit-result-btn[hidden],
+.student-ai-drawer-close[hidden],
+.student-ai-drawer-backdrop[hidden],
+#student-account-settings-btn[hidden] {
+    display: none !important;
+}
+.student-focus-back {
+    border: 1px solid var(--border-color);
+    background: var(--surface-solid);
+    color: var(--text-heading);
+}
+.student-focus-back svg {
+    width: 16px;
+    height: 16px;
+}
+.student-focus-back:hover,
+.student-focus-ai-btn:hover {
+    border-color: rgba(37, 99, 235, 0.28);
+}
+.student-focus-ai-btn {
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    background: #eef2ff;
+    color: #1d4ed8;
+}
+.student-focus-ai-btn[aria-expanded="true"] {
+    background: #1d4ed8;
+    color: #fff;
+    border-color: #1d4ed8;
+}
+.student-submit-result-btn {
+    border: 1px solid #1d4ed8;
+    background: #1d4ed8;
+    color: #fff;
+}
+.student-submit-result-btn:hover {
+    background: #1e40af;
+}
+.student-focus-back:focus-visible,
+.student-focus-ai-btn:focus-visible,
+.student-submit-result-btn:focus-visible,
+.student-account-trigger:focus-visible,
+.student-account-item:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, 0.22);
+    outline-offset: 2px;
+}
+
+.student-account-menu {
+    position: relative;
+}
+.student-account-trigger {
+    list-style: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.student-account-trigger::-webkit-details-marker {
+    display: none;
+}
+.student-account-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e0e7ff;
+    color: #1e3a8a;
+    font-size: 13px;
+    font-weight: 800;
+}
+.student-account-dropdown {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    min-width: 168px;
+    padding: 8px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: #fff;
+    box-shadow: 0 18px 42px -24px rgba(15, 23, 42, 0.45);
+    display: grid;
+    gap: 4px;
+    z-index: 50;
+}
+.student-account-item {
+    width: 100%;
+    min-height: 38px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-heading);
+    text-align: left;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.student-account-item:hover {
+    background: rgba(37, 99, 235, 0.08);
+    color: #1d4ed8;
+}
+.student-account-item strong {
+    font-weight: 700;
+}
+
+body.student-mode:not(.teacher-mode).student-ai-drawer-open .main-content-wrapper {
+    padding-right: min(400px, 100%);
+}
+body.student-mode:not(.teacher-mode).student-ai-drawer-open .top-bar {
+    z-index: 45;
+}
+body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant.page-section {
+    display: flex;
+    position: fixed;
+    top: 58px;
+    right: 0;
+    bottom: 0;
+    width: min(400px, 100vw);
+    z-index: 36;
+    margin: 0;
+    background: #fff;
+    border-left: 1px solid var(--border-color);
+    box-shadow: -18px 0 40px -28px rgba(15, 23, 42, 0.45);
+}
+body.student-ai-drawer-open #ai-assistant .chat-layout {
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+body.student-ai-drawer-open #ai-assistant .chat-sidebar {
+    display: none;
+}
+body.student-ai-drawer-open #student-ai-drawer-close {
+    display: inline-flex;
+}
+.student-ai-drawer-backdrop {
+    position: fixed;
+    top: 58px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 34;
+    border: 0;
+    padding: 0;
+    background: rgba(15, 23, 42, 0.12);
+    cursor: pointer;
+}
+
+@media (max-width: 720px) {
+    .student-focus-back,
+    .student-focus-ai-btn,
+    .student-submit-result-btn,
+    .student-account-trigger {
+        min-height: 44px;
+    }
+    body.student-mode:not(.teacher-mode).student-focus-mode .top-bar-actions {
+        gap: 6px;
+    }
 }
 
 .workspace-bookmark-bar {

@@ -74,6 +74,12 @@ export function log(message, type = 'info') {
 
 // 切换页面 Tab
 export function showTab(tabId, navItem, options = {}) {
+    const studentShell = document.body.classList.contains('student-mode')
+        && !document.body.classList.contains('teacher-mode');
+    if (studentShell && tabId === 'ai-assistant') {
+        window.app?.ai?.toggleStudentAssistant?.(true);
+        return;
+    }
     if (document.body.classList.contains('student-mode') && tabId === 'main' && !options.allowStudentMain) {
         const studentEntry = document.getElementById('nav-student-lesson-item');
         if (window.app?.resources?.openStudentLessonTab) {
@@ -92,6 +98,8 @@ export function showTab(tabId, navItem, options = {}) {
         if (isStudentOnly) {
             tabId = 'resources';
             navItem = document.getElementById('nav-student-lesson-item') || navItem;
+        } else {
+            navItem = document.getElementById('nav-settings-item') || navItem;
         }
     }
 
@@ -128,14 +136,15 @@ export function showTab(tabId, navItem, options = {}) {
     const titleConfig = getPageCopy(tabId);
     const titleEl = document.getElementById('page-title');
     const subtitleEl = document.getElementById('page-subtitle');
-    if (titleEl) {
+    const focusOwnsTitle = document.body.classList.contains('student-focus-mode');
+    if (titleEl && !focusOwnsTitle) {
         if (options.pageTitle) {
             titleEl.textContent = options.pageTitle;
         } else if (titleConfig?.title) {
             titleEl.textContent = titleConfig.title;
         }
     }
-    if (subtitleEl) {
+    if (subtitleEl && !focusOwnsTitle) {
         if (Object.prototype.hasOwnProperty.call(options, 'pageSubtitle')) {
             subtitleEl.textContent = options.pageSubtitle || '';
         } else if (titleConfig?.subtitle) {

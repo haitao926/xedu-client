@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="student-shell-pending">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -103,14 +103,6 @@
         </nav>
 
         <div class="sidebar-footer">
-            <button id="sidebar-teacher-mode-btn" data-role="teacher-mode-toggle" class="sidebar-footer-btn sidebar-teacher-btn" type="button" data-action="resources.toggleTeacherMode" aria-label="教师登录">
-                <span class="sidebar-footer-icon" aria-hidden="true">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="M21 2l-9.6 9.6"></path><path d="M13 2l9 9"></path></svg>
-                </span>
-                <span class="sidebar-footer-copy">
-                    <strong data-role="teacher-mode-label">教师登录</strong>
-                </span>
-            </button>
             <button class="sidebar-about-btn" type="button" data-action="ui.showModal" data-action-value="about-us-modal" aria-label="关于我们">
                 <span class="sidebar-footer-icon" aria-hidden="true">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7h.01"></path></svg>
@@ -126,6 +118,10 @@
     <main class="main-content-wrapper">
         <div class="top-bar">
             <div class="page-header">
+                <button id="student-focus-back" class="student-focus-back" type="button" data-action="resources.returnToStudentTaskCenter" hidden>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18 9 12l6-6"></path></svg>
+                    返回任务中心
+                </button>
                 <div class="page-title-group">
                     <div class="page-title" id="page-title">课程任务中心</div>
                     <div class="page-subtitle" id="page-subtitle"></div>
@@ -145,6 +141,20 @@
                         <button type="button" class="scratch-host-file-item" data-scratch-host-action="save">保存到当前项目</button>
                         <button type="button" class="scratch-host-file-item" data-scratch-host-action="upload">从电脑打开</button>
                         <button type="button" class="scratch-host-file-item" data-scratch-host-action="download">下载到电脑</button>
+                    </div>
+                </details>
+                <button id="student-focus-ai-btn" class="student-focus-ai-btn" type="button" data-action="ai.toggleStudentAssistant" aria-expanded="false" hidden>AI 助手</button>
+                <button id="student-submit-result-btn" class="student-submit-result-btn" type="button" data-action="resources.submitStudentResult" hidden>提交结果</button>
+                <details id="student-account-menu" class="student-account-menu">
+                    <summary class="student-account-trigger" aria-label="账户菜单">
+                        <span class="student-account-avatar" data-role="account-avatar">学</span>
+                    </summary>
+                    <div class="student-account-dropdown" role="menu">
+                        <button id="student-account-teacher-btn" class="student-account-item" type="button" data-role="teacher-mode-toggle" data-action="resources.toggleTeacherMode" aria-label="教师登录">
+                            <strong data-role="teacher-mode-label">教师登录</strong>
+                        </button>
+                        <button id="student-account-settings-btn" class="student-account-item" type="button" data-action="ui.showTab" data-action-value="settings" hidden>设置</button>
+                        <button class="student-account-item" type="button" data-action="ui.showModal" data-action-value="about-us-modal">关于我们</button>
                     </div>
                 </details>
             </div>
@@ -307,6 +317,7 @@
                                 <span id="ai-context-pill" class="ai-context-pill">学习模式</span>
                             </div>
                             <div class="chat-header-actions">
+                                <button id="student-ai-drawer-close" class="btn btn-sm btn-secondary student-ai-drawer-close" type="button" data-action="ai.closeStudentAssistant" hidden>关闭</button>
                                 <div id="ai-chat-status" class="ai-chat-status">
                                     <span class="ai-chat-status-dot"></span>
                                     <span id="ai-chat-status-text">等待提问</span>
@@ -812,6 +823,8 @@
         </div>
     </main>
 </div>
+
+<button id="student-ai-drawer-backdrop" class="student-ai-drawer-backdrop" type="button" data-action="ai.closeStudentAssistant" hidden aria-label="关闭 AI 助手"></button>
 
 <div id="resources-action-modal" class="modal-overlay">
     <div class="modal-content resources-action-modal-content">

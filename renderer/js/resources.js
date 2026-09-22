@@ -3477,23 +3477,62 @@ function syncStudentLessonNav(tabId = resourcesState.activeCourseWorkspaceTab) {
     if (target) target.classList.add("active");
 }
 
+function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    const studentShell = document.body.classList.contains("student-mode")
+        && !document.body.classList.contains("teacher-mode");
+    const focus = studentShell && isStudentLessonMode() && normalized !== "route";
+    document.body.classList.toggle("student-focus-mode", focus);
+    const backBtn = document.getElementById("student-focus-back");
+    const aiBtn = document.getElementById("student-focus-ai-btn");
+    const submitBtn = document.getElementById("student-submit-result-btn");
+    if (backBtn) backBtn.hidden = !focus;
+    if (aiBtn) {
+        aiBtn.hidden = !focus;
+        aiBtn.setAttribute("aria-expanded", document.body.classList.contains("student-ai-drawer-open") ? "true" : "false");
+    }
+    if (submitBtn) submitBtn.hidden = !focus;
+    if (!focus) {
+        document.body.classList.remove("student-ai-drawer-open");
+        const backdrop = document.getElementById("student-ai-drawer-backdrop");
+        const closeBtn = document.getElementById("student-ai-drawer-close");
+        if (backdrop) backdrop.hidden = true;
+        if (closeBtn) closeBtn.hidden = true;
+    }
+}
+
 function syncStudentPageBodyState(tabId = resourcesState.activeCourseWorkspaceTab) {
     const normalized = normalizeWorkspaceTabId(tabId);
     document.body.classList.toggle("student-page-route", normalized === "route");
     document.body.classList.toggle("student-page-experience", normalized === "experience");
     document.body.classList.toggle("student-page-visual", normalized === "visual");
     document.body.classList.toggle("student-page-python", normalized === "python");
+    syncStudentFocusChrome(normalized);
+}
+
+export function syncStudentShellChrome() {
+    syncStudentPageBodyState(resourcesState.activeCourseWorkspaceTab);
+}
+
+function getCurrentStudentTaskTitle(resource, tabId = resourcesState.activeCourseWorkspaceTab) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    if (!resource || normalized === "route") return getWorkspaceTabTitle(normalized);
+    const sections = normalizeSections(resource);
+    const lessonIndex = getCurrentLessonIndex(resource);
+    const section = sections[lessonIndex] || null;
+    const experiments = Array.isArray(section?.experiments) ? section.experiments : [];
+    const experiment = experiments[resourcesState.activeExperimentIndex] || null;
+    return experiment?.title || section?.title || getWorkspaceTabTitle(normalized);
 }
 
 function syncLessonPageTitle(resource, tabId = resourcesState.activeCourseWorkspaceTab) {
     const titleEl = document.getElementById("page-title");
     const subtitleEl = document.getElementById("page-subtitle");
     if (!isStudentLessonMode()) return;
-    const tabTitle = getWorkspaceTabTitle(tabId);
     const sections = normalizeSections(resource || {});
     const lessonIndex = getCurrentLessonIndex(resource || {});
     const section = sections[lessonIndex] || null;
-    if (titleEl) titleEl.textContent = tabTitle;
+    if (titleEl) titleEl.textContent = getCurrentStudentTaskTitle(resource, tabId);
     if (subtitleEl) {
         subtitleEl.textContent = section
             ? `${section.title || `第 ${lessonIndex + 1} 课`} / ${resource?.title || "当前课程"}`
@@ -3619,6 +3658,8 @@ async function openStudentExperimentPage(tabId, context, file = null) {
     resourcesState.activeCourseWorkspaceTab = normalized;
     resourcesState.activeSectionIndex = context.sectionIndex;
     resourcesState.activeExperimentIndex = context.expIndex;
+    syncStudentPageBodyState(normalized);
+    syncLessonPageTitle(context.resource, normalized);
 
     if (normalized === "python") {
         return openStudentPythonWorkspace(context.resource, {
@@ -3987,6 +4028,7 @@ async function openStudentPythonWorkspace(
     resourcesState.activeSectionIndex = sectionIndex;
     resourcesState.activeExperimentIndex = expIndex;
     syncStudentLessonNav("python");
+    syncStudentPageBodyState("python");
     syncLessonPageTitle(resource, "python");
 
     const lessonTitle = target?.section?.title || `第 ${sectionIndex + 1} 课`;
@@ -4010,6 +4052,7 @@ async function openStudentPythonWorkspace(
             sourceLabel,
             sourcePage: "student-python",
         }, { force: true });
+        syncLessonPageTitle(resource, "python");
         if (!isCurrentStudentNavigation(navigationRevision)) {
             await window.app?.jupyter?.setVisibility?.(false);
             return null;
@@ -4041,6 +4084,7 @@ async function openStudentVisualWorkspace(course, context = null) {
     resourcesState.activeSectionIndex = sectionIndex;
     resourcesState.activeExperimentIndex = expIndex;
     syncStudentLessonNav("visual");
+    syncStudentPageBodyState("visual");
     syncLessonPageTitle(resource, "visual");
 
     if (!file) {
@@ -4061,6 +4105,7 @@ async function openStudentVisualWorkspace(course, context = null) {
         expIndex,
         experimentOverview: overview,
     });
+    syncLessonPageTitle(resource, "visual");
     return resource;
 }
 
@@ -5120,6 +5165,7 @@ function showDetailView(resource, options = {}) {
     }
     if (isStudentLessonMode()) {
         syncStudentLessonNav(resourcesState.activeCourseWorkspaceTab);
+        syncStudentPageBodyState(resourcesState.activeCourseWorkspaceTab);
         syncLessonPageTitle(resource, resourcesState.activeCourseWorkspaceTab);
     }
     renderResourceDetail(resource);
@@ -7164,7 +7210,23 @@ export async function syncTeacherModeUI() {
     updateTeacherModeUI();
 }
 
+export function returnToStudentTaskCenter() {
+    return openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
+}
+
+export function submitStudentResult() {
+    // TODO: next pass — 提交到平台（OpenLearnSite grant/submit）。
+    // Authoritative completion is platform acknowledgement, not local progress.
+    const message = "提交结果会交给学习平台确认。这一步还在接入中，当前不会把本地进度当作已完成。";
+    if (typeof window.app?.ui?.showToast === "function") {
+        window.app.ui.showToast(message, "info");
+        return;
+    }
+    console.info(message);
+}
+
 export async function toggleTeacherMode() {
+    document.getElementById("student-account-menu")?.removeAttribute("open");
     await handleTeacherModeToggle();
 }
 

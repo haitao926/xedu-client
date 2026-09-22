@@ -55,3 +55,13 @@ export function initSidebarCollapseToggle({
         writeSidebarCollapsed(storage, collapsed);
     });
 }
+
+export function initStudentAccountMenu(documentRef = globalThis.document) {
+    const menu = documentRef?.getElementById?.('student-account-menu');
+    if (!menu) return;
+    menu.addEventListener('click', (event) => {
+        if (event.target?.closest?.('.student-account-item')) {
+            menu.removeAttribute('open');
+        }
+    });
+}

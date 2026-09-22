@@ -1,6 +1,6 @@
 import { log, showTab, showModal, hideModal, initModalListeners, showToast } from './ui.js';
 import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility, openNotebookFile, getStoredProjectDir } from './jupyter.js';
-import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown, syncModelBadge } from './ai.js';
+import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown, syncModelBadge, toggleStudentAssistant, closeStudentAssistant } from './ai.js';
 import { installPackage, uninstallPackage, updatePackage } from './package-manager.js';
 import { registerNamespace } from './app-context.js';
 import { ProjectWizard } from './project-wizard.js';
@@ -17,7 +17,7 @@ import {
     restoreTeacherModeState,
 } from './main/teacher-mode-state.js';
 import { createBackendStartupSupport } from './main/backend-startup-support.js';
-import { initSidebarCollapseToggle, showSettingsTab } from './main/shell-ui.js';
+import { initSidebarCollapseToggle, initStudentAccountMenu, showSettingsTab } from './main/shell-ui.js';
 import apiClient from './api.js';
 import './action-dispatcher.js';
 
@@ -81,6 +81,21 @@ async function toggleTeacherMode(...args) {
 async function openStudentLessonTab(...args) {
     const mod = await loadResourcesModule();
     return mod.openStudentLessonTab(...args);
+}
+
+async function returnToStudentTaskCenter(...args) {
+    const mod = await loadResourcesModule();
+    return mod.returnToStudentTaskCenter(...args);
+}
+
+async function submitStudentResult(...args) {
+    const mod = await loadResourcesModule();
+    return mod.submitStudentResult(...args);
+}
+
+function syncStudentShellChrome(...args) {
+    if (!resourcesModule?.syncStudentShellChrome) return undefined;
+    return resourcesModule.syncStudentShellChrome(...args);
 }
 
 function getChatContext() {
@@ -188,6 +203,7 @@ function clearDashboardProjectPath() {
 }
 
 function syncActivePageTitle() {
+    if (document.body.classList.contains('student-focus-mode')) return;
     const activeSection = document.querySelector('.page-section.active');
     const tabId = activeSection?.id || 'main';
     const activeStudentNav = document.querySelector('.student-nav-item.active');
@@ -292,7 +308,9 @@ registerNamespace('ai', {
     selectChat,
     previewImage,
     handleKeyDown,
-    syncModelBadge
+    syncModelBadge,
+    toggleStudentAssistant,
+    closeStudentAssistant
 });
 registerNamespace('resources', {
     initResourcesPage,
@@ -301,6 +319,9 @@ registerNamespace('resources', {
     syncTeacherModeUI,
     toggleTeacherMode,
     openStudentLessonTab,
+    returnToStudentTaskCenter,
+    submitStudentResult,
+    syncStudentShellChrome,
     getChatContext
 });
 
@@ -381,6 +402,7 @@ window.addEventListener('DOMContentLoaded', () => {
         // 初始化模态框事件监听器（点击外部关闭和ESC键关闭）
         initModalListeners();
         initSidebarCollapseToggle();
+        initStudentAccountMenu();
         registerPracticeDeepLinkHandler();
         bindBackendStartupSupportActions();
         renderBackendStartupSupport();
