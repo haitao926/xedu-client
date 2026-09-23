@@ -25,6 +25,7 @@ const {
     experimentCaptureRect,
     registerLocalTaskIpc,
 } = require('./xedu-local-task-launch');
+const { registerXeduProtocolClient } = require('./xedu-protocol');
 
 function isBrokenPipeError(error) {
     return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
@@ -702,11 +703,13 @@ function bringMainWindowToFront() {
 
 function registerXeduProtocol() {
     try {
-        if (process.defaultApp && process.argv.length >= 2) {
-            app.setAsDefaultProtocolClient(XEDU_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-            return;
+        // macOS dev must not call setAsDefaultProtocolClient. Electron ignores
+        // path/args there and registers the running Electron.app bundle, which
+        // then opens xedu: as default_app ("path-to-app"). See xedu-protocol.js.
+        const result = registerXeduProtocolClient(app, { protocol: XEDU_PROTOCOL });
+        if (result === 'released-darwin-dev') {
+            console.log('已取消开发用 Electron.app 对 xedu: 的注册，交还给已声明该协议的应用（通常是已安装的 XEdu Client）。');
         }
-        app.setAsDefaultProtocolClient(XEDU_PROTOCOL);
     } catch (error) {
         console.warn('注册 xedu 协议失败:', error.message || error);
     }
