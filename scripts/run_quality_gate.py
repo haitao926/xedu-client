@@ -45,6 +45,16 @@ COMMANDS = (
     ("standalone Python repair bridge tests", ["node", "--test", "electron/test/python-bootstrap.test.mjs"]),
     ("release artifact verifier tests", ["node", "--test", "electron/test/release-artifact-verifier.test.mjs"]),
     ("student shell tests", ["npm", "run", "test:student-shell"]),
+    (
+        "learnsite submission protocol tests",
+        [
+            "node",
+            "--test",
+            "electron/main/xedu-local-task-launch.test.mjs",
+            "renderer/js/resources/xedu-submit-bridge.test.mjs",
+            "renderer/js/resources/xedu-save-chrome.test.mjs",
+        ],
+    ),
     ("manual classroom connection tests", ["node", "--test", "renderer/js/resources/classroom-connect.test.mjs"]),
     ("APIClient and HTML utility tests", ["node", "--test", "renderer/js/api.test.mjs", "renderer/js/utils/html.test.js"]),
     ("renderer error boundary tests", ["node", "--test", "renderer/js/main/error-boundary.test.mjs"]),

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="student-shell-pending">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -103,14 +103,6 @@
         </nav>
 
         <div class="sidebar-footer">
-            <button id="sidebar-teacher-mode-btn" data-role="teacher-mode-toggle" class="sidebar-footer-btn sidebar-teacher-btn" type="button" data-action="resources.toggleTeacherMode" aria-label="教师登录">
-                <span class="sidebar-footer-icon" aria-hidden="true">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="M21 2l-9.6 9.6"></path><path d="M13 2l9 9"></path></svg>
-                </span>
-                <span class="sidebar-footer-copy">
-                    <strong data-role="teacher-mode-label">教师登录</strong>
-                </span>
-            </button>
             <button class="sidebar-about-btn" type="button" data-action="ui.showModal" data-action-value="about-us-modal" aria-label="关于我们">
                 <span class="sidebar-footer-icon" aria-hidden="true">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7h.01"></path></svg>
@@ -126,6 +118,10 @@
     <main class="main-content-wrapper">
         <div class="top-bar">
             <div class="page-header">
+                <button id="student-focus-back" class="student-focus-back" type="button" data-action="resources.returnToStudentTaskCenter" hidden>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18 9 12l6-6"></path></svg>
+                    返回任务中心
+                </button>
                 <div class="page-title-group">
                     <div class="page-title" id="page-title">课程任务中心</div>
                     <div class="page-subtitle" id="page-subtitle"></div>
@@ -145,6 +141,25 @@
                         <button type="button" class="scratch-host-file-item" data-scratch-host-action="save">保存到当前项目</button>
                         <button type="button" class="scratch-host-file-item" data-scratch-host-action="upload">从电脑打开</button>
                         <button type="button" class="scratch-host-file-item" data-scratch-host-action="download">下载到电脑</button>
+                    </div>
+                </details>
+                <button id="student-focus-ai-btn" class="student-focus-ai-btn" type="button" data-action="ai.toggleStudentAssistant" aria-expanded="false" hidden>AI 助手</button>
+                <button id="student-save-score-btn" class="student-save-score-btn" type="button" data-action="resources.saveStudentScore" hidden disabled>保存成绩</button>
+                <button id="student-upload-screenshot-btn" class="student-upload-screenshot-btn" type="button" data-action="resources.uploadStudentScreenshot" hidden>截图并上传</button>
+                <button id="student-save-combined-btn" class="student-save-combined-btn" type="button" data-action="resources.saveStudentScoreAndScreenshot" hidden disabled>保存成绩并截图</button>
+                <span id="student-score-draft" class="student-score-draft" hidden></span>
+                <span id="student-platform-status" class="student-platform-status" hidden></span>
+                <button id="student-save-retry-btn" class="student-save-retry-btn" type="button" data-action="resources.retryStudentSave" hidden>重试</button>
+                <details id="student-account-menu" class="student-account-menu">
+                    <summary class="student-account-trigger" aria-label="账户菜单">
+                        <span class="student-account-avatar" data-role="account-avatar">学</span>
+                    </summary>
+                    <div class="student-account-dropdown" role="menu">
+                        <button id="student-account-teacher-btn" class="student-account-item" type="button" data-role="teacher-mode-toggle" data-action="resources.toggleTeacherMode" aria-label="教师登录">
+                            <strong data-role="teacher-mode-label">教师登录</strong>
+                        </button>
+                        <button id="student-account-settings-btn" class="student-account-item" type="button" data-action="ui.showTab" data-action-value="settings" hidden>设置</button>
+                        <button class="student-account-item" type="button" data-action="ui.showModal" data-action-value="about-us-modal">关于我们</button>
                     </div>
                 </details>
             </div>
@@ -307,6 +322,7 @@
                                 <span id="ai-context-pill" class="ai-context-pill">学习模式</span>
                             </div>
                             <div class="chat-header-actions">
+                                <button id="student-ai-drawer-close" class="btn btn-sm btn-secondary student-ai-drawer-close" type="button" data-action="ai.closeStudentAssistant" hidden>关闭</button>
                                 <div id="ai-chat-status" class="ai-chat-status">
                                     <span class="ai-chat-status-dot"></span>
                                     <span id="ai-chat-status-text">等待提问</span>
@@ -813,6 +829,8 @@
     </main>
 </div>
 
+<button id="student-ai-drawer-backdrop" class="student-ai-drawer-backdrop" type="button" data-action="ai.closeStudentAssistant" hidden aria-label="关闭 AI 助手"></button>
+
 <div id="resources-action-modal" class="modal-overlay">
     <div class="modal-content resources-action-modal-content">
         <div id="resources-action-title" class="modal-title">操作确认</div>
@@ -849,22 +867,54 @@
 
 <div id="about-us-modal" class="modal-overlay">
     <div class="modal-content about-us-modal-content">
-        <div class="modal-icon">⌘</div>
-        <div class="modal-title">关于我们</div>
-        <div class="modal-message">Powered by XEdu Pro Team.</div>
+        <div class="about-us-header">
+            <div class="modal-title">关于我们</div>
+            <div class="modal-message">Powered by XEdu Pro Team.</div>
+        </div>
         <div class="about-us-body">
-            <div class="about-us-card">
+            <section class="about-us-card">
                 <div class="about-us-label">关于本项目</div>
-                <div class="about-us-value">本项目聚焦简化教学中的 AI 实践流程，帮助师生更高效地开展课程与项目。<br><br>本项目是 XEDU PRO 的子项目，聚焦为教学与学习场景提供更顺手的一体化工具体验。</div>
-            </div>
-            <div class="about-us-card">
+                <p class="about-us-value">本项目聚焦简化教学中的 AI 实践流程，帮助师生更高效地开展课程与项目。它是 XEDU PRO 的子项目，为教学与学习场景提供更顺手的一体化工具体验。</p>
+            </section>
+            <section class="about-us-card">
                 <div class="about-us-label">软件贡献者名单</div>
-                <div class="about-us-value">王海涛（上海科技大学附属学校）<br>邱奕盛（上海科技大学附属学校）<br><br>项目指导：谢作如</div>
-            </div>
-            <div class="about-us-card">
+                <ul class="about-us-list">
+                    <li class="about-us-person">
+                        <span class="about-us-name">王海涛</span>
+                        <span class="about-us-school">上海科技大学附属学校</span>
+                    </li>
+                    <li class="about-us-person">
+                        <span class="about-us-name">邱奕盛</span>
+                        <span class="about-us-school">上海科技大学附属学校</span>
+                    </li>
+                </ul>
+                <div class="about-us-advisor">项目指导：<span class="about-us-name">谢作如</span></div>
+            </section>
+            <section class="about-us-card">
                 <div class="about-us-label">测试贡献者</div>
-                    <div class="about-us-value">刘啸宇<br>洪丹妮<br>郑祥<br>刘正云</div>
-            </div>
+                <ul class="about-us-list">
+                    <li class="about-us-person">
+                        <span class="about-us-name">刘正云</span>
+                        <span class="about-us-school">南通大学附属学校</span>
+                    </li>
+                    <li class="about-us-person">
+                        <span class="about-us-name">杜燕</span>
+                        <span class="about-us-school">交大附中密云分校</span>
+                    </li>
+                    <li class="about-us-person">
+                        <span class="about-us-name">郑祥</span>
+                        <span class="about-us-school">温州市第十七中学</span>
+                    </li>
+                    <li class="about-us-person">
+                        <span class="about-us-name">洪丹妮</span>
+                        <span class="about-us-school">温州市绣山中学</span>
+                    </li>
+                    <li class="about-us-person">
+                        <span class="about-us-name">刘宜萍</span>
+                        <span class="about-us-school">合肥一六八中学</span>
+                    </li>
+                </ul>
+            </section>
         </div>
         <div class="modal-actions">
             <button class="btn btn-primary" data-action="ui.hideModal" data-action-value="about-us-modal">知道了</button>

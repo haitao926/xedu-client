@@ -39,7 +39,7 @@ export function isScratchFile(file) {
 }
 
 export function isHtmlFile(file) {
-    return hasFileType(file, 'html', ['.html']);
+    return hasFileType(file, 'html', ['.html', '.htm']);
 }
 
 export function isPythonScriptFile(file) {

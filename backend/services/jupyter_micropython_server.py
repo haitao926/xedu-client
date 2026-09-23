@@ -44,6 +44,69 @@ except ImportError:  # pragma: no cover
 
 
 _MANAGER_KEY = "xedu_micropython_manager"
+_ROUTE_MARKER = "xedu-micropython/"
+SUPPORTED_ACTIONS = frozenset({"ports", "output", "connect", "disconnect", "run", "input", "interrupt", "reset"})
+PANEL_ROUTE_TABLE = (
+    ("GET", "ports"),
+    ("GET", "output"),
+    ("POST", "connect"),
+    ("POST", "disconnect"),
+    ("POST", "run"),
+    ("POST", "input"),
+    ("POST", "interrupt"),
+    ("POST", "reset"),
+)
+
+
+def _split_route_tail(value: str | None) -> tuple[str, str]:
+    text = str(value or "").strip()
+    if _ROUTE_MARKER in text:
+        text = text.split(_ROUTE_MARKER, 1)[1]
+    text = text.split("#", 1)[0].strip().lstrip("/")
+    query = ""
+    if "?" in text:
+        text, query = text.split("?", 1)
+    return text.strip().strip("/"), query
+
+
+def normalize_micropython_action(action: str | None, request_path: str = "") -> str:
+    """Accept a Tornado capture group or the raw request path.
+
+    Jupyter sometimes calls the handler without the `(.*)` group, or the group
+    still contains a trailing slash or `output?after=` query. An explicit
+    unknown capture stays unknown so it still 404s. The path is used only when
+    the capture is missing, which is what exact routes do.
+    """
+    captured, _captured_query = _split_route_tail(action)
+    if captured:
+        return captured
+    from_path, _path_query = _split_route_tail(request_path)
+    return from_path
+
+
+def embedded_after(action: str | None, request_path: str = "") -> int | None:
+    for raw in (action, request_path):
+        _name, query = _split_route_tail(raw)
+        if not query:
+            continue
+        for part in query.split("&"):
+            if part.startswith("after="):
+                try:
+                    return max(0, int(part.split("=", 1)[1]))
+                except ValueError:
+                    return 0
+    return None
+
+
+def micropython_route_patterns(base_url: str) -> list[str]:
+    patterns: list[str] = []
+    for _method, action in PANEL_ROUTE_TABLE:
+        exact = url_path_join(base_url, "xedu-micropython", action)
+        patterns.append(exact)
+        if not exact.endswith("/"):
+            patterns.append(f"{exact}/")
+    patterns.append(url_path_join(base_url, "xedu-micropython", "(.*)"))
+    return patterns
 
 
 def dispatch_micropython_action(
@@ -53,25 +116,28 @@ def dispatch_micropython_action(
     action: str | None,
     payload: dict[str, Any] | None = None,
     after: int = 0,
+    request_path: str = "",
 ) -> tuple[int, dict[str, Any]]:
     """Route a device action without requiring a live Jupyter request."""
     payload = payload or {}
+    verb = str(method or "").upper()
+    name = normalize_micropython_action(action, request_path)
     try:
-        if method == "GET" and action == "ports":
+        if verb == "GET" and name == "ports":
             return 200, {"success": True, "ports": manager.list_ports()}
-        if method == "GET" and action == "output":
+        if verb == "GET" and name == "output":
             return 200, {"success": True, **manager.read_output(after=after)}
-        if method == "POST" and action == "connect":
+        if verb == "POST" and name == "connect":
             return 200, {"success": True, **manager.connect(str(payload.get("port") or ""))}
-        if method == "POST" and action == "disconnect":
+        if verb == "POST" and name == "disconnect":
             return 200, {"success": True, **manager.disconnect()}
-        if method == "POST" and action == "run":
+        if verb == "POST" and name == "run":
             return 200, {"success": True, **manager.run_file(str(payload.get("file") or ""))}
-        if method == "POST" and action == "input":
+        if verb == "POST" and name == "input":
             return 200, {"success": True, **manager.write_input(str(payload.get("text") or ""))}
-        if method == "POST" and action == "interrupt":
+        if verb == "POST" and name == "interrupt":
             return 200, {"success": True, **manager.interrupt()}
-        if method == "POST" and action == "reset":
+        if verb == "POST" and name == "reset":
             return 200, {"success": True, **manager.reset()}
         return 404, {"success": False, "message": "不支持的 MicroPython 请求。"}
     except MicroPythonSessionError as exc:
@@ -116,20 +182,40 @@ class MicroPythonHandler(JupyterHandler):
     def _payload(self) -> dict[str, Any]:
         return parse_json_object(getattr(self.request, "body", b"") or b"")
 
+    def _request_path(self) -> str:
+        request = getattr(self, "request", None)
+        if request is None:
+            return ""
+        return str(getattr(request, "path", "") or getattr(request, "uri", "") or "")
+
     def _call(self, method: str, action: str | None) -> None:
         try:
+            request_path = self._request_path()
             payload = self._payload() if method == "POST" else {}
             try:
                 after = int(self.get_argument("after", "0"))
             except ValueError:
                 after = 0
+            if after == 0:
+                hinted = embedded_after(action, request_path)
+                if hinted:
+                    after = hinted
             status, body = dispatch_micropython_action(
                 _manager(self),
                 method=method,
                 action=action,
                 payload=payload,
                 after=after,
+                request_path=request_path,
             )
+            if status == 404:
+                log = getattr(self, "log", None)
+                if log is not None:
+                    log.warning(
+                        "Unsupported MicroPython route %s %s",
+                        method,
+                        normalize_micropython_action(action, request_path) or request_path,
+                    )
             _json(self, body, status)
         except MicroPythonSessionError as exc:
             _json(self, {"success": False, "message": str(exc)}, 400)
@@ -156,8 +242,10 @@ def _load_jupyter_server_extension(server_app) -> None:
     atexit.register(manager.close)
     host_pattern = ".*$"
     base_url = web_app.settings.get("base_url", "/")
-    route_pattern = url_path_join(base_url, "/xedu-micropython/(.*)")
-    web_app.add_handlers(host_pattern, [(route_pattern, MicroPythonHandler)])
+    web_app.add_handlers(
+        host_pattern,
+        [(pattern, MicroPythonHandler) for pattern in micropython_route_patterns(base_url)],
+    )
 
 
 def _jupyter_server_extension_points() -> list[dict[str, str]]:

@@ -146,9 +146,11 @@ function syncChatContextPill() {
     if (!pill) return;
     const ctx = buildAgentContext();
     const title = ctx?.course?.title?.trim();
+    const experimentTitle = ctx?.experiment_context?.experiment?.title?.trim();
     if (title) {
-        pill.textContent = title;
-        pill.title = `当前课程：${title}`;
+        const label = experimentTitle ? `${title} · ${experimentTitle}` : title;
+        pill.textContent = label;
+        pill.title = experimentTitle ? `当前课程：${title}；当前实验：${experimentTitle}` : `当前课程：${title}`;
         pill.style.display = '';
         return;
     }
@@ -331,6 +333,40 @@ export function clearCurrentChat() {
         chatHistory.innerHTML = buildEmptyStateHtml();
     }
     syncChatContextPill();
+}
+
+function setStudentAssistantDrawer(open) {
+    document.body.classList.toggle('student-ai-drawer-open', open);
+    const backdrop = document.getElementById('student-ai-drawer-backdrop');
+    const closeBtn = document.getElementById('student-ai-drawer-close');
+    const aiBtn = document.getElementById('student-focus-ai-btn');
+    if (backdrop) backdrop.hidden = !open;
+    if (closeBtn) closeBtn.hidden = !open;
+    if (aiBtn) aiBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+export function toggleStudentAssistant(forceOpen = null) {
+    const studentShell = document.body.classList.contains('student-mode')
+        && !document.body.classList.contains('teacher-mode');
+    if (!studentShell) {
+        window.app?.ui?.showTab?.('ai-assistant', document.getElementById('nav-ai-item'));
+        return false;
+    }
+    const nextOpen = typeof forceOpen === 'boolean'
+        ? forceOpen
+        : !document.body.classList.contains('student-ai-drawer-open');
+    setStudentAssistantDrawer(nextOpen);
+    if (nextOpen) {
+        syncAssistantSurfaceMode();
+        syncChatContextPill();
+        document.getElementById('ai-question')?.focus?.();
+    }
+    return nextOpen;
+}
+
+export function closeStudentAssistant() {
+    setStudentAssistantDrawer(false);
+    return false;
 }
 
 export function syncAssistantModeUI() {
@@ -775,6 +811,12 @@ function initAIUI() {
     syncAssistantModeUI();
     updateChatStatus('idle');
     toggleAttachmentHint(true);
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (!document.body.classList.contains('student-ai-drawer-open')) return;
+        if (document.querySelector('.modal-overlay.show')) return;
+        closeStudentAssistant();
+    });
 }
 
 window.addEventListener('DOMContentLoaded', initAIUI);

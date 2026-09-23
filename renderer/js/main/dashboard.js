@@ -91,8 +91,10 @@ export function createDashboardController({ showSettingsTab }) {
                 scratchNavItem.style.display = "none";
                 scratchNavItem.classList.remove("active");
             }
-            if (aiNavItem) aiNavItem.style.display = "flex";
-            if (aiNavLabel) aiNavLabel.textContent = "AI助手";
+            if (aiNavItem) {
+                aiNavItem.style.display = "none";
+                aiNavItem.classList.remove("active");
+            }
             studentNavItems.forEach((item) => {
                 item.style.display = "flex";
             });
@@ -123,7 +125,7 @@ export function createDashboardController({ showSettingsTab }) {
             }
             const activePage = document.querySelector(".page-section.active");
             const activePageId = activePage?.id || "";
-            if (activePageId === "settings" || (!modeAlreadyApplied && activePageId !== "ai-assistant")) {
+            if (activePageId === "settings" || activePageId === "ai-assistant" || !modeAlreadyApplied) {
                 const activeStudentNav = document.querySelector(".student-nav-item.active");
                 const tabId = activeStudentNav?.id === "nav-student-experience-item"
                     ? "experience"
@@ -147,6 +149,12 @@ export function createDashboardController({ showSettingsTab }) {
                 section.classList.remove("active");
             });
         }
+        const accountSettingsBtn = document.getElementById("student-account-settings-btn");
+        if (accountSettingsBtn) accountSettingsBtn.hidden = !isTeacher;
+        const accountAvatar = document.querySelector("[data-role='account-avatar']");
+        if (accountAvatar) accountAvatar.textContent = isTeacher ? "师" : "学";
+        document.documentElement.classList.remove("student-shell-pending");
+        window.app?.resources?.syncStudentShellChrome?.();
         if (!modeAlreadyApplied) {
             window.dispatchEvent(new CustomEvent("xedu:teacher-mode-changed", {
                 detail: { isTeacher },

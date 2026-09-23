@@ -1,6 +1,6 @@
 import { log, showTab, showModal, hideModal, initModalListeners, showToast } from './ui.js';
 import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility, openNotebookFile, getStoredProjectDir } from './jupyter.js';
-import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown, syncModelBadge } from './ai.js';
+import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown, syncModelBadge, toggleStudentAssistant, closeStudentAssistant } from './ai.js';
 import { installPackage, uninstallPackage, updatePackage } from './package-manager.js';
 import { registerNamespace } from './app-context.js';
 import { ProjectWizard } from './project-wizard.js';
@@ -17,7 +17,7 @@ import {
     restoreTeacherModeState,
 } from './main/teacher-mode-state.js';
 import { createBackendStartupSupport } from './main/backend-startup-support.js';
-import { initSidebarCollapseToggle, showSettingsTab } from './main/shell-ui.js';
+import { initSidebarCollapseToggle, initStudentAccountMenu, showSettingsTab } from './main/shell-ui.js';
 import apiClient from './api.js';
 import './action-dispatcher.js';
 
@@ -81,6 +81,41 @@ async function toggleTeacherMode(...args) {
 async function openStudentLessonTab(...args) {
     const mod = await loadResourcesModule();
     return mod.openStudentLessonTab(...args);
+}
+
+async function returnToStudentTaskCenter(...args) {
+    const mod = await loadResourcesModule();
+    return mod.returnToStudentTaskCenter(...args);
+}
+
+async function saveStudentScore(...args) {
+    const mod = await loadResourcesModule();
+    return mod.saveStudentScore(...args);
+}
+
+async function uploadStudentScreenshot(...args) {
+    const mod = await loadResourcesModule();
+    return mod.uploadStudentScreenshot(...args);
+}
+
+async function saveStudentScoreAndScreenshot(...args) {
+    const mod = await loadResourcesModule();
+    return mod.saveStudentScoreAndScreenshot(...args);
+}
+
+async function retryStudentSave(...args) {
+    const mod = await loadResourcesModule();
+    return mod.retryStudentSave(...args);
+}
+
+async function openLaunchedLocalTask(...args) {
+    const mod = await loadResourcesModule();
+    return mod.openLaunchedLocalTask(...args);
+}
+
+function syncStudentShellChrome(...args) {
+    if (!resourcesModule?.syncStudentShellChrome) return undefined;
+    return resourcesModule.syncStudentShellChrome(...args);
 }
 
 function getChatContext() {
@@ -188,6 +223,7 @@ function clearDashboardProjectPath() {
 }
 
 function syncActivePageTitle() {
+    if (document.body.classList.contains('student-focus-mode')) return;
     const activeSection = document.querySelector('.page-section.active');
     const tabId = activeSection?.id || 'main';
     const activeStudentNav = document.querySelector('.student-nav-item.active');
@@ -229,11 +265,34 @@ function applyExperienceCopy(isTeacher) {
     syncActivePageTitle();
 }
 
+function registerLocalTaskDeepLinkHandler() {
+    if (typeof window.electronAPI?.onDeepLinkOpenLocalTask !== 'function') return;
+    window.electronAPI.onDeepLinkOpenLocalTask(async (payload) => {
+        try {
+            await openLaunchedLocalTask(payload);
+        } catch (error) {
+            console.error('打开平台任务失败:', error);
+            showToast(error?.message || '打开平台任务失败', 'error');
+        }
+    });
+}
+
+async function restoreLaunchedLocalTask() {
+    if (typeof window.electronAPI?.xeduGetLocalTask !== 'function') return;
+    try {
+        const state = await window.electronAPI.xeduGetLocalTask();
+        if (!state?.lab_url || !state?.course) return;
+        await openLaunchedLocalTask(state);
+    } catch (error) {
+        console.warn('恢复平台任务失败:', error);
+    }
+}
+
 function registerPracticeDeepLinkHandler() {
     if (!window.electronAPI || typeof window.electronAPI.onDeepLinkOpenPractice !== 'function') {
         return;
     }
-    window.electronAPI.onDeepLinkOpenPractice(async (payload) => {
+    window.electronAPI.onDeepLinkOpenPractice?.(async (payload) => {
         try {
             const projectDir = (payload?.projectDir || '').trim();
             const filePath = (payload?.filePath || '').trim();
@@ -292,7 +351,9 @@ registerNamespace('ai', {
     selectChat,
     previewImage,
     handleKeyDown,
-    syncModelBadge
+    syncModelBadge,
+    toggleStudentAssistant,
+    closeStudentAssistant
 });
 registerNamespace('resources', {
     initResourcesPage,
@@ -301,6 +362,13 @@ registerNamespace('resources', {
     syncTeacherModeUI,
     toggleTeacherMode,
     openStudentLessonTab,
+    returnToStudentTaskCenter,
+    saveStudentScore,
+    uploadStudentScreenshot,
+    saveStudentScoreAndScreenshot,
+    retryStudentSave,
+    openLaunchedLocalTask,
+    syncStudentShellChrome,
     getChatContext
 });
 
@@ -381,7 +449,10 @@ window.addEventListener('DOMContentLoaded', () => {
         // 初始化模态框事件监听器（点击外部关闭和ESC键关闭）
         initModalListeners();
         initSidebarCollapseToggle();
+        initStudentAccountMenu();
         registerPracticeDeepLinkHandler();
+        registerLocalTaskDeepLinkHandler();
+        restoreLaunchedLocalTask();
         bindBackendStartupSupportActions();
         renderBackendStartupSupport();
         if (window.electronAPI?.onBackendStartupState) {

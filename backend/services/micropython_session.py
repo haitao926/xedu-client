@@ -49,6 +49,24 @@ def _is_safe_port(port: str) -> bool:
     return bool(_PORT_RE.fullmatch(str(port or "").strip()))
 
 
+def _drop_tty_callout_twins(ports: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Keep macOS callout devices when both tty and cu nodes exist.
+
+    ESP32-S3 USB-Serial/JTAG shows up as /dev/cu.usbmodem* and /dev/tty.usbmodem*.
+    Thonny and mpremote connect to the cu node.
+    """
+    devices = {item["device"] for item in ports}
+    kept: list[dict[str, str]] = []
+    for item in ports:
+        device = item["device"]
+        if device.startswith("/dev/tty."):
+            twin = "/dev/cu." + device[len("/dev/tty.") :]
+            if twin in devices:
+                continue
+        kept.append(item)
+    return kept
+
+
 def _looks_like_bluetooth(device: str, description: str, hwid: str) -> bool:
     blob = f"{device} {description} {hwid}".lower()
     return "bluetooth" in blob or "bthenum" in blob
@@ -161,6 +179,7 @@ class MicroPythonSessionManager:
                     "preferred": "1" if vid in _PREFERRED_VIDS else "0",
                 }
             )
+        ports = _drop_tty_callout_twins(ports)
         ports.sort(key=lambda item: (item["preferred"] != "1", item["device"]))
         for item in ports:
             item.pop("preferred", None)

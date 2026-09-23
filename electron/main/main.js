@@ -18,6 +18,14 @@ const {
 const { resolveBackendBindHost, resolveBackendConnectHost } = require('./backend-network-config');
 const { createTeacherCredentialStore } = require('./teacher-credential-store');
 const { runPythonBootstrap } = require('./python-bootstrap');
+const {
+    parseOpenLocalTaskLink,
+    createLocalTaskSession,
+    createLaunchOpener,
+    experimentCaptureRect,
+    registerLocalTaskIpc,
+} = require('./xedu-local-task-launch');
+const { registerXeduProtocolClient } = require('./xedu-protocol');
 
 function isBrokenPipeError(error) {
     return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
@@ -97,6 +105,8 @@ let backendRecentOutput = [];
 let backendLastExit = null;
 let quitting = false;
 let pendingPracticeDeepLink = null;
+let pendingLocalTaskPayload = null;
+let localTaskSession = null;
 const gotTheLock = app.requestSingleInstanceLock();
 let jupyterManagedPid = null;
 // Vite injects the stable development capability below when no override is
@@ -658,6 +668,10 @@ function createWindow() {
             mainWindow.webContents.send('deep-link-open-practice', pendingPracticeDeepLink);
             pendingPracticeDeepLink = null;
         }
+        if (pendingLocalTaskPayload) {
+            mainWindow.webContents.send('deep-link-open-local-task', pendingLocalTaskPayload);
+            pendingLocalTaskPayload = null;
+        }
     });
 
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -689,11 +703,13 @@ function bringMainWindowToFront() {
 
 function registerXeduProtocol() {
     try {
-        if (process.defaultApp && process.argv.length >= 2) {
-            app.setAsDefaultProtocolClient(XEDU_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-            return;
+        // macOS dev must not call setAsDefaultProtocolClient. Electron ignores
+        // path/args there and registers the running Electron.app bundle, which
+        // then opens xedu: as default_app ("path-to-app"). See xedu-protocol.js.
+        const result = registerXeduProtocolClient(app, { protocol: XEDU_PROTOCOL });
+        if (result === 'released-darwin-dev') {
+            console.log('已取消开发用 Electron.app 对 xedu: 的注册，交还给已声明该协议的应用（通常是已安装的 XEdu Client）。');
         }
-        app.setAsDefaultProtocolClient(XEDU_PROTOCOL);
     } catch (error) {
         console.warn('注册 xedu 协议失败:', error.message || error);
     }
@@ -729,6 +745,67 @@ function dispatchPracticeDeepLink(payload) {
         return;
     }
     pendingPracticeDeepLink = payload;
+}
+
+function getLocalTaskSession() {
+    if (!localTaskSession) {
+        localTaskSession = createLocalTaskSession({
+            cacheRoot: path.join(app.getPath('userData'), 'xedu-task-packages'),
+        });
+    }
+    return localTaskSession;
+}
+
+function sendLocalTaskPayload(payload) {
+    if (!payload) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        if (mainWindow.webContents.isLoading()) {
+            pendingLocalTaskPayload = payload;
+            return;
+        }
+        mainWindow.webContents.send('deep-link-open-local-task', payload);
+        return;
+    }
+    pendingLocalTaskPayload = payload;
+}
+
+async function captureExperimentView(bounds) {
+    const rect = experimentCaptureRect(bounds);
+    if (!rect || !mainWindow || mainWindow.isDestroyed()) return null;
+    try {
+        const image = await mainWindow.webContents.capturePage(rect);
+        const bytes = image.toPNG();
+        if (!bytes?.length) return null;
+        return { bytes, mime: 'image/png', filename: 'experiment-view.png' };
+    } catch (_) {
+        return null;
+    }
+}
+
+const openIncomingLocalTask = createLaunchOpener((rawUrl) => getLocalTaskSession().openLocalTask(rawUrl));
+
+async function handleOpenLocalTask(rawUrl) {
+    await app.whenReady();
+    const opened = await openIncomingLocalTask(rawUrl);
+    if (opened.reused) {
+        bringMainWindowToFront();
+        return;
+    }
+    sendLocalTaskPayload(opened.result);
+}
+
+function dispatchIncomingDeepLink(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.startsWith(`${XEDU_PROTOCOL}://`)) return;
+    const practice = parsePracticeDeepLink(rawUrl);
+    if (practice) {
+        dispatchPracticeDeepLink(practice);
+        return;
+    }
+    if (parseOpenLocalTaskLink(rawUrl)) {
+        void handleOpenLocalTask(rawUrl);
+    }
 }
 
 // 允许在 BrowserView 中嵌入 Jupyter：移除 CSP/X-Frame 限制
@@ -2135,7 +2212,7 @@ if (!gotTheLock) {
     app.on('second-instance', (event, argv) => {
         const deepLinkArg = (argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`));
         if (deepLinkArg) {
-            dispatchPracticeDeepLink(parsePracticeDeepLink(deepLinkArg));
+            dispatchIncomingDeepLink(deepLinkArg);
         }
         if (mainWindow) {
             bringMainWindowToFront();
@@ -2144,6 +2221,14 @@ if (!gotTheLock) {
 
     app.whenReady().then(async () => {
         registerXeduProtocol();
+        registerLocalTaskIpc({
+            ipcMain,
+            isTrusted: isTrustedRenderer,
+            session: getLocalTaskSession(),
+            captureExperimentView,
+        });
+        const startupDeepLink = (process.argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`));
+        if (startupDeepLink) dispatchIncomingDeepLink(startupDeepLink);
         setupJupyterCspBypass();
         setupTrustedMediaPermissionHandler();
         setupMenu();
@@ -2165,7 +2250,7 @@ if (!gotTheLock) {
 
     app.on('open-url', (event, url) => {
         event.preventDefault();
-        dispatchPracticeDeepLink(parsePracticeDeepLink(url));
+        dispatchIncomingDeepLink(url);
     });
 
     app.on('window-all-closed', () => {

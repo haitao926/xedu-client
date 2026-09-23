@@ -156,6 +156,8 @@ import { getExperimentFileOverview } from "./resources/experiment-overview.js";
 import { createResourcesState } from "./resources/resources-state.js";
 import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
 import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
+import { createXeduSubmitBridge } from "./resources/xedu-submit-bridge.js";
+import { describeStudentSaveChrome, studentSaveMessage } from "./resources/xedu-save-chrome.js";
 
 const resourcesState = createResourcesState();
 const courseAiFrameBridge = createCourseAiFrameBridge({
@@ -166,6 +168,38 @@ const courseAiFrameBridge = createCourseAiFrameBridge({
         }
         return window.electronAPI.scratchApiRequest(request);
     },
+});
+
+function experimentCaptureBounds() {
+    const frame = document.querySelector(".resources-student-html-frame")
+        || document.querySelector("#resources-detail-view")
+        || document.querySelector(".content-scroll-area");
+    if (!frame || typeof frame.getBoundingClientRect !== "function") return null;
+    const rect = frame.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+}
+
+function xeduTransport() {
+    const api = () => window.electronAPI || {};
+    return {
+        setDraft: (draft) => api().xeduSetScoreDraft?.(draft),
+        saveScore: () => api().xeduSaveScore?.(),
+        uploadScreenshot: (bounds) => api().xeduUploadScreenshot?.(bounds),
+        saveCombined: (bounds) => api().xeduSaveCombined?.(bounds),
+    };
+}
+
+let studentSavePhase = "idle";
+let studentSaveResult = null;
+let studentSaveKind = "";
+
+const xeduScoreBridge = createXeduSubmitBridge({
+    windowObject: window,
+    transport: xeduTransport(),
+    captureBounds: experimentCaptureBounds,
+    onDraftChange: () => syncStudentFocusChrome(),
+    onInvalidScore: (parsed) => notifyUser(parsed?.message || "成绩无效。请使用 0 到 100 之间的数字，0 分也会保留。", "error"),
 });
 window.addEventListener("xedu:teacher-credential-updated", () => {
     const state = readTeacherModeState();
@@ -2785,6 +2819,7 @@ function updateTeacherModeUI() {
     if (!resourcesState.teacherMode.unlocked) {
         closeCreateEntryMenu();
     }
+    syncStudentTaskCenterHeader();
     try {
         if (window.app && window.app.system && typeof window.app.system.updateSettingsVisibility === "function") {
             if (!resourcesState.openingStudentLessonTab) {
@@ -3477,28 +3512,135 @@ function syncStudentLessonNav(tabId = resourcesState.activeCourseWorkspaceTab) {
     if (target) target.classList.add("active");
 }
 
+function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    const studentShell = document.body.classList.contains("student-mode")
+        && !document.body.classList.contains("teacher-mode");
+    const focus = studentShell && isStudentLessonMode() && normalized !== "route";
+    document.body.classList.toggle("student-focus-mode", focus);
+    const backBtn = document.getElementById("student-focus-back");
+    const aiBtn = document.getElementById("student-focus-ai-btn");
+    const saveBtn = document.getElementById("student-save-score-btn");
+    const shotBtn = document.getElementById("student-upload-screenshot-btn");
+    const combinedBtn = document.getElementById("student-save-combined-btn");
+    const draftEl = document.getElementById("student-score-draft");
+    const statusEl = document.getElementById("student-platform-status");
+    const retryBtn = document.getElementById("student-save-retry-btn");
+    const chrome = describeStudentSaveChrome({
+        draft: xeduScoreBridge.getDraft(),
+        phase: studentSavePhase,
+        result: studentSaveResult,
+    });
+    if (backBtn) backBtn.hidden = !focus;
+    if (aiBtn) {
+        aiBtn.hidden = !focus;
+        aiBtn.setAttribute("aria-expanded", document.body.classList.contains("student-ai-drawer-open") ? "true" : "false");
+    }
+    if (saveBtn) {
+        saveBtn.hidden = !focus;
+        saveBtn.disabled = chrome.saveDisabled;
+    }
+    if (shotBtn) {
+        shotBtn.hidden = !focus;
+        shotBtn.disabled = chrome.screenshotDisabled;
+    }
+    if (combinedBtn) {
+        combinedBtn.hidden = !focus;
+        combinedBtn.disabled = chrome.combinedDisabled;
+    }
+    if (draftEl) {
+        draftEl.textContent = chrome.draftLabel;
+        draftEl.hidden = !focus || !chrome.draftLabel;
+    }
+    if (statusEl) {
+        statusEl.textContent = chrome.statusText;
+        statusEl.dataset.tone = chrome.tone || "";
+        statusEl.hidden = !focus || !chrome.statusText;
+    }
+    if (retryBtn) retryBtn.hidden = !focus || !chrome.retryVisible;
+    if (!focus) {
+        document.body.classList.remove("student-ai-drawer-open");
+        const backdrop = document.getElementById("student-ai-drawer-backdrop");
+        const closeBtn = document.getElementById("student-ai-drawer-close");
+        if (backdrop) backdrop.hidden = true;
+        if (closeBtn) closeBtn.hidden = true;
+    }
+}
+
+function syncStudentTaskCenterHeader() {
+    const studentHome = document.body.classList.contains("student-mode")
+        && !document.body.classList.contains("teacher-mode")
+        && document.body.classList.contains("student-page-route");
+    document.body.classList.toggle("student-task-center-header", studentHome);
+    const refreshBtn = document.getElementById("resources-refresh-btn");
+    const searchBtn = document.getElementById("resources-search-toggle-btn");
+    const filterBar = document.getElementById("resources-filter-bar");
+    const topActions = document.getElementById("top-bar-actions");
+    const accountMenu = document.getElementById("student-account-menu");
+    const toolbarActions = document.querySelector("#resources-list-view .resources-actions");
+    const listView = document.getElementById("resources-list-view");
+    const resourcesMain = document.querySelector("#resources .resources-main");
+    if (studentHome && topActions && refreshBtn && searchBtn) {
+        const anchor = accountMenu && accountMenu.parentElement === topActions ? accountMenu : null;
+        topActions.insertBefore(refreshBtn, anchor);
+        topActions.insertBefore(searchBtn, anchor);
+        if (filterBar && resourcesMain && listView) {
+            resourcesMain.insertBefore(filterBar, listView);
+        }
+        return;
+    }
+    if (toolbarActions) {
+        if (refreshBtn) toolbarActions.appendChild(refreshBtn);
+        if (searchBtn) toolbarActions.appendChild(searchBtn);
+    }
+    const toolbar = listView?.querySelector(".resources-toolbar");
+    if (filterBar && toolbar) toolbar.insertAdjacentElement("afterend", filterBar);
+}
+
 function syncStudentPageBodyState(tabId = resourcesState.activeCourseWorkspaceTab) {
     const normalized = normalizeWorkspaceTabId(tabId);
     document.body.classList.toggle("student-page-route", normalized === "route");
     document.body.classList.toggle("student-page-experience", normalized === "experience");
     document.body.classList.toggle("student-page-visual", normalized === "visual");
     document.body.classList.toggle("student-page-python", normalized === "python");
+    syncStudentFocusChrome(normalized);
+    syncStudentTaskCenterHeader();
+}
+
+export function syncStudentShellChrome() {
+    syncStudentPageBodyState(resourcesState.activeCourseWorkspaceTab);
+}
+
+function getCurrentStudentTaskTitle(resource, tabId = resourcesState.activeCourseWorkspaceTab) {
+    const normalized = normalizeWorkspaceTabId(tabId);
+    if (!resource || normalized === "route") return getWorkspaceTabTitle(normalized);
+    const sections = normalizeSections(resource);
+    const lessonIndex = getCurrentLessonIndex(resource);
+    const section = sections[lessonIndex] || null;
+    const experiments = Array.isArray(section?.experiments) ? section.experiments : [];
+    const experiment = experiments[resourcesState.activeExperimentIndex] || null;
+    return experiment?.title || section?.title || getWorkspaceTabTitle(normalized);
 }
 
 function syncLessonPageTitle(resource, tabId = resourcesState.activeCourseWorkspaceTab) {
     const titleEl = document.getElementById("page-title");
     const subtitleEl = document.getElementById("page-subtitle");
     if (!isStudentLessonMode()) return;
-    const tabTitle = getWorkspaceTabTitle(tabId);
     const sections = normalizeSections(resource || {});
     const lessonIndex = getCurrentLessonIndex(resource || {});
     const section = sections[lessonIndex] || null;
-    if (titleEl) titleEl.textContent = tabTitle;
+    if (titleEl) titleEl.textContent = getCurrentStudentTaskTitle(resource, tabId);
     if (subtitleEl) {
-        subtitleEl.textContent = section
-            ? `${section.title || `第 ${lessonIndex + 1} 课`} / ${resource?.title || "当前课程"}`
-            : "等待课堂课程";
+        subtitleEl.textContent = formatStudentCourseSubtitle(resource, section, lessonIndex);
     }
+}
+
+function formatStudentCourseSubtitle(resource, section, lessonIndex = 0) {
+    if (!section) return "等待课堂课程";
+    const lesson = String(section.title || `第 ${lessonIndex + 1} 课`).trim();
+    const course = String(resource?.title || "").trim();
+    if (course && lesson && course !== lesson) return lesson;
+    return course || lesson || "当前课程";
 }
 
 function getExperimentStudentTasks(exp) {
@@ -3619,6 +3761,8 @@ async function openStudentExperimentPage(tabId, context, file = null) {
     resourcesState.activeCourseWorkspaceTab = normalized;
     resourcesState.activeSectionIndex = context.sectionIndex;
     resourcesState.activeExperimentIndex = context.expIndex;
+    syncStudentPageBodyState(normalized);
+    syncLessonPageTitle(context.resource, normalized);
 
     if (normalized === "python") {
         return openStudentPythonWorkspace(context.resource, {
@@ -3876,7 +4020,8 @@ function buildStudentExperimentEntryCard(context, tabId = resourcesState.activeC
 
 function buildStudentHtmlExperienceView(context) {
     const htmlFiles = Array.isArray(context?.overview?.htmlFiles) ? context.overview.htmlFiles : [];
-    const primaryHtml = htmlFiles[0] || null;
+    const launchedPath = relativeResourcePath(resourcesState.xeduLaunchResourceId || "");
+    const primaryHtml = htmlFiles.find((file) => relativeResourcePath(file.path) === launchedPath) || htmlFiles[0] || null;
     const experimentTitle = context?.exp?.title || `实验 ${Number.isFinite(context?.expIndex) ? context.expIndex + 1 : 1}`;
     const experimentDesc = String(context?.exp?.description || "").trim();
     const wrap = document.createElement("section");
@@ -3922,9 +4067,11 @@ function buildStudentHtmlExperienceView(context) {
         return wrap;
     }
 
+    const relativeHtmlPath = String(primaryHtml.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
     const frameUrl =
-        buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient) ||
-        resolveResourceUrl(primaryHtml.path || "", context.resource, {
+        resourcesState.xeduLabFrameUrls?.[relativeHtmlPath]
+        || buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient)
+        || resolveResourceUrl(primaryHtml.path || "", context.resource, {
             repoUrl: resourcesState.repoUrl,
             rawBaseUrl: resourcesState.rawBaseUrl,
             indexBranch: resourcesState.indexBranch,
@@ -3948,6 +4095,7 @@ function buildStudentHtmlExperienceView(context) {
     frame.loading = "eager";
     frameWrap.appendChild(frame);
     courseAiFrameBridge.attach(frame, frameUrl);
+    xeduScoreBridge.attach(frame);
     wrap.appendChild(frameWrap);
     const openBrowserBtn = document.createElement("button");
     openBrowserBtn.type = "button";
@@ -3987,6 +4135,7 @@ async function openStudentPythonWorkspace(
     resourcesState.activeSectionIndex = sectionIndex;
     resourcesState.activeExperimentIndex = expIndex;
     syncStudentLessonNav("python");
+    syncStudentPageBodyState("python");
     syncLessonPageTitle(resource, "python");
 
     const lessonTitle = target?.section?.title || `第 ${sectionIndex + 1} 课`;
@@ -4010,6 +4159,7 @@ async function openStudentPythonWorkspace(
             sourceLabel,
             sourcePage: "student-python",
         }, { force: true });
+        syncLessonPageTitle(resource, "python");
         if (!isCurrentStudentNavigation(navigationRevision)) {
             await window.app?.jupyter?.setVisibility?.(false);
             return null;
@@ -4041,6 +4191,7 @@ async function openStudentVisualWorkspace(course, context = null) {
     resourcesState.activeSectionIndex = sectionIndex;
     resourcesState.activeExperimentIndex = expIndex;
     syncStudentLessonNav("visual");
+    syncStudentPageBodyState("visual");
     syncLessonPageTitle(resource, "visual");
 
     if (!file) {
@@ -4061,6 +4212,7 @@ async function openStudentVisualWorkspace(course, context = null) {
         expIndex,
         experimentOverview: overview,
     });
+    syncLessonPageTitle(resource, "visual");
     return resource;
 }
 
@@ -4565,11 +4717,11 @@ function applyFilters() {
     updateResourcesSearchUI();
 }
 
-function setResourcesListToolbarForStudent(tabId = resourcesState.activeCourseWorkspaceTab) {
+function setResourcesListToolbarForStudent() {
     const title = document.querySelector("#resources-list-view .resources-title");
     const count = document.getElementById("resources-count");
-    if (title) title.textContent = getWorkspaceTabTitle(tabId);
-    if (count) count.textContent = "只显示当前课程";
+    if (title) title.textContent = "";
+    if (count) count.textContent = "";
 }
 
 function buildAddCard() {
@@ -4896,7 +5048,7 @@ function renderStudentLessonEmpty(tabId = resourcesState.activeCourseWorkspaceTa
 
     const desc = document.createElement("div");
     desc.className = "resources-student-empty-desc";
-    desc.textContent = `${getWorkspaceTabTitle(tabId)}会在加入课堂后显示；也可以直接把课程 ZIP 或完整课程文件夹拖到上方导入区。`;
+    desc.textContent = "加入课堂后，课程会出现在这里。";
     wrap.appendChild(desc);
 
     const actions = document.createElement("div");
@@ -5120,6 +5272,7 @@ function showDetailView(resource, options = {}) {
     }
     if (isStudentLessonMode()) {
         syncStudentLessonNav(resourcesState.activeCourseWorkspaceTab);
+        syncStudentPageBodyState(resourcesState.activeCourseWorkspaceTab);
         syncLessonPageTitle(resource, resourcesState.activeCourseWorkspaceTab);
     }
     renderResourceDetail(resource);
@@ -7164,7 +7317,146 @@ export async function syncTeacherModeUI() {
     updateTeacherModeUI();
 }
 
+export function returnToStudentTaskCenter() {
+    return openStudentLessonTab("route", document.getElementById("nav-student-lesson-item"));
+}
+
+function presentPlatformSaveResult(result) {
+    const completed = result?.platform_status === "completed";
+    studentSaveResult = result || null;
+    studentSavePhase = completed ? "saved" : "failed";
+    const message = completed
+        ? (result?.message || "平台已保存")
+        : studentSaveMessage(result?.code, result?.message);
+    notifyUser(message, completed ? "success" : "error");
+    syncStudentFocusChrome();
+    return result;
+}
+
+async function runStudentPlatformSave(kind) {
+    if (studentSavePhase === "saving") {
+        return {
+            ok: false,
+            platform_status: "",
+            code: "save_in_flight",
+            message: studentSaveMessage("save_in_flight"),
+        };
+    }
+    studentSaveKind = kind;
+    studentSavePhase = "saving";
+    studentSaveResult = { retryKind: kind };
+    syncStudentFocusChrome();
+    let result;
+    try {
+        if (kind === "screenshot") result = await xeduScoreBridge.uploadScreenshot();
+        else if (kind === "combined") result = await xeduScoreBridge.saveCombined();
+        else result = await xeduScoreBridge.saveScore();
+    } catch (_) {
+        result = {
+            ok: false,
+            platform_status: "",
+            code: "network",
+            message: studentSaveMessage("network"),
+        };
+    }
+    if (result) result.retryKind = kind;
+    return presentPlatformSaveResult(result);
+}
+
+export async function saveStudentScore() {
+    return runStudentPlatformSave("score");
+}
+
+export async function uploadStudentScreenshot() {
+    return runStudentPlatformSave("screenshot");
+}
+
+export async function saveStudentScoreAndScreenshot() {
+    return runStudentPlatformSave("combined");
+}
+
+export function retryStudentSave() {
+    const kind = studentSaveResult?.retryKind || studentSaveKind || "score";
+    return runStudentPlatformSave(kind);
+}
+
+function relativeResourcePath(value) {
+    return String(value || "").replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function findLaunchExperiment(resource, resourceId) {
+    const target = relativeResourcePath(resourceId);
+    const sections = normalizeSections(resource);
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+        const experiments = Array.isArray(sections[sectionIndex]?.experiments) ? sections[sectionIndex].experiments : [];
+        for (let expIndex = 0; expIndex < experiments.length; expIndex += 1) {
+            const files = Array.isArray(experiments[expIndex]?.files) ? experiments[expIndex].files : [];
+            const file = files.find((item) => relativeResourcePath(item?.path) === target);
+            if (file) {
+                return { resource, sectionIndex, expIndex, file };
+            }
+        }
+    }
+    return null;
+}
+
+export async function openLaunchedLocalTask(payload) {
+    if (!payload?.lab_url || !payload?.course) {
+        notifyUser(payload?.message || "打开平台任务失败。请从学习平台重新打开。", "error");
+        return payload;
+    }
+    if (payload.grant_expired) {
+        notifyUser(payload.message || "任务授权已过期，请从学习平台重新打开。当前成绩草稿已保留。", "warning");
+    }
+    const resourceId = relativeResourcePath(payload.resource_id);
+    resourcesState.xeduLaunchResourceId = resourceId;
+    resourcesState.xeduLabFrameUrls = {
+        ...(resourcesState.xeduLabFrameUrls || {}),
+        [resourceId]: payload.lab_url,
+    };
+    const course = {
+        ...payload.course,
+        id: payload.course.id || payload.course_id,
+        local_path: payload.course_root || payload.course.local_path || "",
+        source: "local",
+    };
+    let context = findLaunchExperiment(course, resourceId);
+    if (!context) {
+        course.sections = [
+            ...(Array.isArray(course.sections) ? course.sections : []),
+            {
+                title: "平台任务",
+                experiments: [{
+                    title: course.title || "实验",
+                    files: [{ path: resourceId, type: "html", name: resourceId }],
+                }],
+            },
+        ];
+        context = findLaunchExperiment(course, resourceId);
+    }
+    studentSaveKind = "";
+    studentSaveResult = payload?.grant_expired
+        ? { ok: false, platform_status: "", code: "grant_expired" }
+        : null;
+    studentSavePhase = payload?.grant_expired ? "failed" : "idle";
+    if (payload.restored_draft || payload.draft) {
+        xeduScoreBridge.restoreDraft(payload.restored_draft || payload.draft);
+    } else {
+        xeduScoreBridge.clearDraft();
+    }
+    addCourse(course, { silent: true });
+    if (context) {
+        await openStudentExperimentPage("experience", context, context.file);
+    }
+    if (!payload.grant_expired) {
+        notifyUser(payload.restored_draft ? "已重新打开任务，上次未保存的成绩草稿还在。" : "已打开学习平台任务。", "info");
+    }
+    syncStudentFocusChrome();
+    return payload;
+}
+
 export async function toggleTeacherMode() {
+    document.getElementById("student-account-menu")?.removeAttribute("open");
     await handleTeacherModeToggle();
 }
 

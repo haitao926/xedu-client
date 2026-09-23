@@ -6,29 +6,48 @@ import test from "node:test";
 const repoRoot = resolve(import.meta.dirname, "../..");
 const readRepoFile = (relativePath) => readFileSync(resolve(repoRoot, relativePath), "utf8");
 
-test("student sidebar contains only the intended student-facing course entries", () => {
+test("student shell starts at the task center without a persistent sidebar", () => {
   const html = readRepoFile("renderer/index.html");
-  const expected = [
-    ["nav-student-lesson-item", "课程任务中心", "resources.openStudentLessonTab", "route"],
-    ["nav-student-experience-item", "互动体验", "resources.openStudentLessonTab", "experience"],
-    ["nav-student-visual-item", "图形编程", "resources.openStudentLessonTab", "visual"],
-    ["nav-student-python-item", "Python实验", "resources.openStudentLessonTab", "python"],
-    ["nav-ai-item", "AI助手", "ui.showTab", "ai-assistant"],
-  ];
+  const css = readRepoFile("renderer/styles/main.css");
+  const topBar = html.slice(html.indexOf('class="top-bar"'), html.indexOf('class="content-scroll-area"'));
 
-  for (const [id, label, action, value] of expected) {
-    assert.match(html, new RegExp(`id="${id}"[\\s\\S]*?<span>${label}</span>`));
-    assert.match(html, new RegExp(`id="${id}"[^>]*data-action="${action}"`));
-    assert.match(html, new RegExp(`id="${id}"[^>]*data-action-value="${value}"`));
-  }
+  assert.match(html, /<html[^>]*class="student-shell-pending"/);
+  assert.match(html, /id="page-title">课程任务中心</);
+  assert.match(topBar, /id="student-focus-back"[^>]*data-action="resources\.returnToStudentTaskCenter"[\s\S]*返回任务中心/);
+  assert.match(topBar, /id="student-focus-ai-btn"[^>]*data-action="ai\.toggleStudentAssistant"[\s\S]*AI 助手/);
+  assert.match(topBar, /id="student-save-score-btn"[^>]*data-action="resources\.saveStudentScore"[\s\S]*保存成绩/);
+  assert.match(topBar, /id="student-upload-screenshot-btn"[^>]*data-action="resources\.uploadStudentScreenshot"[\s\S]*截图并上传/);
+  assert.match(topBar, /id="student-save-combined-btn"[^>]*data-action="resources\.saveStudentScoreAndScreenshot"[\s\S]*保存成绩并截图/);
+  assert.match(topBar, /id="student-score-draft"/);
+  assert.match(topBar, /id="student-platform-status"/);
+  assert.match(topBar, /id="student-save-retry-btn"[^>]*data-action="resources\.retryStudentSave"[\s\S]*重试/);
+  assert.doesNotMatch(topBar, /提交结果/);
+  assert.match(topBar, /id="student-account-menu"/);
+  assert.match(topBar, /id="student-account-teacher-btn"[^>]*data-role="teacher-mode-toggle"[\s\S]*data-role="teacher-mode-label">教师登录</);
+  assert.match(topBar, /id="student-account-settings-btn"[^>]*hidden>设置/);
+  assert.doesNotMatch(topBar, /id="nav-student-(experience|visual|python)-item"/);
+  assert.doesNotMatch(topBar, /id="nav-ai-item"/);
+  assert.doesNotMatch(topBar, /id="nav-settings-item"/);
+  assert.doesNotMatch(topBar, /进度|progress-bar|student-focus-progress/);
 
+  assert.match(css, /html\.student-shell-pending body:not\(\.teacher-mode\) \.sidebar,\s*body\.student-mode:not\(\.teacher-mode\) \.sidebar\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #settings,\s*body\.student-mode:not\(\.teacher-mode\) #student-account-settings-btn\s*\{\s*display:\s*none !important;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-focus-mode \.page-subtitle\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #resources-import-drop-zone\s*\{\s*display:\s*none !important;\s*\}/);
+  assert.match(css, /student-page-route #resources-list-view \.resources-toolbar\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant\.page-section\s*\{/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant \.ai-model-badge\s*\{[^}]*white-space:\s*nowrap;/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant\.page-section\s*\{[^}]*height:\s*auto;/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant \.chat-messages\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant \.input-area\s*\{[^}]*flex:\s*0 0 auto;/);
+  assert.doesNotMatch(css, /student-focus-progress/);
+
+  assert.match(html, /id="nav-student-lesson-item"[^>]*data-action="resources\.openStudentLessonTab"[^>]*data-action-value="route"/);
   assert.match(html, /id="nav-main-item"[\s\S]*?<span>总控制台<\/span>/);
   assert.match(html, /id="nav-scratch-item" class="nav-item" style="display: none;"[\s\S]*?<span>Scratch 编程<\/span>/);
   assert.match(html, /id="scratch-workspace"[\s\S]*?id="scratch-workspace-frame"/);
+  assert.doesNotMatch(html, /id="sidebar-teacher-mode-btn"/);
   assert.doesNotMatch(html, /id="topbar-teacher-mode-btn"/);
-  assert.doesNotMatch(html, /右上角使用“教师登录”/);
-  assert.doesNotMatch(html, /教师登录入口固定在左下角/);
-  assert.match(html, /id="sidebar-teacher-mode-btn"[\s\S]*?<strong data-role="teacher-mode-label">教师登录<\/strong>/);
   assert.doesNotMatch(html, /id="resources-teacher-mode-btn"/);
 });
 
@@ -77,9 +96,10 @@ test("resources module exports the student lesson tab entrypoint", () => {
   assert.ok(resources.includes("export async function openStudentLessonTab("));
 });
 
-test("student mode hides teacher/admin shell navigation but keeps AI assistant", () => {
+test("student mode hides the sidebar, settings, and AI page nav", () => {
   const css = readRepoFile("renderer/styles/main.css");
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #nav-group-system-title,\s*body\.student-mode:not\(\.teacher-mode\) #nav-settings-item\s*\{\s*display:\s*none !important;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\) \.sidebar\s*\{/);
   assert.match(css, /body\.student-mode \.student-nav-item\s*\{[\s\S]*display:\s*flex;/);
   assert.match(css, /body\.student-mode \.student-nav-item\.active/);
 
@@ -89,10 +109,11 @@ test("student mode hides teacher/admin shell navigation but keeps AI assistant",
   assert.match(dashboard, /if \(scratchNavItem\) \{[\s\S]*?scratchNavItem\.style\.display = "none";/);
   assert.match(dashboard, /if \(resourcesNavItem\) \{[\s\S]*?resourcesNavItem\.style\.display = "none";/);
   assert.match(studentBranch, /if \(settingsNavItem\) \{[\s\S]*?settingsNavItem\.style\.display = "none";/);
+  assert.match(studentBranch, /if \(aiNavItem\) \{[\s\S]*?aiNavItem\.style\.display = "none";/);
+  assert.match(studentBranch, /accountSettingsBtn\.hidden = !isTeacher/);
+  assert.doesNotMatch(studentBranch, /aiNavItem\.style\.display = "flex"/);
   assert.doesNotMatch(studentBranch, /allowPythonSetup/);
   assert.doesNotMatch(studentBranch, /settingsNavItem\.style\.display = allowPythonSetup/);
-  assert.match(dashboard, /if \(aiNavItem\) aiNavItem\.style\.display = "flex";/);
-  assert.match(dashboard, /if \(aiNavLabel\) aiNavLabel\.textContent = "AI助手";/);
 
   const main = readRepoFile("renderer/js/main.js");
   assert.doesNotMatch(main, /allowPythonSetup/);
@@ -107,6 +128,29 @@ test("student mode hides teacher/admin shell navigation but keeps AI assistant",
 
   const ui = readRepoFile("renderer/js/ui.js");
   assert.match(ui, /tabId === 'settings'[\s\S]*isStudentOnly/);
+  assert.match(ui, /studentShell && tabId === 'ai-assistant'[\s\S]*toggleStudentAssistant\?\.?\(true\)/);
+
+  const ai = readRepoFile("renderer/js/ai.js");
+  assert.match(ai, /export function toggleStudentAssistant\(/);
+  assert.match(ai, /student-ai-drawer-open/);
+  assert.match(ai, /experiment_context\?\.experiment\?\.title/);
+  assert.match(ai, /syncChatContextPill\(\)/);
+
+  assert.match(resources, /export function syncStudentShellChrome\(/);
+  assert.match(resources, /student-focus-mode/);
+  assert.match(resources, /export function returnToStudentTaskCenter\(/);
+  assert.match(resources, /export async function saveStudentScore\(/);
+  assert.match(resources, /export async function uploadStudentScreenshot\(/);
+  assert.match(resources, /export async function saveStudentScoreAndScreenshot\(/);
+  assert.match(resources, /platform_status === "completed"/);
+  assert.match(resources, /describeStudentSaveChrome/);
+  const saveChrome = readRepoFile("renderer/js/resources/xedu-save-chrome.js");
+  assert.match(saveChrome, /待保存：/);
+  assert.match(saveChrome, /保存中/);
+  assert.match(saveChrome, /平台已保存/);
+  assert.match(saveChrome, /grant_expired/);
+  assert.doesNotMatch(resources, /export function submitStudentResult\(/);
+  assert.doesNotMatch(resources, /TODO: next pass — 提交到平台/);
 });
 
 test("teacher mode keeps the student course shell and only adds resources/settings", () => {
@@ -117,6 +161,8 @@ test("teacher mode keeps the student course shell and only adds resources/settin
   assert.match(dashboard, /studentNavItems\.forEach\(\(item\) => \{[\s\S]*?item\.style\.display = "flex";/);
   assert.match(dashboard, /if \(resourcesNavItem\) \{[\s\S]*?resourcesNavItem\.style\.display = "flex";/);
   assert.match(dashboard, /if \(settingsNavItem\) \{[\s\S]*?settingsNavItem\.style\.display = "flex";/);
+  assert.match(dashboard, /if \(aiNavItem\) aiNavItem\.style\.display = "flex";/);
+  assert.match(dashboard, /if \(aiNavLabel\) aiNavLabel\.textContent = "AI助手";/);
 
   const resources = readRepoFile("renderer/js/resources.js");
   assert.match(resources, /function isStudentLessonMode\(\) \{[\s\S]*if \(!resourcesState\.teacherMode\.unlocked\) return true;[\s\S]*document\.querySelector\("\.student-nav-item\.active"\)/);
@@ -127,13 +173,24 @@ test("teacher mode keeps the student course shell and only adds resources/settin
 
 test("student task center opens HTML pages directly and routes coding tabs to native workbenches", () => {
   const resources = readRepoFile("renderer/js/resources.js");
+  const css = readRepoFile("renderer/styles/main.css");
   assert.match(resources, /function makeStudentRouteButton\(tabId, context, options = \{\}\)/);
   assert.match(resources, /function renderResources\(list = \[\]\)/);
   assert.doesNotMatch(resources, /本节实践通道/);
-  assert.match(resources, /只显示当前课程/);
+  assert.match(resources, /function syncStudentTaskCenterHeader\(/);
+  assert.match(resources, /student-task-center-header/);
+  assert.doesNotMatch(resources, /只显示当前课程/);
+  assert.doesNotMatch(resources, /拖到上方导入区/);
+  assert.match(resources, /function formatStudentCourseSubtitle\(/);
+  assert.match(resources, /if \(course && lesson && course !== lesson\) return lesson;/);
+  assert.doesNotMatch(resources, /\$\{section\.title \|\| `第 \$\{lessonIndex \+ 1\} 课`\} \/ \$\{resource\?\.title/);
+  assert.match(css, /student-page-route \.resources-empty[\s\S]*justify-content:\s*center;/);
+  assert.match(css, /student-page-route[\s\S]*resources-course-workspace\.is-route-page[\s\S]*margin-inline:\s*auto;/);
+  assert.match(css, /\.resources-learning-route\.is-student-lesson[\s\S]*margin-inline:\s*auto;/);
   assert.match(resources, /function renderStudentLessonEmpty[\s\S]*?加入课堂/);
   assert.doesNotMatch(resources, /function renderStudentLessonEmpty[\s\S]*?打开本地课程/);
-  assert.match(resources, /加入课堂后显示；也可以直接把课程 ZIP 或完整课程文件夹拖到上方导入区/);
+  assert.match(resources, /加入课堂后，课程会出现在这里。/);
+  assert.doesNotMatch(resources, /拖入 ZIP 或课程文件夹/);
   assert.match(resources, /label: "进入互动体验"/);
   assert.match(resources, /label: isStudentLessonMode\(\) \? "进入图形编程" : "进入可视化编程"/);
   assert.match(resources, /label: isStudentLessonMode\(\) \? "进入Python实验" : "进入Python编程"/);
@@ -304,7 +361,7 @@ test("student task-center workspaces keep route and direct HTML layouts distinct
   assert.match(css, /resources-view\.is-student-lesson \.resources-outline-layout\s*\{[\s\S]*grid-template-columns:\s*260px minmax\(0, 1fr\);/);
   assert.match(css, /body\.student-mode\.student-page-route \.content-scroll-area,[\s\S]*body\.student-mode\.student-page-python \.content-scroll-area\s*\{[\s\S]*padding:\s*0;/);
   assert.match(css, /\.top-bar\s*\{[\s\S]*height:\s*58px;/);
-  assert.match(css, /body\.student-mode\.student-page-experience \.top-bar\s*\{[\s\S]*height:\s*58px;/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-focus-mode \.top-bar,\s*body\.student-mode\.student-page-experience \.top-bar\s*\{[\s\S]*height:\s*58px;/);
   assert.match(css, /resources-outline-layout\.is-direct-file-workspace\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/);
   assert.match(css, /resources-view\.is-student-lesson \.resources-outline-layout\.is-student-workspace\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/);
   assert.match(css, /resources-student-html-experience\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;/);
@@ -312,4 +369,25 @@ test("student task-center workspaces keep route and direct HTML layouts distinct
   assert.match(css, /resources-student-html-frame-wrap\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;/);
   assert.match(css, /resources-student-html-frame\s*\{[\s\S]*height:\s*100%;/);
   assert.doesNotMatch(css, /resources-student-gateway/);
+});
+
+test("about us lists software authors and the current testers with schools", () => {
+  const html = readRepoFile("renderer/index.html");
+  const about = html.slice(html.indexOf('id="about-us-modal"'), html.indexOf("<!-- Modal -->"));
+
+  assert.match(about, /data-action="ui\.hideModal" data-action-value="about-us-modal"/);
+  assert.match(about, /王海涛[\s\S]*上海科技大学附属学校/);
+  assert.match(about, /邱奕盛[\s\S]*上海科技大学附属学校/);
+  assert.match(about, /项目指导：[\s\S]*谢作如/);
+  const testers = about.slice(about.indexOf("测试贡献者"));
+  const testerOrder = ["刘正云", "杜燕", "郑祥", "洪丹妮", "刘宜萍"];
+  const testerAt = testerOrder.map((name) => testers.indexOf(name));
+  assert.deepEqual(testerAt, [...testerAt].sort((a, b) => a - b));
+  assert.ok(testerAt.every((index) => index >= 0));
+  assert.match(testers, /刘正云[\s\S]*南通大学附属学校/);
+  assert.match(testers, /杜燕[\s\S]*交大附中密云分校/);
+  assert.match(testers, /郑祥[\s\S]*温州市第十七中学/);
+  assert.match(testers, /洪丹妮[\s\S]*温州市绣山中学/);
+  assert.match(testers, /刘宜萍[\s\S]*合肥一六八中学/);
+  assert.doesNotMatch(about, /刘啸宇/);
 });
