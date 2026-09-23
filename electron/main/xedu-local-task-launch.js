@@ -260,6 +260,32 @@ function sha256Hex(buffer) {
     return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
+// Local classroom LearnSite is served by Caddy on https://localhost:8443 with a
+// self-signed (or private-CA) certificate. Node's https client does not trust
+// that certificate, so launch exchange, package GET, artifact upload, and
+// submissions all fail unless the process sets NODE_TLS_REJECT_UNAUTHORIZED=0.
+// That env var disables verification for every host. Only these loopback URL
+// hostnames skip certificate checks. Any other host keeps Node's default trust
+// store. The decision is per request URL, so a loopback platform_origin does
+// not relax TLS for a package_url on another host.
+const LOOPBACK_CLASSROOM_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+function isLoopbackClassroomHost(hostname) {
+    const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+    return LOOPBACK_CLASSROOM_HOSTS.has(host);
+}
+
+function tlsOptionsForUrl(url) {
+    let parsed;
+    try {
+        parsed = new URL(url);
+    } catch (_) {
+        return {};
+    }
+    if (parsed.protocol !== 'https:' || !isLoopbackClassroomHost(parsed.hostname)) return {};
+    return { rejectUnauthorized: false };
+}
+
 function defaultRequest({ url, method = 'GET', headers = {}, body = null, timeoutMs = 20000 }) {
     return new Promise((resolve, reject) => {
         let parsed;
@@ -270,7 +296,12 @@ function defaultRequest({ url, method = 'GET', headers = {}, body = null, timeou
             return;
         }
         const lib = parsed.protocol === 'https:' ? https : http;
-        const req = lib.request(url, { method, headers, timeout: timeoutMs }, (res) => {
+        const req = lib.request(url, {
+            method,
+            headers,
+            timeout: timeoutMs,
+            ...tlsOptionsForUrl(url),
+        }, (res) => {
             const chunks = [];
             res.on('data', (chunk) => chunks.push(chunk));
             res.on('end', () => {
@@ -1054,6 +1085,9 @@ module.exports = {
     RETRY_DELAYS_MS,
     STUDENT_MESSAGES,
     parseOpenLocalTaskLink,
+    isLoopbackClassroomHost,
+    tlsOptionsForUrl,
+    defaultRequest,
     normalizeScoreDraft,
     packageCacheDirectory,
     contextKey,

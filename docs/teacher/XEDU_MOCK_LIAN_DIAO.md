@@ -7,7 +7,7 @@
 ## 把 Client 指到 Mock
 
 1. 用本分支启动 XEdu Client。Client 是单实例：第二次打开会回到已经存在的窗口，不会再开一个。
-2. Mock 的 `platform_origin` 必须是 `https`。证书要被这台电脑信任（正式证书或 mkcert）。Client 不会跳过证书校验。
+2. Mock 的 `platform_origin` 必须是 `https`。主机名是 `localhost`、`127.0.0.1` 或 `::1` 时，Client 接受自签或私有 CA（例如本机 Caddy 的 `https://localhost:8443`），不需要 `NODE_TLS_REJECT_UNAUTHORIZED=0`。其它主机仍要使用这台电脑信任的证书。
 3. 让 Mock 的课程页在加载后向父窗口发送成绩，例如：
 
 ```html
