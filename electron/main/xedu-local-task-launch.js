@@ -140,7 +140,9 @@ function parseOpenLocalTaskLink(rawUrl) {
     if (parsed.protocol !== 'xedu:') return null;
     const action = (parsed.hostname || parsed.pathname.replace(/^\/+/, '') || '').split('/')[0].trim();
     if (action !== 'open-local-task') return null;
-    const launchGrant = (parsed.searchParams.get('launch_grant') || '').trim();
+    const namedLaunchGrant = (parsed.searchParams.get('launch_grant') || '').trim();
+    const legacyGrant = (parsed.searchParams.get('grant') || '').trim();
+    const launchGrant = namedLaunchGrant || legacyGrant;
     const platformOriginRaw = (parsed.searchParams.get('platform_origin') || '').trim();
     if (!launchGrant || !platformOriginRaw) return null;
     let platformOrigin = '';
@@ -151,7 +153,21 @@ function parseOpenLocalTaskLink(rawUrl) {
     } catch (_) {
         return null;
     }
-    return { launchGrant, platformOrigin };
+    return { launchGrant, platformOrigin, legacyLaunch: !namedLaunchGrant };
+}
+
+function taskTokenFromExchange(payload) {
+    const modern = typeof payload?.task_grant === 'string' ? payload.task_grant.trim() : '';
+    if (modern) return modern;
+    return typeof payload?.grant === 'string' ? payload.grant.trim() : '';
+}
+
+function exchangeContractAccepted(payload, legacyLaunch) {
+    if (!payload || payload.protocol_version !== PROTOCOL_VERSION) return false;
+    const revision = payload.contract_revision;
+    const revisionAbsent = revision === undefined || revision === null;
+    if (revisionAbsent) return Boolean(legacyLaunch);
+    return revision === CONTRACT_REVISION;
 }
 
 function classifyScoreInput(input) {
@@ -497,18 +513,23 @@ function createLocalTaskSession(options = {}) {
 
     async function openExchangedTask(link) {
         const exchangeUrl = `${link.platformOrigin}/api/xedu/v1/launch/exchange`;
-        const exchangeBody = Buffer.from(JSON.stringify({
-            protocol_version: PROTOCOL_VERSION,
-            contract_revision: CONTRACT_REVISION,
-            launch_grant: link.launchGrant,
-        }));
+        const legacyLaunch = Boolean(link.legacyLaunch);
+        const exchangeBody = Buffer.from(JSON.stringify(legacyLaunch
+            ? { protocol_version: PROTOCOL_VERSION }
+            : {
+                protocol_version: PROTOCOL_VERSION,
+                contract_revision: CONTRACT_REVISION,
+                launch_grant: link.launchGrant,
+            }));
+        const exchangeHeaders = {
+            'Content-Type': 'application/json',
+            'Content-Length': String(exchangeBody.length),
+        };
+        if (legacyLaunch) exchangeHeaders.Authorization = `Bearer ${link.launchGrant}`;
         const response = await callJson({
             url: exchangeUrl,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': String(exchangeBody.length),
-            },
+            headers: exchangeHeaders,
             body: exchangeBody,
         });
         if (response.networkError || response.status < 200 || response.status >= 300) {
@@ -526,10 +547,10 @@ function createLocalTaskSession(options = {}) {
                 serverMessage: payload?.message,
             });
         }
-        if (payload.protocol_version !== PROTOCOL_VERSION || payload.contract_revision !== CONTRACT_REVISION) {
+        if (!exchangeContractAccepted(payload, legacyLaunch)) {
             return failure('protocol_mismatch', { status: response.status });
         }
-        const taskToken = typeof payload.task_grant === 'string' ? payload.task_grant.trim() : '';
+        const taskToken = taskTokenFromExchange(payload);
         if (!taskToken) return failure('grant_invalid', { status: response.status });
         const nextSnapshot = normalizeSnapshot(payload, link.platformOrigin);
         if (!nextSnapshot.ok) return nextSnapshot;

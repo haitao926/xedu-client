@@ -34,6 +34,8 @@ Client 向 `{platform_origin}/api/xedu/v1/launch/exchange` 发送：
 
 服务端必须原样确认 `protocol_version` 和 `contract_revision`。不一致就停止，并提示协议版本不一致。Client 不会改用旧版本再试一次。
 
+现场 LearnSite / classroom 仍使用更早的深链：`xedu://open-local-task?grant=...&platform_origin=https%3A%2F%2F...`。两条都在时用 `launch_grant`。只带 `grant` 时，兑换请求是 `Authorization: Bearer <grant>`，正文只有 `{ "protocol_version": 1 }`。成功响应可以用 `grant` 作为任务令牌，也可以不带 `contract_revision`。响应里如果写了别的 `contract_revision`，仍然停止。`launch_grant` 链接继续按上面的 2026-09-22 正文兑换。
+
 任务 grant 只留在主进程内存，不进入课件、URL、页面状态或日志。启动 grant 兑换后即丢弃。过期或 401 时清掉任务 grant，但保留成绩草稿，学生需要从学习平台重新打开。只有完整上下文键一致时才恢复草稿：
 
 `(platform_origin, learner_scope, platform_activity_id, course_id, activity_id, resource_id, course_version, package_sha256)`

@@ -177,8 +177,17 @@ test('deep link parser accepts the local task link and rejects practice links', 
     const parsed = parseOpenLocalTaskLink('xedu://open-local-task?launch_grant=abc&platform_origin=https%3A%2F%2Flearn.example');
     assert.equal(parsed.launchGrant, 'abc');
     assert.equal(parsed.platformOrigin, 'https://learn.example');
+    assert.equal(parsed.legacyLaunch, false);
+    const legacy = parseOpenLocalTaskLink('xedu://open-local-task?grant=live-grant&platform_origin=https%3A%2F%2Flocalhost');
+    assert.equal(legacy.launchGrant, 'live-grant');
+    assert.equal(legacy.platformOrigin, 'https://localhost');
+    assert.equal(legacy.legacyLaunch, true);
+    const both = parseOpenLocalTaskLink('xedu://open-local-task?grant=old&launch_grant=new&platform_origin=https%3A%2F%2Flearn.example');
+    assert.equal(both.launchGrant, 'new');
+    assert.equal(both.legacyLaunch, false);
     assert.equal(parseOpenLocalTaskLink('xedu://open-practice?project=/tmp&file=a.ipynb'), null);
     assert.equal(parseOpenLocalTaskLink('http://open-local-task?launch_grant=abc&platform_origin=https://learn.example'), null);
+    assert.equal(parseOpenLocalTaskLink('xedu://open-local-task?grant=&platform_origin=https://learn.example'), null);
 });
 
 test('score normalization keeps 0, rejects non-finite values, and does not clamp', () => {
@@ -221,6 +230,75 @@ test('exchange sends contract revision 2026-09-22 and refuses a mismatch without
         const again = await session.saveScore();
         assert.equal(again.code, 'no_active_task');
         assert.equal(bodies.length, 1);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('live LearnSite grant link exchanges with Bearer and opens from a grant task token', async () => {
+    const pkg = coursePackage();
+    const seen = [];
+    const { mock, session } = await openSession({
+        pkg,
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                seen.push({
+                    authorization: req.headers.authorization,
+                    body: JSON.parse(body.toString('utf8')),
+                });
+                const payload = exchangePayload(mockOrigin(req), pkg);
+                delete payload.contract_revision;
+                delete payload.task_grant;
+                payload.grant = 'live-task-token';
+                json(res, 200, payload);
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': pkg.size });
+                res.end(pkg.zip);
+                return;
+            }
+            json(res, 404, { ok: false });
+        },
+    });
+    const link = `xedu://open-local-task?grant=${encodeURIComponent('live-launch-grant')}&platform_origin=${encodeURIComponent(mock.origin)}`;
+    try {
+        const result = await session.openLocalTask(link);
+        assert.equal(result.ok, true, result.message);
+        assert.equal(result.activity_id, 'activity-1');
+        assert.match(result.lab_url, /labs\/quiz\.html$/);
+        assert.equal(seen.length, 1);
+        assert.deepEqual(seen[0].body, { protocol_version: PROTOCOL_VERSION });
+        assert.equal(seen[0].authorization, 'Bearer live-launch-grant');
+        assert.equal(JSON.stringify(result).includes('live-task-token'), false);
+        assert.equal(JSON.stringify(result).includes('live-launch-grant'), false);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('legacy exchange still refuses an explicit contract revision mismatch', async () => {
+    const { mock, session } = await openSession({
+        handler: ({ res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, {
+                    ok: true,
+                    protocol_version: 1,
+                    contract_revision: '2026-01-01',
+                    grant: 'live-task-token',
+                });
+                return;
+            }
+            json(res, 500, { ok: false });
+        },
+    });
+    const link = `xedu://open-local-task?grant=live-launch-grant&platform_origin=${encodeURIComponent(mock.origin)}`;
+    try {
+        const result = await session.openLocalTask(link);
+        assert.equal(result.code, 'protocol_mismatch');
+        assert.equal(result.ok, false);
     } finally {
         await session.close();
         await mock.close();
