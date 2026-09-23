@@ -36,6 +36,16 @@ Client 向 `{platform_origin}/api/xedu/v1/launch/exchange` 发送：
 
 现场 LearnSite / classroom 仍使用更早的深链：`xedu://open-local-task?grant=...&platform_origin=https%3A%2F%2F...`。两条都在时用 `launch_grant`。只带 `grant` 时，兑换请求是 `Authorization: Bearer <grant>`，正文只有 `{ "protocol_version": 1 }`。成功响应可以用 `grant` 作为任务令牌，也可以不带 `contract_revision`。响应里如果写了别的 `contract_revision`，仍然停止。`launch_grant` 链接继续按上面的 2026-09-22 正文兑换。
 
+兑换、课程包 GET、截图上传和提交共用主进程的同一条 Node `https` 请求。URL 主机名是 `localhost`、`127.0.0.1` 或 `::1` 时，接受本机 Caddy 自签或私有 CA 证书，不校验该证书。其它主机仍走 Node 默认信任库。不要用 `NODE_TLS_REJECT_UNAUTHORIZED=0` 启动 Client：那会关掉所有主机的校验。`package_url` 若不是上述回环主机名，仍必须是受信任的 HTTPS。
+
+在 Mac 上用正式包核对本地 LearnSite（不要加那个环境变量）：
+
+1. 退出已经打开的 XEdu Client，确认没有残留用 `NODE_TLS_REJECT_UNAUTHORIZED=0` 启动的进程。
+2. 安装本分支打出的 `/Applications/XEdu Client.app`。LearnSite 用 Caddy 自签证书提供 `https://localhost:8443`。
+3. 在浏览器里正常领一条 `xedu://open-local-task?platform_origin=https://localhost:8443&…&grant=…`。
+4. 用 `open 'xedu://…'` 交给 Launch Services。命令行里不要带 `NODE_TLS_REJECT_UNAUTHORIZED`。
+5. 通过时：这条 grant 的 `ExchangedAt` 有值，平台 deep-link 日志有这次打开，课程包出现在 Application Support 的 `xedu-task-packages/` 下。随后保存成绩，平台回执为 `status: completed`。
+
 任务 grant 只留在主进程内存，不进入课件、URL、页面状态或日志。启动 grant 兑换后即丢弃。过期或 401 时清掉任务 grant，但保留成绩草稿，学生需要从学习平台重新打开。只有完整上下文键一致时才恢复草稿：
 
 `(platform_origin, learner_scope, platform_activity_id, course_id, activity_id, resource_id, course_version, package_sha256)`

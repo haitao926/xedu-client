@@ -15,9 +15,12 @@ const {
     packageCacheDirectory,
     createLocalTaskSession,
     createLaunchOpener,
+    defaultRequest,
     experimentCaptureRect,
+    isLoopbackClassroomHost,
     normalizeScoreDraft,
     parseOpenLocalTaskLink,
+    tlsOptionsForUrl,
 } = require('./xedu-local-task-launch.js');
 
 function sha256(buffer) {
@@ -887,4 +890,129 @@ test('experiment capture requires the experiment rectangle and launch opens are 
     assert.equal(first.reused, false);
     assert.equal(second.reused, true);
     assert.equal(second.result.lab_url, first.result.lab_url);
+});
+
+test('loopback classroom TLS policy skips verification only for localhost, 127.0.0.1, and ::1', () => {
+    assert.equal(isLoopbackClassroomHost('localhost'), true);
+    assert.equal(isLoopbackClassroomHost('LOCALHOST'), true);
+    assert.equal(isLoopbackClassroomHost('[::1]'), true);
+    assert.equal(isLoopbackClassroomHost('127.0.0.2'), false);
+    assert.equal(isLoopbackClassroomHost('localhost.example'), false);
+    assert.deepEqual(tlsOptionsForUrl('https://localhost:8443/api/xedu/v1/launch/exchange'), { rejectUnauthorized: false });
+    assert.deepEqual(tlsOptionsForUrl('https://127.0.0.1:8443/packages/course.zip'), { rejectUnauthorized: false });
+    assert.deepEqual(tlsOptionsForUrl('https://[::1]:8443/api/xedu/v1/submissions'), { rejectUnauthorized: false });
+    assert.deepEqual(tlsOptionsForUrl('https://learn.example/api/xedu/v1/launch/exchange'), {});
+    assert.deepEqual(tlsOptionsForUrl('https://127.0.0.2:8443/api/xedu/v1/artifacts'), {});
+    assert.deepEqual(tlsOptionsForUrl('http://127.0.0.1:8081/api/xedu/v1/launch/exchange'), {});
+    assert.deepEqual(tlsOptionsForUrl('not a url'), {});
+});
+
+test('defaultRequest reaches a loopback self-signed LearnSite and still rejects other hosts', async () => {
+    const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
+    const cert = makeCert();
+    const servers = [];
+    const listen = (host) => new Promise((resolve, reject) => {
+        const server = https.createServer({ key: cert.key, cert: cert.cert }, (req, res) => {
+            const body = JSON.stringify({ ok: true, path: req.url });
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+            res.end(body);
+        });
+        servers.push(server);
+        server.once('error', reject);
+        server.listen(0, host, () => resolve(server.address()));
+    });
+    try {
+        const loopback = await listen('127.0.0.1');
+        const exchange = await defaultRequest({
+            url: `https://127.0.0.1:${loopback.port}/api/xedu/v1/launch/exchange`,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: Buffer.from('{}'),
+        });
+        assert.equal(exchange.status, 200);
+        assert.equal(JSON.parse(exchange.body.toString()).path, '/api/xedu/v1/launch/exchange');
+        const viaLocalhost = await defaultRequest({
+            url: `https://localhost:${loopback.port}/api/xedu/v1/submissions`,
+            method: 'GET',
+        });
+        assert.equal(viaLocalhost.status, 200);
+
+        let ipv6 = null;
+        try {
+            ipv6 = await listen('::1');
+        } catch (_) {
+            ipv6 = null;
+        }
+        if (ipv6) {
+            const viaIpv6 = await defaultRequest({ url: `https://[::1]:${ipv6.port}/packages/course.zip` });
+            assert.equal(viaIpv6.status, 200);
+        }
+
+        const other = await listen('127.0.0.2');
+        await assert.rejects(
+            () => defaultRequest({ url: `https://127.0.0.2:${other.port}/api/xedu/v1/artifacts`, timeoutMs: 3000 }),
+            (error) => /SELF_SIGNED|UNABLE_TO_VERIFY|CERT/.test(error.code || ''),
+        );
+    } finally {
+        if (previous === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previous;
+        await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+    }
+});
+
+test('live session exchanges, downloads, and submits over loopback self-signed HTTPS', async () => {
+    const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
+    const pkg = coursePackage();
+    const cert = makeCert();
+    const seen = [];
+    const server = https.createServer({ key: cert.key, cert: cert.cert }, (req, res) => {
+        const chunks = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+            const url = new URL(req.url, 'https://127.0.0.1');
+            seen.push({ method: req.method, path: url.pathname, authorization: req.headers.authorization || '' });
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(`https://127.0.0.1:${server.address().port}`, pkg));
+                return;
+            }
+            if (url.pathname.endsWith('/packages/course.zip')) {
+                res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': pkg.zip.length });
+                res.end(pkg.zip);
+                return;
+            }
+            if (url.pathname.endsWith('/submissions')) {
+                json(res, 200, { ok: true, status: 'completed', receipt_id: 'receipt-1' });
+                return;
+            }
+            json(res, 404, { ok: false });
+        });
+    });
+    const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-default-request-'));
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const origin = `https://127.0.0.1:${server.address().port}`;
+    const session = createLocalTaskSession({
+        cacheRoot,
+        sleep: async () => {},
+        now: () => Date.parse('2026-09-22T00:00:00.000Z'),
+    });
+    const link = `xedu://open-local-task?grant=${encodeURIComponent('live-grant')}&platform_origin=${encodeURIComponent(origin)}`;
+    try {
+        const opened = await session.openLocalTask(link);
+        assert.equal(opened.ok, true);
+        assert.equal(seen.some((item) => item.path.endsWith('/launch/exchange') && item.authorization === 'Bearer live-grant'), true);
+        assert.equal(seen.some((item) => item.path.endsWith('/packages/course.zip') && item.authorization === ''), true);
+        await session.setDraft({ name: '第1题', value: 80 });
+        const saved = await session.saveScore();
+        assert.equal(saved.ok, true);
+        assert.equal(saved.platform_status, 'completed');
+        assert.equal(seen.some((item) => item.path.endsWith('/submissions') && item.authorization === 'Bearer task-grant-secret'), true);
+    } finally {
+        if (previous === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previous;
+        await session.close();
+        await new Promise((resolve) => server.close(resolve));
+        rmSync(cacheRoot, { recursive: true, force: true });
+    }
 });
