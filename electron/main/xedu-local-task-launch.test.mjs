@@ -458,7 +458,7 @@ test('screenshot upload is raw bytes plus headers, then a submission that refere
         assert.equal(submission.attachments[0].upload_id, 'upl-1');
         assert.equal(submission.score, null);
         assert.equal(submission.raw_score, null);
-        assert.equal(submission.passed, null);
+        assert.equal(submission.passed, true);
         assert.equal(session.getDraft().name, '已有分');
         assert.equal(JSON.stringify(saved).includes('task-grant-secret'), false);
     } finally {
@@ -1158,7 +1158,7 @@ test('scratch and notebook evidence submits a screenshot without a score', async
         const body = bodies[0];
         assert.equal(body.score, null);
         assert.equal(body.raw_score, null);
-        assert.equal(body.passed, null);
+        assert.equal(body.passed, true);
         assert.equal(body.name, null);
         assert.equal(Object.hasOwn(body, 'answers'), false);
         assert.equal(body.attachments[0].upload_id, 'upl-evidence');
@@ -1173,6 +1173,8 @@ test('scratch and notebook evidence submits a screenshot without a score', async
         assert.equal(bodies[1].evidence.experiment, 'notebook');
         assert.equal(bodies[1].evidence.project_file, null);
         assert.equal(bodies[1].score, null);
+        assert.equal(bodies[1].passed, true);
+        assert.equal(Object.hasOwn(bodies[1], 'answers'), false);
     } finally {
         await session.close();
         await mock.close();

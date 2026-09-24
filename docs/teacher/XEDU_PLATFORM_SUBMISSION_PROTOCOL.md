@@ -13,7 +13,7 @@
 | 按钮 | 行为 |
 | --- | --- |
 | 保存成绩 | 需要一份成绩草稿。把最新 `name`、`raw_score` 和归一化 `score` 交给平台。有作答袋时一并带上 `answers`。 |
-| 截图并上传 | 截取当前实验视图（含 iframe 里的 canvas），不截全桌面。`score` / `raw_score` / `passed` 都是 `null`，平台保留已有分。 |
+| 截图并上传 | 截取当前实验视图（含 iframe 里的 canvas），不截全桌面。`name` / `raw_score` / `score` 都是 `null`，`passed` 是 `true`。这是证据提交，不是自动计分。 |
 | 保存成绩并截图 | 同一次确认里带上冻结成绩和截图。截图或上传失败时不会报组合成功，成绩草稿还在，可以单独保存成绩。 |
 | 保存 | 只出现在 Scratch 或 Notebook 实验。不需要成绩。截取当前实验视图作为证据。成功后显示「已保存」。 |
 
@@ -91,16 +91,18 @@ HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 
 }
 ```
 
-自动计分的 HTML 实验仍要带 `ols-score/1` 或 `{name, value}` 成绩。平台在「声称了分数」且 `passed` 不是 `true` 时返回 `XEDU_RESULT_NOT_PASSED`。Client 不把这次保存记为完成，不自动重试，草稿保留，并提示这次成绩还没有通过。`passed: true` 的成绩按原来的完成回执处理。Client 不会在本地把 `passed` 改成 `true`。
+自动计分的 HTML 实验仍要带 `ols-score/1` 或 `{name, value}` 成绩。平台在「声称了分数」且 `passed` 不是 `true` 时返回 `XEDU_RESULT_NOT_PASSED`。Client 不把这次保存记为完成，不自动重试，草稿保留，并提示这次成绩还没有通过。`passed: true` 的成绩按原来的完成回执处理。Client 不会把已声称的分数上的 `passed` 改成 `true`。
 
-Scratch 和 Notebook 用证据提交。学生点「保存」后，Client 走同一条截图上传，再提交一份没有分数的正文。`name`、`raw_score`、`score`、`passed` 都是 `null`。不带 `answers`。多一个 `evidence` 对象。成功且 `status: "completed"` 后，焦点栏显示「已保存」。已有成绩草稿不会被这次证据提交清掉。
+没有分数的证据提交（`name` / `raw_score` / `score` 都是 `null`）必须带 `passed: true`。这表示学生完成了一次证据保存，不是自动计分。Scratch、Notebook 和「截图并上传」都按这条发送。不带 `answers`。
+
+Scratch 和 Notebook 用证据提交。学生点「保存」后，Client 走同一条截图上传。成功且 `status: "completed"` 后，焦点栏显示「已保存」。已有成绩草稿不会被这次证据提交清掉。
 
 ```json
 {
   "name": null,
   "raw_score": null,
   "score": null,
-  "passed": null,
+  "passed": true,
   "attachments": [
     {
       "upload_id": "<artifacts 返回的 id>",

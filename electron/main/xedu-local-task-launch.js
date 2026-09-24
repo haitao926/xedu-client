@@ -871,7 +871,9 @@ function createLocalTaskSession(options = {}) {
             name: score ? score.name : null,
             raw_score: score ? score.raw_score : null,
             score: score ? score.score : null,
-            passed: score ? score.passed : null,
+            // A claimed score forwards passed unchanged. A null-score evidence
+            // submit means the student saved evidence, so passed is true.
+            passed: score ? score.passed : true,
             attachments,
         };
         if (score && Object.prototype.hasOwnProperty.call(score, 'answers')) {

@@ -45,7 +45,7 @@ xedu://open-local-task?launch_grant=<一次性 grant>&platform_origin=https%3A%2
 | T07 | 课程包 GET 不带 Bearer。长度等于 `package_size`，SHA-256 等于 `package_sha256`。`course.json` 的 `id` 等于 `course_id`，不是学案 Cid。 | 实验页打开；校验失败时提示课程包无效或编号不一致 |
 | T08 | 两字段或 `ols-score/1` 只进入草稿。0 分保留。字符串、空值、超过 100 的分数被拒绝，不自动改成 100。 | 顶栏「待保存：名称 分数」；无效成绩有中文提示，且没有提交 |
 | T09 | 点保存成绩。同一 `request_id` 重试时正文不变。只有回执 `status: "completed"` 才算完成。 | 先「保存中」，完成后「平台已保存」 |
-| T10 | 点截图并上传。图片是当前实验视图。提交里 `name` / `raw_score` / `score` / `passed` 为 `null`，并带上 `upload_id`。 | 平台确认后原草稿还在；没有整桌面截图 |
+| T10 | 点截图并上传。图片是当前实验视图。提交里 `name` / `raw_score` / `score` 为 `null`，`passed` 为 `true`，并带上 `upload_id`。 | 平台确认后原草稿还在；没有整桌面截图 |
 | T11 | 点保存成绩并截图。截图或附件失败时，组合结果不是成功。 | 失败说明 + 重试；随后单独点保存成绩仍可完成 |
 | T12 | 保存过程中再点一次不会发出第二笔提交。失败后点重试。429 显示过于频繁。 | 「保存中」时按钮不可再点；`rate_limited` 为「保存太频繁，请稍后再试。」 |
 | T13 | 连点同一条深链。再打开另一个 `activity_id` 的任务。 | 只出现一个窗口，exchange 只有一次；后一个活动看不到前一个活动的草稿 |
@@ -122,7 +122,7 @@ Client 按 `code` 显示本地中文，不把平台 `message` 原文放进顶栏
 | `XEDU_RESULT_NOT_PASSED` | 提交里有分数，但 `passed` 不是 `true` | 这次成绩还没有通过，平台没有记为完成。不重试 |
 | `answers_too_large` | 作答袋超过 32KB | 作答内容超过 32KB，成绩没有保存。 |
 
-Scratch / Notebook 的「保存」不带分数。提交里 `score` / `raw_score` / `passed` / `name` 为 `null`，附件是实验截图，并带：
+Scratch / Notebook 的「保存」不带分数。提交里 `name` / `raw_score` / `score` 为 `null`，`passed` 为 `true`，不带 `answers`。附件是实验截图，并带：
 
 ```json
 "evidence": { "type": "screenshot", "experiment": "scratch", "project_file": null }
