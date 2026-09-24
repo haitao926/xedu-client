@@ -31,7 +31,7 @@
 ## 3. 实验材料文件夹
 
 - 一个实验对应一个材料文件夹。
-- ESP32 MicroPython 实验可以在实验元数据中声明 `runtime: "micropython-esp32"`；其 `.py` 文件由 JupyterLab 的 ESP32 实验插件运行。
+- ESP32 MicroPython 实验在实验元数据中声明 `runtime: "micropython-esp32"`。可选 `entry_file` 指定入口，缺省为 `main.py`。学生从课程任务中心打开该实验时，JupyterLab 会进入 MicroPython 代码模式，而不是另开编辑器。
 - 材料文件夹必须位于课程根目录内。
 - 常见支持文件包括：
   - `.ipynb`

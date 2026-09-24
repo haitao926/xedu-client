@@ -23,7 +23,10 @@ from services.jupyter_environment import (
     build_jupyter_command,
     evaluate_environment_validation,
     merge_jupyter_config,
+    jupyter_path_with_micropython_data,
+    resolve_micropython_labextension_dir,
     resolve_micropython_labextensions_parent,
+    stage_micropython_labextension,
 )
 from utils.logger import get_logger
 
@@ -818,10 +821,17 @@ class JupyterManager:
                 env['JUPYTER_CONFIG_DIR'] = str(cfg_dir)
                 env['JUPYTER_RUNTIME_DIR'] = str(runtime_dir)
                 self._write_jupyterlab_locale_default(cfg_dir)
-                extension_path = resolve_micropython_labextensions_parent(
+                extension_dir = resolve_micropython_labextension_dir(
                     Path(__file__).resolve().parent.parent.parent
                 )
+                extension_path = extension_dir.parent if extension_dir is not None else None
                 self._write_micropython_server_config(cfg_dir, extension_path)
+                if extension_dir is not None:
+                    staged_data = stage_micropython_labextension(Path(data_root), extension_dir)
+                    env["XEDU_MICROPYTHON_JUPYTER_DATA"] = str(staged_data)
+                    logger.info(f"MicroPython labextension staged from {extension_dir}")
+                else:
+                    logger.warning("MicroPython labextension was not found; ESP32 code mode will be unavailable")
             except Exception as e:
                 logger.warning(f"Failed to prepare Jupyter config/runtime dirs: {e}")
 
@@ -861,6 +871,11 @@ class JupyterManager:
         if extension_path is not None and extension_path.is_dir():
             lines.append(f"c.LabApp.extra_labextensions_path = [{str(extension_path)!r}]")
         config_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        lab_config = config_dir / "jupyter_lab_config.py"
+        lab_lines = ["c = get_config()"]
+        if extension_path is not None and extension_path.is_dir():
+            lab_lines.append(f"c.LabApp.extra_labextensions_path = [{str(extension_path)!r}]")
+        lab_config.write_text("\n".join(lab_lines) + "\n", encoding="utf-8")
 
     def _ensure_default_kernel(self, python_exe: str, env: dict) -> None:
         """
@@ -899,8 +914,11 @@ class JupyterManager:
             with open(kernel_dir / "kernel.json", "w", encoding="utf-8") as f:
                 json.dump(kernel_json, f, ensure_ascii=False, indent=2)
 
-            # 仅暴露自有 kernelspec，避免优先加载旧路径
-            env['JUPYTER_PATH'] = str(kernel_base)
+            # 仅暴露自有 kernelspec，并优先加载本次准备好的 MicroPython 插件。
+            env['JUPYTER_PATH'] = jupyter_path_with_micropython_data(
+                kernel_base,
+                env.get("XEDU_MICROPYTHON_JUPYTER_DATA", ""),
+            )
             logger.info(f"Kernelspec refreshed: {kernel_dir} -> {python_exe}")
         except Exception as e:
             logger.warning(f"Failed to refresh kernelspec: {e}")

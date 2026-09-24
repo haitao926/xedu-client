@@ -634,6 +634,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
             filePath: String(payload?.filePath || '').trim(),
             sourceLabel: normalizeWorkspaceSourceLabel(payload),
             sourcePage: String(payload?.sourcePage || '').trim(),
+            micropython: payload?.micropython === true,
         };
         const isStudentPython = normalizedPayload.sourcePage === 'student-python';
         const mainNavItem = isStudentPython
@@ -662,7 +663,9 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         if (!options?.force && targetKey && targetKey === lastOpenedJupyterTarget) {
             return true;
         }
-        await openNotebookFile(normalizedPayload.filePath, normalizedPayload.projectDir);
+        await openNotebookFile(normalizedPayload.filePath, normalizedPayload.projectDir, {
+            micropython: normalizedPayload.micropython,
+        });
         lastOpenedJupyterTarget = targetKey;
         return true;
     }

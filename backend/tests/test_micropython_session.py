@@ -1,3 +1,4 @@
+import base64
 import sys
 import tempfile
 import threading
@@ -250,6 +251,28 @@ class MicroPythonSessionTestCase(unittest.TestCase):
         self.assertNotIn(b"exec(", payload)
         output = self._wait_output("hello from board")
         self.assertIn("hello from board", output)
+
+    def test_upload_file_writes_base64_payload_and_returns_to_friendly_repl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            (project / "main.py").write_text("print('saved')\n", encoding="utf-8")
+            self.manager = MicroPythonSessionManager(
+                serial_factory=lambda *args, **kwargs: self.serial,
+                project_root=project,
+                connect_settle_s=0,
+                repl_timeout_s=0.4,
+                raw_repl_timeout_s=0.8,
+            )
+            self.manager.connect("/dev/cu.usbserial-ESP32")
+            result = self.manager.upload_file("main.py")
+
+        self.assertEqual(result, {"uploaded": True, "file": "main.py", "destination": "main.py"})
+        payload = b"".join(self.serial.writes)
+        self.assertIn(b"ubinascii", payload)
+        self.assertIn(base64.b64encode(b"print('saved')\n"), payload)
+        self.assertIn(b"_name = 'main.py'", payload)
+        self.assertIn(b"\x02", payload)
+        self.assertFalse(self.manager.read_output()["running"])
 
     def test_run_file_rejects_paths_outside_project(self):
         with tempfile.TemporaryDirectory() as directory:

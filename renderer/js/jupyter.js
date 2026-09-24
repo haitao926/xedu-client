@@ -1,4 +1,5 @@
 import apiClient from './api.js';
+import { appendMicroPythonLaunchQuery } from './resources/micropython-launch.js';
 import { log, showModal, hideModal } from './ui.js';
 import {
     formatPythonEnvironmentReadinessMessage,
@@ -487,8 +488,8 @@ function normalizeNotebookPath(filePath, projectDir) {
     return normalized.replace(/^\/+/, '');
 }
 
-function buildNotebookUrl(baseUrl, filePath) {
-    if (!baseUrl || !filePath) return baseUrl;
+function buildNotebookUrl(baseUrl, filePath, options = {}) {
+    if (!baseUrl || !filePath) return appendMicroPythonLaunchQuery(baseUrl, options.micropython);
     try {
         const url = new URL(baseUrl);
         const basePath = url.pathname.replace(/\/+$/, '');
@@ -500,13 +501,13 @@ function buildNotebookUrl(baseUrl, filePath) {
             .map((part) => encodeURIComponent(part))
             .join('/');
         url.pathname = `${prefix}${encodedPath}`;
-        return url.toString();
+        return appendMicroPythonLaunchQuery(url.toString(), options.micropython);
     } catch (err) {
-        return baseUrl;
+        return appendMicroPythonLaunchQuery(baseUrl, options.micropython);
     }
 }
 
-async function openNotebookFileRequest(filePath, projectDir, revision) {
+async function openNotebookFileRequest(filePath, projectDir, revision, options = {}) {
     if (!filePath || revision !== notebookOpenRevision) return false;
     if (!await ensureBackendReadyForJupyter() || revision !== notebookOpenRevision) return false;
     writeJupyterViewIntent(true);
@@ -571,17 +572,17 @@ async function openNotebookFileRequest(filePath, projectDir, revision) {
     const baseUrl = statusData?.url || currentJupyterUrl;
     if (!baseUrl) return false;
 
-    const fileUrl = buildNotebookUrl(baseUrl, normalizedPath);
+    const fileUrl = buildNotebookUrl(baseUrl, normalizedPath, options);
     if (revision !== notebookOpenRevision) return false;
     await attachJupyterView(fileUrl, { force: true });
     return revision === notebookOpenRevision;
 }
 
-export function openNotebookFile(filePath, projectDir) {
+export function openNotebookFile(filePath, projectDir, options = {}) {
     const revision = ++notebookOpenRevision;
     const openTask = notebookOpenSequence
         .catch(() => false)
-        .then(() => openNotebookFileRequest(filePath, projectDir, revision));
+        .then(() => openNotebookFileRequest(filePath, projectDir, revision, options));
     notebookOpenSequence = openTask.catch(() => false);
     return openTask;
 }

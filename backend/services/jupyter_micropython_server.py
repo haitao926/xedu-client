@@ -45,13 +45,14 @@ except ImportError:  # pragma: no cover
 
 _MANAGER_KEY = "xedu_micropython_manager"
 _ROUTE_MARKER = "xedu-micropython/"
-SUPPORTED_ACTIONS = frozenset({"ports", "output", "connect", "disconnect", "run", "input", "interrupt", "reset"})
+SUPPORTED_ACTIONS = frozenset({"ports", "output", "connect", "disconnect", "run", "upload", "input", "interrupt", "reset"})
 PANEL_ROUTE_TABLE = (
     ("GET", "ports"),
     ("GET", "output"),
     ("POST", "connect"),
     ("POST", "disconnect"),
     ("POST", "run"),
+    ("POST", "upload"),
     ("POST", "input"),
     ("POST", "interrupt"),
     ("POST", "reset"),
@@ -133,6 +134,14 @@ def dispatch_micropython_action(
             return 200, {"success": True, **manager.disconnect()}
         if verb == "POST" and name == "run":
             return 200, {"success": True, **manager.run_file(str(payload.get("file") or ""))}
+        if verb == "POST" and name == "upload":
+            return 200, {
+                "success": True,
+                **manager.upload_file(
+                    str(payload.get("file") or ""),
+                    destination=str(payload.get("destination") or ""),
+                ),
+            }
         if verb == "POST" and name == "input":
             return 200, {"success": True, **manager.write_input(str(payload.get("text") or ""))}
         if verb == "POST" and name == "interrupt":

@@ -153,6 +153,10 @@ import {
     sortFiles,
 } from "./resources/file-utils.js";
 import { getExperimentFileOverview } from "./resources/experiment-overview.js";
+import {
+    isMicroPythonExperiment,
+    selectMicroPythonEntryPath,
+} from "./resources/micropython-launch.js";
 import { createResourcesState } from "./resources/resources-state.js";
 import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
 import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
@@ -3714,7 +3718,8 @@ function makeExperimentResourceButton(file, context, options = {}) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `btn ${options.primary ? "btn-primary" : "btn-secondary"} btn-sm`;
-    button.textContent = options.label || getResourceButtonLabel(file, kind);
+    const micropythonFile = kind === "python" && isMicroPythonExperiment(context?.exp);
+    button.textContent = options.label || (micropythonFile ? "打开 MicroPython" : getResourceButtonLabel(file, kind));
     button.addEventListener("click", withAsyncActionErrorBoundary(async () => {
         resourcesState.activeSectionIndex = context.sectionIndex;
         resourcesState.activeExperimentIndex = context.expIndex;
@@ -4145,10 +4150,18 @@ async function openStudentPythonWorkspace(
         : `${lessonTitle} / 本节未配置 Python 文件`;
     const file = target?.file || null;
     const fileKind = getEntryKindForFile(file);
+    const micropython = isMicroPythonExperiment(target?.exp);
+    const micropythonEntry = micropython
+        ? selectMicroPythonEntryPath(target?.exp, target?.overview?.pythonFiles || [])
+        : "";
+    const clickedPython = micropython && fileKind === "python" ? (file?.path || "") : "";
+    const chosenPath = clickedPython
+        || micropythonEntry
+        || ((fileKind === "notebook" || fileKind === "python") ? (file?.path || "") : "");
     const workspaceTarget = resolveJupyterWorkspaceTarget({
         coursePath: resource.local_path || "",
         experimentPath: target?.exp?.path || "",
-        filePath: fileKind === "notebook" || fileKind === "python" ? (file?.path || "") : "",
+        filePath: chosenPath,
     });
     const openWorkspace = window.app?.workspace?.openJupyterWorkspace;
     if (openWorkspace) {
@@ -4158,6 +4171,7 @@ async function openStudentPythonWorkspace(
             filePath: workspaceTarget.filePath,
             sourceLabel,
             sourcePage: "student-python",
+            micropython,
         }, { force: true });
         syncLessonPageTitle(resource, "python");
         if (!isCurrentStudentNavigation(navigationRevision)) {
@@ -5956,13 +5970,18 @@ function normalizeExperiment(exp, index) {
     const rawFiles = exp.files || exp.items || exp.resources || [];
     const files = Array.isArray(rawFiles) ? rawFiles.map((file) => normalizeFile(file)) : [];
 
-    return {
+    const runtime = String(exp.runtime || "").trim();
+    const entryFile = String(exp.entry_file || exp.entryFile || "").trim();
+    const normalized = {
         title,
         description,
         path,
         student_tasks: getExperimentStudentTasks(exp),
         files,
     };
+    if (runtime) normalized.runtime = runtime;
+    if (entryFile) normalized.entry_file = entryFile;
+    return normalized;
 }
 
 function isRemotePath(path) {
@@ -6037,6 +6056,19 @@ async function openExperimentEntry(file, kind = "file", context = null) {
         setExperimentProgress(resource, sectionIndex, expIndex, "in_progress");
         if (kind === "notebook" || kind === "python") {
             resourcesState.runningExperimentKey = buildExperimentStateKey(resource, sectionIndex, expIndex);
+        }
+    }
+    if (kind === "python" && context?.resource) {
+        const experiment = normalizeSections(context.resource)[context.sectionIndex || 0]
+            ?.experiments?.[context.expIndex || 0];
+        if (isMicroPythonExperiment(experiment)) {
+            const opened = await openNotebookInConsole(file.path, { micropython: true });
+            if (opened) {
+                if (resourcesState.currentResource) {
+                    renderResourceDetail(resourcesState.currentResource);
+                }
+                return;
+            }
         }
     }
     if (kind === "notebook") {
@@ -6128,7 +6160,7 @@ function resolveFileTargets(file) {
     return { localTargetPath, targetUrl };
 }
 
-async function openNotebookInConsole(filePath) {
+async function openNotebookInConsole(filePath, options = {}) {
     if (!filePath || isRemotePath(filePath)) return false;
     const resource = resourcesState.currentResource;
     if (!resource?.local_path) return false;
@@ -6147,6 +6179,7 @@ async function openNotebookInConsole(filePath) {
             filePath: workspaceTarget.filePath,
             sourceLabel: `${resource.title || "课程"} / ${getBaseName(filePath)}`,
             sourcePage: resourcesState.teacherMode.unlocked ? "resources" : "main",
+            micropython: options.micropython === true || isMicroPythonExperiment(experiment),
         });
         return true;
     }

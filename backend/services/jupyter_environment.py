@@ -4,6 +4,9 @@ Jupyter environment/config helpers.
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -110,18 +113,106 @@ def evaluate_environment_validation(
     )
 
 
-def resolve_micropython_labextensions_parent(project_root: Path) -> Path | None:
-    """Return the directory that contains the prebuilt ESP32 labextension package."""
-    candidates = [
-        Path(project_root) / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension",
-        Path(project_root) / "backend" / "jupyterlab_micropython" / "labextension",
-        Path(__file__).resolve().parent.parent.parent / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension",
-        Path(__file__).resolve().parent.parent / "jupyterlab_micropython" / "labextension",
-    ]
+_MICROPYTHON_EXTENSION_NAME = "jupyterlab-micropython"
+
+
+def _read_built_labextension(path: Path) -> dict[str, Any] | None:
+    """Accept only a prebuilt extension whose remote entry is actually on disk."""
+    package_json = path / "package.json"
+    if not package_json.is_file():
+        return None
+    try:
+        metadata = json.loads(package_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(metadata, dict) or metadata.get("name") != _MICROPYTHON_EXTENSION_NAME:
+        return None
+    jupyterlab_meta = metadata.get("jupyterlab")
+    build = jupyterlab_meta.get("_build") if isinstance(jupyterlab_meta, dict) else None
+    asset = str(build.get("load") or "") if isinstance(build, dict) else ""
+    if not asset or asset.startswith(("/", "\\")) or ".." in Path(asset).parts:
+        return None
+    if not (path / asset).is_file():
+        return None
+    return metadata
+
+
+def _labextension_search_roots(project_root: Path) -> list[Path]:
+    roots: list[Path] = []
+    seen: set[str] = set()
+
+    def add(value: Path | str | None) -> None:
+        if not value:
+            return
+        path = Path(value)
+        key = str(path)
+        if key in seen:
+            return
+        seen.add(key)
+        roots.append(path)
+
+    add(project_root)
+    current = Path(__file__).resolve().parent
+    for _ in range(6):
+        add(current)
+        if current.parent == current:
+            break
+        current = current.parent
+    for key in ("XEDU_RESOURCES_DIR", "XEDU_APP_ROOT"):
+        add(os.environ.get(key))
+    return roots
+
+
+def resolve_micropython_labextension_dir(project_root: Path) -> Path | None:
+    """Find the prebuilt extension, skipping empty folders that hide the packaged copy."""
+    candidates: list[Path] = []
+    for root in _labextension_search_roots(project_root):
+        candidates.extend(
+            [
+                root / "backend" / "jupyterlab_micropython" / "labextension",
+                root / "jupyterlab_micropython" / "labextension",
+                root / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension",
+                root / "labextensions" / _MICROPYTHON_EXTENSION_NAME,
+                root / "share" / "jupyter" / "labextensions" / _MICROPYTHON_EXTENSION_NAME,
+            ]
+        )
     for candidate in candidates:
-        if candidate.is_dir():
-            return candidate.parent
+        if _read_built_labextension(candidate) is not None:
+            return candidate
     return None
+
+
+def resolve_micropython_labextensions_parent(project_root: Path) -> Path | None:
+    """Return the directory Jupyter scans for the prebuilt ESP32 labextension."""
+    extension_dir = resolve_micropython_labextension_dir(project_root)
+    if extension_dir is None:
+        return None
+    return extension_dir.parent
+
+
+def stage_micropython_labextension(data_root: Path, extension_dir: Path) -> Path:
+    """Copy the extension where Jupyter's default data path is searched first."""
+    data_dir = Path(data_root) / "jupyter_data"
+    target = data_dir / "labextensions" / _MICROPYTHON_EXTENSION_NAME
+    if target.exists():
+        shutil.rmtree(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(extension_dir, target)
+    if _read_built_labextension(target) is None:
+        raise OSError(f"Staged MicroPython labextension is incomplete: {target}")
+    return data_dir
+
+
+def jupyter_path_with_micropython_data(kernel_base: Path, micropython_data: str = "") -> str:
+    """Keep the bundled kernelspec and prefer the staged labextension data dir."""
+    paths: list[str] = []
+    data = str(micropython_data or "").strip()
+    if data:
+        paths.append(data)
+    kernel = str(kernel_base)
+    if kernel and kernel not in paths:
+        paths.append(kernel)
+    return os.pathsep.join(paths)
 
 
 def build_jupyter_command(

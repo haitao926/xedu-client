@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import re
 import threading
 import time
@@ -22,6 +23,7 @@ class MicroPythonSessionError(ValueError):
 
 
 _PORT_RE = re.compile(r"^(?:COM\d+|\\\\\.\\COM\d+|/(?:dev|cu)[\w./-]+)$", re.IGNORECASE)
+_DEVICE_FILENAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
 _DEFAULT_BAUDRATE = 115200
 _MAX_SOURCE_BYTES = 256 * 1024
 _MAX_OUTPUT_EVENTS = 400
@@ -47,6 +49,13 @@ _MISSING_HINTS = ("file not found", "no such file", "cannot find", "not exist")
 
 def _is_safe_port(port: str) -> bool:
     return bool(_PORT_RE.fullmatch(str(port or "").strip()))
+
+
+def _safe_device_filename(name: str) -> str:
+    candidate = Path(str(name or "").replace("\\", "/")).name
+    if not _DEVICE_FILENAME_RE.fullmatch(candidate) or not candidate.lower().endswith(".py"):
+        raise MicroPythonSessionError("开发板上的文件名无效。")
+    return candidate
 
 
 def _drop_tty_callout_twins(ports: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -305,6 +314,42 @@ class MicroPythonSessionManager:
             if self._serial is not None:
                 self._start_reader()
         return {"running": True, "file": path.name}
+
+    def upload_file(self, relative_path: str, destination: str = "") -> dict[str, Any]:
+        """Write a project .py file onto the board without leaving raw REPL running."""
+        path = self._resolve_project_file(relative_path)
+        source = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        source_bytes = source.encode("utf-8")
+        if len(source_bytes) > _MAX_SOURCE_BYTES:
+            raise MicroPythonSessionError("代码文件过大，无法发送到开发板。")
+        dest_name = _safe_device_filename(destination or path.name)
+        encoded = base64.b64encode(source_bytes).decode("ascii")
+        script = (
+            "import ubinascii\n"
+            f"_name = {dest_name!r}\n"
+            f"_payload = {encoded!r}\n"
+            "with open(_name, 'wb') as _handle:\n"
+            "    _handle.write(ubinascii.a2b_base64(_payload))\n"
+            "print('uploaded', _name)\n"
+        )
+        self._pause_reader()
+        try:
+            with self._lock:
+                serial_connection = self._require_serial()
+            self._enter_raw_repl(serial_connection, soft_reset=False)
+            self._exec_raw_no_follow(serial_connection, script.encode("utf-8"))
+            self._write(serial_connection, b"\r\x02")
+            with self._lock:
+                self._in_raw_repl = False
+                self._running_file = ""
+        except MicroPythonSessionError:
+            raise
+        except Exception as exc:
+            raise MicroPythonSessionError("无法把代码上传到开发板，请重新连接后重试。") from exc
+        finally:
+            if self._serial is not None:
+                self._start_reader()
+        return {"uploaded": True, "file": path.name, "destination": dest_name}
 
     def read_output(self, *, after: int = 0) -> dict[str, Any]:
         try:
