@@ -20,6 +20,7 @@ export function describeStudentSaveChrome({ draft = null, phase = 'idle', result
     const hasDraft = Boolean(name) && score !== null;
     const saving = phase === 'saving';
     const completed = phase === 'saved' && result?.platform_status === 'completed';
+    const evidenceSaved = completed && result?.mode === 'evidence';
     const failed = phase === 'failed';
     const code = failed ? canonicalCode(result?.code) : '';
     const grantExpired = code === 'grant_expired';
@@ -28,6 +29,9 @@ export function describeStudentSaveChrome({ draft = null, phase = 'idle', result
     if (saving) {
         statusText = '保存中';
         tone = 'progress';
+    } else if (evidenceSaved) {
+        statusText = '已保存';
+        tone = 'success';
     } else if (completed) {
         statusText = '平台已保存';
         tone = 'success';
@@ -39,9 +43,7 @@ export function describeStudentSaveChrome({ draft = null, phase = 'idle', result
         draftLabel: hasDraft ? `待保存：${name} ${score}分` : '',
         statusText,
         tone,
-        saveDisabled: saving || !hasDraft,
-        combinedDisabled: saving || !hasDraft,
-        screenshotDisabled: saving,
+        submitDisabled: saving,
         retryVisible: failed && !grantExpired,
         grantExpired,
     };

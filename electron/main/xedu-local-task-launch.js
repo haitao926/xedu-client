@@ -9,6 +9,19 @@ const PROTOCOL_VERSION = 1;
 const CONTRACT_REVISION = '2026-09-22';
 const RETRY_DELAYS_MS = Object.freeze([1000, 2000, 4000]);
 const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
+const MAX_ANSWERS_JSON_BYTES = 32 * 1024;
+const PROJECT_FILE_EVIDENCE = Object.freeze({
+    scratch: Object.freeze({
+        extension: '.sb3',
+        content_type: 'application/x.scratch.sb3',
+        filename: 'project.sb3',
+    }),
+    notebook: Object.freeze({
+        extension: '.ipynb',
+        content_type: 'application/x-ipynb+json',
+        filename: 'notebook.ipynb',
+    }),
+});
 const SCREENSHOT_MIME = Object.freeze({
     'image/png': '.png',
     'image/jpeg': '.jpg',
@@ -24,16 +37,19 @@ const STUDENT_MESSAGES = Object.freeze({
     conflict: '保存发生冲突，请从学习平台重新打开后再试。',
     package_invalid: '课程包校验失败，请从学习平台重新打开。',
     course_id_mismatch: '课程包编号与任务不一致，已停止打开。课程编号以 course.json 的 id 为准。',
-    screenshot_failed: '截图失败，没有上传。成绩草稿还在，可以单独保存成绩。',
-    screenshot_too_large: '截图超过 10MB，没有上传。可以单独保存成绩。',
+    screenshot_failed: '截图失败，没有上传。成绩草稿还在。',
+    screenshot_too_large: '截图超过 10MB，没有上传。',
     screenshot_type: '截图格式无效。请使用 PNG、JPEG 或 WebP。',
     rate_limited: '保存太频繁，请稍后再试。',
     save_in_flight: '正在保存，请稍候再试。',
     no_score_draft: '还没有可保存的成绩。',
+    answers_invalid: '作答内容格式无效，成绩没有保存。',
+    answers_too_large: '作答内容超过 32KB，成绩没有保存。',
+    XEDU_RESULT_NOT_PASSED: '这次成绩还没有通过，平台没有记为完成。',
     no_active_task: '请从学习平台重新打开这个任务。',
     submission_not_completed: '学习平台尚未确认完成，请稍后再试。',
     network: '暂时连不上学习平台，请稍后再试。',
-    attachment_invalid: '截图没有被平台收下，本次没有保存成功。可以单独保存成绩。',
+    attachment_invalid: '截图没有被平台收下，本次没有保存成功。',
     forbidden: '当前窗口不能执行这个操作。',
 });
 
@@ -41,6 +57,7 @@ const SUCCESS_MESSAGES = Object.freeze({
     score: '成绩已保存，平台已确认完成。',
     screenshot: '截图已上传，平台已确认。已有成绩会保留。',
     combined: '成绩和截图已保存，平台已确认完成。',
+    evidence: '已保存',
 });
 
 function canonicalPlatformCode(code) {
@@ -107,12 +124,48 @@ function success(mode, extra = {}) {
         status: extra.status || 200,
         platform_status: 'completed',
         code: '',
+        mode,
         message: SUCCESS_MESSAGES[mode] || '平台已确认完成。',
         retryable: false,
         request_id: extra.requestId || '',
         receipt_id: extra.receiptId || '',
         has_draft: Boolean(extra.hasDraft),
         draft: extra.draft || null,
+    };
+}
+
+function jsonUtf8Size(text) {
+    return Buffer.byteLength(String(text || ''), 'utf8');
+}
+
+function sanitizeAnswersBag(value) {
+    if (value === undefined || value === null) return { include: false };
+    if (typeof value !== 'object') return { include: false, code: 'answers_invalid' };
+    let cloned;
+    try {
+        cloned = JSON.parse(JSON.stringify(value));
+    } catch (_) {
+        return { include: false, code: 'answers_invalid' };
+    }
+    if (!cloned || typeof cloned !== 'object') return { include: false, code: 'answers_invalid' };
+    if (jsonUtf8Size(JSON.stringify(cloned)) > MAX_ANSWERS_JSON_BYTES) {
+        return { include: false, code: 'answers_too_large' };
+    }
+    return { include: true, answers: cloned };
+}
+
+// Artifact upload currently accepts only PNG, JPEG, and WebP. Screenshot evidence
+// is the MVP attachment. When LearnSite accepts non-image bytes, upload the
+// exported project here and return its upload descriptor.
+function projectFileEvidenceAttachment(kind) {
+    const spec = PROJECT_FILE_EVIDENCE[kind] || null;
+    return {
+        ok: false,
+        wired: false,
+        code: 'project_file_not_uploaded',
+        kind: spec ? kind : '',
+        spec,
+        attachment: null,
     };
 }
 
@@ -170,6 +223,38 @@ function exchangeContractAccepted(payload, legacyLaunch) {
     return revision === CONTRACT_REVISION;
 }
 
+function plainScoreObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function presentScoreLabel(value) {
+    return typeof value === 'string' && value.trim() ? value : '';
+}
+
+function submitRequestRecord(parsed) {
+    // A numeric score is the grade. Treating it as the payload spreads into an empty record.
+    const payload = plainScoreObject(parsed.payload) ? parsed.payload : parsed;
+    const name = presentScoreLabel(payload.name)
+        || (payload !== parsed ? presentScoreLabel(parsed.name) : '')
+        || presentScoreLabel(payload.summary)
+        || presentScoreLabel(parsed.summary)
+        || '测验成绩';
+    let value;
+    if (payload.value !== undefined) {
+        value = payload.value;
+    } else if (typeof parsed.score === 'number') {
+        value = parsed.score;
+    } else if (typeof payload.score === 'number') {
+        value = payload.score;
+    }
+    return {
+        name,
+        value,
+        passed: payload.passed !== undefined ? payload.passed : parsed.passed,
+        answers: payload.answers !== undefined ? payload.answers : parsed.answers,
+    };
+}
+
 function classifyScoreInput(input) {
     let parsed = input;
     if (typeof parsed === 'string') {
@@ -185,16 +270,24 @@ function classifyScoreInput(input) {
     let record = parsed;
     if (!type && parsed.raw_score !== undefined && parsed.name !== undefined && parsed.value === undefined) {
         source = parsed.source || 'two-field';
-        record = { name: parsed.name, value: parsed.raw_score, passed: parsed.passed };
+        record = {
+            name: parsed.name,
+            value: parsed.raw_score,
+            passed: parsed.passed,
+            answers: parsed.answers,
+        };
     } else if (!type) {
         const keys = Object.keys(parsed);
-        if (!(keys.length === 2 && keys.includes('name') && keys.includes('value'))) return { ignore: true };
+        const allowed = new Set(['name', 'value', 'answers']);
+        if (!keys.includes('name') || !keys.includes('value') || keys.some((key) => !allowed.has(key))) {
+            return { ignore: true };
+        }
         source = 'two-field';
     } else if (type === 'ols-score/1') {
         source = 'ols-score/1';
     } else if (type === 'xedu:submit-request') {
         source = 'xedu:submit-request';
-        record = parsed.payload || parsed.score || parsed;
+        record = submitRequestRecord(parsed);
     } else {
         return { ignore: true };
     }
@@ -204,6 +297,7 @@ function classifyScoreInput(input) {
         name: record?.name,
         value: record?.value,
         passed: record?.passed,
+        answers: record?.answers,
     };
 }
 
@@ -223,6 +317,16 @@ function normalizeScoreDraft(input) {
         if (typeof classified.passed !== 'boolean') return failure('score_invalid');
         passed = classified.passed;
     }
+    const bag = sanitizeAnswersBag(classified.answers);
+    if (bag.code) return failure(bag.code);
+    const draft = {
+        name,
+        raw_score: value,
+        score: Math.floor(value + 0.5),
+        passed,
+        source: classified.source,
+    };
+    if (bag.include) draft.answers = bag.answers;
     return {
         ok: true,
         status: 0,
@@ -231,13 +335,7 @@ function normalizeScoreDraft(input) {
         message: '',
         retryable: false,
         request_id: '',
-        draft: {
-            name,
-            raw_score: value,
-            score: Math.floor(value + 0.5),
-            passed,
-            source: classified.source,
-        },
+        draft,
     };
 }
 
@@ -501,7 +599,16 @@ function createLocalTaskSession(options = {}) {
         if (httpStatus === 409 && code !== 'work_locked') code = code || 'conflict';
         if (code === 'work_locked' || httpStatus === 423) code = 'work_locked';
         if (!code) code = response.networkError ? 'network' : 'network';
-        const neverRetry = ['grant_expired', 'protocol_mismatch', 'score_invalid', 'work_locked', 'conflict', 'course_id_mismatch', 'package_invalid'].includes(code);
+        const neverRetry = [
+            'grant_expired',
+            'protocol_mismatch',
+            'score_invalid',
+            'work_locked',
+            'conflict',
+            'course_id_mismatch',
+            'package_invalid',
+            'XEDU_RESULT_NOT_PASSED',
+        ].includes(code);
         const retryable = !neverRetry && (
             response.timedOut
             || response.networkError
@@ -777,8 +884,8 @@ function createLocalTaskSession(options = {}) {
         };
     }
 
-    function buildSubmission({ requestId, score, attachments }) {
-        return {
+    function buildSubmission({ requestId, score, attachments, evidence }) {
+        const body = {
             protocol_version: PROTOCOL_VERSION,
             contract_revision: CONTRACT_REVISION,
             request_id: requestId,
@@ -793,9 +900,16 @@ function createLocalTaskSession(options = {}) {
             name: score ? score.name : null,
             raw_score: score ? score.raw_score : null,
             score: score ? score.score : null,
-            passed: score ? score.passed : null,
+            // A claimed score forwards passed unchanged. A null-score evidence
+            // submit means the student saved evidence, so passed is true.
+            passed: score ? score.passed : true,
             attachments,
         };
+        if (score && Object.prototype.hasOwnProperty.call(score, 'answers')) {
+            body.answers = score.answers;
+        }
+        if (evidence) body.evidence = evidence;
+        return body;
     }
 
     async function postArtifact(file, requestId) {
@@ -923,7 +1037,7 @@ function createLocalTaskSession(options = {}) {
         return last;
     }
 
-    async function runSave(mode, file) {
+    async function runSave(mode, file, meta = {}) {
         if (!snapshot || !activeKey) return failure('no_active_task');
         if (saving) return failure('save_in_flight', { hasDraft: Boolean(draftForActive()), draft: draftForActive() });
         if (grantExpired()) {
@@ -931,7 +1045,7 @@ function createLocalTaskSession(options = {}) {
             return failure('grant_expired', { status: 401, hasDraft: Boolean(draftForActive()), draft: draftForActive() });
         }
         const needsScore = mode === 'score' || mode === 'combined';
-        const needsFile = mode === 'screenshot' || mode === 'combined';
+        const needsFile = mode === 'screenshot' || mode === 'combined' || mode === 'evidence';
         const existingDraft = drafts.get(activeKey) || null;
         if (needsScore && !existingDraft) {
             return failure('no_score_draft');
@@ -961,10 +1075,22 @@ function createLocalTaskSession(options = {}) {
                 restoreAfterSave(frozen, needsScore);
                 return failure('no_score_draft');
             }
+            let evidence = null;
+            if (mode === 'evidence') {
+                const experiment = meta?.experiment === 'scratch' || meta?.experiment === 'notebook'
+                    ? meta.experiment
+                    : '';
+                evidence = {
+                    type: 'screenshot',
+                    experiment,
+                    project_file: projectFileEvidenceAttachment(experiment).attachment,
+                };
+            }
             const rawBody = Buffer.from(JSON.stringify(buildSubmission({
                 requestId,
                 score,
                 attachments,
+                evidence,
             })));
             const posted = await postSubmission(rawBody, requestId, mode);
             if (posted.platform_status !== 'completed') {
@@ -1029,6 +1155,9 @@ function createLocalTaskSession(options = {}) {
         uploadScreenshot(file) {
             return runSave('screenshot', file);
         },
+        saveEvidence(file, meta) {
+            return runSave('evidence', file, meta || {});
+        },
         saveCombined(file) {
             return runSave('combined', file);
         },
@@ -1068,6 +1197,15 @@ function registerLocalTaskIpc({ ipcMain, isTrusted, session, captureExperimentVi
         return session.uploadScreenshot(shot);
     });
 
+    ipcMain.handle('xedu:local-task-save-evidence', async (event, payload) => {
+        const denied = guard(event);
+        if (denied) return denied;
+        const bounds = payload && Object.prototype.hasOwnProperty.call(payload, 'bounds') ? payload.bounds : payload;
+        const shot = await captureExperimentView(bounds);
+        if (!shot?.bytes) return failure('screenshot_failed', { hasDraft: Boolean(session.getDraft()), draft: session.getDraft() });
+        return session.saveEvidence(shot, { experiment: payload?.experiment });
+    });
+
     ipcMain.handle('xedu:local-task-save-combined', async (event, bounds) => {
         const denied = guard(event);
         if (denied) return denied;
@@ -1083,7 +1221,9 @@ module.exports = {
     PROTOCOL_VERSION,
     CONTRACT_REVISION,
     RETRY_DELAYS_MS,
+    MAX_ANSWERS_JSON_BYTES,
     STUDENT_MESSAGES,
+    projectFileEvidenceAttachment,
     parseOpenLocalTaskLink,
     isLoopbackClassroomHost,
     tlsOptionsForUrl,

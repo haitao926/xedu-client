@@ -11,8 +11,10 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
     CONTRACT_REVISION,
+    MAX_ANSWERS_JSON_BYTES,
     PROTOCOL_VERSION,
     packageCacheDirectory,
+    projectFileEvidenceAttachment,
     createLocalTaskSession,
     createLaunchOpener,
     defaultRequest,
@@ -204,6 +206,53 @@ test('score normalization keeps 0, rejects non-finite values, and does not clamp
     assert.equal(normalizeScoreDraft({ name: '题', value: Number.NaN }).code, 'score_invalid');
     assert.equal(normalizeScoreDraft({ name: '题', value: 120 }).code, 'score_invalid');
     assert.equal(normalizeScoreDraft({ type: 'xedu:submit-request', name: '旧接口', value: 10 }).draft.source, 'xedu:submit-request');
+});
+
+test('demo submit-request maps numeric score and summary into a draft', () => {
+    const withSummary = normalizeScoreDraft({
+        type: 'xedu:submit-request',
+        score: 50,
+        passed: true,
+        summary: '选择题',
+    });
+    assert.equal(withSummary.ok, true);
+    assert.equal(withSummary.draft.name, '选择题');
+    assert.equal(withSummary.draft.raw_score, 50);
+    assert.equal(withSummary.draft.score, 50);
+    assert.equal(withSummary.draft.passed, true);
+    assert.equal(withSummary.draft.source, 'xedu:submit-request');
+
+    const zero = normalizeScoreDraft({
+        type: 'xedu:submit-request',
+        score: 0,
+        passed: true,
+    });
+    assert.equal(zero.ok, true);
+    assert.equal(zero.draft.name, '测验成绩');
+    assert.equal(zero.draft.raw_score, 0);
+    assert.equal(zero.draft.score, 0);
+    assert.equal(zero.draft.passed, true);
+
+    const payload = normalizeScoreDraft({
+        type: 'xedu:submit-request',
+        payload: { name: '实验', value: 88 },
+        score: 50,
+        summary: '不用这条',
+    });
+    assert.equal(payload.ok, true);
+    assert.equal(payload.draft.name, '实验');
+    assert.equal(payload.draft.raw_score, 88);
+    assert.equal(payload.draft.score, 88);
+
+    const invalid = normalizeScoreDraft({
+        type: 'xedu:submit-request',
+        score: 101,
+        passed: true,
+        summary: '超分',
+    });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.code, 'score_invalid');
+    assert.equal(invalid.draft, null);
 });
 
 test('exchange sends contract revision 2026-09-22 and refuses a mismatch without downgrade', async () => {
@@ -456,7 +505,7 @@ test('screenshot upload is raw bytes plus headers, then a submission that refere
         assert.equal(submission.attachments[0].upload_id, 'upl-1');
         assert.equal(submission.score, null);
         assert.equal(submission.raw_score, null);
-        assert.equal(submission.passed, null);
+        assert.equal(submission.passed, true);
         assert.equal(session.getDraft().name, '已有分');
         assert.equal(JSON.stringify(saved).includes('task-grant-secret'), false);
     } finally {
@@ -1015,4 +1064,225 @@ test('live session exchanges, downloads, and submits over loopback self-signed H
         await new Promise((resolve) => server.close(resolve));
         rmSync(cacheRoot, { recursive: true, force: true });
     }
+});
+
+test('optional answers bag is stored on the submission and score-only omits it', async () => {
+    const pkg = coursePackage();
+    const bodies = [];
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/submissions')) {
+                bodies.push(JSON.parse(body.toString('utf8')));
+                json(res, 200, { ok: true, status: 'completed', receipt_id: 'answers-1' });
+                return;
+            }
+            json(res, 404, { ok: false });
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        const withBag = await session.setDraft({
+            type: 'ols-score/1',
+            name: '操作题',
+            value: 80,
+            passed: true,
+            answers: { q1: 'A', q2: ['B', 'C'] },
+        });
+        assert.equal(withBag.ok, true);
+        assert.deepEqual(withBag.draft.answers, { q1: 'A', q2: ['B', 'C'] });
+        const saved = await session.saveScore();
+        assert.equal(saved.platform_status, 'completed');
+        assert.equal(saved.mode, 'score');
+        assert.deepEqual(bodies[0].answers, { q1: 'A', q2: ['B', 'C'] });
+        assert.equal(bodies[0].passed, true);
+        assert.equal(bodies[0].score, 80);
+        assert.equal(bodies[0].raw_score, 80);
+        assert.equal(bodies[0].name, '操作题');
+        assert.equal(Object.hasOwn(bodies[0], 'evidence'), false);
+
+        const scoreOnly = await session.setDraft({ name: '第1题', value: 0 });
+        assert.equal(scoreOnly.ok, true);
+        assert.equal(Object.hasOwn(scoreOnly.draft, 'answers'), false);
+        const again = await session.saveScore();
+        assert.equal(again.platform_status, 'completed');
+        assert.equal(bodies[1].score, 0);
+        assert.equal(bodies[1].passed, null);
+        assert.equal(Object.hasOwn(bodies[1], 'answers'), false);
+        assert.equal(Object.hasOwn(bodies[1], 'evidence'), false);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('oversized or non-object answers do not replace a score draft or get submitted', async () => {
+    const pkg = coursePackage();
+    let posts = 0;
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/submissions')) {
+                posts += 1;
+                json(res, 200, { ok: true, status: 'completed' });
+            }
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        const kept = await session.setDraft({ name: '题', value: 12, answers: { q: 1 } });
+        assert.equal(kept.ok, true);
+        const tooBig = await session.setDraft({
+            name: '题',
+            value: 12,
+            answers: { note: 'x'.repeat(MAX_ANSWERS_JSON_BYTES) },
+        });
+        assert.equal(tooBig.ok, false);
+        assert.equal(tooBig.code, 'answers_too_large');
+        assert.deepEqual(session.getDraft().answers, { q: 1 });
+        const invalid = await session.setDraft({ name: '题', value: 12, answers: 'not-a-bag' });
+        assert.equal(invalid.code, 'answers_invalid');
+        assert.equal(posts, 0);
+        assert.deepEqual(normalizeScoreDraft({ name: '题', value: 1, extra: true }).code, 'score_invalid');
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('scratch and notebook evidence submits a screenshot without a score', async () => {
+    const pkg = coursePackage();
+    const bodies = [];
+    const { mock, session, link } = await openSession({
+        pkg,
+        createRequestId: () => 'req-evidence-1',
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (url.pathname.endsWith('/artifacts')) {
+                json(res, 201, { ok: true, upload_id: 'upl-evidence' });
+                return;
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/submissions')) {
+                bodies.push(JSON.parse(body.toString('utf8')));
+                json(res, 200, { ok: true, status: 'completed', request_id: 'req-evidence-1', receipt_id: 'ev-1' });
+            }
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        const drafted = await session.setDraft({ type: 'ols-score/1', name: '已有分', value: 40, passed: true });
+        assert.equal(drafted.ok, true, drafted.message);
+        const png = Buffer.from([137, 80, 78, 71, 9, 9, 9]);
+        const scratch = await session.saveEvidence({ bytes: png, mime: 'image/png' }, { experiment: 'scratch' });
+        assert.equal(scratch.ok, true);
+        assert.equal(scratch.platform_status, 'completed');
+        assert.equal(scratch.mode, 'evidence');
+        assert.equal(scratch.message, '已保存');
+        assert.equal(session.getDraft().name, '已有分');
+        const body = bodies[0];
+        assert.equal(body.score, null);
+        assert.equal(body.raw_score, null);
+        assert.equal(body.passed, true);
+        assert.equal(body.name, null);
+        assert.equal(Object.hasOwn(body, 'answers'), false);
+        assert.equal(body.attachments[0].upload_id, 'upl-evidence');
+        assert.deepEqual(body.evidence, {
+            type: 'screenshot',
+            experiment: 'scratch',
+            project_file: null,
+        });
+
+        const notebook = await session.saveEvidence({ bytes: png, mime: 'image/png' }, { experiment: 'notebook' });
+        assert.equal(notebook.platform_status, 'completed');
+        assert.equal(bodies[1].evidence.experiment, 'notebook');
+        assert.equal(bodies[1].evidence.project_file, null);
+        assert.equal(bodies[1].score, null);
+        assert.equal(bodies[1].passed, true);
+        assert.equal(Object.hasOwn(bodies[1], 'answers'), false);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('a claimed score is not completed when the platform returns XEDU_RESULT_NOT_PASSED', async () => {
+    const pkg = coursePackage();
+    const posts = [];
+    const { mock, session, link, delays } = await openSession({
+        pkg,
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/submissions')) {
+                posts.push(JSON.parse(body.toString('utf8')));
+                json(res, 422, {
+                    ok: false,
+                    code: 'XEDU_RESULT_NOT_PASSED',
+                    retryable: true,
+                    message: 'platform raw text',
+                });
+            }
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        assert.equal((await session.setDraft({ type: 'ols-score/1', name: '题', value: 80, passed: false })).ok, true);
+        const rejected = await session.saveScore();
+        assert.equal(rejected.ok, false);
+        assert.equal(rejected.platform_status, '');
+        assert.equal(rejected.code, 'XEDU_RESULT_NOT_PASSED');
+        assert.match(rejected.message, /还没有通过/);
+        assert.equal(rejected.retryable, false);
+        assert.equal(posts.length, 1);
+        assert.equal(posts[0].passed, false);
+        assert.equal(posts[0].score, 80);
+        assert.deepEqual(delays, []);
+        assert.equal(session.getDraft().name, '题');
+        assert.equal(session.getDraft().passed, false);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('project file evidence stays unwired until non-image artifact upload exists', () => {
+    const scratch = projectFileEvidenceAttachment('scratch');
+    assert.equal(scratch.wired, false);
+    assert.equal(scratch.attachment, null);
+    assert.equal(scratch.code, 'project_file_not_uploaded');
+    assert.equal(scratch.spec.extension, '.sb3');
+    assert.equal(scratch.spec.filename, 'project.sb3');
+    const notebook = projectFileEvidenceAttachment('notebook');
+    assert.equal(notebook.spec.extension, '.ipynb');
+    assert.equal(notebook.spec.content_type, 'application/x-ipynb+json');
+    assert.equal(projectFileEvidenceAttachment('html').spec, null);
 });

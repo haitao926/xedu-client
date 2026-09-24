@@ -88,19 +88,9 @@ async function returnToStudentTaskCenter(...args) {
     return mod.returnToStudentTaskCenter(...args);
 }
 
-async function saveStudentScore(...args) {
+async function submitStudentScreenshot(...args) {
     const mod = await loadResourcesModule();
-    return mod.saveStudentScore(...args);
-}
-
-async function uploadStudentScreenshot(...args) {
-    const mod = await loadResourcesModule();
-    return mod.uploadStudentScreenshot(...args);
-}
-
-async function saveStudentScoreAndScreenshot(...args) {
-    const mod = await loadResourcesModule();
-    return mod.saveStudentScoreAndScreenshot(...args);
+    return mod.submitStudentScreenshot(...args);
 }
 
 async function retryStudentSave(...args) {
@@ -364,9 +354,7 @@ registerNamespace('resources', {
     toggleTeacherMode,
     openStudentLessonTab,
     returnToStudentTaskCenter,
-    saveStudentScore,
-    uploadStudentScreenshot,
-    saveStudentScoreAndScreenshot,
+    submitStudentScreenshot,
     retryStudentSave,
     openLaunchedLocalTask,
     syncStudentShellChrome,

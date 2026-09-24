@@ -16,7 +16,7 @@
 </script>
 ```
 
-`ols-score/1` 也可以：`{ type: "ols-score/1", name: "第1题", value: 80, passed: false }`。这两类消息只产生草稿，不会自动提交。
+`ols-score/1` 也可以：`{ type: "ols-score/1", name: "第1题", value: 80, passed: true, answers: { "q1": "A" } }`。`xedu:submit-request` 同样会转成成绩并提交。`answers` 可省略。有效成绩会提交到平台，顶栏没有单独的「保存成绩」。声称了分数但 `passed` 不是 `true` 时，平台应返回 `XEDU_RESULT_NOT_PASSED`，Client 不显示完成。
 
 4. 用深链打开，不要把 launch grant 写进日志：
 
@@ -28,14 +28,13 @@ xedu://open-local-task?launch_grant=<一次性 grant>&platform_origin=https%3A%2
 
 ## 对着 Mock 要点的按钮
 
-进入实验后看顶栏，从左到右是：返回任务中心、任务名、AI 助手、保存成绩、截图并上传、保存成绩并截图。
+进入实验后看顶栏，从左到右是：返回任务中心、任务名、AI 助手、**截图并提交**。没有「保存」「保存成绩」「截图并上传」「保存成绩并截图」。HTML、Scratch、Notebook 都是这一颗按钮。
 
-1. 打开深链。实验页出现后，顶栏应出现 **待保存：第1题 80分**。「保存成绩」和「保存成绩并截图」变为可点。「截图并上传」不需要草稿。
-2. 点 **保存成绩**。按钮先变成不可再点，状态是 **保存中**。Mock 返回 `status: "completed"` 之后，状态变成 **平台已保存**。没有 `completed` 时不要出现这句。
-3. 再发一次成绩草稿，确认新的「待保存」不会把上一名学生或其他活动的分数带过来。
-4. 点 **截图并上传**。截的是当前实验区域，不是整块桌面。成功后平台确认，原有分数草稿还在。
-5. 点 **保存成绩并截图**。两边都成功才显示平台已保存。若截图失败，顶栏是失败说明和 **重试**，不会显示平台已保存；「保存成绩」仍可单独再点。
-6. 让 Mock 返回 401 / `grant_expired`。顶栏提示从学习平台重新打开，草稿还在，没有「重试」提交。
+1. 打开深链。实验页发出有效成绩后，顶栏先出现 **待保存：第1题 80分**，接着是 **保存中**。Mock 返回 `status: "completed"` 之后，状态变成 **平台已保存**。没有 `completed` 时不要出现这句。顶栏没有「保存成绩」。
+2. 再发一次成绩，确认新的「待保存」不会把上一名学生或其他活动的分数带过来。保存进行中的新成绩留作下一稿，当前这次结束后再提交。
+3. 点 **截图并提交**。截的是当前实验区域，不是整块桌面。成功后平台确认。HTML 走无分数证据，原有分数草稿还在。Scratch / Notebook 走证据提交，成功后显示 **已保存**。
+4. 让截图失败。顶栏是失败说明和 **重试**，不会显示平台已保存。没有「保存成绩并截图」。
+5. 让 Mock 返回 401 / `grant_expired`。顶栏提示从学习平台重新打开，草稿还在，没有「重试」提交。
 
 ## T06–T14
 
@@ -43,10 +42,10 @@ xedu://open-local-task?launch_grant=<一次性 grant>&platform_origin=https%3A%2
 | --- | --- | --- |
 | T06 | 深链兑换。请求体含 `protocol_version: 1` 和 `contract_revision: "2026-09-22"`。Mock 回了别的版本时 Client 停止，不改用旧版本再试。 | 协议不一致的中文提示，实验不打开 |
 | T07 | 课程包 GET 不带 Bearer。长度等于 `package_size`，SHA-256 等于 `package_sha256`。`course.json` 的 `id` 等于 `course_id`，不是学案 Cid。 | 实验页打开；校验失败时提示课程包无效或编号不一致 |
-| T08 | 两字段或 `ols-score/1` 只进入草稿。0 分保留。字符串、空值、超过 100 的分数被拒绝，不自动改成 100。 | 顶栏「待保存：名称 分数」；无效成绩有中文提示，且没有提交 |
-| T09 | 点保存成绩。同一 `request_id` 重试时正文不变。只有回执 `status: "completed"` 才算完成。 | 先「保存中」，完成后「平台已保存」 |
-| T10 | 点截图并上传。图片是当前实验视图。提交里 `name` / `raw_score` / `score` / `passed` 为 `null`，并带上 `upload_id`。 | 平台确认后原草稿还在；没有整桌面截图 |
-| T11 | 点保存成绩并截图。截图或附件失败时，组合结果不是成功。 | 失败说明 + 重试；随后单独点保存成绩仍可完成 |
+| T08 | 两字段、`ols-score/1` 或 `xedu:submit-request` 进入草稿并提交。0 分保留。字符串、空值、超过 100 的分数被拒绝，不自动改成 100。 | 顶栏「待保存：名称 分数」，随后提交；无效成绩有中文提示，且没有提交 |
+| T09 | 页面提交成绩。同一 `request_id` 重试时正文不变。只有回执 `status: "completed"` 才算完成。 | 先「保存中」，完成后「平台已保存」。顶栏没有「保存成绩」 |
+| T10 | 点截图并提交。图片是当前实验视图。HTML 提交里 `name` / `raw_score` / `score` 为 `null`，`passed` 为 `true`，并带上 `upload_id`。Scratch / Notebook 另带 `evidence.experiment`。 | 平台确认后原草稿还在；没有整桌面截图 |
+| T11 | 顶栏没有「保存成绩并截图」。截图或附件失败时，不显示平台已保存。 | 失败说明 + 重试；成绩草稿还在 |
 | T12 | 保存过程中再点一次不会发出第二笔提交。失败后点重试。429 显示过于频繁。 | 「保存中」时按钮不可再点；`rate_limited` 为「保存太频繁，请稍后再试。」 |
 | T13 | 连点同一条深链。再打开另一个 `activity_id` 的任务。 | 只出现一个窗口，exchange 只有一次；后一个活动看不到前一个活动的草稿 |
 | T14 | 任务授权过期或 401。用完整上下文键（含 `learner_scope`）重新打开。换一个 `learner_scope` 再打开。 | 提示从学习平台重新打开，草稿保留；另一名学生看不到这份草稿 |
@@ -118,6 +117,16 @@ Client 按 `code` 显示本地中文，不把平台 `message` 原文放进顶栏
 | `rate_limited` | 429 | 保存太频繁，请稍后再试。 |
 | `package_invalid` | 包大小或哈希不符 | 课程包校验失败，请从学习平台重新打开。 |
 | `course_id_mismatch` | 包内 id 与 `course_id` 不同 | 课程包编号与任务不一致。 |
-| `screenshot_failed` | Client 本地截图失败 | 截图失败，没有上传。成绩草稿还在，可以单独保存成绩。 |
+| `screenshot_failed` | Client 本地截图失败 | 截图失败，没有上传。成绩草稿还在。 |
+| `XEDU_RESULT_NOT_PASSED` | 提交里有分数，但 `passed` 不是 `true` | 这次成绩还没有通过，平台没有记为完成。不重试 |
+| `answers_too_large` | 作答袋超过 32KB | 作答内容超过 32KB，成绩没有保存。 |
+
+Scratch / Notebook 的「截图并提交」不带分数。提交里 `name` / `raw_score` / `score` 为 `null`，`passed` 为 `true`，不带 `answers`。附件是实验截图，并带：
+
+```json
+"evidence": { "type": "screenshot", "experiment": "scratch", "project_file": null }
+```
+
+`experiment` 为 `"notebook"` 时同样。`project_file` 仍是 `null`，工程文件上传还没接上。平台回 `status: "completed"` 后，学生看到「已保存」。
 
 冲突、作业锁定、成绩无效、授权过期不会自动重试。网络错误和超时会先查 `GET /api/xedu/v1/submissions/status?request_id=`，最多再试 3 次（1 秒、2 秒、4 秒）。

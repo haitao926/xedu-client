@@ -163,6 +163,7 @@ import { getPathForFileWithDesktopBridge } from "./resources/desktop-bridge.js";
 import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
 import { createXeduSubmitBridge } from "./resources/xedu-submit-bridge.js";
 import { describeStudentSaveChrome, studentSaveMessage } from "./resources/xedu-save-chrome.js";
+import { evidenceExperimentKind } from "./resources/xedu-evidence.js";
 
 const resourcesState = createResourcesState();
 const courseAiFrameBridge = createCourseAiFrameBridge({
@@ -176,13 +177,24 @@ const courseAiFrameBridge = createCourseAiFrameBridge({
 });
 
 function experimentCaptureBounds() {
-    const frame = document.querySelector(".resources-student-html-frame")
-        || document.querySelector("#resources-detail-view")
-        || document.querySelector(".content-scroll-area");
-    if (!frame || typeof frame.getBoundingClientRect !== "function") return null;
-    const rect = frame.getBoundingClientRect();
-    if (!rect.width || !rect.height) return null;
-    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    const active = document.querySelector(".page-section.active");
+    const preferred = [];
+    if (active?.id === "scratch-workspace") {
+        preferred.push(document.getElementById("scratch-workspace-frame"));
+    } else if (active?.id === "main") {
+        preferred.push(document.getElementById("jupyter-view-placeholder"));
+    } else {
+        preferred.push(document.querySelector(".resources-student-html-frame"));
+        preferred.push(document.getElementById("resources-detail-view"));
+    }
+    preferred.push(document.querySelector(".content-scroll-area"));
+    for (const frame of preferred) {
+        if (!frame || typeof frame.getBoundingClientRect !== "function") continue;
+        const rect = frame.getBoundingClientRect();
+        if (!rect.width || !rect.height) continue;
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    }
+    return null;
 }
 
 function xeduTransport() {
@@ -191,6 +203,7 @@ function xeduTransport() {
         setDraft: (draft) => api().xeduSetScoreDraft?.(draft),
         saveScore: () => api().xeduSaveScore?.(),
         uploadScreenshot: (bounds) => api().xeduUploadScreenshot?.(bounds),
+        saveEvidence: (bounds, meta) => api().xeduSaveEvidence?.({ bounds, experiment: meta?.experiment || "" }),
         saveCombined: (bounds) => api().xeduSaveCombined?.(bounds),
     };
 }
@@ -198,6 +211,7 @@ function xeduTransport() {
 let studentSavePhase = "idle";
 let studentSaveResult = null;
 let studentSaveKind = "";
+let pageScorePending = false;
 
 const xeduScoreBridge = createXeduSubmitBridge({
     windowObject: window,
@@ -205,6 +219,7 @@ const xeduScoreBridge = createXeduSubmitBridge({
     captureBounds: experimentCaptureBounds,
     onDraftChange: () => syncStudentFocusChrome(),
     onInvalidScore: (parsed) => notifyUser(parsed?.message || "成绩无效。请使用 0 到 100 之间的数字，0 分也会保留。", "error"),
+    onPageScoreSubmit: () => { void submitPageScore(); },
 });
 window.addEventListener("xedu:teacher-credential-updated", () => {
     const state = readTeacherModeState();
@@ -3517,6 +3532,21 @@ function syncStudentLessonNav(tabId = resourcesState.activeCourseWorkspaceTab) {
     if (target) target.classList.add("active");
 }
 
+function currentEvidenceKind(tabId = resourcesState.activeCourseWorkspaceTab) {
+    const resource = resourcesState.currentResource;
+    if (!resource) return "";
+    const sections = normalizeSections(resource);
+    const section = sections[resourcesState.activeSectionIndex] || null;
+    const experiments = Array.isArray(section?.experiments) ? section.experiments : [];
+    const experiment = experiments[resourcesState.activeExperimentIndex] || null;
+    if (!experiment) return "";
+    return evidenceExperimentKind({
+        tabId,
+        experiment,
+        overview: getExperimentFileOverview(experiment),
+    });
+}
+
 function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab) {
     const normalized = normalizeWorkspaceTabId(tabId);
     const studentShell = document.body.classList.contains("student-mode")
@@ -3525,9 +3555,7 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
     document.body.classList.toggle("student-focus-mode", focus);
     const backBtn = document.getElementById("student-focus-back");
     const aiBtn = document.getElementById("student-focus-ai-btn");
-    const saveBtn = document.getElementById("student-save-score-btn");
-    const shotBtn = document.getElementById("student-upload-screenshot-btn");
-    const combinedBtn = document.getElementById("student-save-combined-btn");
+    const submitBtn = document.getElementById("student-submit-screenshot-btn");
     const draftEl = document.getElementById("student-score-draft");
     const statusEl = document.getElementById("student-platform-status");
     const retryBtn = document.getElementById("student-save-retry-btn");
@@ -3541,17 +3569,9 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
         aiBtn.hidden = !focus;
         aiBtn.setAttribute("aria-expanded", document.body.classList.contains("student-ai-drawer-open") ? "true" : "false");
     }
-    if (saveBtn) {
-        saveBtn.hidden = !focus;
-        saveBtn.disabled = chrome.saveDisabled;
-    }
-    if (shotBtn) {
-        shotBtn.hidden = !focus;
-        shotBtn.disabled = chrome.screenshotDisabled;
-    }
-    if (combinedBtn) {
-        combinedBtn.hidden = !focus;
-        combinedBtn.disabled = chrome.combinedDisabled;
+    if (submitBtn) {
+        submitBtn.hidden = !focus;
+        submitBtn.disabled = chrome.submitDisabled;
     }
     if (draftEl) {
         draftEl.textContent = chrome.draftLabel;
@@ -3884,7 +3904,9 @@ function buildStudentRouteEntryCard(tabId, context, options = {}) {
 function getStudentRouteEntries(context) {
     const html = context.overview.htmlFiles[0] || null;
     const scratch = context.overview.scratchFiles?.[0] || null;
-    const python = context.overview.notebookFiles[0] || context.overview.pythonFiles[0] || null;
+    const notebook = context.overview.notebookFiles[0] || null;
+    const python = notebook || context.overview.pythonFiles[0] || null;
+    const notebookEvidence = Boolean(notebook) && !isMicroPythonExperiment(context.exp);
 
     return [
         {
@@ -3901,7 +3923,7 @@ function getStudentRouteEntries(context) {
             file: scratch,
             icon: "▦",
             title: "图形编程",
-            desc: "进入 Scratch，使用积木完成任务流程。",
+            desc: "进入 Scratch，完成后点顶部「截图并提交」。",
             action: "打开 Scratch",
             meta: scratch ? getBaseName(scratch.path || scratch.name || "") : "",
         },
@@ -3910,7 +3932,9 @@ function getStudentRouteEntries(context) {
             file: python,
             icon: "</>",
             title: "Python 实验",
-            desc: "打开 Notebook / Python，继续代码实践。",
+            desc: notebookEvidence
+                ? "打开 Notebook，完成后点顶部「截图并提交」。"
+                : "打开 Notebook / Python，继续代码实践。",
             action: "进入代码",
             meta: python ? getBaseName(python.path || python.name || "") : "",
         },
@@ -4136,6 +4160,7 @@ async function openStudentPythonWorkspace(
     if (!isCurrentStudentNavigation(navigationRevision)) return null;
     const resource = course || pickStudentCurrentCourse();
     if (!resource) return null;
+    resourcesState.currentResource = resource;
     const target = context || findFirstExperimentWithWorkspaceFiles(resource, "python");
     const sectionIndex = Number.isFinite(target?.sectionIndex) ? target.sectionIndex : getCurrentLessonIndex(resource);
     const expIndex = Number.isFinite(target?.expIndex) ? target.expIndex : 0;
@@ -4198,6 +4223,7 @@ async function openStudentVisualWorkspace(course, context = null) {
     const currentCourse = pickStudentCurrentCourse();
     const resource = currentCourse || course;
     if (!resource) return null;
+    resourcesState.currentResource = resource;
     const target = context || findFirstExperimentWithWorkspaceFiles(resource, "visual");
     const sectionIndex = Number.isFinite(target?.sectionIndex) ? target.sectionIndex : getCurrentLessonIndex(resource);
     const expIndex = Number.isFinite(target?.expIndex) ? target.expIndex : 0;
@@ -7369,8 +7395,9 @@ function presentPlatformSaveResult(result) {
     return result;
 }
 
-async function runStudentPlatformSave(kind) {
+async function runStudentPlatformSave(kind, meta) {
     if (studentSavePhase === "saving") {
+        if (kind === "score") pageScorePending = true;
         return {
             ok: false,
             platform_status: "",
@@ -7380,12 +7407,12 @@ async function runStudentPlatformSave(kind) {
     }
     studentSaveKind = kind;
     studentSavePhase = "saving";
-    studentSaveResult = { retryKind: kind };
+    studentSaveResult = { retryKind: kind, experiment: meta?.experiment || "" };
     syncStudentFocusChrome();
     let result;
     try {
         if (kind === "screenshot") result = await xeduScoreBridge.uploadScreenshot();
-        else if (kind === "combined") result = await xeduScoreBridge.saveCombined();
+        else if (kind === "evidence") result = await xeduScoreBridge.saveEvidence(meta);
         else result = await xeduScoreBridge.saveScore();
     } catch (_) {
         result = {
@@ -7395,25 +7422,37 @@ async function runStudentPlatformSave(kind) {
             message: studentSaveMessage("network"),
         };
     }
-    if (result) result.retryKind = kind;
-    return presentPlatformSaveResult(result);
+    if (result) {
+        result.retryKind = kind;
+        if (meta?.experiment) result.experiment = meta.experiment;
+    }
+    const presented = presentPlatformSaveResult(result);
+    if (pageScorePending && xeduScoreBridge.hasDraft()) {
+        pageScorePending = false;
+        return runStudentPlatformSave("score");
+    }
+    pageScorePending = false;
+    return presented;
 }
 
-export async function saveStudentScore() {
+function submitPageScore() {
     return runStudentPlatformSave("score");
 }
 
-export async function uploadStudentScreenshot() {
+export async function submitStudentScreenshot() {
+    const experiment = currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
+    if (experiment) return runStudentPlatformSave("evidence", { experiment });
     return runStudentPlatformSave("screenshot");
 }
 
-export async function saveStudentScoreAndScreenshot() {
-    return runStudentPlatformSave("combined");
-}
-
 export function retryStudentSave() {
-    const kind = studentSaveResult?.retryKind || studentSaveKind || "score";
-    return runStudentPlatformSave(kind);
+    const kind = studentSaveResult?.retryKind || studentSaveKind || "screenshot";
+    if (kind === "evidence") {
+        const experiment = studentSaveResult?.experiment || currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
+        return runStudentPlatformSave("evidence", experiment ? { experiment } : {});
+    }
+    if (kind === "score") return runStudentPlatformSave("score");
+    return runStudentPlatformSave("screenshot");
 }
 
 function relativeResourcePath(value) {

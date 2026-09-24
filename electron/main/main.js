@@ -771,12 +771,37 @@ function sendLocalTaskPayload(payload) {
     pendingLocalTaskPayload = payload;
 }
 
+function captureRectsOverlap(a, b) {
+    if (!a || !b) return false;
+    return a.x < b.x + b.width
+        && a.x + a.width > b.x
+        && a.y < b.y + b.height
+        && a.y + a.height > b.y;
+}
+
+async function captureVisibleJupyterExperiment(rect) {
+    if (!isJupyterViewVisible || !jupyterView?.webContents || jupyterView.webContents.isDestroyed()) return null;
+    let viewBounds = null;
+    try {
+        viewBounds = jupyterView.getBounds();
+    } catch (_) {
+        return null;
+    }
+    if (!captureRectsOverlap(rect, viewBounds)) return null;
+    try {
+        return await jupyterView.webContents.capturePage();
+    } catch (_) {
+        return null;
+    }
+}
+
 async function captureExperimentView(bounds) {
     const rect = experimentCaptureRect(bounds);
     if (!rect || !mainWindow || mainWindow.isDestroyed()) return null;
     try {
-        const image = await mainWindow.webContents.capturePage(rect);
-        const bytes = image.toPNG();
+        const jupyterImage = await captureVisibleJupyterExperiment(rect);
+        const image = jupyterImage || await mainWindow.webContents.capturePage(rect);
+        const bytes = image?.toPNG?.();
         if (!bytes?.length) return null;
         return { bytes, mime: 'image/png', filename: 'experiment-view.png' };
     } catch (_) {

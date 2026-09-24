@@ -1,6 +1,6 @@
 {
   "name": "xedu-client",
-  "version": "2.1.0",
+  "version": "2.1.2",
   "description": "专业的 Jupyter Notebook 桌面管理工具 - 重构版本",
   "main": "electron/main/main.js",
   "scripts": {
