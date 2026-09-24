@@ -53,6 +53,54 @@ test('two-field and ols-score messages become drafts and never call save', async
     assert.equal(bridge.hasDraft(), true);
 });
 
+test('demo submit-request maps numeric score and summary into a draft', () => {
+    const withSummary = parseLabScoreMessage({
+        type: 'xedu:submit-request',
+        score: 50,
+        passed: true,
+        summary: '选择题',
+    });
+    assert.equal(withSummary.ok, true);
+    assert.equal(withSummary.draft.name, '选择题');
+    assert.equal(withSummary.draft.raw_score, 50);
+    assert.equal(withSummary.draft.score, 50);
+    assert.equal(withSummary.draft.passed, true);
+    assert.equal(withSummary.draft.source, 'xedu:submit-request');
+
+    const zero = parseLabScoreMessage({
+        type: 'xedu:submit-request',
+        score: 0,
+        passed: true,
+    });
+    assert.equal(zero.ok, true);
+    assert.equal(zero.draft.name, '测验成绩');
+    assert.equal(zero.draft.raw_score, 0);
+    assert.equal(zero.draft.score, 0);
+    assert.equal(zero.draft.passed, true);
+
+    const payload = parseLabScoreMessage({
+        type: 'xedu:submit-request',
+        payload: { name: '实验', value: 88 },
+        score: 50,
+        summary: '不用这条',
+    });
+    assert.equal(payload.ok, true);
+    assert.equal(payload.draft.name, '实验');
+    assert.equal(payload.draft.raw_score, 88);
+    assert.equal(payload.draft.score, 88);
+
+    const invalid = parseLabScoreMessage({
+        type: 'xedu:submit-request',
+        score: 101,
+        passed: true,
+        summary: '超分',
+    });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.ignore, false);
+    assert.equal(invalid.code, 'score_invalid');
+    assert.equal(invalid.draft, null);
+});
+
 test('invalid score values are rejected without clamping', () => {
     for (const value of ['80', null, Number.NaN, Number.POSITIVE_INFINITY, 101, -1]) {
         const parsed = parseLabScoreMessage({ name: '题', value });

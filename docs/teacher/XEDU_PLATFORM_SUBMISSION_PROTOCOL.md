@@ -65,7 +65,7 @@ HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 
 
 - 无 `type` 时是 `{name, value}`，可以再带可选的 `answers`
 - 或者 `type: "ols-score/1"`
-- 旧的 `xedu:submit-request` 只会转成草稿
+- 旧的 `xedu:submit-request` 只会转成草稿。对象 `payload` 里的 `name` / `value` 优先。没有对象 `payload` 时读消息本身：没有 `value` 就用数字 `score`（含 0），没有 `name` 就用 `summary`，再没有则用「测验成绩」。数字 `score` 不是 payload。
 
 `name` 去掉首尾空白后为 1–200 字。`value` 必须是有限数字，范围 0–100。字符串、`null`、`NaN` 都拒绝，也不把超额分数钳进范围内。0 分是有效分数。`score = floor(raw_score + 0.5)`。`passed` 可以缺省、`null` 或 `false`，草稿会原样保留，不会改写成 `true`。
 

@@ -208,6 +208,53 @@ test('score normalization keeps 0, rejects non-finite values, and does not clamp
     assert.equal(normalizeScoreDraft({ type: 'xedu:submit-request', name: '旧接口', value: 10 }).draft.source, 'xedu:submit-request');
 });
 
+test('demo submit-request maps numeric score and summary into a draft', () => {
+    const withSummary = normalizeScoreDraft({
+        type: 'xedu:submit-request',
+        score: 50,
+        passed: true,
+        summary: '选择题',
+    });
+    assert.equal(withSummary.ok, true);
+    assert.equal(withSummary.draft.name, '选择题');
+    assert.equal(withSummary.draft.raw_score, 50);
+    assert.equal(withSummary.draft.score, 50);
+    assert.equal(withSummary.draft.passed, true);
+    assert.equal(withSummary.draft.source, 'xedu:submit-request');
+
+    const zero = normalizeScoreDraft({
+        type: 'xedu:submit-request',
+        score: 0,
+        passed: true,
+    });
+    assert.equal(zero.ok, true);
+    assert.equal(zero.draft.name, '测验成绩');
+    assert.equal(zero.draft.raw_score, 0);
+    assert.equal(zero.draft.score, 0);
+    assert.equal(zero.draft.passed, true);
+
+    const payload = normalizeScoreDraft({
+        type: 'xedu:submit-request',
+        payload: { name: '实验', value: 88 },
+        score: 50,
+        summary: '不用这条',
+    });
+    assert.equal(payload.ok, true);
+    assert.equal(payload.draft.name, '实验');
+    assert.equal(payload.draft.raw_score, 88);
+    assert.equal(payload.draft.score, 88);
+
+    const invalid = normalizeScoreDraft({
+        type: 'xedu:submit-request',
+        score: 101,
+        passed: true,
+        summary: '超分',
+    });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.code, 'score_invalid');
+    assert.equal(invalid.draft, null);
+});
+
 test('exchange sends contract revision 2026-09-22 and refuses a mismatch without downgrade', async () => {
     const bodies = [];
     const { mock, session, link } = await openSession({

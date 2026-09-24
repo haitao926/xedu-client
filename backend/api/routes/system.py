@@ -36,7 +36,7 @@ def register_system_routes(app, services: dict):
         return jsonify(
             {
                 "message": "Xedu Client API Server",
-                "version": "2.1.0",
+                "version": "2.1.1",
                 "timestamp": datetime.utcnow().isoformat(),
             }
         )

@@ -223,6 +223,38 @@ function exchangeContractAccepted(payload, legacyLaunch) {
     return revision === CONTRACT_REVISION;
 }
 
+function plainScoreObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function presentScoreLabel(value) {
+    return typeof value === 'string' && value.trim() ? value : '';
+}
+
+function submitRequestRecord(parsed) {
+    // A numeric score is the grade. Treating it as the payload spreads into an empty record.
+    const payload = plainScoreObject(parsed.payload) ? parsed.payload : parsed;
+    const name = presentScoreLabel(payload.name)
+        || (payload !== parsed ? presentScoreLabel(parsed.name) : '')
+        || presentScoreLabel(payload.summary)
+        || presentScoreLabel(parsed.summary)
+        || '测验成绩';
+    let value;
+    if (payload.value !== undefined) {
+        value = payload.value;
+    } else if (typeof parsed.score === 'number') {
+        value = parsed.score;
+    } else if (typeof payload.score === 'number') {
+        value = payload.score;
+    }
+    return {
+        name,
+        value,
+        passed: payload.passed !== undefined ? payload.passed : parsed.passed,
+        answers: payload.answers !== undefined ? payload.answers : parsed.answers,
+    };
+}
+
 function classifyScoreInput(input) {
     let parsed = input;
     if (typeof parsed === 'string') {
@@ -255,10 +287,7 @@ function classifyScoreInput(input) {
         source = 'ols-score/1';
     } else if (type === 'xedu:submit-request') {
         source = 'xedu:submit-request';
-        const payload = parsed.payload || parsed.score || parsed;
-        record = payload === parsed
-            ? parsed
-            : { ...payload, answers: payload.answers !== undefined ? payload.answers : parsed.answers };
+        record = submitRequestRecord(parsed);
     } else {
         return { ignore: true };
     }
