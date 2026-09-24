@@ -23,8 +23,9 @@ import {
     dedupeResourceSources,
     parseRepoUrlParts,
 } from "./resources/source-utils.js";
+import { collapseStudentJupyterControls, refreshEmbeddedJupyterBounds } from "./jupyter.js";
 import {
-  connectStudentClassroomByCodeFlow,
+    connectStudentClassroomByCodeFlow,
   getStoredProjectDirFallback,
   normalizeClassroomAddress,
   prepareStudentClassroomLaunchFlow,
@@ -3563,12 +3564,14 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
     }
     if (retryBtn) retryBtn.hidden = !focus || !chrome.retryVisible;
     if (!focus) {
+        collapseStudentJupyterControls();
         document.body.classList.remove("student-ai-drawer-open");
         const backdrop = document.getElementById("student-ai-drawer-backdrop");
         const closeBtn = document.getElementById("student-ai-drawer-close");
         if (backdrop) backdrop.hidden = true;
         if (closeBtn) closeBtn.hidden = true;
     }
+    refreshEmbeddedJupyterBounds();
 }
 
 function syncStudentTaskCenterHeader() {

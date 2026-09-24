@@ -9,6 +9,7 @@ import {
   appendConsoleText,
   panelRequestPath,
   panelRoute,
+  highlightPython,
   preferredPythonFile,
   projectDirectoryFromLabPath,
   projectFilePath,
@@ -108,7 +109,10 @@ class MicroPythonPanel extends Panel {
           </aside>
           <section class="xedu-mp-editor-pane">
             <div class="xedu-mp-editor-tab" data-role="file">main.py</div>
-            <textarea class="xedu-mp-editor" data-role="editor" spellcheck="false" aria-label="MicroPython 代码"></textarea>
+            <div class="xedu-mp-editor-scroll">
+              <pre class="xedu-mp-highlight" data-role="highlight" aria-hidden="true"></pre>
+              <textarea class="xedu-mp-editor" data-role="editor" spellcheck="false" wrap="off" autocomplete="off" autocorrect="off" autocapitalize="off" aria-label="MicroPython 代码"></textarea>
+            </div>
           </section>
         </div>
         <footer class="xedu-mp-output">
@@ -137,8 +141,10 @@ class MicroPythonPanel extends Panel {
     this.node.querySelector('[data-role="port"]').addEventListener('change', () => this.updateActionState());
     this.editor.addEventListener('input', () => {
       this.dirty = true;
+      this.renderHighlight();
       this.updateFileLabel();
     });
+    this.editor.addEventListener('scroll', () => this.syncHighlightScroll());
     this.editor.addEventListener('keydown', (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -153,7 +159,31 @@ class MicroPythonPanel extends Panel {
       this.editor.selectionStart = start + 4;
       this.editor.selectionEnd = start + 4;
       this.dirty = true;
+      this.renderHighlight();
     });
+  }
+
+  codeText() {
+    return this.editor?.value || '';
+  }
+
+  setCodeText(value) {
+    if (this.editor) this.editor.value = value ?? '';
+    this.renderHighlight();
+  }
+
+  renderHighlight() {
+    const highlight = this.node.querySelector('[data-role="highlight"]');
+    if (!highlight) return;
+    highlight.innerHTML = highlightPython(this.codeText());
+    this.syncHighlightScroll();
+  }
+
+  syncHighlightScroll() {
+    const highlight = this.node.querySelector('[data-role="highlight"]');
+    if (!highlight || !this.editor) return;
+    highlight.scrollTop = this.editor.scrollTop;
+    highlight.scrollLeft = this.editor.scrollLeft;
   }
 
   async handleAction(action) {
@@ -194,7 +224,7 @@ class MicroPythonPanel extends Panel {
         return;
       }
       this.activePythonPath = projectFilePath(this.projectDirectory, 'main.py');
-      this.editor.value = STARTER_MAIN_PY;
+      this.setCodeText(STARTER_MAIN_PY);
       this.dirty = true;
       this.updateFileLabel();
       this.updateActionState();
@@ -242,7 +272,7 @@ class MicroPythonPanel extends Panel {
   async loadFile(path) {
     const model = await this.app.serviceManager.contents.get(path, { content: true });
     this.activePythonPath = path;
-    this.editor.value = typeof model?.content === 'string' ? model.content : '';
+    this.setCodeText(typeof model?.content === 'string' ? model.content : '');
     this.dirty = false;
     this.updateFileLabel();
     this.updateActionState();
@@ -257,7 +287,7 @@ class MicroPythonPanel extends Panel {
       return;
     }
     this.activePythonPath = target;
-    if (!this.editor.value.trim()) this.editor.value = STARTER_MAIN_PY;
+    if (!this.codeText().trim()) this.setCodeText(STARTER_MAIN_PY);
     this.dirty = true;
     this.updateFileLabel();
     this.updateActionState();
@@ -270,7 +300,7 @@ class MicroPythonPanel extends Panel {
     await this.app.serviceManager.contents.save(file, {
       type: 'file',
       format: 'text',
-      content: this.editor.value,
+      content: this.codeText(),
     });
     this.dirty = false;
     this.updateFileLabel();

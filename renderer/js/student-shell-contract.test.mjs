@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import { applyStudentJupyterControls, STUDENT_JUPYTER_CONTROLS_CLASS } from "./jupyter-controls.js";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const readRepoFile = (relativePath) => readFileSync(resolve(repoRoot, relativePath), "utf8");
@@ -33,6 +34,11 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.match(css, /html\.student-shell-pending body:not\(\.teacher-mode\) \.sidebar,\s*body\.student-mode:not\(\.teacher-mode\) \.sidebar\s*\{\s*display:\s*none;\s*\}/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #settings,\s*body\.student-mode:not\(\.teacher-mode\) #student-account-settings-btn\s*\{\s*display:\s*none !important;\s*\}/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-focus-mode \.page-subtitle\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-focus-mode:not\(\.student-jupyter-controls-open\) \.dashboard-left-col\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-focus-mode:not\(\.student-jupyter-controls-open\) \.dashboard-layout\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);\s*\}/);
+  assert.match(html, /id="jupyter-controls-toggle"[^>]*data-action="jupyter\.toggleStudentControls"[\s\S]*控制/);
+  assert.match(readRepoFile("renderer/js/resources.js"), /collapseStudentJupyterControls\(\)/);
+  assert.match(readRepoFile("renderer/js/action-dispatcher.js"), /jupyter\.toggleStudentControls/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\) #resources-import-drop-zone\s*\{\s*display:\s*none !important;\s*\}/);
   assert.match(css, /student-page-route #resources-list-view \.resources-toolbar\s*\{\s*display:\s*none;\s*\}/);
   assert.match(css, /body\.student-mode:not\(\.teacher-mode\)\.student-ai-drawer-open #ai-assistant\.page-section\s*\{/);
@@ -49,6 +55,41 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.doesNotMatch(html, /id="sidebar-teacher-mode-btn"/);
   assert.doesNotMatch(html, /id="topbar-teacher-mode-btn"/);
   assert.doesNotMatch(html, /id="resources-teacher-mode-btn"/);
+});
+
+test("student experiment focus hides Jupyter controls until the student expands them", () => {
+  const classes = new Set();
+  const button = {
+    textContent: "控制",
+    title: "",
+    attrs: {},
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
+  };
+  const documentRef = {
+    body: {
+      classList: {
+        contains: (name) => classes.has(name),
+        toggle(name, force) {
+          if (force) classes.add(name);
+          else classes.delete(name);
+          return classes.has(name);
+        },
+      },
+    },
+    getElementById: () => button,
+  };
+
+  applyStudentJupyterControls(documentRef, false);
+  assert.equal(classes.has(STUDENT_JUPYTER_CONTROLS_CLASS), false);
+  assert.equal(button.textContent, "控制");
+  assert.equal(button.attrs["aria-expanded"], "false");
+
+  applyStudentJupyterControls(documentRef, true);
+  assert.equal(classes.has(STUDENT_JUPYTER_CONTROLS_CLASS), true);
+  assert.equal(button.textContent, "收起");
+  assert.equal(button.attrs["aria-label"], "收起实验控制");
 });
 
 test("active Scratch courses do not advertise Blockly experiments", () => {

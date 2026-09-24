@@ -13,10 +13,12 @@ import {
   projectFilePath,
   pythonPathFromWidget,
   pythonProjectFiles,
+  highlightPython,
   shouldAutoOpenCodeMode,
   studentErrorMessage,
   xsrfTokenFromCookie,
 } from './panel-logic.js';
+import { readFileSync } from 'node:fs';
 
 test('pythonPathFromWidget only accepts .py files', () => {
   assert.equal(pythonPathFromWidget({ context: { path: 'main.py' } }), 'main.py');
@@ -115,4 +117,35 @@ test('code mode opens from the student experiment query and prefers main.py', ()
   assert.equal(preferredPythonFile(files, ''), 'lesson/main.py');
   assert.equal(projectFilePath('lesson/exp', 'main.py'), 'lesson/exp/main.py');
   assert.match(STARTER_MAIN_PY, /print\("hello from ESP32"\)/);
+});
+
+test('code mode highlights Python while keeping the editable source', () => {
+  const source = [
+    'import tkinter as tk',
+    'class fireworks:',
+    '    def __init__(self):',
+    '        # 烟花 <绽放>',
+    "        self.color = 'red'",
+    '        self.size = 2.',
+    '        print(f"n={6}")',
+  ].join('\n');
+  const html = highlightPython(source);
+  assert.match(html, /class="xedu-py-keyword">import</);
+  assert.match(html, /class="xedu-py-keyword">class</);
+  assert.match(html, /class="xedu-py-keyword">def</);
+  assert.match(html, /class="xedu-py-comment"># 烟花 &lt;绽放&gt;</);
+  assert.match(html, /class="xedu-py-string">'red'</);
+  assert.match(html, /class="xedu-py-string">f"n=\{6\}"</);
+  assert.match(html, /class="xedu-py-number">2\.</);
+  assert.equal(
+    html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'),
+    source,
+  );
+  assert.equal(highlightPython(''), '');
+
+  const panel = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+  assert.match(panel, /data-role="editor"/);
+  assert.match(panel, /data-role="highlight"/);
+  assert.match(panel, /highlightPython\(this\.codeText\(\)\)/);
+  assert.match(panel, /content: this\.codeText\(\)/);
 });

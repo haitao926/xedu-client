@@ -1,5 +1,9 @@
 import apiClient from './api.js';
 import { appendMicroPythonLaunchQuery } from './resources/micropython-launch.js';
+import {
+    applyStudentJupyterControls,
+    studentJupyterControlsAreOpen,
+} from './jupyter-controls.js';
 import { log, showModal, hideModal } from './ui.js';
 import {
     formatPythonEnvironmentReadinessMessage,
@@ -434,6 +438,30 @@ export async function openExternal(url) {
         log('Jupyter 尚未启动', 'warning');
         return false;
     }
+}
+
+export function refreshEmbeddedJupyterBounds() {
+    const tick = () => {
+        if (!isViewAttached || !isViewVisible) return;
+        const bounds = getPlaceholderBounds();
+        if (isUsableJupyterViewBounds(bounds)) {
+            window.electronAPI?.jupyterUpdateBounds?.(bounds);
+        }
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tick);
+    else tick();
+}
+
+export function toggleStudentJupyterControls() {
+    const open = !studentJupyterControlsAreOpen(document.body?.classList);
+    applyStudentJupyterControls(document, open);
+    refreshEmbeddedJupyterBounds();
+}
+
+export function collapseStudentJupyterControls() {
+    const wasOpen = studentJupyterControlsAreOpen(document.body?.classList);
+    applyStudentJupyterControls(document, false);
+    if (wasOpen) refreshEmbeddedJupyterBounds();
 }
 
 export function toggleFullscreen() {

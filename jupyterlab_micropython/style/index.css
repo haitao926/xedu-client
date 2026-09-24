@@ -147,22 +147,62 @@
   background: var(--jp-layout-color2, #fafaf9);
 }
 
-.xedu-mp-editor {
+.xedu-mp-editor-scroll {
+  position: relative;
   flex: 1 1 auto;
-  width: 100%;
   min-height: 0;
+  background: #fff;
+}
+
+.xedu-mp-highlight,
+.xedu-mp-editor {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
   margin: 0;
   padding: 14px 16px 20px;
   border: 0;
-  resize: none;
-  outline: none;
-  background: var(--jp-layout-color1, #fff);
-  color: inherit;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 4;
   font-family: var(--jp-code-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 14px;
   line-height: 1.55;
-  tab-size: 4;
+  letter-spacing: 0;
+  font-variant-ligatures: none;
+  scrollbar-gutter: stable;
 }
+
+.xedu-mp-highlight {
+  overflow: hidden;
+  pointer-events: none;
+  color: #1c1917;
+  background: #fff;
+}
+
+.xedu-mp-editor {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  outline: none;
+  overflow: auto;
+  background: transparent;
+  color: transparent;
+  caret-color: #1c1917;
+  -webkit-text-fill-color: transparent;
+}
+
+.xedu-mp-editor::selection {
+  background: rgba(37, 99, 235, 0.22);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.xedu-py-keyword { color: #1d4ed8; }
+.xedu-py-string { color: #047857; }
+.xedu-py-comment { color: #78716c; }
+.xedu-py-number { color: #c2410c; }
+.xedu-py-text { color: #1c1917; }
 
 .xedu-mp-output {
   display: flex;

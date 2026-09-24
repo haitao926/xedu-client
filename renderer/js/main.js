@@ -1,5 +1,5 @@
 import { log, showTab, showModal, hideModal, initModalListeners, showToast } from './ui.js';
-import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, setVisibility, openNotebookFile, getStoredProjectDir } from './jupyter.js';
+import { startJupyter, stopJupyter, restartJupyter, openBrowser, browseFolder, confirmProjectPath, clearProjectPath, refreshStatus, testPythonEnvironment, refreshView, openExternal, toggleFullscreen, toggleStudentJupyterControls, setVisibility, openNotebookFile, getStoredProjectDir } from './jupyter.js';
 import { askAI, clearCurrentChat, startNewChat, removeImage, saveAIConfig, testAIConfig, selectChat, previewImage, handleKeyDown, syncModelBadge, toggleStudentAssistant, closeStudentAssistant } from './ai.js';
 import { installPackage, uninstallPackage, updatePackage } from './package-manager.js';
 import { registerNamespace } from './app-context.js';
@@ -337,6 +337,7 @@ registerNamespace('jupyter', {
     refreshView,
     openExternal,
     toggleFullscreen,
+    toggleStudentJupyterControls,
     setVisibility,
     openNotebookFile,
     getStoredProjectDir

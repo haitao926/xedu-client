@@ -13,6 +13,7 @@ const ACTIONS = Object.freeze({
     'jupyter.refreshView': (app) => app.jupyter?.refreshView?.(),
     'jupyter.openExternal': (app) => app.jupyter?.openExternal?.(),
     'jupyter.toggleFullscreen': (app) => app.jupyter?.toggleFullscreen?.(),
+    'jupyter.toggleStudentControls': (app) => app.jupyter?.toggleStudentJupyterControls?.(),
     'jupyter.testPythonEnvironment': (app) => app.jupyter?.testPythonEnvironment?.(),
     'workspace.openScratchWorkspace': (app) => app.workspace?.openScratchWorkspace?.({}),
     'resources.openStudentLessonTab': (app, element) => app.resources?.openStudentLessonTab?.(element.dataset.actionValue, element),
