@@ -373,20 +373,22 @@ class XEduHubSupportTestCase(unittest.TestCase):
         fake_utils_module.vis_res = fake_vis_res_module
         fake_module.utils = fake_utils_module
 
-        with patch.dict(
-            sys.modules,
-            {
-                "rapidocr_onnxruntime": fake_module,
-                "rapidocr_onnxruntime.utils": fake_utils_module,
-                "rapidocr_onnxruntime.utils.vis_res": fake_vis_res_module,
-            },
-            clear=False,
-        ):
-            _patch_rapidocr_visres_compat()
-            vis = fake_module.VisRes(font_path="ignored-by-compat-layer")
-            self.assertTrue(Path(vis.get_font_path(None)).exists())
-            vis("img", [], ["a"], [1.0])
+        with tempfile.TemporaryDirectory() as temp_dir:
+            font_path = Path(temp_dir) / "sample.ttf"
+            font_path.write_bytes(b"font")
+            with patch.dict(
+                sys.modules,
+                {
+                    "rapidocr_onnxruntime": fake_module,
+                    "rapidocr_onnxruntime.utils": fake_utils_module,
+                    "rapidocr_onnxruntime.utils.vis_res": fake_vis_res_module,
+                },
+                clear=False,
+            ):
+                _patch_rapidocr_visres_compat()
+                vis = fake_module.VisRes(font_path=str(font_path))
+                self.assertEqual(vis.get_font_path(None), str(font_path))
+                vis("img", [], ["a"], [1.0])
 
         self.assertIsInstance(vis, FakeVisRes)
-        self.assertEqual(len(vis.calls), 1)
-        self.assertTrue(Path(vis.calls[0]).exists())
+        self.assertEqual(vis.calls, [str(font_path)])

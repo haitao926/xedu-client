@@ -3,6 +3,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -98,9 +99,15 @@ class JupyterMicroPythonServerTestCase(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(">>>", body["output"])
         cursor = body["cursor"]
-        status, body = jupyter_micropython_server.dispatch_micropython_action(
-            self.manager, method="GET", action="output", after=cursor
-        )
+        # The reader can deliver the REPL banner in more than one chunk.
+        for _ in range(20):
+            status, body = jupyter_micropython_server.dispatch_micropython_action(
+                self.manager, method="GET", action="output", after=cursor
+            )
+            if not body["output"]:
+                break
+            cursor = body["cursor"]
+            time.sleep(0.02)
         self.assertEqual(body["output"], "")
 
         status, body = jupyter_micropython_server.dispatch_micropython_action(
@@ -167,6 +174,7 @@ class JupyterMicroPythonServerTestCase(unittest.TestCase):
                 ("connect", "POST", "connect"),
                 ("disconnect", "POST", "disconnect"),
                 ("run", "POST", "run"),
+                ("upload", "POST", "upload"),
                 ("interrupt", "POST", "interrupt"),
                 ("reset", "POST", "reset"),
                 ("send", "POST", "input"),
@@ -183,9 +191,10 @@ class JupyterMicroPythonServerTestCase(unittest.TestCase):
         bodies = {
             "connect": {"port": "/dev/ttyUSB0"},
             "run": {"file": "main.py"},
+            "upload": {"file": "main.py"},
             "input": {"text": "print(2)"},
         }
-        for path in ("ports", "connect", "output", "run", "input", "interrupt", "reset", "disconnect"):
+        for path in ("ports", "connect", "output", "run", "upload", "input", "interrupt", "reset", "disconnect"):
             _name, method = by_path[path]
             request_path = f"/jupyter/xedu-micropython/{path}"
             if path == "output":
@@ -237,8 +246,16 @@ class JupyterMicroPythonServerTestCase(unittest.TestCase):
             uri=request_path,
             body=b"" if payload is None else json.dumps(payload).encode("utf-8"),
         )
-        handler.settings = {"xedu_micropython_manager": self.manager}
-        handler.log = None
+        settings = {"xedu_micropython_manager": self.manager}
+        try:
+            handler.settings = settings
+        except AttributeError:
+            # Real JupyterHandler.settings is a read-only alias of application.settings.
+            handler.application = SimpleNamespace(settings=settings)
+        try:
+            handler.log = None
+        except AttributeError:
+            pass
         handler._status = None
         handler._finished = None
 

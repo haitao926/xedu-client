@@ -22,6 +22,22 @@ test('ESP32 MicroPython extension is packaged with the backend runtime', async (
   const metadata = JSON.parse(extensionPackage);
   assert.equal(metadata.name, 'jupyterlab-micropython');
   assert.equal(metadata.jupyterlab.extension, true);
+  assert.deepEqual(
+    {
+      '@jupyterlab/application': metadata.dependencies['@jupyterlab/application'],
+      '@jupyterlab/apputils': metadata.dependencies['@jupyterlab/apputils'],
+      '@jupyterlab/coreutils': metadata.dependencies['@jupyterlab/coreutils'],
+      '@jupyterlab/launcher': metadata.dependencies['@jupyterlab/launcher'],
+      '@lumino/widgets': metadata.dependencies['@lumino/widgets'],
+    },
+    {
+      '@jupyterlab/application': '~4.5.9',
+      '@jupyterlab/apputils': '~4.6.9',
+      '@jupyterlab/coreutils': '~6.5.9',
+      '@jupyterlab/launcher': '~4.5.9',
+      '@lumino/widgets': '^2.3.1',
+    },
+  );
   assert.match(serverSource, /xedu-micropython/);
   assert.match(sessionSource, /class MicroPythonSessionManager/);
 

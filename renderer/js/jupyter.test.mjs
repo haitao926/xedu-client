@@ -10,6 +10,7 @@ import {
     shouldDisplayEmbeddedJupyterState,
     shouldRestoreJupyterView,
 } from "./jupyter.js";
+import { applyStudentJupyterControls, STUDENT_JUPYTER_CONTROLS_CLASS } from "./jupyter-controls.js";
 
 const jupyterSource = readFileSync(new URL("./jupyter.js", import.meta.url), "utf8");
 
@@ -116,6 +117,35 @@ test("Jupyter stays hidden on another student page", () => {
         suppressUntil: 0,
         now: 100,
     }), false);
+});
+
+test("student Jupyter controls collapse by default and can expand", () => {
+    const classes = new Set();
+    const button = {
+        textContent: "",
+        title: "",
+        attrs: {},
+        setAttribute(name, value) {
+            this.attrs[name] = value;
+        },
+    };
+    const documentRef = {
+        body: {
+            classList: {
+                contains: (name) => classes.has(name),
+                toggle(name, force) {
+                    if (force) classes.add(name);
+                    else classes.delete(name);
+                },
+            },
+        },
+        getElementById: () => button,
+    };
+    applyStudentJupyterControls(documentRef, false);
+    assert.equal(classes.has(STUDENT_JUPYTER_CONTROLS_CLASS), false);
+    applyStudentJupyterControls(documentRef, true);
+    assert.equal(button.textContent, "收起");
+    assert.equal(button.attrs["aria-expanded"], "true");
 });
 
 test("Jupyter startup errors show the backend message instead of raw JSON", () => {

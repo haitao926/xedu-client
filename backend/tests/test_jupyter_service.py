@@ -15,7 +15,10 @@ from models.config import JupyterConfig  # noqa: E402
 from services.jupyter_environment import (  # noqa: E402
     build_jupyter_command,
     evaluate_environment_validation,
+    jupyter_path_with_micropython_data,
     merge_jupyter_config,
+    resolve_micropython_labextensions_parent,
+    stage_micropython_labextension,
 )
 from services.jupyter_service import JupyterManager  # noqa: E402
 
@@ -149,11 +152,53 @@ class JupyterManagerUnitTestCase(unittest.TestCase):
             environment = manager._prepare_environment(manager.config)  # noqa: SLF001
             config_file = Path(environment["JUPYTER_CONFIG_DIR"]) / "jupyter_server_config.py"
             config = config_file.read_text(encoding="utf-8")
+            staged = (
+                Path(tmp_dir)
+                / "jupyter_data"
+                / "labextensions"
+                / "jupyterlab-micropython"
+                / "package.json"
+            )
+            self.assertTrue(staged.is_file())
+            self.assertEqual(json.loads(staged.read_text(encoding="utf-8"))["name"], "jupyterlab-micropython")
+            lab_config = Path(environment["JUPYTER_CONFIG_DIR"]) / "jupyter_lab_config.py"
+            lab_config_text = lab_config.read_text(encoding="utf-8")
 
         self.assertIn("services.jupyter_micropython_server", config)
         self.assertIn("jpserver_extensions.update", config)
         self.assertIn("jupyterlab_micropython'", config)
         self.assertNotIn("/labextension']", config)
+        self.assertIn("XEDU_MICROPYTHON_JUPYTER_DATA", environment)
+        self.assertIn("extra_labextensions_path", lab_config_text)
+
+    def test_labextension_resolver_skips_empty_directory_and_stages_built_copy(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            empty = root / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension"
+            empty.mkdir(parents=True)
+            built = root / "backend" / "jupyterlab_micropython" / "labextension"
+            static = built / "static"
+            static.mkdir(parents=True)
+            (static / "remoteEntry.test.js").write_text("/* test */\n", encoding="utf-8")
+            (built / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "jupyterlab-micropython",
+                        "jupyterlab": {"extension": True, "_build": {"load": "static/remoteEntry.test.js"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            resolved = resolve_micropython_labextensions_parent(root)
+            self.assertEqual(resolved, built.parent)
+            staged_root = stage_micropython_labextension(root / "data", built)
+            staged_package = staged_root / "labextensions" / "jupyterlab-micropython" / "package.json"
+            self.assertTrue(staged_package.is_file())
+            self.assertEqual(
+                jupyter_path_with_micropython_data(root / "jupyter_kernels", str(staged_root)),
+                os.pathsep.join([str(staged_root), str(root / "jupyter_kernels")]),
+            )
 
     def test_xedupro_jupyter_inherits_activated_environment_and_selected_kernel(self):
         manager = self.make_manager(python_executable="E:/XEdu/env/python.exe")

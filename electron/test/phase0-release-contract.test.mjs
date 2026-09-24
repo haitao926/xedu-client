@@ -306,8 +306,16 @@ test('official release config fails closed when signing credentials are missing'
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /electron:build:release/i);
   assert.match(result.stderr, /Missing release signing credentials/i);
-  assert.match(result.stderr, /APPLE_ID/);
-  assert.doesNotMatch(result.stderr, /WIN_CSC_LINK/);
+  if (process.platform === 'win32') {
+    assert.match(result.stderr, /WIN_CSC_LINK/);
+    assert.doesNotMatch(result.stderr, /APPLE_ID/);
+  } else if (process.platform === 'darwin') {
+    assert.match(result.stderr, /APPLE_ID/);
+    assert.doesNotMatch(result.stderr, /WIN_CSC_LINK/);
+  } else {
+    assert.match(result.stderr, /APPLE_ID/);
+    assert.match(result.stderr, /WIN_CSC_LINK/);
+  }
 });
 
 test('official release config validates only the credentials for the target platform', async () => {

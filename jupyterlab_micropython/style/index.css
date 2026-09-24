@@ -1,107 +1,291 @@
 .xedu-micropython-panel {
-  min-width: 320px;
-  max-width: 420px;
-  background: var(--jp-layout-color1);
-}
-
-.xedu-micropython-content {
-  padding: 24px 20px 28px;
-  overflow: auto;
-  color: var(--jp-ui-font-color1);
-  font-size: 13px;
-}
-
-.xedu-micropython-eyebrow {
-  color: var(--jp-brand-color1);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .14em;
-}
-
-.xedu-micropython-content h2 {
-  margin: 5px 0 6px;
-  font-size: 21px;
-  letter-spacing: -.02em;
-}
-
-.xedu-micropython-lead,
-.xedu-micropython-hint {
-  color: var(--jp-ui-font-color2);
-  line-height: 1.55;
-}
-
-.xedu-micropython-section {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--jp-border-color2);
-}
-
-.xedu-micropython-section-title {
-  margin-bottom: 10px;
-  font-weight: 700;
-}
-
-.xedu-micropython-row {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--jp-layout-color1, #fff);
+  color: var(--jp-ui-font-color1, #111);
+}
+
+.xedu-mp-shell {
+  --xedu-mp-output-height: 164px;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.xedu-mp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 6px 10px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fdba74;
+}
+
+.xedu-mp-brand {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #9a3412;
+}
+
+.xedu-mp-toolbar-spacer {
+  flex: 1 1 12px;
 }
 
 .xedu-micropython-select,
 .xedu-micropython-input {
   min-width: 0;
-  flex: 1;
+}
+
+.xedu-micropython-select {
+  flex: 1 1 180px;
+  max-width: 320px;
 }
 
 .xedu-micropython-button,
 .xedu-micropython-primary {
-  min-height: 30px;
+  min-height: 32px;
   white-space: nowrap;
 }
 
-.xedu-micropython-primary {
-  margin-top: 10px;
+.xedu-mp-toolbar .xedu-micropython-primary {
+  background: #ea580c;
+  border-color: #c2410c;
+  color: #fff;
 }
 
-.xedu-micropython-connect-actions .xedu-micropython-primary {
-  flex: 1;
-}
-
-.xedu-micropython-status,
-.xedu-micropython-file {
-  margin-top: 10px;
-  color: var(--jp-ui-font-color2);
-  line-height: 1.45;
+.xedu-micropython-status {
+  flex: 1 1 180px;
+  color: var(--jp-ui-font-color2, #57534e);
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
 .xedu-micropython-error {
-  color: var(--jp-error-color1);
+  color: var(--jp-error-color1, #b91c1c);
+}
+
+.xedu-mp-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.xedu-mp-files {
+  display: flex;
+  flex-direction: column;
+  width: 196px;
+  min-width: 160px;
+  border-right: 1px solid var(--jp-border-color2, #e7e5e4);
+  background: var(--jp-layout-color2, #fafaf9);
+}
+
+.xedu-mp-files-title,
+.xedu-mp-output-title,
+.xedu-mp-editor-tab {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.xedu-mp-file-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 8px;
+}
+
+.xedu-mp-file,
+.xedu-mp-file-empty {
+  display: block;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  text-align: left;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.xedu-mp-file {
+  cursor: pointer;
+}
+
+.xedu-mp-file:hover,
+.xedu-mp-file.is-active {
+  background: #ffedd5;
+}
+
+.xedu-mp-file-empty {
+  color: var(--jp-ui-font-color2, #78716c);
+}
+
+.xedu-mp-open-project {
+  margin: 8px;
+}
+
+.xedu-mp-editor-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.xedu-mp-editor-tab {
+  border-bottom: 1px solid var(--jp-border-color2, #e7e5e4);
+  background: var(--jp-layout-color2, #fafaf9);
+}
+
+.xedu-mp-editor-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #fff;
+}
+
+.xedu-mp-highlight,
+.xedu-mp-editor {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 14px 16px 20px;
+  border: 0;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 4;
+  font-family: var(--jp-code-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: 0;
+  font-variant-ligatures: none;
+  scrollbar-gutter: stable;
+}
+
+.xedu-mp-highlight {
+  overflow: hidden;
+  pointer-events: none;
+  color: #1c1917;
+  background: #fff;
+}
+
+.xedu-mp-editor {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  outline: none;
+  overflow: auto;
+  background: transparent;
+  color: transparent;
+  caret-color: #1c1917;
+  -webkit-text-fill-color: transparent;
+}
+
+.xedu-mp-editor::selection {
+  background: rgba(37, 99, 235, 0.22);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.xedu-py-keyword { color: #1d4ed8; }
+.xedu-py-string { color: #047857; }
+.xedu-py-comment { color: #78716c; }
+.xedu-py-number { color: #c2410c; }
+.xedu-py-text { color: #1c1917; }
+
+.xedu-mp-splitter {
+  flex: 0 0 6px;
+  height: 6px;
+  cursor: row-resize;
+  background: #292524;
+  touch-action: none;
+}
+
+.xedu-mp-splitter:hover,
+.xedu-mp-splitter.is-dragging,
+.xedu-mp-splitter:focus-visible {
+  background: #ea580c;
+  outline: none;
+}
+
+.xedu-mp-output {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--xedu-mp-output-height);
+  height: var(--xedu-mp-output-height);
+  min-height: 120px;
+  max-height: 36%;
+  overflow: hidden;
+  border-top: 0;
+  background: #111;
+  color: #f5f5f4;
+}
+
+.xedu-mp-output-title {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  color: #fdba74;
 }
 
 .xedu-micropython-console {
-  min-height: 150px;
-  max-height: 260px;
-  margin: 0 0 10px;
-  padding: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0 12px;
+  padding: 0;
   overflow: auto;
-  background: var(--jp-layout-color0);
-  border: 1px solid var(--jp-border-color2);
-  border-radius: 4px;
-  color: var(--jp-ui-font-color1);
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font-family: var(--jp-code-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 13px;
+  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.xedu-mp-repl {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 6px 12px 8px;
+}
+
+.xedu-mp-repl .xedu-micropython-input {
+  flex: 1 1 auto;
+  color: #111;
+  background: #fff;
 }
 
 .xedu-micropython-button:disabled,
 .xedu-micropython-primary:disabled,
 .xedu-micropython-input:disabled,
 .xedu-micropython-select:disabled {
-  opacity: .55;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
-.xedu-micropython-hint {
-  margin-top: 18px;
-  font-size: 12px;
+@media (max-width: 760px) {
+  .xedu-mp-body {
+    flex-direction: column;
+  }
+
+  .xedu-mp-files {
+    width: 100%;
+    max-height: 148px;
+    border-right: 0;
+    border-bottom: 1px solid var(--jp-border-color2, #e7e5e4);
+  }
 }

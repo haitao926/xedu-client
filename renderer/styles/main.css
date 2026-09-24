@@ -541,6 +541,28 @@ body.student-mode:not(.teacher-mode).student-focus-mode .top-bar-actions {
     justify-content: flex-end;
 }
 
+body.student-mode:not(.teacher-mode).student-focus-mode:not(.student-jupyter-controls-open) .dashboard-layout {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+body.student-mode:not(.teacher-mode).student-focus-mode:not(.student-jupyter-controls-open) .dashboard-left-col {
+    display: none;
+}
+
+.jupyter-controls-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle {
+    display: inline-flex;
+}
+
 .student-focus-back,
 .student-focus-ai-btn,
 .student-save-score-btn,
