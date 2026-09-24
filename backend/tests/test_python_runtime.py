@@ -123,7 +123,10 @@ class PythonRuntimeTestCase(unittest.TestCase):
 
         self.assertTrue(result["success"], result)
         self.assertEqual(result["executable"], os.path.abspath(selected))
-        self.assertNotEqual(result["executable"], os.path.realpath(selected))
+        self.assertNotEqual(
+            os.path.normcase(result["executable"]),
+            os.path.normcase(os.path.realpath(sys.executable)),
+        )
 
     def test_missing_interpreter_is_rejected(self):
         result = inspect_python_executable("/tmp/xedu-python-does-not-exist")
@@ -649,7 +652,10 @@ class PythonRuntimeTestCase(unittest.TestCase):
         ) as install_jupyter, patch(
             "utils.python_runtime._install_xedu_package",
             return_value={"success": False, "message": "xedu-python 安装失败: package unavailable"},
-        ) as install_xedu:
+        ) as install_xedu, patch(
+            "utils.python_runtime._install_xedu_runtime_packages",
+            return_value={"success": False, "message": "XEduHub 运行依赖安装失败"},
+        ):
             result = repair_xedu_python_environment("/tmp/selected-python", use_mirror=False)
 
         self.assertTrue(result["success"], result)
@@ -700,13 +706,13 @@ class PythonRuntimeTestCase(unittest.TestCase):
 
         self.assertEqual(
             specs,
-            ["jupyterlab<4.3", "ipykernel<6.30", "jupyterlab-language-pack-zh-CN<4.3"],
+            ["jupyterlab<4.3", "ipykernel<6.30", "jupyterlab-language-pack-zh-CN<4.3", "pyserial==3.5"],
         )
 
     def test_newer_python_repair_keeps_unpinned_jupyter_specs(self):
         self.assertEqual(
             _jupyter_repair_specs({"python_version": "3.12.8"}),
-            ["jupyterlab", "ipykernel", "jupyterlab-language-pack-zh-CN"],
+            ["jupyterlab", "ipykernel", "jupyterlab-language-pack-zh-CN", "pyserial"],
         )
 
     def test_repair_matches_language_pack_to_existing_jupyterlab_minor_version(self):
@@ -718,6 +724,7 @@ class PythonRuntimeTestCase(unittest.TestCase):
                 "jupyterlab",
                 "ipykernel",
                 "jupyterlab-language-pack-zh-CN>=4.4,<4.5",
+                "pyserial==3.5",
             ],
         )
 
