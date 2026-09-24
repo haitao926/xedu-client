@@ -1,5 +1,6 @@
 const PROTOCOL_VERSION = 1;
 const CONTRACT_REVISION = '2026-09-22';
+const MAX_ANSWERS_JSON_BYTES = 32 * 1024;
 
 const STUDENT_MESSAGES = Object.freeze({
     protocol_mismatch: '学习平台协议版本与客户端不一致，已停止打开。请更新后再从平台重新进入。',
@@ -16,6 +17,9 @@ const STUDENT_MESSAGES = Object.freeze({
     rate_limited: '保存太频繁，请稍后再试。',
     save_in_flight: '正在保存，请稍候再试。',
     no_score_draft: '还没有可保存的成绩。',
+    answers_invalid: '作答内容格式无效，成绩没有保存。',
+    answers_too_large: '作答内容超过 32KB，成绩没有保存。',
+    XEDU_RESULT_NOT_PASSED: '这次成绩还没有通过，平台没有记为完成。',
     no_active_task: '请从学习平台重新打开这个任务。',
     submission_not_completed: '学习平台尚未确认完成，请稍后再试。',
     network: '暂时连不上学习平台，请稍后再试。',
@@ -35,6 +39,29 @@ function failure(code) {
     };
 }
 
+function jsonUtf8Size(text) {
+    const encoded = typeof TextEncoder === 'function'
+        ? new TextEncoder().encode(String(text || ''))
+        : null;
+    return encoded ? encoded.length : String(text || '').length;
+}
+
+function sanitizeAnswersBag(value) {
+    if (value === undefined || value === null) return { include: false };
+    if (typeof value !== 'object') return { include: false, code: 'answers_invalid' };
+    let cloned;
+    try {
+        cloned = JSON.parse(JSON.stringify(value));
+    } catch (_) {
+        return { include: false, code: 'answers_invalid' };
+    }
+    if (!cloned || typeof cloned !== 'object') return { include: false, code: 'answers_invalid' };
+    if (jsonUtf8Size(JSON.stringify(cloned)) > MAX_ANSWERS_JSON_BYTES) {
+        return { include: false, code: 'answers_too_large' };
+    }
+    return { include: true, answers: cloned };
+}
+
 function classifyScoreInput(input) {
     let parsed = input;
     if (typeof parsed === 'string') {
@@ -50,16 +77,27 @@ function classifyScoreInput(input) {
     let record = parsed;
     if (!type && parsed.raw_score !== undefined && parsed.name !== undefined && parsed.value === undefined) {
         source = parsed.source || 'two-field';
-        record = { name: parsed.name, value: parsed.raw_score, passed: parsed.passed };
+        record = {
+            name: parsed.name,
+            value: parsed.raw_score,
+            passed: parsed.passed,
+            answers: parsed.answers,
+        };
     } else if (!type) {
         const keys = Object.keys(parsed);
-        if (!(keys.length === 2 && keys.includes('name') && keys.includes('value'))) return { ignore: true };
+        const allowed = new Set(['name', 'value', 'answers']);
+        if (!keys.includes('name') || !keys.includes('value') || keys.some((key) => !allowed.has(key))) {
+            return { ignore: true };
+        }
         source = 'two-field';
     } else if (type === 'ols-score/1') {
         source = 'ols-score/1';
     } else if (type === 'xedu:submit-request') {
         source = 'xedu:submit-request';
-        record = parsed.payload || parsed.score || parsed;
+        const payload = parsed.payload || parsed.score || parsed;
+        record = payload === parsed
+            ? parsed
+            : { ...payload, answers: payload.answers !== undefined ? payload.answers : parsed.answers };
     } else {
         return { ignore: true };
     }
@@ -69,6 +107,7 @@ function classifyScoreInput(input) {
         name: record?.name,
         value: record?.value,
         passed: record?.passed,
+        answers: record?.answers,
     };
 }
 
@@ -87,18 +126,24 @@ export function parseLabScoreMessage(input) {
         }
         passed = classified.passed;
     }
+    const bag = sanitizeAnswersBag(classified.answers);
+    if (bag.code) {
+        return { ok: false, ignore: false, code: bag.code, message: STUDENT_MESSAGES[bag.code], draft: null };
+    }
+    const draft = {
+        name,
+        raw_score: value,
+        score: Math.floor(value + 0.5),
+        passed,
+        source: classified.source,
+    };
+    if (bag.include) draft.answers = bag.answers;
     return {
         ok: true,
         ignore: false,
         code: '',
         message: '',
-        draft: {
-            name,
-            raw_score: value,
-            score: Math.floor(value + 0.5),
-            passed,
-            source: classified.source,
-        },
+        draft,
     };
 }
 
@@ -118,6 +163,7 @@ export function createXeduSubmitBridge({
     }
 
     async function remember(nextDraft) {
+        const previous = draft;
         draft = nextDraft;
         notify();
         if (typeof transport?.setDraft === 'function') {
@@ -126,6 +172,11 @@ export function createXeduSubmitBridge({
             if (stored?.ok === false && stored.code === 'score_invalid') {
                 draft = null;
                 notify();
+            } else if (stored?.ok === false && (stored.code === 'answers_invalid' || stored.code === 'answers_too_large')) {
+                draft = previous;
+                notify();
+                onInvalidScore?.(stored);
+                return stored;
             }
         }
         return { ok: true, has_draft: Boolean(draft), draft };
@@ -145,23 +196,32 @@ export function createXeduSubmitBridge({
 
     windowObject?.addEventListener?.('message', handleMessage);
 
-    async function run(kind) {
+    async function run(kind, meta) {
         if (saving) return failure('save_in_flight');
         if ((kind === 'score' || kind === 'combined') && !draft) return failure('no_score_draft');
-        if (typeof transport?.[kind === 'score' ? 'saveScore' : kind === 'screenshot' ? 'uploadScreenshot' : 'saveCombined'] !== 'function') {
+        const method = kind === 'score'
+            ? 'saveScore'
+            : kind === 'screenshot'
+                ? 'uploadScreenshot'
+                : kind === 'evidence'
+                    ? 'saveEvidence'
+                    : 'saveCombined';
+        if (typeof transport?.[method] !== 'function') {
             return failure('no_active_task');
         }
         saving = true;
         const frozen = draft;
         try {
-            const method = kind === 'score' ? 'saveScore' : kind === 'screenshot' ? 'uploadScreenshot' : 'saveCombined';
             const bounds = typeof captureBounds === 'function' ? captureBounds() : null;
-            const result = await transport[method](bounds);
-            if (result?.platform_status === 'completed' && kind !== 'screenshot') {
+            const result = kind === 'evidence'
+                ? await transport.saveEvidence(bounds, meta)
+                : await transport[method](bounds);
+            const keepsScoreDraft = kind === 'screenshot' || kind === 'evidence';
+            if (result?.platform_status === 'completed' && !keepsScoreDraft) {
                 draft = result.draft || null;
             } else if (result?.draft) {
                 draft = result.draft;
-            } else if (result?.platform_status !== 'completed' && kind !== 'screenshot') {
+            } else if (result?.platform_status !== 'completed' && !keepsScoreDraft) {
                 draft = result?.has_draft ? (result.draft || frozen) : frozen;
             }
             notify();
@@ -205,6 +265,9 @@ export function createXeduSubmitBridge({
         },
         uploadScreenshot() {
             return run('screenshot');
+        },
+        saveEvidence(meta) {
+            return run('evidence', meta);
         },
         saveCombined() {
             return run('combined');

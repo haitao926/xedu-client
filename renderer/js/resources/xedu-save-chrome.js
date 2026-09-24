@@ -14,12 +14,14 @@ export function studentSaveMessage(code, fallback = '') {
     return '保存没有完成，请稍后再试。';
 }
 
-export function describeStudentSaveChrome({ draft = null, phase = 'idle', result = null } = {}) {
+export function describeStudentSaveChrome({ draft = null, phase = 'idle', result = null, evidenceKind = '' } = {}) {
     const name = typeof draft?.name === 'string' ? draft.name.trim() : '';
     const score = Number.isFinite(draft?.score) ? draft.score : null;
     const hasDraft = Boolean(name) && score !== null;
     const saving = phase === 'saving';
     const completed = phase === 'saved' && result?.platform_status === 'completed';
+    const evidenceExperiment = evidenceKind === 'scratch' || evidenceKind === 'notebook';
+    const evidenceSaved = completed && result?.mode === 'evidence';
     const failed = phase === 'failed';
     const code = failed ? canonicalCode(result?.code) : '';
     const grantExpired = code === 'grant_expired';
@@ -28,6 +30,9 @@ export function describeStudentSaveChrome({ draft = null, phase = 'idle', result
     if (saving) {
         statusText = '保存中';
         tone = 'progress';
+    } else if (evidenceSaved) {
+        statusText = '已保存';
+        tone = 'success';
     } else if (completed) {
         statusText = '平台已保存';
         tone = 'success';
@@ -42,6 +47,12 @@ export function describeStudentSaveChrome({ draft = null, phase = 'idle', result
         saveDisabled: saving || !hasDraft,
         combinedDisabled: saving || !hasDraft,
         screenshotDisabled: saving,
+        evidenceKind: evidenceExperiment ? evidenceKind : '',
+        evidenceVisible: evidenceExperiment,
+        evidenceDisabled: saving,
+        scoreHidden: evidenceExperiment && !hasDraft,
+        screenshotHidden: evidenceExperiment,
+        combinedHidden: evidenceExperiment && !hasDraft,
         retryVisible: failed && !grantExpired,
         grantExpired,
     };

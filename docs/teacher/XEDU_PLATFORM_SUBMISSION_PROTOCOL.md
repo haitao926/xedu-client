@@ -12,9 +12,10 @@
 
 | 按钮 | 行为 |
 | --- | --- |
-| 保存成绩 | 需要一份成绩草稿。把最新 `name`、`raw_score` 和归一化 `score` 交给平台。 |
+| 保存成绩 | 需要一份成绩草稿。把最新 `name`、`raw_score` 和归一化 `score` 交给平台。有作答袋时一并带上 `answers`。 |
 | 截图并上传 | 截取当前实验视图（含 iframe 里的 canvas），不截全桌面。`score` / `raw_score` / `passed` 都是 `null`，平台保留已有分。 |
 | 保存成绩并截图 | 同一次确认里带上冻结成绩和截图。截图或上传失败时不会报组合成功，成绩草稿还在，可以单独保存成绩。 |
+| 保存 | 只出现在 Scratch 或 Notebook 实验。不需要成绩。截取当前实验视图作为证据。成功后显示「已保存」。 |
 
 完成提示只在平台返回 `status: "completed"` 之后出现。草稿、截图暂存、本地实验进度都不是完成。
 
@@ -62,13 +63,15 @@ Client 向 `{platform_origin}/api/xedu/v1/launch/exchange` 发送：
 
 HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 只接受当前登记 iframe 的 `contentWindow`。
 
-- 无 `type` 时必须刚好是 `{name, value}`
+- 无 `type` 时是 `{name, value}`，可以再带可选的 `answers`
 - 或者 `type: "ols-score/1"`
 - 旧的 `xedu:submit-request` 只会转成草稿
 
-`name` 去掉首尾空白后为 1–200 字。`value` 必须是有限数字，范围 0–100。字符串、`null`、`NaN` 都拒绝，也不把超额分数钳进范围内。0 分是有效分数。`score = floor(raw_score + 0.5)`。`passed` 可以缺省、`null` 或 `false`。
+`name` 去掉首尾空白后为 1–200 字。`value` 必须是有限数字，范围 0–100。字符串、`null`、`NaN` 都拒绝，也不把超额分数钳进范围内。0 分是有效分数。`score = floor(raw_score + 0.5)`。`passed` 可以缺省、`null` 或 `false`，草稿会原样保留，不会改写成 `true`。
 
-这些消息不会自动提交。保存进行中的新消息留作下一稿。没有草稿时「保存成绩」和「保存成绩并截图」不可用；「截图并上传」仍然可用。
+可选作答袋 `answers` 可以和成绩一起出现。两字段消息允许的键只有 `name`、`value`，以及可选的 `answers`。`ols-score/1` 和旧的 `xedu:submit-request` 也读取同一字段。`answers` 必须是 JSON 对象或数组。缺省、`null` 表示没有作答袋，成绩仍可保存。字符串和其他标量会拒绝这次草稿。序列化后超过 32KB 也会拒绝，已有草稿保留。函数、`undefined` 和循环引用按 JSON 规则去掉或拒绝。
+
+这些消息不会自动提交。保存进行中的新消息留作下一稿。没有草稿时「保存成绩」和「保存成绩并截图」不可用；「截图并上传」仍然可用。Scratch / Notebook 的「保存」不需要成绩草稿。
 
 ## 上传和提交
 
@@ -76,7 +79,49 @@ HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 
 2. `POST /api/xedu/v1/submissions`：带上 grant 快照里的课程三元组、`course_version`、`package_sha256`，以及分数或至少一个 `upload_id`。
 3. 超时后先 `GET /api/xedu/v1/submissions/status?request_id=`。
 
-同一次保存的 `request_id` 不变，重试时正文也不变。自动重试最多 3 次，间隔 1 秒、2 秒、4 秒。同一任务同时只有一个在途保存。409 冲突、作业锁定、成绩无效、授权过期不会重试。
+成绩提交在有作答袋时多一个 JSON 字段 `answers`，没有作答袋时不出现这个字段。其余字段与以前相同：
+
+```json
+{
+  "name": "操作题",
+  "raw_score": 80,
+  "score": 80,
+  "passed": true,
+  "answers": { "q1": "A", "q2": ["B", "C"] }
+}
+```
+
+自动计分的 HTML 实验仍要带 `ols-score/1` 或 `{name, value}` 成绩。平台在「声称了分数」且 `passed` 不是 `true` 时返回 `XEDU_RESULT_NOT_PASSED`。Client 不把这次保存记为完成，不自动重试，草稿保留，并提示这次成绩还没有通过。`passed: true` 的成绩按原来的完成回执处理。Client 不会在本地把 `passed` 改成 `true`。
+
+Scratch 和 Notebook 用证据提交。学生点「保存」后，Client 走同一条截图上传，再提交一份没有分数的正文。`name`、`raw_score`、`score`、`passed` 都是 `null`。不带 `answers`。多一个 `evidence` 对象。成功且 `status: "completed"` 后，焦点栏显示「已保存」。已有成绩草稿不会被这次证据提交清掉。
+
+```json
+{
+  "name": null,
+  "raw_score": null,
+  "score": null,
+  "passed": null,
+  "attachments": [
+    {
+      "upload_id": "<artifacts 返回的 id>",
+      "filename": "experiment-view.png",
+      "sha256": "<截图 SHA-256>",
+      "content_type": "image/png"
+    }
+  ],
+  "evidence": {
+    "type": "screenshot",
+    "experiment": "scratch",
+    "project_file": null
+  }
+}
+```
+
+`evidence.experiment` 是 `"scratch"` 或 `"notebook"`。Notebook 截的是当前 Jupyter 视图；Scratch 和 HTML 截的是当前实验区域，不截全桌面。
+
+`project_file` 现在固定是 `null`。作品文件（`.sb3` / `.ipynb`）还没有上传：现有 `/api/xedu/v1/artifacts` 只收 PNG、JPEG、WebP。以后平台接受非图片字节时，再把导出的工程文件作为可选附件，并填上 `project_file`。在那之前截图就是证据。
+
+同一次保存的 `request_id` 不变，重试时正文也不变。自动重试最多 3 次，间隔 1 秒、2 秒、4 秒。同一任务同时只有一个在途保存。409 冲突、作业锁定、成绩无效、授权过期、`XEDU_RESULT_NOT_PASSED` 不会重试。
 
 ## 学生会看到的失败
 
@@ -91,8 +136,11 @@ HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 
 | `grant_invalid` | 学习平台没有返回有效的任务授权，请重新打开。 |
 | `rate_limited` | 保存太频繁，请稍后再试。 |
 | `screenshot_failed` | 截图失败，没有上传。成绩草稿还在，可以单独保存成绩。 |
+| `answers_invalid` | 作答内容格式无效，成绩没有保存。 |
+| `answers_too_large` | 作答内容超过 32KB，成绩没有保存。 |
+| `XEDU_RESULT_NOT_PASSED` | 这次成绩还没有通过，平台没有记为完成。 |
 
-焦点栏会显示当前草稿（待保存：名称和分数）、保存中、以及只在 `status: "completed"` 之后出现的「平台已保存」。失败时可以点「重试」。授权过期时提示从学习平台重新打开，不提供会再次提交的重试。
+焦点栏会显示当前草稿（待保存：名称和分数）、保存中、以及只在 `status: "completed"` 之后出现的「平台已保存」。Scratch / Notebook 证据保存成功时显示「已保存」。失败时可以点「重试」。授权过期时提示从学习平台重新打开，不提供会再次提交的重试。`XEDU_RESULT_NOT_PASSED` 不重试。
 
 同一条尚未完成兑换的 `xedu://open-local-task` 只兑换一次，并回到已经打开的窗口。不同活动的草稿按上下文键分开。
 

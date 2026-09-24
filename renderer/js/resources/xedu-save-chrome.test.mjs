@@ -77,4 +77,36 @@ test('grant expiry tells the student to reopen and other codes stay in Chinese',
     assert.match(studentSaveMessage('conflict'), /冲突/);
     assert.match(studentSaveMessage('score_invalid'), /0 到 100/);
     assert.match(studentSaveMessage('grant_invalid'), /任务授权/);
+    assert.match(studentSaveMessage('XEDU_RESULT_NOT_PASSED'), /还没有通过/);
+});
+
+test('scratch and notebook evidence can be saved without a score', () => {
+    const idle = describeStudentSaveChrome({ draft: null, phase: 'idle', evidenceKind: 'scratch' });
+    assert.equal(idle.evidenceVisible, true);
+    assert.equal(idle.evidenceDisabled, false);
+    assert.equal(idle.evidenceKind, 'scratch');
+    assert.equal(idle.saveDisabled, true);
+    assert.equal(idle.scoreHidden, true);
+    assert.equal(idle.screenshotHidden, true);
+
+    const saving = describeStudentSaveChrome({ draft: null, phase: 'saving', evidenceKind: 'notebook' });
+    assert.equal(saving.statusText, '保存中');
+    assert.equal(saving.evidenceDisabled, true);
+
+    const saved = describeStudentSaveChrome({
+        draft: null,
+        phase: 'saved',
+        evidenceKind: 'notebook',
+        result: { ok: true, platform_status: 'completed', mode: 'evidence', message: '已保存' },
+    });
+    assert.equal(saved.statusText, '已保存');
+    assert.equal(saved.retryVisible, false);
+
+    const scoreSaved = describeStudentSaveChrome({
+        draft: null,
+        phase: 'saved',
+        result: { ok: true, platform_status: 'completed', mode: 'score' },
+    });
+    assert.equal(scoreSaved.statusText, '平台已保存');
+    assert.equal(scoreSaved.evidenceVisible, false);
 });

@@ -40,13 +40,14 @@ test('two-field and ols-score messages become drafts and never call save', async
     bridge.attach(frame);
     await ui.emit({ source: frame.contentWindow, data: JSON.stringify({ name: ' 选择题 ', value: 0 }) });
     await ui.emit({ source: {}, data: { name: '别人', value: 99 } });
-    await ui.emit({ source: frame.contentWindow, data: { type: 'ols-score/1', name: '操作题', value: 1.5, passed: false } });
+    await ui.emit({ source: frame.contentWindow, data: { type: 'ols-score/1', name: '操作题', value: 1.5, passed: false, answers: { q1: 'A' } } });
     await ui.emit({ source: frame.contentWindow, data: { type: 'xedu:submit-request', payload: { name: '旧提交', value: 40 } } });
     assert.deepEqual(calls.map((call) => call[0]), ['draft', 'draft', 'draft']);
     assert.equal(calls[0][1].raw_score, 0);
     assert.equal(calls[0][1].score, 0);
     assert.equal(calls[1][1].score, 2);
     assert.equal(calls[1][1].passed, false);
+    assert.deepEqual(calls[1][1].answers, { q1: 'A' });
     assert.equal(calls[2][1].source, 'xedu:submit-request');
     assert.equal(bridge.getDraft().name, '旧提交');
     assert.equal(bridge.hasDraft(), true);
@@ -61,6 +62,14 @@ test('invalid score values are rejected without clamping', () => {
     }
     assert.equal(parseLabScoreMessage({ type: 'xedu:course-ai-request', name: '题', value: 1 }).ignore, true);
     assert.equal(parseLabScoreMessage({ name: '题', value: 1, extra: true }).ignore, true);
+    const withAnswers = parseLabScoreMessage({ name: '选择题', value: 80, answers: { selected: [1, 2] } });
+    assert.equal(withAnswers.ok, true);
+    assert.deepEqual(withAnswers.draft.answers, { selected: [1, 2] });
+    assert.equal(parseLabScoreMessage({ name: '题', value: 80, answers: 'nope' }).code, 'answers_invalid');
+    const tooBig = parseLabScoreMessage({ name: '题', value: 80, answers: { note: 'x'.repeat(32 * 1024) } });
+    assert.equal(tooBig.ok, false);
+    assert.equal(tooBig.code, 'answers_too_large');
+    assert.equal(tooBig.draft, null);
 });
 
 test('save is disabled without a draft and a failed screenshot does not count as combined success', async () => {
@@ -96,4 +105,25 @@ test('save is disabled without a draft and a failed screenshot does not count as
     const saved = await bridge.saveScore();
     assert.equal(saved.platform_status, 'completed');
     assert.deepEqual(calls, ['combined', 'score']);
+});
+
+test('evidence save does not need a score draft and keeps one if it exists', async () => {
+    const calls = [];
+    const bridge = createXeduSubmitBridge({
+        windowObject: harness().windowObject,
+        transport: {
+            saveEvidence: async (bounds, meta) => {
+                calls.push(['evidence', bounds, meta]);
+                return { ok: true, platform_status: 'completed', mode: 'evidence', message: '已保存', draft: bridge.getDraft() };
+            },
+        },
+        captureBounds: () => ({ x: 1, y: 2, width: 3, height: 4 }),
+    });
+    bridge.restoreDraft({ name: '题', raw_score: 8, score: 8, passed: true, source: 'two-field' });
+    const saved = await bridge.saveEvidence({ experiment: 'notebook' });
+    assert.equal(saved.platform_status, 'completed');
+    assert.equal(saved.message, '已保存');
+    assert.deepEqual(calls[0][2], { experiment: 'notebook' });
+    assert.equal(bridge.getDraft().name, '题');
+    assert.equal(bridge.getDraft().passed, true);
 });

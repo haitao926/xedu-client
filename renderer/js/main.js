@@ -98,6 +98,11 @@ async function uploadStudentScreenshot(...args) {
     return mod.uploadStudentScreenshot(...args);
 }
 
+async function saveStudentEvidence(...args) {
+    const mod = await loadResourcesModule();
+    return mod.saveStudentEvidence(...args);
+}
+
 async function saveStudentScoreAndScreenshot(...args) {
     const mod = await loadResourcesModule();
     return mod.saveStudentScoreAndScreenshot(...args);
@@ -366,6 +371,7 @@ registerNamespace('resources', {
     returnToStudentTaskCenter,
     saveStudentScore,
     uploadStudentScreenshot,
+    saveStudentEvidence,
     saveStudentScoreAndScreenshot,
     retryStudentSave,
     openLaunchedLocalTask,

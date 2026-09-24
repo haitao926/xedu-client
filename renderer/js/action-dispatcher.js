@@ -20,6 +20,7 @@ const ACTIONS = Object.freeze({
     'resources.returnToStudentTaskCenter': (app) => app.resources?.returnToStudentTaskCenter?.(),
     'resources.saveStudentScore': (app) => app.resources?.saveStudentScore?.(),
     'resources.uploadStudentScreenshot': (app) => app.resources?.uploadStudentScreenshot?.(),
+    'resources.saveStudentEvidence': (app) => app.resources?.saveStudentEvidence?.(),
     'resources.saveStudentScoreAndScreenshot': (app) => app.resources?.saveStudentScoreAndScreenshot?.(),
     'resources.retryStudentSave': (app) => app.resources?.retryStudentSave?.(),
     'resources.toggleTeacherMode': (app) => app.resources?.toggleTeacherMode?.(),

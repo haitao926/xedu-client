@@ -566,6 +566,7 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
 .student-focus-back,
 .student-focus-ai-btn,
 .student-save-score-btn,
+.student-save-evidence-btn,
 .student-upload-screenshot-btn,
 .student-save-combined-btn,
 .student-save-retry-btn {
@@ -584,6 +585,7 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
 .student-focus-back[hidden],
 .student-focus-ai-btn[hidden],
 .student-save-score-btn[hidden],
+.student-save-evidence-btn[hidden],
 .student-upload-screenshot-btn[hidden],
 .student-save-combined-btn[hidden],
 .student-score-draft[hidden],
@@ -618,6 +620,7 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
     border-color: #1d4ed8;
 }
 .student-save-score-btn,
+.student-save-evidence-btn,
 .student-save-combined-btn {
     border: 1px solid #1d4ed8;
     background: #1d4ed8;
@@ -629,18 +632,21 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
     color: #1d4ed8;
 }
 .student-save-score-btn:hover,
+.student-save-evidence-btn:hover,
 .student-save-combined-btn:hover,
 .student-upload-screenshot-btn:hover {
     background: #1e40af;
     color: #fff;
 }
 .student-save-score-btn:disabled,
+.student-save-evidence-btn:disabled,
 .student-save-combined-btn:disabled,
 .student-upload-screenshot-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
 .student-save-score-btn:disabled,
+.student-save-evidence-btn:disabled,
 .student-save-combined-btn:disabled {
     background: #1d4ed8;
     color: #fff;
@@ -690,6 +696,7 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
 .student-focus-back:focus-visible,
 .student-focus-ai-btn:focus-visible,
 .student-save-score-btn:focus-visible,
+.student-save-evidence-btn:focus-visible,
 .student-upload-screenshot-btn:focus-visible,
 .student-save-combined-btn:focus-visible,
 .student-account-trigger:focus-visible,
@@ -954,6 +961,7 @@ body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .ai-co
     .student-focus-back,
     .student-focus-ai-btn,
     .student-save-score-btn,
+    .student-save-evidence-btn,
     .student-upload-screenshot-btn,
     .student-save-combined-btn,
     .student-save-retry-btn,

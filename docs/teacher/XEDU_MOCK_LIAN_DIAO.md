@@ -16,7 +16,7 @@
 </script>
 ```
 
-`ols-score/1` 也可以：`{ type: "ols-score/1", name: "第1题", value: 80, passed: false }`。这两类消息只产生草稿，不会自动提交。
+`ols-score/1` 也可以：`{ type: "ols-score/1", name: "第1题", value: 80, passed: true, answers: { "q1": "A" } }`。`answers` 可省略。这两类消息只产生草稿，不会自动提交。声称了分数但 `passed` 不是 `true` 时，平台应返回 `XEDU_RESULT_NOT_PASSED`，Client 不显示完成。
 
 4. 用深链打开，不要把 launch grant 写进日志：
 
@@ -119,5 +119,15 @@ Client 按 `code` 显示本地中文，不把平台 `message` 原文放进顶栏
 | `package_invalid` | 包大小或哈希不符 | 课程包校验失败，请从学习平台重新打开。 |
 | `course_id_mismatch` | 包内 id 与 `course_id` 不同 | 课程包编号与任务不一致。 |
 | `screenshot_failed` | Client 本地截图失败 | 截图失败，没有上传。成绩草稿还在，可以单独保存成绩。 |
+| `XEDU_RESULT_NOT_PASSED` | 提交里有分数，但 `passed` 不是 `true` | 这次成绩还没有通过，平台没有记为完成。不重试 |
+| `answers_too_large` | 作答袋超过 32KB | 作答内容超过 32KB，成绩没有保存。 |
+
+Scratch / Notebook 的「保存」不带分数。提交里 `score` / `raw_score` / `passed` / `name` 为 `null`，附件是实验截图，并带：
+
+```json
+"evidence": { "type": "screenshot", "experiment": "scratch", "project_file": null }
+```
+
+`experiment` 为 `"notebook"` 时同样。`project_file` 仍是 `null`，工程文件上传还没接上。平台回 `status: "completed"` 后，学生看到「已保存」。
 
 冲突、作业锁定、成绩无效、授权过期不会自动重试。网络错误和超时会先查 `GET /api/xedu/v1/submissions/status?request_id=`，最多再试 3 次（1 秒、2 秒、4 秒）。

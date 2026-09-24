@@ -16,6 +16,7 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.match(html, /id="page-title">课程任务中心</);
   assert.match(topBar, /id="student-focus-back"[^>]*data-action="resources\.returnToStudentTaskCenter"[\s\S]*返回任务中心/);
   assert.match(topBar, /id="student-focus-ai-btn"[^>]*data-action="ai\.toggleStudentAssistant"[\s\S]*AI 助手/);
+  assert.match(topBar, /id="student-save-evidence-btn"[^>]*data-action="resources\.saveStudentEvidence"[^>]*>保存</);
   assert.match(topBar, /id="student-save-score-btn"[^>]*data-action="resources\.saveStudentScore"[\s\S]*保存成绩/);
   assert.match(topBar, /id="student-upload-screenshot-btn"[^>]*data-action="resources\.uploadStudentScreenshot"[\s\S]*截图并上传/);
   assert.match(topBar, /id="student-save-combined-btn"[^>]*data-action="resources\.saveStudentScoreAndScreenshot"[\s\S]*保存成绩并截图/);
@@ -182,6 +183,8 @@ test("student mode hides the sidebar, settings, and AI page nav", () => {
   assert.match(resources, /export function returnToStudentTaskCenter\(/);
   assert.match(resources, /export async function saveStudentScore\(/);
   assert.match(resources, /export async function uploadStudentScreenshot\(/);
+  assert.match(resources, /export async function saveStudentEvidence\(/);
+  assert.match(readRepoFile("renderer/js/action-dispatcher.js"), /resources\.saveStudentEvidence/);
   assert.match(resources, /export async function saveStudentScoreAndScreenshot\(/);
   assert.match(resources, /platform_status === "completed"/);
   assert.match(resources, /describeStudentSaveChrome/);
@@ -189,6 +192,7 @@ test("student mode hides the sidebar, settings, and AI page nav", () => {
   assert.match(saveChrome, /待保存：/);
   assert.match(saveChrome, /保存中/);
   assert.match(saveChrome, /平台已保存/);
+  assert.match(saveChrome, /statusText = '已保存'/);
   assert.match(saveChrome, /grant_expired/);
   assert.doesNotMatch(resources, /export function submitStudentResult\(/);
   assert.doesNotMatch(resources, /TODO: next pass — 提交到平台/);
