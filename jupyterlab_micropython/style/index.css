@@ -11,6 +11,7 @@
 }
 
 .xedu-mp-shell {
+  --xedu-mp-output-height: 164px;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -21,10 +22,11 @@
 .xedu-mp-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  min-height: 46px;
-  padding: 8px 12px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 6px 10px;
   background: #fff7ed;
   border-bottom: 1px solid #fdba74;
 }
@@ -52,7 +54,7 @@
 
 .xedu-micropython-button,
 .xedu-micropython-primary {
-  min-height: 30px;
+  min-height: 32px;
   white-space: nowrap;
 }
 
@@ -204,18 +206,37 @@
 .xedu-py-number { color: #c2410c; }
 .xedu-py-text { color: #1c1917; }
 
+.xedu-mp-splitter {
+  flex: 0 0 6px;
+  height: 6px;
+  cursor: row-resize;
+  background: #292524;
+  touch-action: none;
+}
+
+.xedu-mp-splitter:hover,
+.xedu-mp-splitter.is-dragging,
+.xedu-mp-splitter:focus-visible {
+  background: #ea580c;
+  outline: none;
+}
+
 .xedu-mp-output {
   display: flex;
   flex-direction: column;
-  flex: 0 0 32%;
-  min-height: 148px;
-  max-height: 42%;
-  border-top: 1px solid #292524;
+  flex: 0 0 var(--xedu-mp-output-height);
+  height: var(--xedu-mp-output-height);
+  min-height: 120px;
+  max-height: 36%;
+  overflow: hidden;
+  border-top: 0;
   background: #111;
   color: #f5f5f4;
 }
 
 .xedu-mp-output-title {
+  flex: 0 0 auto;
+  padding: 4px 12px;
   color: #fdba74;
 }
 
@@ -237,8 +258,9 @@
 
 .xedu-mp-repl {
   display: flex;
+  flex: 0 0 auto;
   gap: 8px;
-  padding: 8px 12px 12px;
+  padding: 6px 12px 8px;
 }
 
 .xedu-mp-repl .xedu-micropython-input {

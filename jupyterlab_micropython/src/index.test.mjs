@@ -13,6 +13,8 @@ import {
   projectFilePath,
   pythonPathFromWidget,
   pythonProjectFiles,
+  clampOutputHeight,
+  DEFAULT_OUTPUT_HEIGHT,
   highlightPython,
   shouldAutoOpenCodeMode,
   studentErrorMessage,
@@ -148,4 +150,20 @@ test('code mode highlights Python while keeping the editable source', () => {
   assert.match(panel, /data-role="highlight"/);
   assert.match(panel, /highlightPython\(this\.codeText\(\)\)/);
   assert.match(panel, /content: this\.codeText\(\)/);
+});
+
+test('code mode keeps the editor larger than the output console', () => {
+  assert.equal(DEFAULT_OUTPUT_HEIGHT, 164);
+  assert.equal(clampOutputHeight(undefined, 800), 164);
+  assert.equal(clampOutputHeight(80, 800), 120);
+  assert.equal(clampOutputHeight(500, 800), 288);
+  assert.equal(clampOutputHeight(140, 800), 140);
+
+  const panel = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../style/index.css', import.meta.url), 'utf8');
+  assert.match(panel, /data-role="output-splitter"/);
+  assert.match(panel, /clampOutputHeight/);
+  assert.match(css, /--xedu-mp-output-height:\s*164px/);
+  assert.match(css, /\.xedu-mp-editor-scroll\s*\{[^}]*flex:\s*1 1 auto/);
+  assert.doesNotMatch(css, /flex:\s*0 0 32%/);
 });

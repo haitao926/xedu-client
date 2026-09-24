@@ -117,6 +117,20 @@ export function preferredPythonFile(files = [], hintedPath = '') {
   return files[0]?.path || '';
 }
 
+export const DEFAULT_OUTPUT_HEIGHT = 164;
+export const MIN_OUTPUT_HEIGHT = 120;
+const MAX_OUTPUT_RATIO = 0.36;
+
+export function clampOutputHeight(height, shellHeight) {
+  const available = Number(shellHeight);
+  const max = Number.isFinite(available) && available > 0
+    ? Math.max(MIN_OUTPUT_HEIGHT, Math.round(available * MAX_OUTPUT_RATIO))
+    : DEFAULT_OUTPUT_HEIGHT;
+  const value = Number(height);
+  if (!Number.isFinite(value)) return Math.min(DEFAULT_OUTPUT_HEIGHT, max);
+  return Math.min(max, Math.max(MIN_OUTPUT_HEIGHT, Math.round(value)));
+}
+
 export function projectFilePath(directory = '', name = 'main.py') {
   const fileName = String(name || 'main.py').replace(/\\/g, '/').split('/').pop() || 'main.py';
   const folder = String(directory || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');

@@ -7,6 +7,8 @@ import {
   STARTER_MAIN_PY,
   actionAvailability,
   appendConsoleText,
+  clampOutputHeight,
+  DEFAULT_OUTPUT_HEIGHT,
   panelRequestPath,
   panelRoute,
   highlightPython,
@@ -115,6 +117,7 @@ class MicroPythonPanel extends Panel {
             </div>
           </section>
         </div>
+        <div class="xedu-mp-splitter" data-role="output-splitter" role="separator" aria-orientation="horizontal" aria-label="调整输出高度" tabindex="0"></div>
         <footer class="xedu-mp-output">
           <div class="xedu-mp-output-title">输出</div>
           <pre class="xedu-micropython-console" data-role="output">${PLACEHOLDER_OUTPUT}</pre>
@@ -145,6 +148,7 @@ class MicroPythonPanel extends Panel {
       this.updateFileLabel();
     });
     this.editor.addEventListener('scroll', () => this.syncHighlightScroll());
+    this.bindOutputResize();
     this.editor.addEventListener('keydown', (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -161,6 +165,47 @@ class MicroPythonPanel extends Panel {
       this.dirty = true;
       this.renderHighlight();
     });
+  }
+
+  bindOutputResize() {
+    const splitter = this.node.querySelector('[data-role="output-splitter"]');
+    const shell = this.node.querySelector('.xedu-mp-shell');
+    if (!splitter || !shell) return;
+    shell.style.setProperty('--xedu-mp-output-height', `${DEFAULT_OUTPUT_HEIGHT}px`);
+    const applyHeight = (height) => {
+      const next = clampOutputHeight(height, shell.getBoundingClientRect().height);
+      shell.style.setProperty('--xedu-mp-output-height', `${next}px`);
+      splitter.setAttribute('aria-valuenow', String(next));
+    };
+    const currentHeight = () => {
+      const raw = getComputedStyle(shell).getPropertyValue('--xedu-mp-output-height');
+      return Number.parseFloat(raw) || DEFAULT_OUTPUT_HEIGHT;
+    };
+    let drag = null;
+    const stopDrag = () => {
+      drag = null;
+      splitter.classList.remove('is-dragging');
+    };
+    splitter.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      drag = { y: event.clientY, height: currentHeight() };
+      splitter.classList.add('is-dragging');
+      splitter.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+    splitter.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      applyHeight(drag.height + (drag.y - event.clientY));
+    });
+    splitter.addEventListener('pointerup', stopDrag);
+    splitter.addEventListener('pointercancel', stopDrag);
+    splitter.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      event.preventDefault();
+      const step = event.shiftKey ? 48 : 24;
+      applyHeight(currentHeight() + (event.key === 'ArrowUp' ? step : -step));
+    });
+    applyHeight(DEFAULT_OUTPUT_HEIGHT);
   }
 
   codeText() {
