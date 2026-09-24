@@ -11,8 +11,8 @@ const STUDENT_MESSAGES = Object.freeze({
     conflict: '保存发生冲突，请从学习平台重新打开后再试。',
     package_invalid: '课程包校验失败，请从学习平台重新打开。',
     course_id_mismatch: '课程包编号与任务不一致，已停止打开。课程编号以 course.json 的 id 为准。',
-    screenshot_failed: '截图失败，没有上传。成绩草稿还在，可以单独保存成绩。',
-    screenshot_too_large: '截图超过 10MB，没有上传。可以单独保存成绩。',
+    screenshot_failed: '截图失败，没有上传。成绩草稿还在。',
+    screenshot_too_large: '截图超过 10MB，没有上传。',
     screenshot_type: '截图格式无效。请使用 PNG、JPEG 或 WebP。',
     rate_limited: '保存太频繁，请稍后再试。',
     save_in_flight: '正在保存，请稍候再试。',
@@ -23,7 +23,7 @@ const STUDENT_MESSAGES = Object.freeze({
     no_active_task: '请从学习平台重新打开这个任务。',
     submission_not_completed: '学习平台尚未确认完成，请稍后再试。',
     network: '暂时连不上学习平台，请稍后再试。',
-    attachment_invalid: '截图没有被平台收下，本次没有保存成功。可以单独保存成绩。',
+    attachment_invalid: '截图没有被平台收下，本次没有保存成功。',
     forbidden: '当前窗口不能执行这个操作。',
 });
 
@@ -181,6 +181,7 @@ export function createXeduSubmitBridge({
     transport,
     onDraftChange,
     onInvalidScore,
+    onPageScoreSubmit,
     captureBounds,
 } = {}) {
     let activeFrame = null;
@@ -201,12 +202,15 @@ export function createXeduSubmitBridge({
             if (stored?.ok === false && stored.code === 'score_invalid') {
                 draft = null;
                 notify();
-            } else if (stored?.ok === false && (stored.code === 'answers_invalid' || stored.code === 'answers_too_large')) {
+                return stored;
+            }
+            if (stored?.ok === false && (stored.code === 'answers_invalid' || stored.code === 'answers_too_large')) {
                 draft = previous;
                 notify();
                 onInvalidScore?.(stored);
                 return stored;
             }
+            if (stored?.ok === false) return stored;
         }
         return { ok: true, has_draft: Boolean(draft), draft };
     }
@@ -220,7 +224,9 @@ export function createXeduSubmitBridge({
             onInvalidScore?.(parsed);
             return;
         }
-        await remember(parsed.draft);
+        const stored = await remember(parsed.draft);
+        if (stored?.ok === false || !draft) return;
+        onPageScoreSubmit?.(draft);
     }
 
     windowObject?.addEventListener?.('message', handleMessage);

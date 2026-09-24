@@ -565,10 +565,7 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
 
 .student-focus-back,
 .student-focus-ai-btn,
-.student-save-score-btn,
-.student-save-evidence-btn,
-.student-upload-screenshot-btn,
-.student-save-combined-btn,
+.student-submit-screenshot-btn,
 .student-save-retry-btn {
     display: inline-flex;
     align-items: center;
@@ -584,10 +581,7 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
 }
 .student-focus-back[hidden],
 .student-focus-ai-btn[hidden],
-.student-save-score-btn[hidden],
-.student-save-evidence-btn[hidden],
-.student-upload-screenshot-btn[hidden],
-.student-save-combined-btn[hidden],
+.student-submit-screenshot-btn[hidden],
 .student-score-draft[hidden],
 .student-platform-status[hidden],
 .student-save-retry-btn[hidden],
@@ -619,41 +613,20 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
     color: #fff;
     border-color: #1d4ed8;
 }
-.student-save-score-btn,
-.student-save-evidence-btn,
-.student-save-combined-btn {
+.student-submit-screenshot-btn {
     border: 1px solid #1d4ed8;
     background: #1d4ed8;
     color: #fff;
 }
-.student-upload-screenshot-btn {
-    border: 1px solid rgba(37, 99, 235, 0.28);
-    background: #fff;
-    color: #1d4ed8;
-}
-.student-save-score-btn:hover,
-.student-save-evidence-btn:hover,
-.student-save-combined-btn:hover,
-.student-upload-screenshot-btn:hover {
+.student-submit-screenshot-btn:hover {
     background: #1e40af;
     color: #fff;
 }
-.student-save-score-btn:disabled,
-.student-save-evidence-btn:disabled,
-.student-save-combined-btn:disabled,
-.student-upload-screenshot-btn:disabled {
+.student-submit-screenshot-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
-}
-.student-save-score-btn:disabled,
-.student-save-evidence-btn:disabled,
-.student-save-combined-btn:disabled {
     background: #1d4ed8;
     color: #fff;
-}
-.student-upload-screenshot-btn:disabled {
-    background: #fff;
-    color: #1d4ed8;
 }
 .student-save-retry-btn {
     border: 1px solid #b45309;
@@ -695,10 +668,7 @@ body.student-mode:not(.teacher-mode).student-focus-mode .jupyter-controls-toggle
 }
 .student-focus-back:focus-visible,
 .student-focus-ai-btn:focus-visible,
-.student-save-score-btn:focus-visible,
-.student-save-evidence-btn:focus-visible,
-.student-upload-screenshot-btn:focus-visible,
-.student-save-combined-btn:focus-visible,
+.student-submit-screenshot-btn:focus-visible,
 .student-account-trigger:focus-visible,
 .student-account-item:focus-visible {
     outline: 3px solid rgba(37, 99, 235, 0.22);
@@ -960,10 +930,7 @@ body.student-mode:not(.teacher-mode).student-ai-drawer-open #ai-assistant .ai-co
 @media (max-width: 720px) {
     .student-focus-back,
     .student-focus-ai-btn,
-    .student-save-score-btn,
-    .student-save-evidence-btn,
-    .student-upload-screenshot-btn,
-    .student-save-combined-btn,
+    .student-submit-screenshot-btn,
     .student-save-retry-btn,
     .student-account-trigger {
         min-height: 44px;

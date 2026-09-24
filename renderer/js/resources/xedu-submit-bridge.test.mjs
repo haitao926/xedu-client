@@ -53,6 +53,52 @@ test('two-field and ols-score messages become drafts and never call save', async
     assert.equal(bridge.hasDraft(), true);
 });
 
+test('valid page scores ask the shell to submit, including xedu:submit-request', async () => {
+    const submitted = [];
+    const ui = harness();
+    const frame = { contentWindow: {} };
+    const bridge = createXeduSubmitBridge({
+        windowObject: ui.windowObject,
+        onPageScoreSubmit: (draft) => submitted.push(draft),
+        transport: {
+            setDraft: async (draft) => ({ ok: true, has_draft: true, draft }),
+            saveScore: async () => submitted.push('save'),
+        },
+    });
+    bridge.attach(frame);
+    await ui.emit({
+        source: frame.contentWindow,
+        data: { type: 'xedu:submit-request', payload: { name: '页面提交', value: 70, answers: { q1: 'A' } } },
+    });
+    await ui.emit({ source: frame.contentWindow, data: { name: '两字段', value: 3 } });
+    await ui.emit({ source: {}, data: { type: 'xedu:submit-request', payload: { name: '别人', value: 1 } } });
+    await ui.emit({ source: frame.contentWindow, data: { name: '坏', value: 101 } });
+    assert.equal(submitted.length, 2);
+    assert.equal(submitted[0].name, '页面提交');
+    assert.equal(submitted[0].source, 'xedu:submit-request');
+    assert.equal(submitted[0].raw_score, 70);
+    assert.deepEqual(submitted[0].answers, { q1: 'A' });
+    assert.equal(submitted[1].name, '两字段');
+    assert.equal(submitted.includes('save'), false);
+});
+
+test('a page score without an active platform task stays a draft and does not submit', async () => {
+    const submitted = [];
+    const ui = harness();
+    const frame = { contentWindow: {} };
+    const bridge = createXeduSubmitBridge({
+        windowObject: ui.windowObject,
+        onPageScoreSubmit: (draft) => submitted.push(draft),
+        transport: {
+            setDraft: async () => ({ ok: false, code: 'no_active_task', message: '请从学习平台重新打开这个任务。' }),
+        },
+    });
+    bridge.attach(frame);
+    await ui.emit({ source: frame.contentWindow, data: { type: 'xedu:submit-request', payload: { name: '页面提交', value: 70 } } });
+    assert.equal(submitted.length, 0);
+    assert.equal(bridge.getDraft().name, '页面提交');
+});
+
 test('demo submit-request maps numeric score and summary into a draft', () => {
     const withSummary = parseLabScoreMessage({
         type: 'xedu:submit-request',
@@ -133,11 +179,11 @@ test('save is disabled without a draft and a failed screenshot does not count as
             },
             uploadScreenshot: async () => {
                 calls.push('shot');
-                return { ok: false, platform_status: '', code: 'screenshot_failed', message: '截图失败，没有上传。成绩草稿还在，可以单独保存成绩。' };
+                return { ok: false, platform_status: '', code: 'screenshot_failed', message: '截图失败，没有上传。成绩草稿还在。' };
             },
             saveCombined: async () => {
                 calls.push('combined');
-                return { ok: false, platform_status: '', code: 'screenshot_failed', message: '截图失败，没有上传。成绩草稿还在，可以单独保存成绩。', has_draft: true, draft: bridge.getDraft() };
+                return { ok: false, platform_status: '', code: 'screenshot_failed', message: '截图失败，没有上传。成绩草稿还在。', has_draft: true, draft: bridge.getDraft() };
             },
         },
     });
@@ -148,7 +194,8 @@ test('save is disabled without a draft and a failed screenshot does not count as
     const failed = await bridge.saveCombined();
     assert.equal(failed.platform_status, '');
     assert.equal(failed.ok, false);
-    assert.match(failed.message, /可以单独保存成绩/);
+    assert.match(failed.message, /成绩草稿还在/);
+    assert.equal(failed.message.includes('可以单独保存成绩'), false);
     assert.equal(bridge.hasDraft(), true);
     const saved = await bridge.saveScore();
     assert.equal(saved.platform_status, 'completed');
