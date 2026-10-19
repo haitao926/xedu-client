@@ -7,6 +7,7 @@ const ACTIONS = Object.freeze({
     'ui.hideModal': (app, element) => app.ui?.hideModal?.(element.dataset.actionValue),
     'docs.loadDocument': (_app, element) => loadDocument(element.dataset.actionValue),
     'jupyter.browseFolder': (app) => app.jupyter?.browseFolder?.(),
+    'system.selectCourseRoot': (app) => app.system?.selectCourseRoot?.(),
     'jupyter.startJupyter': (app) => app.jupyter?.startJupyter?.(),
     'jupyter.restartJupyter': (app) => app.jupyter?.restartJupyter?.(),
     'jupyter.stopJupyter': (app) => app.jupyter?.stopJupyter?.(),

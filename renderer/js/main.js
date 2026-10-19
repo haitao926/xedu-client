@@ -6,7 +6,7 @@ import { registerNamespace } from './app-context.js';
 import { ProjectWizard } from './project-wizard.js';
 import { createWorkspaceController } from './main/workspace-context.js';
 import { createDashboardController } from './main/dashboard.js';
-import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, forgetStoredTeacherCredential, selectPythonEnvironment, scanPythonEnvironments, confirmPythonEnvironment, repairXeduEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
+import { applySystemConfigToInputs, saveSystemConfig, resetSystemConfig, forgetStoredTeacherCredential, selectPythonEnvironment, selectCourseRoot, scanPythonEnvironments, confirmPythonEnvironment, repairXeduEnvironment, ensureTeacherCodeInitialized } from './main/system-config.js';
 import { getExperienceMode, getPageCopy } from './experience-config.js';
 import { installUnhandledRejectionHandler } from './main/error-boundary.js';
 import {
@@ -197,6 +197,7 @@ const {
     openResourcesOrClassroomSource,
     openJupyterWorkspace,
     openScratchWorkspace,
+    saveScratchProjectForSubmission,
     renderWorkspacePages,
     getLastOpenedJupyterWorkspace,
     isTeacherModeActive,
@@ -364,6 +365,7 @@ registerNamespace('resources', {
 registerNamespace('workspace', {
     openJupyterWorkspace,
     openScratchWorkspace,
+    saveScratchProjectForSubmission,
 });
 
 registerNamespace('system', {
@@ -371,6 +373,7 @@ registerNamespace('system', {
     resetSystemConfig,
     forgetStoredTeacherCredential,
     selectPythonEnvironment,
+    selectCourseRoot,
     scanPythonEnvironments,
     confirmPythonEnvironment,
     repairXeduEnvironment,

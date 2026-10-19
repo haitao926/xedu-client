@@ -7,7 +7,7 @@ _PACKAGE_ROOT = Path(__file__).parent
 def _jupyter_labextension_paths():
     return [
         {
-            "src": str(_PACKAGE_ROOT / "labextension"),
+            "src": str(_PACKAGE_ROOT / "jupyterlab-micropython"),
             "dest": "jupyterlab-micropython",
         }
     ]

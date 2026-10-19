@@ -72,7 +72,7 @@ sasu/zhangjiang-image-recognition-standard/
 nul
 .local-cache/
 jupyterlab_micropython/lib/
-jupyterlab_micropython/jupyterlab_micropython/labextension/
+jupyterlab_micropython/jupyterlab_micropython/jupyterlab-micropython/
 /course.json
 *.part
 *.backup

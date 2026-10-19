@@ -12,4 +12,4 @@ requires-python = ">=3.8"
 packages = ["jupyterlab_micropython"]
 
 [tool.hatch.build.targets.wheel.shared-data]
-"jupyterlab_micropython/labextension" = "share/jupyter/labextensions/jupyterlab-micropython"
+"jupyterlab_micropython/jupyterlab-micropython" = "share/jupyter/labextensions/jupyterlab-micropython"

@@ -6,6 +6,7 @@ import {
     isNotebookFile,
     isPythonScriptFile,
     isScratchFile,
+    normalizeFile,
     sortFiles,
 } from './file-utils.js';
 
@@ -34,11 +35,26 @@ function getFileExtension(filePath = '') {
 }
 
 export function getExperimentFileOverview(exp) {
-    const sourceFiles = Array.isArray(exp?.files) ? exp.files : [];
+    const sourceFiles = Array.isArray(exp?.files) ? exp.files.map(normalizeFile) : [];
     const topLevelFolders = sortFiles(sourceFiles.filter((file) => isDirectory(file)));
     const flatFiles = flattenFiles(sourceFiles, []);
     const allFiles = flatFiles.filter((file) => file && !isDirectory(file) && (file.path || file.name));
     const htmlFiles = allFiles.filter((file) => isHtmlFile(file));
+    const entry = String(exp?.entry_file || exp?.entryFile || '').trim().replace(/\\/g, '/').replace(/^\.\//, '');
+    if (isHtmlFile({ path: entry })) {
+        const parents = allFiles.map((file) => String(file.path || '').replace(/\\/g, '/'))
+            .filter((path) => path.endsWith(`/${entry}`));
+        const root = String(exp?.path || exp?.dir || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+|\/+$/g, '');
+        const entryPath = root && !entry.startsWith(`${root}/`) && !/^https?:\/\//i.test(entry)
+            ? `${root}/${entry}` : entry;
+        const match = htmlFiles.find((file) => file.path.replace(/\\/g, '/') === entryPath)
+            || htmlFiles.find((file) => file.path.replace(/\\/g, '/') === entry)
+            || (parents.length === 1 ? htmlFiles.find((file) => file.path.replace(/\\/g, '/') === parents[0]) : null);
+        const primaryHtml = match || { path: entryPath, type: 'html' };
+        if (!match) allFiles.push(primaryHtml);
+        else htmlFiles.splice(htmlFiles.indexOf(match), 1);
+        htmlFiles.unshift(primaryHtml);
+    }
     const scratchFiles = allFiles.filter((file) => isScratchFile(file));
     const blocklyFiles = allFiles.filter((file) => isBlocklyFile(file));
     const notebookFiles = allFiles.filter((file) => isNotebookFile(file));

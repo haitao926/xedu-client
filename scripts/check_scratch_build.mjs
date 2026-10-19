@@ -24,6 +24,7 @@ try {
     'xedu:scratch-host-state-request',
     'xedu:scratch-host-state',
     'xedu:scratch-host-action-result',
+    'export-for-submission',
   ]) {
     if (!indexHtml.includes(marker)) throw new Error(`Scratch host bridge marker is missing: ${marker}`);
   }

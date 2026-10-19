@@ -532,6 +532,24 @@ def register_resource_routes(app, services: dict):
             logger.error(f"扫描课程失败: {exc}")
             return jsonify({"success": False, "message": "扫描课程失败"}), 500
 
+    @app.route("/api/resources/discover-local", methods=["POST"])
+    @require_capability("resource:read")
+    def discover_local_courses():
+        root = Path(str((request.get_json(silent=True) or {}).get("root_path") or "").strip()).expanduser()
+        if not root.is_dir():
+            return jsonify({"success": True, "courses": []})
+        courses = []
+        for child in sorted(root.iterdir(), key=lambda item: item.name.lower()):
+            if not child.is_dir() or not (child / "course.json").is_file():
+                continue
+            try:
+                result = scan_course(str(child), init_if_missing=False, auto_build=False)
+                handle = _issue_local_course_handle(child)
+                courses.append({**result.course, "source": "local", "local_path": str(child), "resource_handle": handle})
+            except Exception as exc:
+                logger.warning("跳过无法读取的课程目录 %s: %s", child, exc)
+        return jsonify({"success": True, "courses": courses})
+
     @app.route("/api/resources/inspect-course", methods=["POST"])
     @require_capability("resource:read")
     def inspect_resource_course():

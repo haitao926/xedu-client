@@ -64,12 +64,13 @@ test('teacher setup and teacher login are separate flows', () => {
     assert.match(resourcesSource, /title:\s*["']退出教师模式["'][\s\S]{0,360}?exitTeacherMode\(\)/);
 });
 
-test('teacher login restores the saved credential while exit remains session-only', () => {
+test('teacher login restores the saved credential while exit records student preference', () => {
     assert.match(mainSource, /restoreTeacherModeState/);
     assert.match(mainSource, /onConfigurationReset:\s*async[\s\S]*?forgetTeacherMode\(\)/);
     assert.match(systemConfigSource, /rememberTeacherMode/);
     assert.match(systemConfigSource, /forgetTeacherMode/);
     assert.match(resourcesSource, /rememberTeacherMode/);
+    assert.match(resourcesSource, /rememberStudentMode/);
     assert.doesNotMatch(resourcesSource, /restoreTeacherModeState/);
     assert.doesNotMatch(systemConfigSource, /detail:\s*\{\s*code\s*:/);
     assert.match(preloadSource, /loadTeacherCredential/);

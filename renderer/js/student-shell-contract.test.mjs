@@ -2,10 +2,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import { resolveJupyterWorkspaceTarget } from "./resources/file-utils.js";
 import { applyStudentJupyterControls, STUDENT_JUPYTER_CONTROLS_CLASS } from "./jupyter-controls.js";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const readRepoFile = (relativePath) => readFileSync(resolve(repoRoot, relativePath), "utf8");
+
+test("Jupyter file paths without an explicit experiment directory remain course-relative", () => {
+  const resources = readRepoFile("renderer/js/resources.js");
+  assert.match(resources, /const path = exp\.path \|\| exp\.dir \|\| "";/);
+  assert.deepEqual(resolveJupyterWorkspaceTarget({
+    coursePath: "/courses/sample",
+    experimentPath: "",
+    filePath: "lesson1/code/publish_teacher_lamp.py",
+  }), {
+    projectDir: "/courses/sample",
+    filePath: "lesson1/code/publish_teacher_lamp.py",
+  });
+});
 
 test("student shell starts at the task center without a persistent sidebar", () => {
   const html = readRepoFile("renderer/index.html");
@@ -16,7 +30,7 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.match(html, /id="page-title">课程任务中心</);
   assert.match(topBar, /id="student-focus-back"[^>]*data-action="resources\.returnToStudentTaskCenter"[\s\S]*返回任务中心/);
   assert.match(topBar, /id="student-focus-ai-btn"[^>]*data-action="ai\.toggleStudentAssistant"[\s\S]*AI 助手/);
-  assert.match(topBar, /id="student-submit-screenshot-btn"[^>]*data-action="resources\.submitStudentScreenshot"[^>]*>截图并提交</);
+  assert.match(topBar, /id="student-submit-screenshot-btn"[^>]*data-action="resources\.submitStudentScreenshot"[^>]*>保存并提交</);
   assert.doesNotMatch(topBar, /保存成绩|截图并上传|保存成绩并截图|student-save-evidence-btn|student-save-score-btn|student-upload-screenshot-btn|student-save-combined-btn/);
   assert.match(topBar, /id="student-score-draft"/);
   assert.match(topBar, /id="student-platform-status"/);
@@ -182,8 +196,10 @@ test("student mode hides the sidebar, settings, and AI page nav", () => {
   assert.match(resources, /export async function submitStudentScreenshot\(/);
   assert.match(resources, /onPageScoreSubmit:\s*\(\) => \{\s*void submitPageScore\(\);\s*\}/);
   assert.match(resources, /currentEvidenceKind\(resourcesState\.activeCourseWorkspaceTab\)/);
-  assert.match(resources, /runStudentPlatformSave\("evidence", \{ experiment \}\)/);
+  assert.match(resources, /runStudentPlatformSave\("project", \{ experiment \}\)/);
   assert.match(resources, /runStudentPlatformSave\("screenshot"\)/);
+  assert.match(resources, /submitBtn\.hidden = !focus \|\| !currentEvidenceKind\(normalized\)/);
+  assert.match(resources, /experiment === "screenshot"\) return runStudentPlatformSave\("screenshot"\)/);
   assert.doesNotMatch(resources, /export async function saveStudentScore\(|export async function uploadStudentScreenshot\(|export async function saveStudentEvidence\(|export async function saveStudentScoreAndScreenshot\(/);
   assert.match(readRepoFile("renderer/js/action-dispatcher.js"), /resources\.submitStudentScreenshot/);
   assert.doesNotMatch(readRepoFile("renderer/js/action-dispatcher.js"), /resources\.saveStudentScore|resources\.uploadStudentScreenshot|resources\.saveStudentEvidence|resources\.saveStudentScoreAndScreenshot/);
@@ -192,8 +208,8 @@ test("student mode hides the sidebar, settings, and AI page nav", () => {
   const saveChrome = readRepoFile("renderer/js/resources/xedu-save-chrome.js");
   assert.match(saveChrome, /待保存：/);
   assert.match(saveChrome, /保存中/);
-  assert.match(saveChrome, /平台已保存/);
-  assert.match(saveChrome, /statusText = '已保存'/);
+  assert.match(saveChrome, /提交成功 · 平台已确认/);
+  assert.match(saveChrome, /statusText = '提交成功 · 作品已保存'/);
   assert.match(saveChrome, /grant_expired/);
   assert.doesNotMatch(resources, /export function submitStudentResult\(/);
   assert.doesNotMatch(resources, /TODO: next pass — 提交到平台/);
@@ -248,6 +264,12 @@ test("student task center opens HTML pages directly and routes coding tabs to na
   assert.doesNotMatch(resources, /当前实验没有配置 Scratch 资源。/);
   assert.match(resources, /function buildStudentHtmlExperienceView\(context\)/);
   assert.match(resources, /openBrowserBtn\.addEventListener\("click", withAsyncActionErrorBoundary\(async \(\) => \{[\s\S]*await openExternal\(frameUrl\);/);
+  assert.match(resources, /const maxBtn = document\.createElement\("button"\);/);
+  assert.match(resources, /maxBtn\.className = "btn btn-secondary btn-icon-only resources-student-html-max-btn";/);
+  assert.match(resources, /wrap\.classList\.toggle\("is-maximized", isMaximized\);/);
+  assert.match(resources, /window\.dispatchEvent\(new Event\("resize"\)\);/);
+  assert.match(resources, /keydown/);
+  assert.match(resources, /Escape/);
   assert.doesNotMatch(resources, /window\.app\?\.system\?\.openExternal\?\.\(frameUrl\)/);
   assert.match(resources, /function syncStudentPageBodyState\(tabId = resourcesState\.activeCourseWorkspaceTab\)/);
   assert.match(resources, /student-page-experience/);
@@ -287,16 +309,20 @@ test("student task center does not fall back to local, historical, or generic re
   assert.doesNotMatch(renderer, /Array\.isArray\(list\)\s*&&\s*list\.length\s*\?\s*list\[0\]/);
 });
 
-test("student interactive experience opens the selected HTML file without the course outline", () => {
+test("student HTML experience header is compressed and supports non-fullscreen maximize", () => {
   const resources = readRepoFile("renderer/js/resources.js");
   const styles = readRepoFile("renderer/styles/main.css");
 
-  assert.match(resources, /const directStudentExperience = isStudentLessonMode\(\) && resourcesState\.activeCourseWorkspaceTab === "experience";/);
-  assert.match(resources, /if \(!directStudentExperience && \(!isStudentLessonMode\(\) \|\| resourcesState\.activeCourseWorkspaceTab !== "route"\)\)/);
-  assert.match(resources, /split\.classList\.add\("is-direct-file-workspace"\);/);
-  assert.doesNotMatch(resources, /is-experience-workbench/);
-  assert.match(styles, /resources-outline-layout\.is-direct-file-workspace\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
-  assert.doesNotMatch(styles, /is-experience-workbench/);
+  // In resources.js: header only keeps title and action buttons (maximize + external)
+  assert.match(resources, /resources-student-html-experience-actions/);
+  assert.match(resources, /maxBtn\.setAttribute\("aria-label",\s*isMaximized\s*\?\s*"还原"\s*:\s*"最大化"\)/);
+  assert.doesNotMatch(resources, /resources-student-html-experience-desc/);
+  assert.doesNotMatch(resources, /resources-student-html-experience-meta/);
+
+  // In main.css: maximized styling covers content area, not window/system fullscreen
+  assert.match(styles, /\.resources-student-html-experience\.is-maximized\s*\{[\s\S]*position:\s*absolute;/);
+  assert.match(styles, /\.resources-student-html-experience\.is-maximized\s*\{[\s\S]*inset:\s*0;/);
+  assert.match(styles, /\.resources-student-html-experience\.is-maximized\s*\{[\s\S]*z-index:\s*100;/);
 });
 
 test("student classroom entry is owned by the course task center", () => {

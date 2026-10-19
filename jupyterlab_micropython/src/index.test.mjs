@@ -167,3 +167,27 @@ test('code mode keeps the editor larger than the output console', () => {
   assert.match(css, /\.xedu-mp-editor-scroll\s*\{[^}]*flex:\s*1 1 auto/);
   assert.doesNotMatch(css, /flex:\s*0 0 32%/);
 });
+
+test('MicroPython launcher configuration ensures top placement and MicroPython icon', () => {
+  const panel = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+  const logic = readFileSync(new URL('./panel-logic.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../style/index.css', import.meta.url), 'utf8');
+
+  // 1) Launcher configuration places the category and card at top priority
+  assert.match(panel, /category:\s*'XEdu 实验'/);
+  assert.match(panel, /categoryRank:\s*(-[0-9]+|Number\.NEGATIVE_INFINITY|-Infinity)/);
+  assert.match(panel, /rank:\s*0/);
+
+  // 2) MicroPython/ESP32 launcher icon contract: uses command icon renderer with clear MicroPython/ESP32 icon
+  assert.match(panel, /icon:\s*(microPythonIcon|MICROPYTHON_ICON)/);
+  assert.match(panel, /svgstr/);
+  assert.match(logic, /MICROPYTHON_ICON_NAME\s*=\s*'xedu-micropython:icon'/);
+
+  // SVG representation in logic includes distinct MicroPython snake / ESP32 board visuals
+  assert.match(logic, /<svg[^>]*viewBox=/);
+  assert.match(logic, /MicroPython/);
+  assert.match(logic, /ESP32/);
+
+  // CSS styling for launcher icon polish and sharp rendering
+  assert.match(css, /\.jp-LauncherCard\[data-category="XEdu 实验"\]|\.jp-LauncherCard\[data-category='XEdu 实验'\]/);
+});

@@ -33,7 +33,7 @@ test('platform saved appears only after completed, and zero stays visible', () =
         phase: 'saved',
         result: { ok: true, platform_status: 'completed' },
     });
-    assert.equal(saved.statusText, '平台已保存');
+    assert.equal(saved.statusText, '提交成功 · 平台已确认');
     assert.equal(saved.draftLabel, '');
     assert.equal(saved.retryVisible, false);
 
@@ -92,7 +92,7 @@ test('screenshot submit stays available without a score draft', () => {
         phase: 'saved',
         result: { ok: true, platform_status: 'completed', mode: 'evidence', message: '已保存' },
     });
-    assert.equal(saved.statusText, '已保存');
+    assert.equal(saved.statusText, '提交成功 · 作品已保存');
     assert.equal(saved.submitDisabled, false);
     assert.equal(saved.retryVisible, false);
 
@@ -101,5 +101,5 @@ test('screenshot submit stays available without a score draft', () => {
         phase: 'saved',
         result: { ok: true, platform_status: 'completed', mode: 'score' },
     });
-    assert.equal(scoreSaved.statusText, '平台已保存');
+    assert.equal(scoreSaved.statusText, '提交成功 · 平台已确认');
 });

@@ -57,6 +57,7 @@ function loadMain({ backendProcess = null, httpImpl = { request() {} } } = {}) {
     env: { XEDU_CLIENT_CAPABILITY: 'shutdown-test-capability' },
     on: () => {},
     platform: 'darwin',
+    kill: () => true,
     stderr: { on: () => {} },
     stdout: { on: () => {} },
   };
@@ -157,6 +158,12 @@ test('managed backend receives SIGKILL when it stays alive past the graceful tim
   await harness.shutdown.stopManagedBackend(5);
 
   assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
+});
+
+test('managed backend launch creates an isolated process group for descendant cleanup', () => {
+  assert.match(mainSource, /backendProcess = spawn\(backendPython, args, \{[\s\S]*?detached:\s*process\.platform !== 'win32'/);
+  assert.match(mainSource, /function forceTerminateProcessTree\(pid\)/);
+  assert.match(mainSource, /forceTerminateProcessTree\(processRef\.pid\)/);
 });
 
 test('before-quit completes managed backend shutdown before retrying application quit', async () => {

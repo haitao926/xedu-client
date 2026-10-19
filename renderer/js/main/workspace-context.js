@@ -257,6 +257,22 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         });
     }
 
+    async function saveScratchProjectForSubmission() {
+        if (!scratchBridgeReady) {
+            throw new Error('Scratch 页面尚未连接');
+        }
+        const result = await dispatchScratchHostRequest({
+            type: 'xedu:scratch-host-action',
+            action: 'export-for-submission',
+        });
+        const bytes = normalizeScratchProjectBuffer(result?.bytes);
+        const filename = String(result?.filename || '').trim();
+        if (!bytes?.byteLength || !filename || !filename.toLowerCase().endsWith('.sb3')) {
+            throw new Error('Scratch 项目导出失败');
+        }
+        return { bytes, mime: 'application/x.scratch.sb3', filename };
+    }
+
     async function runScratchHostAction(action) {
         const { menu } = getScratchHostMenuElements();
         if (menu) {
@@ -868,6 +884,7 @@ export function createWorkspaceController({ showTab, openNotebookFile }) {
         openScratchWorkspace,
         renderWorkspacePages,
         getLastOpenedJupyterWorkspace,
+        saveScratchProjectForSubmission,
         isTeacherModeActive,
     };
 }

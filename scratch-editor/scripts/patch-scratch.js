@@ -628,7 +628,11 @@ const standaloneRenderer = path.join(guiRoot, 'src', 'playground', 'render-gui-s
 assertExists(standaloneRenderer);
 patchFile(standaloneRenderer, (text) => {
   if (text.includes('getXEduScratchProjectInfo') && text.includes('saveXEduScratchProject')) {
-    return text;
+    return text
+      .replace('const saveXEduScratchProject = (id, vmState, params, vm) => {',
+        'const saveXEduScratchProject = (id, vmState, params, vm, content) => {')
+      .replace('    return vm.saveProjectSb3()\n',
+        '    return (content ? Promise.resolve(content) : vm.saveProjectSb3())\n');
   }
   const helper = `
 const getXEduScratchParams = () => new URLSearchParams(window.location.search || '');
@@ -660,10 +664,10 @@ const getXEduScratchProjectInfo = () => {
     };
 };
 
-const saveXEduScratchProject = (id, vmState, params, vm) => {
+const saveXEduScratchProject = (id, vmState, params, vm, content) => {
     const projectUrl = getXEduScratchProjectUrl();
     if (!projectUrl || !vm || !vm.saveProjectSb3) return Promise.resolve({id: id || '0'});
-    return vm.saveProjectSb3()
+    return (content ? Promise.resolve(content) : vm.saveProjectSb3())
         .then(blob => fetch(projectUrl, {
             method: 'PUT',
             headers: {'Content-Type': 'application/x.scratch.sb3'},
@@ -719,7 +723,7 @@ patchFile(standaloneRenderer, (text) => {
   const scratchHostBridgeSource = `const bindXEduScratchHostBridge = (state, bridge) => {
     const bridgeToken = new URLSearchParams(window.location.search).get('bridgeToken') || '';
     if (!bridgeToken || window.parent === window) return;
-    const send = payload => window.parent.postMessage({...payload, bridgeToken}, '*');
+    const send = (payload, transfer = []) => window.parent.postMessage({...payload, bridgeToken}, '*', transfer);
     const sendState = () => send({
         type: 'xedu:scratch-host-state',
         state: bridge.getState()
@@ -760,7 +764,8 @@ patchFile(standaloneRenderer, (text) => {
             new: 'newProject',
             save: 'saveProject',
             upload: 'uploadProject',
-            download: 'downloadProject'
+            download: 'downloadProject',
+            'export-for-submission': 'exportProjectForSubmission'
         };
         const handler = bridge[actionMap[request.action]];
         if (typeof handler !== 'function') {
@@ -773,7 +778,8 @@ patchFile(standaloneRenderer, (text) => {
         }
         try {
             const result = await handler();
-            send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, result});
+            send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, result},
+                result?.bytes instanceof ArrayBuffer ? [result.bytes] : []);
             sendState();
         } catch (error) {
             send({
@@ -979,6 +985,38 @@ const onClickLogo = () => {`
       'const onClickLogo = () => {',
       `${scratchHostBridgeSource}\n\nconst onClickLogo = () => {`
     );
+  }
+  next = next.replace(/const bindXEduScratchHostBridge = \(state, bridge\) => \{[\s\S]*?\n};/,
+    scratchHostBridgeSource);
+  next = next
+    .replace('const saveScratchProjectToCurrentFile = async state => {',
+      'const saveScratchProjectToCurrentFile = async (state, content) => {')
+    .replace('    await saveXEduScratchProject(projectInfo.id, null, null, vm);',
+      `    if (!vm || typeof vm.saveProjectSb3 !== 'function') {
+        throw new Error('Scratch 还没有准备好。');
+    }
+    await saveXEduScratchProject(projectInfo.id, null, null, vm, content);`);
+  if (!next.includes('const exportScratchProjectForSubmission = async state => {')) {
+    next = next.replace('const createXEduScratchBridge = state => ({',
+      `const exportScratchProjectForSubmission = async state => {
+    if (!getXEduScratchProjectInfo()) {
+        throw new Error('当前 Scratch 页面没有绑定可保存的项目文件。');
+    }
+    const vm = state.store.getState().scratchGui.vm;
+    if (!vm || typeof vm.saveProjectSb3 !== 'function') {
+        throw new Error('Scratch 还没有准备好。');
+    }
+    const filename = getScratchProjectTitle(state).replace(/\\.sb3$/i, '') + '.sb3';
+    const content = await vm.saveProjectSb3();
+    await saveScratchProjectToCurrentFile(state, content);
+    return {bytes: await content.arrayBuffer(), mime: 'application/x.scratch.sb3', filename};
+};
+
+const createXEduScratchBridge = state => ({`);
+  }
+  if (!next.includes('exportProjectForSubmission: () => exportScratchProjectForSubmission(state),')) {
+    next = next.replace(/    downloadProject: \(\) => downloadScratchProjectToComputer\(state\),?/,
+      '    downloadProject: () => downloadScratchProjectToComputer(state),\n    exportProjectForSubmission: () => exportScratchProjectForSubmission(state),');
   }
   if (!next.includes('bindXEduScratchHostBridge(state, xeduScratchBridge);')) {
     next = next.replace(

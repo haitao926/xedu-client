@@ -1,5 +1,25 @@
 export const TEACHER_MODE_KEY = 'xedu_teacher_mode';
 export const TEACHER_MODE_CODE_KEY = 'xedu_teacher_mode_code';
+export const PREFERRED_EXPERIENCE_MODE_KEY = 'xedu_preferred_experience_mode';
+
+export function readPreferredExperienceMode(storage = globalThis.localStorage) {
+    try {
+        const value = storage?.getItem(PREFERRED_EXPERIENCE_MODE_KEY);
+        return value === 'student' || value === 'teacher' ? value : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+export function writePreferredExperienceMode(value, storage = globalThis.localStorage) {
+    if (value !== 'student' && value !== 'teacher') return '';
+    try {
+        storage?.setItem(PREFERRED_EXPERIENCE_MODE_KEY, value);
+        return value;
+    } catch (_) {
+        return '';
+    }
+}
 
 export function readTeacherModeState(storage = globalThis.sessionStorage) {
     try {
@@ -42,6 +62,7 @@ export function clearTeacherModeSession(storage = globalThis.sessionStorage) {
 
 export async function rememberTeacherMode(value, {
     storage = globalThis.sessionStorage,
+    preferenceStorage = globalThis.localStorage,
     credentialApi = globalThis.electronAPI,
 } = {}) {
     const state = writeTeacherModeState(value, storage);
@@ -58,7 +79,12 @@ export async function rememberTeacherMode(value, {
         clearTeacherModeSession(storage);
         return { unlocked: false, code: '', persisted: false, error: saved?.error || 'credential-save-failed' };
     }
+    writePreferredExperienceMode('teacher', preferenceStorage);
     return { ...state, persisted: true, error: undefined };
+}
+
+export function rememberStudentMode(preferenceStorage = globalThis.localStorage) {
+    return writePreferredExperienceMode('student', preferenceStorage) === 'student';
 }
 
 export async function forgetTeacherMode({
@@ -84,11 +110,13 @@ export async function forgetTeacherMode({
 
 export async function restoreTeacherModeState({
     storage = globalThis.sessionStorage,
+    preferenceStorage = globalThis.localStorage,
     credentialApi = globalThis.electronAPI,
     verifyCode,
 } = {}) {
     const current = readTeacherModeState(storage);
     if (current.unlocked) return current;
+    if (readPreferredExperienceMode(preferenceStorage) === 'student') return current;
     if (typeof credentialApi?.loadTeacherCredential !== 'function') return current;
 
     let loaded;

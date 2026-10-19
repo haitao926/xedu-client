@@ -5,5 +5,5 @@ import { fileURLToPath } from 'node:url';
 const extensionRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 await Promise.all([
   rm(join(extensionRoot, 'lib'), { recursive: true, force: true }),
-  rm(join(extensionRoot, 'jupyterlab_micropython', 'labextension'), { recursive: true, force: true }),
+  rm(join(extensionRoot, 'jupyterlab_micropython', 'jupyterlab-micropython'), { recursive: true, force: true }),
 ]);

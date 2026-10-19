@@ -116,6 +116,7 @@ class UIConfig:
     classroom_code: str = ""
     classroom_teacher_code: str = ""
     allow_network_access: bool = True
+    course_root: str = ""
 
     def validate(self) -> tuple[bool, list[str]]:
         """验证配置"""
@@ -141,6 +142,9 @@ class UIConfig:
 
         if isinstance(self.allow_network_access, bool) is False:
             errors.append("网络暴露开关必须为布尔值")
+
+        if self.course_root and not Path(self.course_root).is_dir():
+            errors.append(f"课程目录不存在: {self.course_root}")
 
         return len(errors) == 0, errors
 

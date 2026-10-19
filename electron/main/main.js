@@ -4,7 +4,7 @@ const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const crypto = require('crypto');
-const { spawn, execSync } = require('child_process');
+const { spawn, execFileSync, execSync } = require('child_process');
 const {
     buildPythonChildEnvironment,
     discoverPythonEnvironments,
@@ -26,6 +26,7 @@ const {
     registerLocalTaskIpc,
 } = require('./xedu-local-task-launch');
 const { registerXeduProtocolClient } = require('./xedu-protocol');
+const { saveCurrentJupyterProject } = require('./jupyter-project-save');
 
 function isBrokenPipeError(error) {
     return Boolean(error && (error.code === 'EPIPE' || error.errno === 'EPIPE'));
@@ -144,7 +145,7 @@ const DIAGNOSTIC_BODY_LABELS = ['request_body', 'request-body', 'request body', 
 
 const API_REQUEST_ALLOWLIST = Object.freeze([
     { method: 'GET', pattern: /^\/api\/(?:health|status|detect_python|load_config|documents(?:\/|$)|classroom\/(?:status|discover|index|course\/|file\/|package\/)|resources\/(?:default-sample|index|local-file\/|scan|inspect-course|scan-folder|operations\/[^/]+)|projects\/templates)(?:\?.*)?$/ },
-    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|repair_xedu|projects\/create|ai\/(?:ask|test_config|save_config)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|inspect-course|publish|pull|ensure-repo|save-course|import-package-local|local-handle|scratch-workspace))(?:\?.*)?$/ },
+    { method: 'POST', pattern: /^\/api\/(?:start|stop|restart|save_config|reset_config|repair_xedu|projects\/create|ai\/(?:ask|test_config|save_config)|classroom\/(?:verify-teacher|sync-courses|start|stop|pull|fetch-index)|resources\/(?:index|scan|scan-folder|inspect-course|discover-local|publish|pull|ensure-repo|save-course|import-package-local|local-handle|scratch-workspace))(?:\?.*)?$/ },
 ]);
 
 const DEV_RENDERER_CANDIDATES = [
@@ -233,6 +234,45 @@ function getBackendConfigFile() {
         return path.join(app.getPath('userData'), 'config', 'config.json');
     } catch (_) {
         return null;
+    }
+}
+
+function getManagedBackendPidFile() {
+    try {
+        return path.join(app.getPath('userData'), 'backend.pid');
+    } catch (_) {
+        return null;
+    }
+}
+
+function readManagedBackendPid() {
+    const pidFile = getManagedBackendPidFile();
+    if (!pidFile) return null;
+    try {
+        const pid = Number.parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+        return Number.isInteger(pid) && pid > 0 ? pid : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function writeManagedBackendPid(pid) {
+    const pidFile = getManagedBackendPidFile();
+    if (!pidFile || !pid) return;
+    try {
+        fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+        fs.writeFileSync(pidFile, `${pid}\n`, 'utf8');
+    } catch (error) {
+        console.warn('记录后端进程失败:', error?.message || error);
+    }
+}
+
+function clearManagedBackendPid(pid) {
+    const pidFile = getManagedBackendPidFile();
+    if (!pidFile || !pid) return;
+    try {
+        if (readManagedBackendPid() === pid) fs.unlinkSync(pidFile);
+    } catch (_) {
     }
 }
 
@@ -747,10 +787,39 @@ function dispatchPracticeDeepLink(payload) {
     pendingPracticeDeepLink = payload;
 }
 
+function resolveConfiguredLocalCourseRoot(snapshot) {
+    try {
+        const configPath = path.join(app.getPath('userData'), 'config', 'config.json');
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const configuredRoot = config?.ui?.course_root;
+        if (typeof configuredRoot !== 'string' || !path.isAbsolute(configuredRoot)) return null;
+        const root = path.resolve(configuredRoot);
+        if (!fs.statSync(root).isDirectory()) return null;
+        const matches = (directory) => {
+            try {
+                return fs.statSync(directory).isDirectory()
+                    && JSON.parse(fs.readFileSync(path.join(directory, 'course.json'), 'utf8'))?.id === snapshot.course_id;
+            } catch (_) {
+                return false;
+            }
+        };
+        if (matches(root)) return root;
+        for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const candidate = path.join(root, entry.name);
+            if (matches(candidate)) return candidate;
+        }
+    } catch (_) {
+        // Missing/unreadable local configuration must not block a platform launch.
+    }
+    return null;
+}
+
 function getLocalTaskSession() {
     if (!localTaskSession) {
         localTaskSession = createLocalTaskSession({
             cacheRoot: path.join(app.getPath('userData'), 'xedu-task-packages'),
+            resolveLocalCourseRoot: resolveConfiguredLocalCourseRoot,
         });
     }
     return localTaskSession;
@@ -823,9 +892,29 @@ async function handleOpenLocalTask(rawUrl) {
 
 function dispatchIncomingDeepLink(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.startsWith(`${XEDU_PROTOCOL}://`)) return;
+    try {
+        const parsed = new URL(rawUrl);
+        const action = parsed.hostname || parsed.pathname.replace(/^\/+/, '');
+        if (action === 'open') {
+            bringMainWindowToFront();
+            return;
+        }
+    } catch (_) {
+        return;
+    }
     const practice = parsePracticeDeepLink(rawUrl);
     if (practice) {
         dispatchPracticeDeepLink(practice);
+        return;
+    }
+    try {
+        const parsed = new URL(rawUrl);
+        const action = (parsed.hostname || parsed.pathname.replace(/^\/+/, '') || '').split('/')[0].trim();
+        if (parsed.protocol === `${XEDU_PROTOCOL}:` && action === 'open-local-task') {
+            void handleOpenLocalTask(rawUrl);
+            return;
+        }
+    } catch (_) {
         return;
     }
     if (parseOpenLocalTaskLink(rawUrl)) {
@@ -1560,11 +1649,11 @@ function stopJupyterGracefully(timeoutMs = 3000) {
 }
 
 function stopManagedBackend(timeoutMs = 5000) {
-    const processRef = backendProcess;
+        const processRef = backendProcess;
     backendReadyPromise = null;
-    jupyterManagedPid = null;
 
     if (!processRef) {
+        jupyterManagedPid = null;
         return Promise.resolve();
     }
 
@@ -1575,7 +1664,10 @@ function stopManagedBackend(timeoutMs = 5000) {
             if (settled) return;
             settled = true;
             if (forceKillTimer) clearTimeout(forceKillTimer);
+            forceTerminateProcessTree(processRef.pid);
             if (backendProcess === processRef) backendProcess = null;
+            clearManagedBackendPid(processRef.pid);
+            jupyterManagedPid = null;
             resolve();
         };
 
@@ -1600,6 +1692,75 @@ function stopManagedBackend(timeoutMs = 5000) {
     });
 }
 
+function forceTerminateProcessTree(pid) {
+    if (!pid) return;
+    if (process.platform === 'win32') {
+        try {
+            execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+        } catch (_) {
+        }
+        return;
+    }
+
+    try {
+        process.kill(-pid, 'SIGKILL');
+    } catch (error) {
+        if (error?.code !== 'ESRCH') {
+            console.warn('强制清理后端进程组失败:', error?.message || error);
+        }
+    }
+
+    try {
+        const rows = execFileSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' })
+            .split(/\r?\n/)
+            .map((line) => line.trim().split(/\s+/).map(Number))
+            .filter(([childPid, parentPid]) => Number.isInteger(childPid) && Number.isInteger(parentPid));
+        const childrenByParent = new Map();
+        for (const [childPid, parentPid] of rows) {
+            const children = childrenByParent.get(parentPid) || [];
+            children.push(childPid);
+            childrenByParent.set(parentPid, children);
+        }
+        const descendants = [];
+        const pending = [...(childrenByParent.get(pid) || [])];
+        while (pending.length) {
+            const childPid = pending.pop();
+            descendants.push(childPid);
+            pending.push(...(childrenByParent.get(childPid) || []));
+        }
+        for (const childPid of descendants.reverse()) {
+            try {
+                process.kill(childPid, 'SIGKILL');
+            } catch (childError) {
+                if (childError?.code !== 'ESRCH') continue;
+            }
+        }
+        try {
+            process.kill(pid, 'SIGKILL');
+        } catch (parentError) {
+            if (parentError?.code !== 'ESRCH') throw parentError;
+        }
+    } catch (error) {
+        if (error?.code !== 'ESRCH') {
+            console.warn('强制清理后端子进程失败:', error?.message || error);
+        }
+    }
+}
+
+function waitForPortFree(port, timeoutMs = 3000) {
+    const startedAt = Date.now();
+    return new Promise((resolve) => {
+        const check = () => {
+            if (!findProcessOnPort(port) || Date.now() - startedAt >= timeoutMs) {
+                resolve();
+                return;
+            }
+            setTimeout(check, 100);
+        };
+        check();
+    });
+}
+
 function startBackendServer(options = {}) {
     const { force = false, reason = 'initial' } = options;
     if (backendReadyPromise && !force) {
@@ -1619,6 +1780,16 @@ function startBackendServer(options = {}) {
             logDirectory: getBackendLogDirectory(),
         });
         const occupiedMsgBase = `端口 ${BACKEND_PORT} 已被进程 ${occupied.pid}${occupied.command ? ` (${occupied.command})` : ''} 占用`;
+        const managedPid = readManagedBackendPid();
+        if (managedPid === occupied.pid) {
+            console.log('检测到旧的 XEdu 后端服务，先清理其进程树再启动新服务');
+            forceTerminateProcessTree(occupied.pid);
+            backendReadyPromise = waitForPortFree(BACKEND_PORT).then(() => {
+                backendReadyPromise = null;
+                return startBackendServer({ force: true, reason: 'stale-backend-recovery' });
+            });
+            return backendReadyPromise;
+        }
         console.log(`${occupiedMsgBase}，尝试健康检查...`);
         backendReadyPromise = waitForBackendReady(5000)
             .then(async () => {
@@ -1795,8 +1966,10 @@ function startBackendServer(options = {}) {
         backendProcess = spawn(backendPython, args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: path.dirname(serverScript),
-            env
+            env,
+            detached: process.platform !== 'win32',
         });
+        writeManagedBackendPid(backendProcess.pid);
 
         const classifyOutput = (text, isError = false) => {
             const t = text.toString();
@@ -2172,6 +2345,16 @@ function setupJupyterView() {
     // 主窗口关闭时在 createWindow 中统一清理引用
 }
 
+async function saveJupyterProjectForSubmission() {
+    if (!jupyterView || jupyterView.webContents.isDestroyed()) {
+        throw new Error('Jupyter 页面尚未连接');
+    }
+    return jupyterView.webContents.executeJavaScript(
+        `(${saveCurrentJupyterProject.toString()})()`,
+        true,
+    );
+}
+
 function setupMenu() {
 // ... existing code ...
     const viewSubmenu = [
@@ -2251,6 +2434,7 @@ if (!gotTheLock) {
             isTrusted: isTrustedRenderer,
             session: getLocalTaskSession(),
             captureExperimentView,
+            saveJupyterProject: saveJupyterProjectForSubmission,
         });
         const startupDeepLink = (process.argv || []).find((arg) => typeof arg === 'string' && arg.startsWith(`${XEDU_PROTOCOL}://`));
         if (startupDeepLink) dispatchIncomingDeepLink(startupDeepLink);

@@ -6,6 +6,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -24,6 +25,9 @@ class FakeMicroPythonSerial:
         self.args = args
         self.kwargs = kwargs
         self.writes = []
+        self.io_events = []
+        self.execution_finishes = True
+        self._executing = False
         self.closed = False
         self.timeout = kwargs.get("timeout", 0.1)
         self.dtr = True
@@ -46,6 +50,7 @@ class FakeMicroPythonSerial:
     def write(self, value):
         data = bytes(value)
         self.writes.append(data)
+        self.io_events.append(("write", data))
         index = 0
         while index < len(data):
             if data[index : index + 3] == b"\x05A\x01":
@@ -54,9 +59,12 @@ class FakeMicroPythonSerial:
                 continue
             byte = data[index : index + 1]
             if byte == b"\x03":
-                self._raw = False
                 self._raw_buffer.clear()
-                self._queue(b"\r\n>>> ")
+                if self._executing:
+                    self._executing = False
+                    self._queue(b"\x04Traceback: KeyboardInterrupt\r\n\x04>")
+                else:
+                    self._queue(b">" if self._raw else b"\r\n>>> ")
             elif byte == b"\x01":
                 self._raw = True
                 self._raw_buffer.clear()
@@ -67,7 +75,8 @@ class FakeMicroPythonSerial:
                 self._queue(b"\r\nMicroPython v1.23.0 on ESP32\r\n>>> ")
             elif byte == b"\x04":
                 if self._raw and self._raw_buffer:
-                    self._queue(b"OK" + self.exec_output + b"\x04\x04>")
+                    self._executing = not self.execution_finishes
+                    self._queue(b"OK" + self.exec_output + (b"\x04\x04>" if self.execution_finishes else b""))
                     self._raw_buffer.clear()
                 elif self._raw:
                     self._queue(b"MPY: soft reboot\r\nraw REPL; CTRL-B to exit\r\n>")
@@ -93,6 +102,7 @@ class FakeMicroPythonSerial:
             time.sleep(0.005)
 
     def flush(self):
+        self.io_events.append(("flush", None))
         return None
 
     def open(self):
@@ -274,6 +284,88 @@ class MicroPythonSessionTestCase(unittest.TestCase):
         self.assertIn(b"\x02", payload)
         self.assertFalse(self.manager.read_output()["running"])
 
+    def test_interrupt_sends_separate_flushed_controls_and_clears_running_file(self):
+        self.serial.execution_finishes = False
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "main.py").write_text("while True: pass\n", encoding="utf-8")
+            self.manager.project_root = Path(directory).resolve()
+            self.manager.connect("COM3")
+            self.manager.run_file("main.py")
+            self.assertEqual(self.manager.read_output()["running_file"], "main.py")
+            self.serial.io_events.clear()
+            result = self.manager.interrupt()
+
+        self.assertEqual(result, {"interrupted": True})
+        self.assertEqual(self.serial.io_events, [
+            ("write", b"\r\x03"), ("flush", None),
+            ("write", b"\x03"), ("flush", None),
+            ("write", b"\r\x02"), ("flush", None),
+        ])
+        snapshot = self.manager.read_output()
+        self.assertFalse(snapshot["running"])
+        self.assertEqual(snapshot["running_file"], "")
+        self.assertFalse(self.manager._in_raw_repl)
+        self.assertIn("KeyboardInterrupt", snapshot["output"])
+        self.assertIn(">>>", snapshot["output"])
+
+    def test_interrupt_owns_control_reads_and_resumes_reader(self):
+        self.manager.connect("COM3")
+        reader = self.manager._reader
+        read_until = self.manager._read_until
+
+        def read_control(connection, ending, timeout):
+            self.assertFalse(reader.is_alive(), "reader must not consume control responses")
+            return read_until(connection, ending, timeout)
+
+        with patch.object(self.manager, "_read_until", side_effect=read_control) as control:
+            self.manager.interrupt()
+        control.assert_called()
+        self.assertTrue(self.manager._reader.is_alive())
+        self.serial.push(b"output after stop\n")
+        self._wait_output("output after stop")
+
+    def test_interrupt_without_prompt_reports_failure_and_resumes_reader(self):
+        self.manager.connect("COM3")
+        self.manager.repl_timeout_s = 0.05
+        with self.manager._lock:
+            self.manager._running_file = "main.py"
+            self.manager._in_raw_repl = True
+        with patch.object(self.serial, "write", return_value=1):
+            with self.assertRaisesRegex(MicroPythonSessionError, "中断后没有返回"):
+                self.manager.interrupt()
+        self.assertEqual(self.manager.read_output()["running_file"], "main.py")
+        self.assertTrue(self.manager._reader.is_alive())
+        self.serial.push(b"output after failed stop\n")
+        self._wait_output("output after failed stop")
+
+    def test_upload_waits_for_friendly_prompt_before_reporting_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            (project / "main.py").write_text("print('saved')\n", encoding="utf-8")
+            self.manager = MicroPythonSessionManager(
+                serial_factory=lambda *args, **kwargs: self.serial,
+                project_root=project,
+                connect_settle_s=0,
+                repl_timeout_s=0.4,
+                raw_repl_timeout_s=0.8,
+            )
+            self.manager.connect("/dev/cu.usbserial-ESP32")
+            cursor = self.manager.read_output()["cursor"]
+            result = self.manager.upload_file("main.py")
+
+        self.assertTrue(result["uploaded"])
+        output = self._wait_output_after(cursor, ">>>")
+        self.assertIn(">>>", output)
+
+    def test_reset_waits_for_device_prompt_before_reporting_success(self):
+        self.manager.connect("/dev/cu.usbserial-ESP32")
+        cursor = self.manager.read_output()["cursor"]
+        result = self.manager.reset()
+        self.assertTrue(result["reset"])
+        output = self._wait_output_after(cursor, "soft reboot")
+        self.assertIn("soft reboot", output)
+        self.assertFalse(self.manager.read_output()["running"])
+
     def test_run_file_rejects_paths_outside_project(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
@@ -334,6 +426,14 @@ class MicroPythonSessionTestCase(unittest.TestCase):
                 return output
             time.sleep(0.02)
         self.fail(f"did not observe {needle!r} in {self.manager.read_output()['output']!r}")
+
+    def _wait_output_after(self, cursor, needle):
+        for _ in range(40):
+            output = self.manager.read_output(after=cursor)["output"]
+            if needle in output:
+                return output
+            time.sleep(0.02)
+        self.fail(f"did not observe {needle!r} in {self.manager.read_output(after=cursor)['output']!r}")
 
 
 if __name__ == "__main__":

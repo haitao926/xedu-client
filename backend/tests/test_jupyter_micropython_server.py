@@ -158,6 +158,39 @@ class JupyterMicroPythonServerTestCase(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("路径", body["message"])
 
+    def test_stop_running_raw_program_through_handler(self):
+        self.serial.execution_finishes = False
+        status, body = self._invoke_handler(
+            "POST", action="connect", request_path="/jupyter/xedu-micropython/connect",
+            payload={"port": "COM3"},
+        )
+        self.assertEqual(status, 200, body)
+        status, body = self._invoke_handler(
+            "POST", action="run", request_path="/jupyter/xedu-micropython/run",
+            payload={"file": "main.py"},
+        )
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.manager.read_output()["running_file"], "main.py")
+        self.serial.io_events.clear()
+        status, body = self._invoke_handler(
+            "POST", action=None, request_path="/jupyter/xedu-micropython/interrupt",
+        )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["interrupted"])
+        self.assertEqual(self.serial.io_events, [
+            ("write", b"\r\x03"), ("flush", None),
+            ("write", b"\x03"), ("flush", None),
+            ("write", b"\r\x02"), ("flush", None),
+        ])
+        status, body = self._invoke_handler(
+            "GET", action="output", request_path="/jupyter/xedu-micropython/output",
+        )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["connected"])
+        self.assertFalse(body["running"])
+        self.assertEqual(body["running_file"], "")
+        self.assertIn("KeyboardInterrupt", body["output"])
+
     def test_parse_json_object_rejects_malformed_payloads(self):
         with self.assertRaises(MicroPythonSessionError):
             jupyter_micropython_server.parse_json_object(b"{")

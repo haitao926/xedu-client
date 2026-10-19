@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import fs from 'node:fs';
+import http from 'node:http';
 import https from 'node:https';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -162,6 +165,146 @@ function json(res, status, payload) {
     res.end(body);
 }
 
+test('local course wins after exchange, serves local-only resources and retains platform grants', async (t) => {
+    const root = mkdtempSync(path.join(tmpdir(), 'xedu-local-first-'));
+    const local = path.join(root, '本地 course');
+    mkdirSync(local);
+    writeFileSync(path.join(local, 'course.json'), JSON.stringify({ id: 'pkg-course' }));
+    writeFileSync(path.join(local, 'local-only.html'), '<h1>local resource</h1>');
+    const pkg = coursePackage();
+    const origin = 'https://learn.example';
+    const calls = [];
+    let candidate = local;
+    const session = createLocalTaskSession({
+        cacheRoot: path.join(root, 'cache'),
+        resolveLocalCourseRoot: async (snapshot) => {
+            assert.equal(snapshot.course_id, 'pkg-course');
+            assert.ok(calls.at(-1).url.endsWith('/launch/exchange'));
+            return candidate;
+        },
+        request: async (req) => {
+            calls.push(req);
+            const body = req.url.endsWith('/launch/exchange')
+                ? exchangePayload(origin, pkg, { resource_id: candidate ? 'local-only.html' : 'labs/quiz.html' })
+                : req.url.endsWith('/artifacts') ? { upload_id: 'local-shot', size: 3 }
+                    : req.url.endsWith('/submissions') ? { ok: true, status: 'completed' } : null;
+            return { status: 200, body: body ? Buffer.from(JSON.stringify(body)) : pkg.zip };
+        },
+    });
+    t.after(async () => { await session.close(); rmSync(root, { recursive: true, force: true }); });
+    const link = (grant) => ({ launchGrant: grant, platformOrigin: origin });
+    const opened = await session.openLocalTask(link('first'));
+    assert.equal(calls.filter((req) => req.url.includes('/packages/')).length, 0);
+    assert.equal(opened.ok, true);
+    assert.equal(opened.course_root, local);
+    assert.equal(opened.course.local_path, local);
+    assert.equal(session.getPublicTask().course_root, local);
+    const resource = await defaultRequest({ url: opened.lab_url });
+    assert.equal(resource.status, 200);
+    assert.equal(resource.body.toString(), '<h1>local resource</h1>');
+    session.setDraft({ name: 'local result', value: 90 });
+    assert.equal((await session.saveCombined({ mime: 'image/png', bytes: Buffer.from('png') })).ok, true);
+    for (const req of calls.filter((req) => /\/(artifacts|submissions)$/.test(req.url))) {
+        assert.equal(req.headers.Authorization, 'Bearer task-grant-secret');
+        assert.ok(req.url.startsWith(origin));
+    }
+    const submission = JSON.parse(calls.find((req) => req.url.endsWith('/submissions')).body);
+    assert.equal(submission.resource_id, 'local-only.html');
+    assert.equal(submission.platform_activity_id, 'plat-act-1');
+    assert.equal(submission.activity_id, 'activity-1');
+    candidate = null;
+    const switched = await session.openLocalTask(link('second'));
+    assert.equal(switched.ok, true);
+    assert.notEqual(switched.course_root, local);
+    assert.equal(switched.course_root, switched.course.local_path);
+    await session.close();
+    assert.equal(session.getPublicTask().ok, false);
+    candidate = null;
+    const fallback = await session.openLocalTask(link('first'));
+    assert.equal(fallback.ok, true);
+    assert.equal(fallback.course_root, path.join(packageCacheDirectory(path.join(root, 'cache'), exchangePayload(origin, pkg, { platform_origin: origin })), 'extracted'));
+    assert.notEqual(fallback.course_root, local);
+});
+
+for (const invalid of ['missing', 'wrong-id', 'file', 'bad-json', 'throws']) {
+    test(`invalid local course (${invalid}) silently falls back to platform ZIP`, async (t) => {
+        const root = mkdtempSync(path.join(tmpdir(), 'xedu-local-fallback-'));
+        const local = path.join(root, 'local');
+        if (invalid === 'file') writeFileSync(local, '{}');
+        else if (invalid !== 'missing') {
+            mkdirSync(local);
+            writeFileSync(path.join(local, 'course.json'), invalid === 'bad-json' ? '{' : JSON.stringify({ id: 'other-course' }));
+        }
+        const pkg = coursePackage();
+        let downloads = 0;
+        const session = createLocalTaskSession({
+            cacheRoot: path.join(root, 'cache'),
+            localCourseRoot: local,
+            ...(invalid === 'throws' ? { resolveLocalCourseRoot: () => { throw new Error('unreadable'); } } : {}),
+            request: async ({ url }) => {
+                if (url.endsWith('/launch/exchange')) return { status: 200, body: Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg))) };
+                downloads += 1;
+                return { status: 200, body: pkg.zip };
+            },
+        });
+        t.after(async () => { await session.close(); rmSync(root, { recursive: true, force: true }); });
+        const result = await session.openLocalTask({ launchGrant: 'grant', platformOrigin: 'https://learn.example' });
+        assert.equal(result.ok, true);
+        assert.equal(downloads, 1);
+        assert.notEqual(result.course_root, local);
+        assert.equal(result.course_root, result.course.local_path);
+    });
+}
+
+test('main resolver reads userData config without writes and matches only root or direct children', () => {
+    const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+    const start = source.indexOf('function resolveConfiguredLocalCourseRoot(');
+    assert.ok(start >= 0);
+    const end = source.indexOf('function getLocalTaskSession(', start);
+    const root = mkdtempSync(path.join(tmpdir(), 'xedu-local-config-'));
+    try {
+        mkdirSync(path.join(root, 'config'));
+        const courses = path.join(root, '课程 with spaces');
+        const course = path.join(courses, 'arbitrary-folder-name');
+        mkdirSync(course, { recursive: true });
+        writeFileSync(path.join(course, 'course.json'), JSON.stringify({ id: 'course-id' }));
+        const config = path.join(root, 'config', 'config.json');
+        const context = vm.createContext({ fs, path, app: { getPath: (name) => { assert.equal(name, 'userData'); return root; } } });
+        vm.runInContext(source.slice(start, end), context);
+        for (const courseRoot of [course, courses]) {
+            const text = JSON.stringify({ ui: { course_root: courseRoot } });
+            writeFileSync(config, text);
+            assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'course-id' }), course);
+            assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'different-id' }), null);
+            assert.equal(readFileSync(config, 'utf8'), text);
+        }
+        writeFileSync(config, '{');
+        assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'course-id' }), null);
+        rmSync(config);
+        assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'course-id' }), null);
+        const windowsRoot = 'C:\\Users\\学生\\Local Courses';
+        const windowsCourse = path.win32.join(windowsRoot, 'course');
+        const windowsConfig = 'C:\\UserData\\config\\config.json';
+        const windowsContext = vm.createContext({
+            path: path.win32,
+            app: { getPath: () => 'C:\\UserData' },
+            fs: {
+                readFileSync: (file) => {
+                    if (file === windowsConfig) return JSON.stringify({ ui: { course_root: windowsRoot } });
+                    if (file === path.win32.join(windowsCourse, 'course.json')) return JSON.stringify({ id: 'course-id' });
+                    throw new Error('not found');
+                },
+                statSync: (file) => ({ isDirectory: () => [windowsRoot, windowsCourse].includes(file) }),
+                readdirSync: () => [{ name: 'course', isDirectory: () => true }],
+            },
+        });
+        vm.runInContext(source.slice(start, end), windowsContext);
+        assert.equal(windowsContext.resolveConfiguredLocalCourseRoot({ course_id: 'course-id' }), windowsCourse);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+});
+
 async function openSession({ handler, sleep, createRequestId, pkg }) {
     const cert = makeCert();
     const mock = await startMock(cert, handler);
@@ -193,6 +336,217 @@ test('deep link parser accepts the local task link and rejects practice links', 
     assert.equal(parseOpenLocalTaskLink('xedu://open-practice?project=/tmp&file=a.ipynb'), null);
     assert.equal(parseOpenLocalTaskLink('http://open-local-task?launch_grant=abc&platform_origin=https://learn.example'), null);
     assert.equal(parseOpenLocalTaskLink('xedu://open-local-task?grant=&platform_origin=https://learn.example'), null);
+});
+
+test('deep link parser accepts valid HTTP origins without a host allowlist', () => {
+    const link = parseOpenLocalTaskLink('xedu://open-local-task?launch_grant=abc&platform_origin=http%3A%2F%2F10.19.174.251%3A8088');
+    assert.equal(link.platformOrigin, 'http://10.19.174.251:8088');
+    for (const origin of ['http://classroom.example:8088', 'http://203.0.113.20:8088', 'http://localhost:8088']) {
+        const accepted = parseOpenLocalTaskLink(`xedu://open-local-task?launch_grant=abc&platform_origin=${encodeURIComponent(origin)}`);
+        assert.equal(accepted.platformOrigin, origin);
+    }
+    for (const origin of [
+        'http://user@10.19.174.251:8088',
+        'http://10.19.174.251:8088/path',
+        'http://10.19.174.251:8088?mode=lan',
+        'http://10.19.174.251:8088#fragment',
+    ]) {
+        assert.equal(parseOpenLocalTaskLink(`xedu://open-local-task?launch_grant=abc&platform_origin=${encodeURIComponent(origin)}`), null, origin);
+    }
+});
+
+test('HTTP completes exchange, same-origin package download, and score submission without configuration', async () => {
+    const origin = 'http://classroom.example:8088';
+    const pkg = coursePackage();
+    const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-lan-allow-'));
+    const requests = [];
+    const session = createLocalTaskSession({
+        cacheRoot,
+        createRequestId: () => 'http-request-1',
+        request: async ({ url, method, body }) => {
+            requests.push({ url, method, body });
+            if (url === `${origin}/api/xedu/v1/launch/exchange`) {
+                return { status: 200, body: Buffer.from(JSON.stringify(exchangePayload(origin, pkg))) };
+            }
+            if (url === `${origin}/packages/course.zip`) return { status: 200, body: pkg.zip };
+            if (url === `${origin}/api/xedu/v1/submissions` && method === 'POST') {
+                return { status: 200, body: Buffer.from(JSON.stringify({ ok: true, status: 'completed', request_id: 'http-request-1' })) };
+            }
+            if (url.startsWith(`${origin}/api/xedu/v1/submissions/status?`)) {
+                return { status: 404, body: Buffer.from('{}') };
+            }
+            throw new Error(`unexpected request ${method} ${url}`);
+        },
+    });
+    try {
+        const opened = await session.openLocalTask(`xedu://open-local-task?launch_grant=lan&platform_origin=${encodeURIComponent(origin)}`);
+        assert.equal(opened.ok, true, opened.message);
+        assert.equal(requests.map((request) => request.url).join(','), `${origin}/api/xedu/v1/launch/exchange,${origin}/packages/course.zip`);
+        assert.equal(session.setDraft({ name: 'LAN score', value: 95 }).ok, true);
+        const saved = await session.saveScore();
+        assert.equal(saved.platform_status, 'completed');
+        assert.equal(requests.at(-1).url, `${origin}/api/xedu/v1/submissions`);
+        assert.equal(JSON.parse(requests.at(-1).body.toString('utf8')).platform_origin, origin);
+    } finally {
+        await session.close();
+        rmSync(cacheRoot, { recursive: true, force: true });
+    }
+});
+
+test('HTTP package URL must match the launch origin before download', async () => {
+    const origin = 'http://classroom.example:8088';
+    const pkg = coursePackage();
+    const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-lan-package-origin-'));
+    const requests = [];
+    const session = createLocalTaskSession({
+        cacheRoot,
+        request: async ({ url }) => {
+            requests.push(url);
+            return {
+                status: 200,
+                body: Buffer.from(JSON.stringify(exchangePayload(origin, pkg, {
+                    package_url: 'http://other.example:8088/packages/course.zip',
+                }))),
+            };
+        },
+    });
+    try {
+        const result = await session.openLocalTask(`xedu://open-local-task?launch_grant=mismatch&platform_origin=${encodeURIComponent(origin)}`);
+        assert.equal(result.ok, false);
+        assert.equal(result.code, 'package_invalid');
+        assert.equal(requests.length, 1);
+    } finally {
+        await session.close();
+        rmSync(cacheRoot, { recursive: true, force: true });
+    }
+});
+
+test('defaultRequest uses HTTP and returns redirects without following them', async () => {
+    let redirectTargetHits = 0;
+    const server = http.createServer((req, res) => {
+        if (req.url === '/packages/course.zip') {
+            res.writeHead(302, { Location: '/redirect-target' });
+            res.end();
+            return;
+        }
+        redirectTargetHits += 1;
+        res.writeHead(200);
+        res.end('unexpected');
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+        const { port } = server.address();
+        const response = await defaultRequest({ url: `http://127.0.0.1:${port}/packages/course.zip` });
+        assert.equal(response.status, 302);
+        assert.equal(redirectTargetHits, 0);
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+    }
+});
+
+test('generic open deep link restores and shows the main window without launching a task', () => {
+    const mainSource = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+    const frontStart = mainSource.indexOf('function bringMainWindowToFront(');
+    const frontEnd = mainSource.indexOf('function registerXeduProtocol(', frontStart);
+    const dispatchStart = mainSource.indexOf('function dispatchIncomingDeepLink(');
+    const dispatchEnd = mainSource.indexOf('// 允许在 BrowserView', dispatchStart);
+    const calls = [];
+    const context = vm.createContext({
+        URL, XEDU_PROTOCOL: 'xedu', console,
+        mainWindow: {
+            isDestroyed: () => false, isMinimized: () => true, isVisible: () => false,
+            restore: () => calls.push('restore'), show: () => calls.push('show'), focus: () => calls.push('focus'),
+        },
+        parsePracticeDeepLink: () => null,
+        parseOpenLocalTaskLink,
+        handleOpenLocalTask: () => calls.push('task'),
+    });
+    vm.runInContext(mainSource.slice(frontStart, frontEnd) + mainSource.slice(dispatchStart, dispatchEnd), context);
+    context.dispatchIncomingDeepLink('xedu://open');
+    assert.deepEqual(calls, ['restore', 'show', 'focus']);
+    calls.length = 0;
+    context.dispatchIncomingDeepLink('xedu://unknown');
+    assert.deepEqual(calls, []);
+    context.dispatchIncomingDeepLink('xedu://open-local-task?launch_grant=abc&platform_origin=http%3A%2F%2F10.19.174.251%3A8088');
+    assert.deepEqual(calls, ['task']);
+});
+
+test('course launch scope survives exchange while retaining task submission identifiers', async () => {
+    const pkg = coursePackage();
+    for (const launchScope of ['course', undefined, 'unsupported']) {
+        const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-course-scope-'));
+        const session = createLocalTaskSession({ cacheRoot, request: async ({ url }) => ({
+            status: 200, body: url.endsWith('/launch/exchange')
+                ? Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg, { launch_scope: launchScope })))
+                : pkg.zip,
+        }) });
+        try {
+            const result = await session.openLocalTask('xedu://open-local-task?launch_grant=course&platform_origin=https%3A%2F%2Flearn.example');
+            assert.equal(result.ok, true);
+            assert.equal(result.launch_scope || '', launchScope === 'course' ? 'course' : '');
+            assert.equal(result.activity_id, 'activity-1');
+            assert.equal(result.resource_id, 'labs/quiz.html');
+            assert.equal(result.platform_activity_id, 'plat-act-1');
+            assert.equal(result.active, true);
+            assert.equal(result.course.id, 'pkg-course');
+            assert.ok(result.course_root.endsWith('/extracted'));
+        } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
+    }
+});
+
+test('whole course launch loads every package file without requiring a selected experiment', async () => {
+    const course = { id: 'pkg-course', title: 'Whole course', sections: [] };
+    const files = [
+        { name: 'course.json', data: JSON.stringify(course) },
+        { name: 'labs/first.ipynb', data: '{"cells":[]}' },
+        { name: 'labs/second.py', data: 'print(2)' },
+        { name: 'assets/background.txt', data: 'supporting asset' },
+    ];
+    const zip = makeStoredZip(files);
+    const pkg = { zip, sha256: sha256(zip), size: zip.length };
+    for (const resourceId of [undefined, '', 'missing.ipynb', 'teacher/guide.md']) {
+        const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-whole-course-'));
+        let downloads = 0;
+        const session = createLocalTaskSession({ cacheRoot, request: async ({ url }) => {
+            if (url.endsWith('/launch/exchange')) return {
+                status: 200,
+                body: Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg, {
+                    launch_scope: 'course', resource_id: resourceId,
+                }))),
+            };
+            downloads += 1;
+            return { status: 200, body: zip };
+        } });
+        try {
+            const result = await session.openLocalTask('xedu://open-local-task?launch_grant=whole&platform_origin=https%3A%2F%2Flearn.example');
+            assert.equal(result.ok, true, `${resourceId}: ${result.message}`);
+            assert.equal(downloads, 1);
+            assert.equal(result.course.id, course.id);
+            assert.ok(result.lab_url.endsWith(resourceId ? '/' + resourceId : '/course.json'));
+            for (const file of files) {
+                assert.equal(readFileSync(path.join(result.course_root, file.name), 'utf8'), file.data);
+            }
+        } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
+    }
+});
+
+test('whole course launch still rejects a corrupt package or mismatched course identity', async () => {
+    const pkg = coursePackage();
+    for (const overrides of [{ package_sha256: '0'.repeat(64) }, { course_id: 'wrong-course' }]) {
+        const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-whole-integrity-'));
+        const session = createLocalTaskSession({ cacheRoot, request: async ({ url }) => ({
+            status: 200,
+            body: url.endsWith('/launch/exchange')
+                ? Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg, {
+                    launch_scope: 'course', resource_id: undefined, ...overrides,
+                }))) : pkg.zip,
+        }) });
+        try {
+            const result = await session.openLocalTask('xedu://open-local-task?launch_grant=integrity&platform_origin=https%3A%2F%2Flearn.example');
+            assert.equal(result.ok, false);
+            assert.equal(result.code, overrides.course_id ? 'course_id_mismatch' : 'package_invalid');
+        } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
+    }
 });
 
 test('score normalization keeps 0, rejects non-finite values, and does not clamp', () => {
@@ -956,7 +1310,7 @@ test('loopback classroom TLS policy skips verification only for localhost, 127.0
     assert.deepEqual(tlsOptionsForUrl('not a url'), {});
 });
 
-test('defaultRequest reaches a loopback self-signed LearnSite and still rejects other hosts', async () => {
+test('defaultRequest reaches a loopback self-signed LearnSite and still rejects other hosts', async (t) => {
     const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
     const cert = makeCert();
@@ -998,7 +1352,12 @@ test('defaultRequest reaches a loopback self-signed LearnSite and still rejects 
             assert.equal(viaIpv6.status, 200);
         }
 
-        const other = await listen('127.0.0.2');
+        let other;
+        try { other = await listen('127.0.0.2'); } catch (error) {
+            if (error.code !== 'EADDRNOTAVAIL') throw error;
+            t.diagnostic('127.0.0.2 is unavailable on this OS; strict non-loopback TLS policy is covered by the preceding unit test.');
+            return;
+        }
         await assert.rejects(
             () => defaultRequest({ url: `https://127.0.0.2:${other.port}/api/xedu/v1/artifacts`, timeoutMs: 3000 }),
             (error) => /SELF_SIGNED|UNABLE_TO_VERIFY|CERT/.test(error.code || ''),
@@ -1274,7 +1633,7 @@ test('a claimed score is not completed when the platform returns XEDU_RESULT_NOT
     }
 });
 
-test('project file evidence stays unwired until non-image artifact upload exists', () => {
+test('legacy screenshot evidence does not claim a project file upload', () => {
     const scratch = projectFileEvidenceAttachment('scratch');
     assert.equal(scratch.wired, false);
     assert.equal(scratch.attachment, null);
@@ -1285,4 +1644,157 @@ test('project file evidence stays unwired until non-image artifact upload exists
     assert.equal(notebook.spec.extension, '.ipynb');
     assert.equal(notebook.spec.content_type, 'application/x-ipynb+json');
     assert.equal(projectFileEvidenceAttachment('html').spec, null);
+});
+
+test('project submission uploads the saved bytes and filename without a screenshot', async () => {
+    const pkg = coursePackage();
+    const uploads = [];
+    const submissions = [];
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) return json(res, 200, exchangePayload(mockOrigin(req), pkg));
+            if (url.pathname === '/packages/course.zip') return res.end(pkg.zip);
+            if (url.pathname.endsWith('/artifacts')) {
+                uploads.push({ headers: req.headers, body });
+                return json(res, 201, { ok: true, upload_id: `project-${uploads.length}` });
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/submissions')) {
+                submissions.push(JSON.parse(body.toString('utf8')));
+                return json(res, 200, { ok: true, status: 'completed' });
+            }
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        await session.setDraft({ name: 'score draft', value: 80 });
+        const files = [
+            { experiment: 'notebook', filename: 'edited.ipynb', mime: 'application/x-ipynb+json', bytes: Buffer.from(JSON.stringify({ nbformat: 4, cells: [] })) },
+            { experiment: 'scratch', filename: 'edited.sb3', mime: 'application/x.scratch.sb3', bytes: makeStoredZip([{ name: 'project.json', data: '{}' }]) },
+            { experiment: 'notebook', filename: 'edited.py', mime: 'text/plain', bytes: Buffer.from('print(42)\n') },
+        ];
+        for (const file of files) {
+            const saved = await session.saveProject({ ...file, bytes: Array.from(file.bytes) }, { experiment: file.experiment });
+            assert.equal(saved.platform_status, 'completed');
+            assert.equal(saved.mode, 'project');
+            const uploaded = uploads.at(-1);
+            assert.deepEqual(uploaded.body, file.bytes);
+            assert.equal(uploaded.headers['content-type'], file.mime);
+            assert.equal(uploaded.headers['x-xedu-filename'], file.filename);
+            const submitted = submissions.at(-1);
+            assert.equal(submitted.score, null);
+            assert.equal(submitted.passed, true);
+            assert.equal(submitted.evidence.type, 'project_file');
+            assert.equal(submitted.evidence.experiment, file.experiment);
+            assert.deepEqual(submitted.evidence.project_file, submitted.attachments[0]);
+            assert.deepEqual(submitted.artifacts, [{
+                upload_id: submitted.attachments[0].upload_id,
+                sha256: submitted.attachments[0].sha256,
+                size: file.bytes.length,
+            }]);
+            assert.equal(submitted.attachments[0].sha256, sha256(file.bytes));
+        }
+        assert.equal(session.getDraft().name, 'score draft');
+        const rejected = await session.saveProject({ bytes: Buffer.from('x'), filename: 'x.html', mime: 'text/html' }, { experiment: 'notebook' });
+        assert.equal(rejected.code, 'project_file_invalid');
+        assert.equal(uploads.length, 3);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+
+test('native launch accepts packaged notebooks, Python and Scratch without HTML', async () => {
+    for (const resourceId of ['exp1/fireworks.ipynb', 'exp2/doraemon.py', 'exp3/project.sb3']) {
+        const zip = makeStoredZip([
+            { name: 'course.json', data: JSON.stringify({ id: 'pkg-course', sections: [] }) },
+            { name: resourceId, data: 'native experiment' },
+        ]);
+        const pkg = { zip, sha256: sha256(zip), size: zip.length };
+        const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-native-'));
+        const session = createLocalTaskSession({ cacheRoot, request: async ({ url }) => ({
+            status: 200, body: url.endsWith('/launch/exchange')
+                ? Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg, { resource_id: resourceId })))
+                : zip,
+        }) });
+        try {
+            const result = await session.openLocalTask('xedu://open-local-task?launch_grant=native&platform_origin=https%3A%2F%2Flearn.example');
+            assert.equal(result.ok, true, resourceId);
+            assert.equal(result.resource_id, resourceId);
+            assert.ok(result.lab_url.endsWith(resourceId));
+            assert.equal(JSON.stringify(result).includes('task-grant-secret'), false);
+        } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
+    }
+});
+
+test('native launch rejects unsafe, unsupported, missing and directory entries', async () => {
+    const zip = makeStoredZip([
+        { name: 'course.json', data: JSON.stringify({ id: 'pkg-course', sections: [] }) },
+        { name: 'folder.py/child.txt', data: 'directory is not an entry' },
+        { name: 'valid.py', data: 'print(1)' },
+    ]);
+    const pkg = { zip, sha256: sha256(zip), size: zip.length };
+    for (const resourceId of ['../valid.py', '/valid.py', 'C:/valid.py', 'https://example/valid.py', 'missing.py', 'folder.py', 'unknown.exe']) {
+        const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-native-invalid-'));
+        const session = createLocalTaskSession({ cacheRoot, request: async ({ url }) => ({
+            status: 200, body: url.endsWith('/launch/exchange')
+                ? Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg, { resource_id: resourceId })))
+                : zip,
+        }) });
+        try {
+            const result = await session.openLocalTask('xedu://open-local-task?launch_grant=invalid&platform_origin=https%3A%2F%2Flearn.example');
+            assert.equal(result.ok, false, resourceId);
+            assert.equal(result.code, 'package_invalid', resourceId);
+        } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
+    }
+});
+
+
+test('course grant permits successive activity selections after a rejected selection', async () => {
+    const pkg = coursePackage();
+    const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-repeat-selection-'));
+    const selections = [];
+    const session = createLocalTaskSession({ cacheRoot, request: async ({ url, headers, body }) => {
+        if (url.endsWith('/launch/exchange')) return { status: 200, body: Buffer.from(JSON.stringify(
+            exchangePayload('https://learn.example', pkg, { launch_scope: 'course' }))) };
+        if (url.endsWith('/tasks/select.ashx')) {
+            const selection = JSON.parse(body.toString());
+            selections.push({ selection, authorization: headers.Authorization });
+            if (selection.activity_id === 'unbound') return { status: 403, body: Buffer.from(JSON.stringify({ ok: false, code: 'XEDU_ACTIVITY_FORBIDDEN' })) };
+            return { status: 200, body: Buffer.from(JSON.stringify({
+                ok: true, course_id: 'pkg-course', ...selection,
+                task_grant: 'selected-' + selection.activity_id,
+                grant_expires_at: '2099-01-01T00:00:00.000Z',
+            })) };
+        }
+        return { status: 200, body: pkg.zip };
+    } });
+    try {
+        assert.equal((await session.openLocalTask('xedu://open-local-task?launch_grant=course&platform_origin=https%3A%2F%2Flearn.example')).ok, true);
+        for (const activityId of ['activity-2', 'unbound', 'activity-3', 'activity-2']) {
+            const selected = await session.selectTask({ activity_id: activityId, resource_id: 'labs/quiz.html' });
+            assert.equal(selected.ok, activityId !== 'unbound', activityId + ': ' + selected.code);
+            if (selected.ok) assert.equal(selected.activity_id, activityId);
+        }
+        assert.equal(selections.length, 4);
+        assert.ok(selections.every(item => item.authorization === 'Bearer task-grant-secret'));
+    } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
+});
+
+test('activity-only launch cannot select course activities', async () => {
+    const pkg = coursePackage();
+    const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-activity-selection-'));
+    let selections = 0;
+    const session = createLocalTaskSession({ cacheRoot, request: async ({ url }) => {
+        if (url.endsWith('/launch/exchange')) return { status: 200, body: Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg))) };
+        if (url.endsWith('/tasks/select.ashx')) selections += 1;
+        return { status: 200, body: pkg.zip };
+    } });
+    try {
+        assert.equal((await session.openLocalTask('xedu://open-local-task?launch_grant=activity&platform_origin=https%3A%2F%2Flearn.example')).ok, true);
+        const selected = await session.selectTask({ activity_id: 'activity-2', resource_id: 'labs/quiz.html' });
+        assert.equal(selected.code, 'no_active_task');
+        assert.equal(selections, 0);
+    } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
 });

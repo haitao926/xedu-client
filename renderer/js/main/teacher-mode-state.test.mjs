@@ -60,6 +60,16 @@ test('exiting teacher mode clears only the current session', () => {
     assert.deepEqual(readTeacherModeState(storage), { unlocked: false, code: '' });
 });
 
+test('remembering student mode persists the student preference', () => {
+    const preferenceStorage = createStorage();
+
+    assert.equal(teacherModeState.rememberStudentMode(preferenceStorage), true);
+    assert.equal(
+        teacherModeState.readPreferredExperienceMode(preferenceStorage),
+        'student',
+    );
+});
+
 test('manual teacher login writes session state and persists the credential', async () => {
     assert.equal(typeof teacherModeState.rememberTeacherMode, 'function');
     const storage = createStorage();
@@ -115,6 +125,46 @@ test('teacher mode restores a persisted credential only after backend verificati
     assert.deepEqual(restored, { unlocked: true, code: 'remembered-code' });
     assert.deepEqual(readTeacherModeState(storage), restored);
     assert.equal(verifyAttempts, 1);
+});
+
+test('student preference prevents a persisted teacher credential from restoring teacher mode', async () => {
+    const storage = createStorage();
+    const preferenceStorage = createStorage({ xedu_preferred_experience_mode: 'student' });
+    let verifyAttempts = 0;
+
+    const restored = await teacherModeState.restoreTeacherModeState({
+        storage,
+        preferenceStorage,
+        credentialApi: {
+            async loadTeacherCredential() {
+                return { success: true, code: 'remembered-code' };
+            },
+        },
+        async verifyCode() {
+            verifyAttempts += 1;
+            return true;
+        },
+    });
+
+    assert.deepEqual(restored, { unlocked: false, code: '' });
+    assert.equal(verifyAttempts, 0);
+});
+
+test('remembering teacher mode changes the persistent preference back to teacher', async () => {
+    const storage = createStorage();
+    const preferenceStorage = createStorage({ xedu_preferred_experience_mode: 'student' });
+
+    await teacherModeState.rememberTeacherMode('teacher-code', {
+        storage,
+        preferenceStorage,
+        credentialApi: {
+            async saveTeacherCredential() {
+                return { success: true };
+            },
+        },
+    });
+
+    assert.equal(preferenceStorage.getItem('xedu_preferred_experience_mode'), 'teacher');
 });
 
 test('restoreTeacherModeState preserves an already unlocked session without reloading credentials', async () => {

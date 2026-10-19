@@ -222,3 +222,109 @@ test('evidence save does not need a score draft and keeps one if it exists', asy
     assert.equal(bridge.getDraft().name, '题');
     assert.equal(bridge.getDraft().passed, true);
 });
+
+test('project save uses the current-file transport without capturing bounds or clearing scores', async () => {
+    const calls = [];
+    const bridge = createXeduSubmitBridge({
+        windowObject: harness().windowObject,
+        transport: {
+            saveProject: async meta => {
+                calls.push(meta);
+                return { ok: true, platform_status: 'completed', mode: 'project' };
+            },
+        },
+        captureBounds: () => { throw new Error('must not capture'); },
+    });
+    bridge.restoreDraft({ name: 'score draft', value: 30 });
+    const result = await bridge.saveProject({ experiment: 'scratch' });
+    assert.equal(result.platform_status, 'completed');
+    assert.deepEqual(calls, [{ experiment: 'scratch' }]);
+    assert.equal(bridge.getDraft().score, 30);
+});
+
+test('submit-request with request_id auto-saves and posts xedu:submit-response', async () => {
+    const posts = [];
+    const saves = [];
+    const ui = harness();
+    const frame = {
+        contentWindow: {
+            postMessage(message, origin) {
+                posts.push([message, origin]);
+            },
+        },
+    };
+    const bridge = createXeduSubmitBridge({
+        windowObject: ui.windowObject,
+        transport: {
+            setDraft: async (draft) => ({ ok: true, has_draft: true, draft }),
+            saveScore: async () => {
+                saves.push('score');
+                return {
+                    ok: true,
+                    platform_status: 'completed',
+                    message: '成绩已保存，平台已确认完成。',
+                    receipt_id: 'rc-1',
+                    draft: null,
+                };
+            },
+        },
+    });
+    bridge.attach(frame);
+    await ui.emit({
+        source: frame.contentWindow,
+        origin: 'http://127.0.0.1:8765',
+        data: {
+            type: 'xedu:submit-request',
+            request_id: 'demo-req-1',
+            name: '交互测验',
+            value: 67,
+            passed: true,
+            summary: 'XEdu交互测验演示：67分',
+        },
+    });
+    assert.deepEqual(saves, ['score']);
+    assert.equal(bridge.hasDraft(), false);
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0][0].type, 'xedu:submit-response');
+    assert.equal(posts[0][0].request_id, 'demo-req-1');
+    assert.equal(posts[0][0].ok, true);
+    assert.equal(posts[0][0].status, 'completed');
+    assert.equal(posts[0][1], 'http://127.0.0.1:8765');
+});
+
+test('submit-request with request_id still acks when score is invalid', async () => {
+    const posts = [];
+    const ui = harness();
+    const frame = {
+        contentWindow: {
+            postMessage(message, origin) {
+                posts.push([message, origin]);
+            },
+        },
+    };
+    const bridge = createXeduSubmitBridge({
+        windowObject: ui.windowObject,
+        transport: {
+            setDraft: async () => ({ ok: true }),
+            saveScore: async () => { throw new Error('should not save'); },
+        },
+    });
+    bridge.attach(frame);
+    await ui.emit({
+        source: frame.contentWindow,
+        origin: 'http://127.0.0.1:8765',
+        data: {
+            type: 'xedu:submit-request',
+            request_id: 'bad-score',
+            name: '交互测验',
+            value: 101,
+            passed: true,
+        },
+    });
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0][0].type, 'xedu:submit-response');
+    assert.equal(posts[0][0].request_id, 'bad-score');
+    assert.equal(posts[0][0].ok, false);
+    assert.equal(posts[0][0].code, 'score_invalid');
+    assert.match(posts[0][0].error, /0 到 100/);
+});

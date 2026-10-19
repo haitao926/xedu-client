@@ -273,22 +273,56 @@ class MicroPythonSessionManager:
         return {"sent": True}
 
     def interrupt(self) -> dict[str, Any]:
-        with self._lock:
-            serial_connection = self._require_serial()
-            serial_connection.write(b"\r\x03\x03")
-            serial_connection.write(b"\r\x02")
-            self._in_raw_repl = False
-            self._running_file = ""
+        self._pause_reader()
+        try:
+            with self._lock:
+                serial_connection = self._require_serial()
+            # USB serial drivers may batch consecutive control bytes. Give the
+            # VM time to handle KeyboardInterrupt before asking it to exit raw REPL.
+            self._write(serial_connection, b"\r\x03")
+            time.sleep(0.1)
+            self._write(serial_connection, b"\x03")
+            time.sleep(0.1)
+            self._write(serial_connection, b"\r\x02")
+            friendly = self._read_until(serial_connection, b">>>", self.repl_timeout_s)
+            with self._lock:
+                self._append_bytes_locked(friendly)
+                if b">>>" not in friendly:
+                    raise MicroPythonSessionError("设备中断后没有返回 MicroPython REPL，请重新连接。")
+                self._in_raw_repl = False
+                self._running_file = ""
+                self._follow_tail = b""
+        except MicroPythonSessionError:
+            raise
+        except Exception as exc:
+            raise MicroPythonSessionError("无法停止开发板上的代码，请重新连接后重试。") from exc
+        finally:
+            if self._serial is not None:
+                self._start_reader()
         return {"interrupted": True}
 
     def reset(self) -> dict[str, Any]:
-        with self._lock:
-            serial_connection = self._require_serial()
-            serial_connection.write(b"\r\x03")
-            serial_connection.write(b"\r\x02")
-            serial_connection.write(b"\x04")
-            self._in_raw_repl = False
-            self._running_file = ""
+        self._pause_reader()
+        try:
+            with self._lock:
+                serial_connection = self._require_serial()
+            self._write(serial_connection, b"\r\x03\x03")
+            friendly = self._read_until(serial_connection, b">>>", self.repl_timeout_s)
+            self._write(serial_connection, b"\x04")
+            reboot = self._read_until(serial_connection, b">>>", self.raw_repl_timeout_s)
+            if b">>>" not in reboot and b">>>" not in friendly:
+                raise MicroPythonSessionError("设备重启后没有返回 MicroPython REPL，请重新连接。")
+            with self._lock:
+                self._in_raw_repl = False
+                self._running_file = ""
+                self._append_bytes_locked(friendly + reboot)
+        except MicroPythonSessionError:
+            raise
+        except Exception as exc:
+            raise MicroPythonSessionError("设备重启失败，请重新连接后重试。") from exc
+        finally:
+            if self._serial is not None:
+                self._start_reader()
         return {"reset": True}
 
     def run_file(self, relative_path: str) -> dict[str, Any]:
@@ -339,9 +373,13 @@ class MicroPythonSessionManager:
             self._enter_raw_repl(serial_connection, soft_reset=False)
             self._exec_raw_no_follow(serial_connection, script.encode("utf-8"))
             self._write(serial_connection, b"\r\x02")
+            friendly = self._read_until(serial_connection, b">>>", self.repl_timeout_s)
+            if b">>>" not in friendly:
+                raise MicroPythonSessionError("代码上传后设备没有返回 MicroPython REPL，请重新连接。")
             with self._lock:
                 self._in_raw_repl = False
                 self._running_file = ""
+                self._append_bytes_locked(friendly)
         except MicroPythonSessionError:
             raise
         except Exception as exc:

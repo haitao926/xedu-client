@@ -14,7 +14,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "clean": "node scripts/clean.mjs",
-    "test": "node --test src/index.test.mjs"
+    "test": "node --test src/*.test.mjs"
   },
   "dependencies": {
     "@jupyterlab/application": "~4.5.9",
@@ -28,10 +28,11 @@
   },
   "jupyterlab": {
     "extension": true,
-    "outputDir": "jupyterlab_micropython/labextension",
+    "outputDir": "jupyterlab_micropython/jupyterlab-micropython",
     "_build": {
-      "load": "static/remoteEntry.65e219387df779869e8f.js",
-      "extension": "./extension"
+      "load": "static/remoteEntry.35859acdb255d30bc1de.js",
+      "extension": "./extension",
+      "xeduCoreVersion": "4.5.9"
     }
   }
 }

@@ -4,6 +4,7 @@ const http = require('http');
 const https = require('https');
 const path = require('path');
 const zlib = require('zlib');
+const { normalizeHttpOrigin } = require('./platform-connections');
 
 const PROTOCOL_VERSION = 1;
 const CONTRACT_REVISION = '2026-09-22';
@@ -50,6 +51,10 @@ const STUDENT_MESSAGES = Object.freeze({
     submission_not_completed: '学习平台尚未确认完成，请稍后再试。',
     network: '暂时连不上学习平台，请稍后再试。',
     attachment_invalid: '截图没有被平台收下，本次没有保存成功。',
+    project_save_failed: '作品文件保存失败，没有提交。请检查当前编辑器后重试。',
+    project_file_invalid: '当前文件不是可提交的 Python、Notebook 或 Scratch 作品。',
+    project_file_too_large: '作品文件超过 10MB，已保存在本地，但没有提交。',
+    project_file_unsupported: '作品已保存在本地，但学习平台尚不支持作品文件上传。',
     forbidden: '当前窗口不能执行这个操作。',
 });
 
@@ -58,6 +63,7 @@ const SUCCESS_MESSAGES = Object.freeze({
     screenshot: '截图已上传，平台已确认。已有成绩会保留。',
     combined: '成绩和截图已保存，平台已确认完成。',
     evidence: '已保存',
+    project: '作品已保存并提交，平台已确认完成。',
 });
 
 function canonicalPlatformCode(code) {
@@ -198,15 +204,21 @@ function parseOpenLocalTaskLink(rawUrl) {
     const launchGrant = namedLaunchGrant || legacyGrant;
     const platformOriginRaw = (parsed.searchParams.get('platform_origin') || '').trim();
     if (!launchGrant || !platformOriginRaw) return null;
-    let platformOrigin = '';
-    try {
-        const originUrl = new URL(platformOriginRaw);
-        if (originUrl.protocol !== 'https:') return null;
-        platformOrigin = originUrl.origin;
-    } catch (_) {
-        return null;
-    }
+    const platformOrigin = normalizePlatformOrigin(platformOriginRaw);
+    if (!platformOrigin) return null;
     return { launchGrant, platformOrigin, legacyLaunch: !namedLaunchGrant };
+}
+
+function normalizePlatformOrigin(value) {
+    try {
+        const originUrl = new URL(String(value || ''));
+        if (originUrl.username || originUrl.password || originUrl.search || originUrl.hash
+            || (originUrl.pathname !== '' && originUrl.pathname !== '/')) return '';
+        if (originUrl.protocol === 'https:') return originUrl.origin;
+        return normalizeHttpOrigin(value);
+    } catch (_) {
+        return '';
+    }
 }
 
 function taskTokenFromExchange(payload) {
@@ -515,12 +527,15 @@ function createLocalTaskSession(options = {}) {
     let snapshot = null;
     let activeKey = '';
     let taskGrant = '';
+    let courseGrant = '';
     let grantExpiresAt = 0;
     let saving = false;
     let hostServer = null;
     let hostRoot = '';
+    let activeCourseRoot = '';
     let labBaseUrl = '';
     let courseRecord = null;
+    let activityTasks = [];
     let activeLaunchKey = '';
     const launchJobs = new Map();
 
@@ -537,6 +552,7 @@ function createLocalTaskSession(options = {}) {
             grant_expired: Boolean(snapshot) && (!taskGrant || grantExpired()),
             protocol_version: PROTOCOL_VERSION,
             contract_revision: CONTRACT_REVISION,
+            launch_scope: snapshot?.launch_scope || '',
             platform_origin: snapshot?.platform_origin || '',
             learner_scope: snapshot?.learner_scope || '',
             platform_activity_id: snapshot?.platform_activity_id || '',
@@ -545,10 +561,11 @@ function createLocalTaskSession(options = {}) {
             resource_id: snapshot?.resource_id || '',
             course_version: snapshot?.course_version || '',
             package_sha256: snapshot?.package_sha256 || '',
-            course_root: snapshot ? path.join(packageCacheDirectory(cacheRoot, snapshot), 'extracted') : '',
-            lab_url: snapshot ? labUrlFor(snapshot.resource_id) : '',
+            course_root: activeCourseRoot,
+            lab_url: snapshot ? labUrlFor(snapshot.resource_id || 'course.json') : '',
             lab_base_url: labBaseUrl,
             course: courseRecord,
+            activity_tasks: activityTasks,
             restored_draft: draft,
             has_draft: Boolean(draft),
             draft,
@@ -634,13 +651,16 @@ function createLocalTaskSession(options = {}) {
         if (!link?.launchGrant || !link?.platformOrigin) {
             return failure('no_active_task', { serverMessage: '任务链接不完整，请从学习平台重新打开。' });
         }
-        const launchKey = `${link.platformOrigin}\n${link.launchGrant}`;
+        const platformOrigin = normalizePlatformOrigin(link.platformOrigin);
+        if (!platformOrigin) return failure('no_active_task', { serverMessage: '平台地址不受支持，请使用学校局域网地址。' });
+        const trustedLink = { ...link, platformOrigin };
+        const launchKey = `${trustedLink.platformOrigin}\n${trustedLink.launchGrant}`;
         const pending = launchJobs.get(launchKey);
         if (pending) return pending;
         if (activeLaunchKey === launchKey && snapshot && taskGrant && !grantExpired()) {
             return publicTask();
         }
-        const job = openExchangedTask(link).finally(() => {
+        const job = openExchangedTask(trustedLink).finally(() => {
             if (launchJobs.get(launchKey) === job) launchJobs.delete(launchKey);
         });
         launchJobs.set(launchKey, job);
@@ -676,11 +696,12 @@ function createLocalTaskSession(options = {}) {
             if (response.networkError || error.retryable) {
                 return failure('network', { status: response.status || 0, timedOut: response.timedOut, retryable: true });
             }
-            return failure('protocol_mismatch', { status: response.status || 0 });
+            return error;
         }
         const payload = readJsonBody(response.body);
         if (!payload || payload.ok === false) {
-            return failure(payload?.code === 'protocol_mismatch' ? 'protocol_mismatch' : 'protocol_mismatch', {
+            const code = canonicalPlatformCode(typeof payload?.code === 'string' ? payload.code : '');
+            return failure(code === 'protocol_unsupported' ? 'protocol_mismatch' : (code || 'grant_invalid'), {
                 status: response.status,
                 serverMessage: payload?.message,
             });
@@ -692,36 +713,67 @@ function createLocalTaskSession(options = {}) {
         if (!taskToken) return failure('grant_invalid', { status: response.status });
         const nextSnapshot = normalizeSnapshot(payload, link.platformOrigin);
         if (!nextSnapshot.ok) return nextSnapshot;
-        const downloaded = await ensurePackage(nextSnapshot.snapshot, payload.package_url);
+        const local = await resolveLocalCourse(nextSnapshot.snapshot);
+        const downloaded = local || await ensurePackage(nextSnapshot.snapshot, payload.package_url);
         if (!downloaded.ok) return downloaded;
         const hosted = await ensureHost(downloaded.extractedRoot);
         if (!hosted.ok) return hosted;
         snapshot = nextSnapshot.snapshot;
+        activeCourseRoot = downloaded.extractedRoot;
         activeKey = contextKey(snapshot);
         taskGrant = taskToken;
+        courseGrant = snapshot.launch_scope === 'course' ? taskToken : '';
         const expires = Date.parse(payload.grant_expires_at || '');
         grantExpiresAt = Number.isFinite(expires) ? expires : now() + 120 * 60 * 1000;
         courseRecord = downloaded.course;
+        activityTasks = Array.isArray(payload.activity_tasks) ? payload.activity_tasks : [];
         return publicTask();
     }
 
+    async function selectTask(selection = {}) {
+        if (!snapshot || !courseGrant) return failure('no_active_task');
+        const activityId = String(selection.activity_id || '').trim();
+        const resourceId = String(selection.resource_id || '').trim();
+        if (!activityId || !resourceId) return failure('no_active_task', { serverMessage: '请选择已绑定的课程实验。' });
+        const url = `${snapshot.platform_origin}/api/xedu/v1/tasks/select.ashx`;
+        const body = Buffer.from(JSON.stringify({ activity_id: activityId, resource_id: resourceId }));
+        const response = await callJson({ url, method: 'POST', headers: { Authorization: `Bearer ${courseGrant}`, 'Content-Type': 'application/json', 'Content-Length': String(body.length) }, body });
+        if (response.networkError || response.status < 200 || response.status >= 300) return interpretPlatformError(response, '');
+        const payload = readJsonBody(response.body) || {};
+        if (!payload.ok || !payload.task_grant) return failure(payload.code || 'grant_invalid', { serverMessage: payload.message });
+        const next = normalizeSnapshot({ ...payload, launch_scope: '', course_version: snapshot.course_version, package_sha256: snapshot.package_sha256, package_size: snapshot.package_size }, snapshot.platform_origin);
+        if (!next.ok) return next;
+        snapshot = { ...snapshot, ...next.snapshot, platform_activity_id: String(payload.platform_activity_id || activityId), launch_scope: '' };
+        activeKey = contextKey(snapshot);
+        taskGrant = String(payload.task_grant);
+        const expires = Date.parse(payload.grant_expires_at || '');
+        grantExpiresAt = Number.isFinite(expires) ? expires : now() + 120 * 60 * 1000;
+        return publicTask({ status: 200 });
+    }
+
     function normalizeSnapshot(payload, platformOrigin) {
-        const resourceId = String(payload.resource_id || '').replace(/\\/g, '/').replace(/^\/+/, '');
+        const courseLaunch = payload.launch_scope === 'course';
+        // Whole-course launches resolve course.json first. resource_id is retained
+        // only as legacy submission context; it must not gate package loading.
+        const resourceId = String(payload.resource_id || '').replace(/\\/g, '/');
         const courseId = String(payload.course_id || '').trim();
         const sha = String(payload.package_sha256 || '').trim().toLowerCase();
         const courseVersion = payload.course_version === undefined || payload.course_version === null
             ? ''
             : String(payload.course_version);
         const packageSize = Number(payload.package_size);
-        if (!courseId || !payload.activity_id || !resourceId || !courseVersion || !/^[a-f0-9]{64}$/.test(sha)) {
-            return failure('protocol_mismatch');
+        if (!courseId || !payload.activity_id || (!courseLaunch && !resourceId) || !courseVersion || !/^[a-f0-9]{64}$/.test(sha)) {
+            return failure('package_invalid');
         }
         if (!Number.isFinite(packageSize) || packageSize < 0) return failure('package_invalid');
-        if (resourceId.includes('..') || !/\.html?$/i.test(resourceId)) return failure('protocol_mismatch');
+        if (!courseLaunch && (resourceId.startsWith('/') || resourceId.includes(':') || resourceId.includes('\0')
+            || resourceId.split('/').some((part) => !part || part === '.' || part === '..')
+            || !/\.(html?|ipynb|py|sb3)$/i.test(resourceId))) return failure('package_invalid');
         return {
             ok: true,
             snapshot: {
                 platform_origin: platformOrigin,
+                launch_scope: payload.launch_scope === 'course' ? 'course' : '',
                 learner_scope: String(payload.learner_scope || ''),
                 platform_activity_id: String(payload.platform_activity_id || ''),
                 course_id: courseId,
@@ -734,6 +786,31 @@ function createLocalTaskSession(options = {}) {
         };
     }
 
+    async function resolveLocalCourse(nextSnapshot) {
+        try {
+            const candidate = options.resolveLocalCourseRoot
+                ? await options.resolveLocalCourseRoot({ ...nextSnapshot })
+                : options.localCourseRoot;
+            if (typeof candidate !== 'string' || !candidate || !path.isAbsolute(candidate)) return null;
+            const root = path.resolve(candidate);
+            if (!fs.statSync(root).isDirectory()) return null;
+            const course = JSON.parse(fs.readFileSync(path.join(root, 'course.json'), 'utf8'));
+            if (!course || course.id !== nextSnapshot.course_id) return null;
+            if (nextSnapshot.launch_scope !== 'course') {
+                const resource = safeZipDestination(root, nextSnapshot.resource_id);
+                if (!resource || !fs.statSync(resource).isFile()) return null;
+                // A local symlink must not let a platform resource escape the course.
+                const relative = path.relative(fs.realpathSync(root), fs.realpathSync(resource));
+                if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+            }
+            course.local_path = root;
+            course.source = 'local';
+            return { ok: true, extractedRoot: root, course };
+        } catch (_) {
+            return null;
+        }
+    }
+
     async function ensurePackage(nextSnapshot, packageUrl) {
         let parsedUrl;
         try {
@@ -741,7 +818,11 @@ function createLocalTaskSession(options = {}) {
         } catch (_) {
             return failure('package_invalid');
         }
-        if (parsedUrl.protocol !== 'https:') return failure('package_invalid');
+        if ((parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:')
+            || parsedUrl.username || parsedUrl.password || parsedUrl.hash
+            || parsedUrl.origin !== nextSnapshot.platform_origin
+            || (parsedUrl.protocol === 'http:' && !normalizeHttpOrigin(parsedUrl.origin)))
+            return failure('package_invalid');
         const directory = packageCacheDirectory(cacheRoot, nextSnapshot);
         const packagePath = path.join(directory, 'package.bin');
         const extractedRoot = path.join(directory, 'extracted');
@@ -764,8 +845,9 @@ function createLocalTaskSession(options = {}) {
             fs.renameSync(partial, packagePath);
         }
         const courseJsonPath = path.join(extractedRoot, 'course.json');
+        const courseLaunch = nextSnapshot.launch_scope === 'course';
         const resourcePath = safeZipDestination(extractedRoot, nextSnapshot.resource_id);
-        if (!fs.existsSync(courseJsonPath) || !resourcePath || !fs.existsSync(resourcePath)) {
+        if (!fs.existsSync(courseJsonPath) || (!courseLaunch && (!resourcePath || !fs.existsSync(resourcePath)))) {
             try {
                 extractZip(bytes, extractedRoot);
             } catch (_) {
@@ -781,7 +863,7 @@ function createLocalTaskSession(options = {}) {
         if (!course || course.id !== nextSnapshot.course_id) {
             return failure('course_id_mismatch');
         }
-        if (!resourcePath || !fs.existsSync(resourcePath)) return failure('package_invalid');
+        if (!courseLaunch && (!resourcePath || !fs.existsSync(resourcePath) || !fs.statSync(resourcePath).isFile())) return failure('package_invalid');
         course.local_path = extractedRoot;
         course.source = 'local';
         course.id = course.id;
@@ -884,7 +966,7 @@ function createLocalTaskSession(options = {}) {
         };
     }
 
-    function buildSubmission({ requestId, score, attachments, evidence }) {
+    function buildSubmission({ requestId, score, attachments, evidence, mode }) {
         const body = {
             protocol_version: PROTOCOL_VERSION,
             contract_revision: CONTRACT_REVISION,
@@ -904,6 +986,9 @@ function createLocalTaskSession(options = {}) {
             // submit means the student saved evidence, so passed is true.
             passed: score ? score.passed : true,
             attachments,
+            artifacts: mode === 'project'
+                ? attachments.map(({ upload_id, sha256, size }) => ({ upload_id, sha256, size }))
+                : undefined,
         };
         if (score && Object.prototype.hasOwnProperty.call(score, 'answers')) {
             body.answers = score.answers;
@@ -912,14 +997,14 @@ function createLocalTaskSession(options = {}) {
         return body;
     }
 
-    async function postArtifact(file, requestId) {
-        const prepared = prepareScreenshot(file);
+    async function postArtifact(file, requestId, experiment = '') {
+        const prepared = experiment ? prepareProject(file, experiment) : prepareScreenshot(file);
         if (!prepared.ok) return prepared;
         const url = `${snapshot.platform_origin}/api/xedu/v1/artifacts`;
         const headers = authorizationHeaders({
             'Content-Type': prepared.mime,
             'Content-Length': String(prepared.bytes.length),
-            'X-XEdu-Filename': prepared.filename,
+            'X-XEdu-Filename': /^[\x20-\x7e]+$/.test(prepared.filename) ? prepared.filename : encodeURIComponent(prepared.filename),
             'X-XEdu-SHA256': prepared.sha256,
         });
         let last = failure('network', { retryable: true, requestId });
@@ -939,10 +1024,14 @@ function createLocalTaskSession(options = {}) {
                         filename: prepared.filename,
                         sha256: prepared.sha256,
                         content_type: prepared.mime,
+                        size: Number.isFinite(Number(payload.size)) ? Number(payload.size) : prepared.bytes.length,
                     },
                 };
             }
             last = interpretPlatformError(response, requestId);
+            if (experiment && response.status === 415) {
+                return failure('project_file_unsupported', { status: response.status, requestId });
+            }
             if (!payload.upload_id && !response.networkError && response.status >= 200 && response.status < 300) {
                 last = failure('attachment_invalid', { status: response.status, requestId, hasDraft: Boolean(draftForActive()), draft: draftForActive() });
             }
@@ -960,6 +1049,39 @@ function createLocalTaskSession(options = {}) {
         if (bytes.length > MAX_SCREENSHOT_BYTES) return failure('screenshot_too_large');
         const filename = `experiment-view${SCREENSHOT_MIME[mime]}`;
         return { ok: true, bytes, mime, filename, sha256: sha256Hex(bytes) };
+    }
+
+    function prepareProject(file, experiment) {
+        const spec = PROJECT_FILE_EVIDENCE[experiment];
+        const requestedFilename = String(file?.filename || '').split(/[\\/]/).pop();
+        const filename = /^[A-Za-z0-9._ -]+$/.test(requestedFilename)
+            ? requestedFilename
+            : (experiment === 'scratch' ? 'project.sb3' : (requestedFilename.toLowerCase().endsWith('.py') ? 'solution.py' : 'notebook.ipynb'));
+        const extension = path.extname(filename).toLowerCase();
+        const pythonFile = experiment === 'notebook' && extension === '.py';
+        if (!spec || (!pythonFile && extension !== spec.extension) || !filename || /[\r\n\x00]/.test(filename)) {
+            return failure('project_file_invalid');
+        }
+        let bytes;
+        try {
+            bytes = Buffer.isBuffer(file.bytes) ? file.bytes : Buffer.from(file.bytes || []);
+        } catch (_) {
+            return failure('project_file_invalid');
+        }
+        if (!bytes.length) return failure('project_save_failed');
+        if (bytes.length > MAX_SCREENSHOT_BYTES) return failure('project_file_too_large');
+        if (extension === '.ipynb') {
+            try {
+                const notebook = JSON.parse(bytes.toString('utf8'));
+                if (notebook.nbformat !== 4 || !Array.isArray(notebook.cells)) return failure('project_file_invalid');
+            } catch (_) {
+                return failure('project_file_invalid');
+            }
+        }
+        if (extension === '.sb3' && (bytes.length < 4 || bytes.readUInt32LE(0) !== 0x04034b50)) {
+            return failure('project_file_invalid');
+        }
+        return { ok: true, bytes, filename, mime: pythonFile ? 'text/plain' : spec.content_type, sha256: sha256Hex(bytes) };
     }
 
     async function lookupStatus(requestId) {
@@ -1045,13 +1167,13 @@ function createLocalTaskSession(options = {}) {
             return failure('grant_expired', { status: 401, hasDraft: Boolean(draftForActive()), draft: draftForActive() });
         }
         const needsScore = mode === 'score' || mode === 'combined';
-        const needsFile = mode === 'screenshot' || mode === 'combined' || mode === 'evidence';
+        const needsFile = mode === 'screenshot' || mode === 'combined' || mode === 'evidence' || mode === 'project';
         const existingDraft = drafts.get(activeKey) || null;
         if (needsScore && !existingDraft) {
             return failure('no_score_draft');
         }
-        if (needsFile && (!file || !file.bytes || !(Buffer.isBuffer(file.bytes) ? file.bytes.length : file.bytes.byteLength))) {
-            return failure('screenshot_failed', { hasDraft: Boolean(existingDraft), draft: existingDraft });
+        if (needsFile && (!file || !file.bytes || !(file.bytes.byteLength || file.bytes.length))) {
+            return failure(mode === 'project' ? 'project_save_failed' : 'screenshot_failed', { hasDraft: Boolean(existingDraft), draft: existingDraft });
         }
         const requestId = createRequestId();
         let frozen = null;
@@ -1063,7 +1185,7 @@ function createLocalTaskSession(options = {}) {
         try {
             let attachments = [];
             if (needsFile) {
-                const uploaded = await postArtifact(file, requestId);
+                const uploaded = await postArtifact(file, requestId, mode === 'project' ? (meta.experiment || 'invalid') : '');
                 if (!uploaded.ok) {
                     restoreAfterSave(frozen, needsScore);
                     return { ...uploaded, has_draft: Boolean(draftForActive()), draft: draftForActive() };
@@ -1076,6 +1198,9 @@ function createLocalTaskSession(options = {}) {
                 return failure('no_score_draft');
             }
             let evidence = null;
+            if (mode === 'project') {
+                evidence = { type: 'project_file', experiment: meta.experiment, project_file: attachments[0] };
+            }
             if (mode === 'evidence') {
                 const experiment = meta?.experiment === 'scratch' || meta?.experiment === 'notebook'
                     ? meta.experiment
@@ -1091,6 +1216,7 @@ function createLocalTaskSession(options = {}) {
                 score,
                 attachments,
                 evidence,
+                mode,
             })));
             const posted = await postSubmission(rawBody, requestId, mode);
             if (posted.platform_status !== 'completed') {
@@ -1130,6 +1256,15 @@ function createLocalTaskSession(options = {}) {
         hostServer = null;
         labBaseUrl = '';
         hostRoot = '';
+        activeCourseRoot = '';
+        snapshot = null;
+        activeKey = '';
+        activeLaunchKey = '';
+        taskGrant = '';
+        courseGrant = '';
+        grantExpiresAt = 0;
+        courseRecord = null;
+        activityTasks = [];
         if (!server) return Promise.resolve();
         return new Promise((resolve) => server.close(() => resolve()));
     }
@@ -1137,6 +1272,7 @@ function createLocalTaskSession(options = {}) {
     return {
         parseOpenLocalTaskLink,
         openLocalTask,
+        selectTask,
         getPublicTask() {
             if (!snapshot) return failure('no_active_task');
             const task = publicTask();
@@ -1158,6 +1294,9 @@ function createLocalTaskSession(options = {}) {
         saveEvidence(file, meta) {
             return runSave('evidence', file, meta || {});
         },
+        saveProject(file, meta) {
+            return runSave('project', file, meta || {});
+        },
         saveCombined(file) {
             return runSave('combined', file);
         },
@@ -1165,7 +1304,7 @@ function createLocalTaskSession(options = {}) {
     };
 }
 
-function registerLocalTaskIpc({ ipcMain, isTrusted, session, captureExperimentView }) {
+function registerLocalTaskIpc({ ipcMain, isTrusted, session, captureExperimentView, saveJupyterProject }) {
     const guard = (event) => {
         if (isTrusted(event)) return null;
         return failure('forbidden', { status: 403 });
@@ -1175,6 +1314,11 @@ function registerLocalTaskIpc({ ipcMain, isTrusted, session, captureExperimentVi
         const denied = guard(event);
         if (denied) return denied;
         return session.getPublicTask();
+    });
+    ipcMain.handle('xedu:local-task-select', async (event, payload) => {
+        const denied = guard(event);
+        if (denied) return denied;
+        return session.selectTask(payload || {});
     });
 
     ipcMain.handle('xedu:local-task-set-draft', (event, draft) => {
@@ -1187,6 +1331,22 @@ function registerLocalTaskIpc({ ipcMain, isTrusted, session, captureExperimentVi
         const denied = guard(event);
         if (denied) return denied;
         return session.saveScore();
+    });
+
+    ipcMain.handle('xedu:local-task-save-project', async (event, payload) => {
+        const denied = guard(event);
+        if (denied) return denied;
+        const task = session.getPublicTask();
+        if (!task?.ok) return task;
+        if (task.grant_expired) return failure('grant_expired');
+        const experiment = payload?.experiment;
+        if (experiment !== 'scratch' && experiment !== 'notebook') return failure('project_file_invalid');
+        try {
+            const file = experiment === 'notebook' ? await saveJupyterProject() : payload?.file;
+            return await session.saveProject(file, { experiment });
+        } catch (error) {
+            return failure('project_save_failed', { serverMessage: error?.message });
+        }
     });
 
     ipcMain.handle('xedu:local-task-upload-screenshot', async (event, bounds) => {

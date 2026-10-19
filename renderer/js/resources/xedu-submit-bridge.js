@@ -24,6 +24,10 @@ const STUDENT_MESSAGES = Object.freeze({
     submission_not_completed: '学习平台尚未确认完成，请稍后再试。',
     network: '暂时连不上学习平台，请稍后再试。',
     attachment_invalid: '截图没有被平台收下，本次没有保存成功。',
+    project_save_failed: '作品文件保存失败，没有提交。请检查当前编辑器后重试。',
+    project_file_invalid: '当前文件不是可提交的 Python、Notebook 或 Scratch 作品。',
+    project_file_too_large: '作品文件超过 10MB，已保存在本地，但没有提交。',
+    project_file_unsupported: '作品已保存在本地，但学习平台尚不支持作品文件上传。',
     forbidden: '当前窗口不能执行这个操作。',
 });
 
@@ -182,6 +186,7 @@ export function createXeduSubmitBridge({
     onDraftChange,
     onInvalidScore,
     onPageScoreSubmit,
+    onSaveResult,
     captureBounds,
 } = {}) {
     let activeFrame = null;
@@ -215,17 +220,70 @@ export function createXeduSubmitBridge({
         return { ok: true, has_draft: Boolean(draft), draft };
     }
 
+    function replySubmitResponse(event, requestId, result) {
+        if (!requestId || typeof event?.source?.postMessage !== 'function') return;
+        const completed = result?.platform_status === 'completed' || result?.status === 'completed';
+        const ok = result?.ok === true && completed;
+        const payload = {
+            type: 'xedu:submit-response',
+            request_id: requestId,
+            ok,
+            status: ok ? 'completed' : (result?.platform_status || result?.status || 'failed'),
+            code: result?.code || '',
+            error: ok ? '' : (result?.message || result?.error || STUDENT_MESSAGES[result?.code] || '平台未确认保存完成，请重试。'),
+            message: result?.message || '',
+            receipt_id: result?.receipt_id || '',
+            submission_id: result?.submission_id || '',
+        };
+        const origin = typeof event.origin === 'string' && event.origin && event.origin !== 'null'
+            ? event.origin
+            : '*';
+        try {
+            event.source.postMessage(payload, origin);
+        } catch (_) {
+            try { event.source.postMessage(payload, '*'); } catch (__) { /* iframe gone */ }
+        }
+    }
+
+    function submitRequestId(input) {
+        let parsed = input;
+        if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch (_) { return ''; }
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return '';
+        if (parsed.type !== 'xedu:submit-request') return '';
+        const requestId = typeof parsed.request_id === 'string' ? parsed.request_id.trim() : '';
+        return requestId && requestId.length <= 100 ? requestId : '';
+    }
+
     async function handleMessage(event) {
         const frameWindow = activeFrame?.contentWindow || null;
         if (!frameWindow || event.source !== frameWindow) return;
+        const requestId = submitRequestId(event.data);
         const parsed = parseLabScoreMessage(event.data);
         if (parsed.ignore) return;
         if (!parsed.ok) {
             onInvalidScore?.(parsed);
+            if (requestId) {
+                replySubmitResponse(event, requestId, {
+                    ok: false,
+                    platform_status: 'failed',
+                    code: parsed.code || 'score_invalid',
+                    message: parsed.message || STUDENT_MESSAGES.score_invalid,
+                });
+            }
             return;
         }
         const stored = await remember(parsed.draft);
         if (stored?.ok === false || !draft) return;
+        // Path B HTML (xedu:submit-request + request_id): save now and ack the iframe.
+        // Other page scores notify the shell (no top-bar 保存成绩).
+        if (requestId) {
+            const result = await run('score');
+            onSaveResult?.(result);
+            replySubmitResponse(event, requestId, result);
+            return;
+        }
         onPageScoreSubmit?.(draft);
     }
 
@@ -234,7 +292,7 @@ export function createXeduSubmitBridge({
     async function run(kind, meta) {
         if (saving) return failure('save_in_flight');
         if ((kind === 'score' || kind === 'combined') && !draft) return failure('no_score_draft');
-        const method = kind === 'score'
+        const method = kind === 'project' ? 'saveProject' : kind === 'score'
             ? 'saveScore'
             : kind === 'screenshot'
                 ? 'uploadScreenshot'
@@ -247,11 +305,11 @@ export function createXeduSubmitBridge({
         saving = true;
         const frozen = draft;
         try {
-            const bounds = typeof captureBounds === 'function' ? captureBounds() : null;
-            const result = kind === 'evidence'
+            const bounds = kind !== 'project' && typeof captureBounds === 'function' ? captureBounds() : null;
+            const result = kind === 'project' ? await transport.saveProject(meta) : kind === 'evidence'
                 ? await transport.saveEvidence(bounds, meta)
                 : await transport[method](bounds);
-            const keepsScoreDraft = kind === 'screenshot' || kind === 'evidence';
+            const keepsScoreDraft = kind === 'screenshot' || kind === 'evidence' || kind === 'project';
             if (result?.platform_status === 'completed' && !keepsScoreDraft) {
                 draft = result.draft || null;
             } else if (result?.draft) {
@@ -303,6 +361,9 @@ export function createXeduSubmitBridge({
         },
         saveEvidence(meta) {
             return run('evidence', meta);
+        },
+        saveProject(meta) {
+            return run('project', meta);
         },
         saveCombined() {
             return run('combined');

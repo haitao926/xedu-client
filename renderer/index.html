@@ -144,9 +144,9 @@
                     </div>
                 </details>
                 <button id="student-focus-ai-btn" class="student-focus-ai-btn" type="button" data-action="ai.toggleStudentAssistant" aria-expanded="false" hidden>AI 助手</button>
-                <button id="student-submit-screenshot-btn" class="student-submit-screenshot-btn" type="button" data-action="resources.submitStudentScreenshot" hidden>截图并提交</button>
+                <button id="student-submit-screenshot-btn" class="student-submit-screenshot-btn" type="button" data-action="resources.submitStudentScreenshot" hidden>保存并提交</button>
                 <span id="student-score-draft" class="student-score-draft" hidden></span>
-                <span id="student-platform-status" class="student-platform-status" hidden></span>
+                <span id="student-platform-status" class="student-platform-status" role="status" aria-live="polite" hidden></span>
                 <button id="student-save-retry-btn" class="student-save-retry-btn" type="button" data-action="resources.retryStudentSave" hidden>重试</button>
                 <details id="student-account-menu" class="student-account-menu">
                     <summary class="student-account-trigger" aria-label="账户菜单">
@@ -700,6 +700,10 @@
                                     </svg>
                                     课堂设置
                                 </button>
+                                <button class="btn btn-secondary settings-tab" data-tab="courses" data-teacher-only="true" data-action="system.showSettingsTab" data-action-value="courses">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h5l2 2h11v10a2 2 0 0 1-2 2H3z"></path><path d="M3 7V5a2 2 0 0 1 2-2h5l2 2"></path></svg>
+                                    课程目录
+                                </button>
                             </div>
 
                             <div class="settings-content" data-settings-tab="ai" data-teacher-only="true">
@@ -811,6 +815,17 @@
                                         <input type="checkbox" id="allow-network-access" checked>
                                         <span>允许学生连接本机课堂</span>
                                     </label>
+                                </div>
+                            </div>
+
+                            <div class="settings-content" data-settings-tab="courses" data-teacher-only="true">
+                                <div class="form-group">
+                                    <label class="input-label">课程文件目录</label>
+                                    <div class="input-row">
+                                        <input type="text" id="course-root-input" class="form-control" placeholder="例如：/Users/你的用户名/Documents/XeduCourses">
+                                        <button id="course-root-select-btn" class="btn btn-secondary" data-action="system.selectCourseRoot" type="button">选择目录</button>
+                                    </div>
+                                    <div class="resources-create-hint">把课程文件夹放入此目录后，打开“课程资源”会自动扫描并显示。每个课程文件夹应包含 course.json。</div>
                                 </div>
                             </div>
 

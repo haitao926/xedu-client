@@ -157,3 +157,10 @@ test("Jupyter startup errors show the backend message instead of raw JSON", () =
         "JupyterLab 检查超时，请稍后重试。",
     );
 });
+
+test("Jupyter restart stops when the old server cannot be stopped", () => {
+    assert.match(
+        jupyterSource,
+        /if \(!stopped\) return false;/,
+    );
+});

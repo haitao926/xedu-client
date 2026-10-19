@@ -3,6 +3,8 @@ import { Panel } from '@lumino/widgets';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { showErrorMessage } from '@jupyterlab/apputils';
 import {
+  MICROPYTHON_ICON_NAME,
+  MICROPYTHON_ICON_SVG,
   PLACEHOLDER_OUTPUT,
   STARTER_MAIN_PY,
   actionAvailability,
@@ -26,6 +28,11 @@ import '../style/index.css';
 const COMMAND_ID = 'xedu-micropython:open-panel';
 const PANEL_ID = 'xedu-micropython-panel';
 const POLL_INTERVAL_MS = 400;
+
+const microPythonIcon = {
+  name: MICROPYTHON_ICON_NAME,
+  svgstr: MICROPYTHON_ICON_SVG,
+};
 
 function apiUrl(path) {
   return `${PageConfig.getBaseUrl()}xedu-micropython/${path}`;
@@ -246,8 +253,11 @@ class MicroPythonPanel extends Panel {
         return;
       }
       if (action === 'reset') {
-        await requestRoute('reset');
         this.setStatus('正在重启设备…');
+        await requestRoute('reset');
+        this.cursor = 0;
+        this.setStatus('设备已重启，等待 MicroPython 输出。');
+        this.startPolling();
         return;
       }
       if (action === 'send') return await this.sendInput();
@@ -408,6 +418,7 @@ class MicroPythonPanel extends Panel {
     await this.save();
     const file = this.activePythonPath;
     if (!file) throw new Error('请先打开一个 .py 文件。');
+    this.setStatus(`正在上传 ${file.split('/').pop()}…`);
     await requestRoute('upload', { body: JSON.stringify({ file }) });
     this.setStatus(`已上传 ${file.split('/').pop()}`);
   }
@@ -519,6 +530,7 @@ const plugin = {
     app.commands.addCommand(COMMAND_ID, {
       label: 'MicroPython 代码模式',
       caption: '打开 XEdu ESP32 MicroPython 代码模式',
+      icon: microPythonIcon,
       execute: openPanel,
     });
     app.commands.addKeyBinding({ command: COMMAND_ID, keys: ['Accel Shift E'], selector: 'body' });
@@ -526,7 +538,8 @@ const plugin = {
       launcher.add({
         command: COMMAND_ID,
         category: 'XEdu 实验',
-        rank: 1,
+        categoryRank: -100,
+        rank: 0,
       });
     }
     if (shouldAutoOpenCodeMode(typeof window !== 'undefined' ? window.location.search : '')) {

@@ -219,6 +219,7 @@ export function applySystemConfigToInputs(response) {
     const aiApiMode = document.getElementById('ai-api-mode');
     const allowNetworkAccess = document.getElementById('allow-network-access');
     const pythonPathInput = document.getElementById('python-path-input');
+    const courseRootInput = document.getElementById('course-root-input');
 
     if (classroomName) classroomName.value = uiConfig.classroom_name || '';
     if (classroomTeacherCode) {
@@ -247,6 +248,7 @@ export function applySystemConfigToInputs(response) {
     pythonSelectionConfirmed = response.config?.jupyter?.python_selection_confirmed === true;
     if (configuredPythonPath) storePythonPath(configuredPythonPath);
     if (pythonPathInput) pythonPathInput.value = pythonPath;
+    if (courseRootInput) courseRootInput.value = String(uiConfig.course_root || '').trim();
     renderPythonSelectionState(pythonPath, { confirmed: pythonSelectionConfirmed });
     renderPythonEnvironmentOptions(lastScannedPythonEnvironments, pythonPath, {
         loading: isScanningPythonEnvironments,
@@ -295,6 +297,20 @@ export async function selectPythonEnvironment() {
         showToast(`Python 环境选择失败: ${message}`, 'error');
         return null;
     }
+}
+
+export async function selectCourseRoot() {
+    const selectFolder = window.electronAPI?.selectFolder;
+    if (typeof selectFolder !== 'function') {
+        showToast('浏览器模式不支持选择课程目录。', 'warning');
+        return '';
+    }
+    const selected = await selectFolder();
+    if (selected) {
+        const input = document.getElementById('course-root-input');
+        if (input) input.value = selected;
+    }
+    return selected || '';
 }
 
 export async function scanPythonEnvironments({ silent = false, preferredPath = '' } = {}) {
@@ -550,6 +566,7 @@ export async function saveSystemConfig() {
     const classroomAutoDiscoverInput = document.getElementById('classroom-auto-discover')?.checked ?? true;
     const usePipMirrorInput = document.getElementById('use-tsinghua-mirror')?.checked ?? true;
     const allowNetworkAccessInput = document.getElementById('allow-network-access')?.checked ?? true;
+    const courseRootInput = document.getElementById('course-root-input')?.value.trim() || '';
     const hasClassroomInput = !!(classroomNameInput || classroomTeacherCodeInput || classroomAutoDiscoverInput);
     const hasAiInput = !!(apiKey || aiBaseUrlInput || aiModelInput || aiApiModeInput);
     const hasPackageSettingsInput = true;
@@ -573,6 +590,7 @@ export async function saveSystemConfig() {
             classroom_auto_discover: classroomAutoDiscoverInput,
             pip_use_mirror: usePipMirrorInput,
             allow_network_access: allowNetworkAccessInput,
+            course_root: courseRootInput,
             ...buildTeacherCodeUpdate(classroomTeacherCodeInput),
         };
 

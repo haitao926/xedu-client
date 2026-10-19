@@ -429,6 +429,111 @@ test("Scratch host controls communicate with a cross-origin iframe through postM
   }
 });
 
+async function createSubmissionHarness() {
+  const timers = createFakeTimers();
+  const restoreTimers = timers.install();
+  const postedMessages = [];
+  const childWindow = {
+    postMessage(message, targetOrigin) {
+      postedMessages.push({ message, targetOrigin });
+    },
+  };
+  const harness = createScratchHarness({ contentWindow: childWindow });
+  const originalRequest = apiClient.request;
+  apiClient.request = async () => new Response("{}", { status: 200 });
+  harness.controller.openScratchWorkspace({ projectPath: "starter.sb3" });
+  await flushAsyncWork();
+  harness.frame.dispatchEvent("load");
+  const bridgeToken = postedMessages.find(({ message }) =>
+    message.type === "xedu:scratch-host-state-request"
+  ).message.bridgeToken;
+  const reply = (data, overrides = {}) => harness.dispatchWindowMessage({
+    source: childWindow,
+    origin: "http://127.0.0.1:5123",
+    data: { bridgeToken, ...data },
+    ...overrides,
+  });
+  reply({ type: "xedu:scratch-host-state", state: { canSave: true } });
+  return {
+    ...harness, postedMessages, timers, reply,
+    restore() {
+      apiClient.request = originalRequest;
+      harness.restore();
+      restoreTimers();
+    },
+  };
+}
+
+test("Scratch submission exports through the authenticated host request and returns the current name", async () => {
+  const harness = await createSubmissionHarness();
+  try {
+    const submission = harness.controller.saveScratchProjectForSubmission();
+    const { message, targetOrigin } = harness.postedMessages.at(-1);
+    assert.equal(message.action, "export-for-submission");
+    assert.equal(targetOrigin, "http://127.0.0.1:5123");
+    const bytes = new Uint8Array([80, 75, 3, 4, 42]).buffer;
+    let settled = false;
+    submission.then(() => { settled = true; });
+    const response = {
+      type: "xedu:scratch-host-action-result", requestId: message.requestId,
+      result: { bytes, mime: "application/x.scratch.sb3", filename: "Edited project.sb3" },
+    };
+    harness.reply({ ...response, bridgeToken: "wrong-token" });
+    harness.reply(response, { origin: "https://untrusted.example" });
+    harness.reply(response, { source: {} });
+    await flushAsyncWork();
+    assert.equal(settled, false);
+    harness.reply(response);
+    assert.deepEqual(await submission, response.result);
+    assert.equal(harness.timers.countByDelay(15000), 0);
+    assert.equal(harness.postedMessages.some(({ message }) => message.action === "download"), false);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("Scratch submission rejects persistence errors and is bounded when the editor does not reply", async () => {
+  const harness = await createSubmissionHarness();
+  try {
+    const failed = harness.controller.saveScratchProjectForSubmission();
+    const failedCheck = assert.rejects(failed, /disk full/);
+    harness.reply({
+      type: "xedu:scratch-host-action-result",
+      requestId: harness.postedMessages.at(-1).message.requestId,
+      error: "disk full",
+    });
+    await failedCheck;
+    const timedOut = harness.controller.saveScratchProjectForSubmission();
+    const timeoutCheck = assert.rejects(timedOut, /超时/);
+    harness.timers.run(harness.timers.findByDelay(delay => delay === 15000).id);
+    await timeoutCheck;
+    assert.equal(harness.timers.countByDelay(15000), 0);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("Scratch submission rejects malformed exports and disconnected editors", async () => {
+  const harness = await createSubmissionHarness();
+  try {
+    for (const result of [true, { bytes: new ArrayBuffer(0), filename: "empty.sb3" },
+      { bytes: new Uint8Array([1]).buffer, filename: "" }]) {
+      const submission = harness.controller.saveScratchProjectForSubmission();
+      const rejected = assert.rejects(submission, /导出/);
+      harness.reply({
+        type: "xedu:scratch-host-action-result",
+        requestId: harness.postedMessages.at(-1).message.requestId,
+        result,
+      });
+      await rejected;
+    }
+    harness.frame.contentWindow = null;
+    await assert.rejects(harness.controller.saveScratchProjectForSubmission(), /连接/);
+  } finally {
+    harness.restore();
+  }
+});
+
 test("Scratch upload uses a host-side file picker and sends the project buffer to the iframe", async () => {
   const postedMessages = [];
   const childWindow = {

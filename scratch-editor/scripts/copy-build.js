@@ -177,14 +177,14 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
         return false;
       }
     };
-    const saveXEduProject = (id, vmState, saveParams, state) => {
+    const saveXEduProject = (id, vmState, saveParams, state, content) => {
       void vmState;
       void saveParams;
       const projectUrl = getProjectUrl();
       const vm = state && state.store && state.store.getState().scratchGui.vm;
       if (!projectUrl || !vm || !vm.saveProjectSb3) return Promise.resolve({id: id || '0'});
       showStatus('正在保存 Scratch 项目…', 0);
-      return vm.saveProjectSb3()
+      return (content ? Promise.resolve(content) : vm.saveProjectSb3())
         .then(blob => fetch(projectUrl, {
           method: 'PUT',
           headers: {'Content-Type': 'application/x.scratch.sb3'},
@@ -222,10 +222,10 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
         window.URL.revokeObjectURL(url);
       }, 1000);
     };
-    const saveScratchProjectToCurrentFile = async (state) => {
+    const saveScratchProjectToCurrentFile = async (state, content) => {
       const projectInfo = getProjectInfo();
       if (!projectInfo) throw new Error('当前 Scratch 页面没有绑定可保存的项目文件。');
-      await saveXEduProject(projectInfo.id, null, null, state);
+      await saveXEduProject(projectInfo.id, null, null, state, content);
       return true;
     };
     const createNewScratchProject = async (state) => {
@@ -318,6 +318,15 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
       downloadScratchBlob(getScratchProjectTitle(state) + '.sb3', await vm.saveProjectSb3());
       return true;
     };
+    const exportScratchProjectForSubmission = async (state) => {
+      if (!getProjectInfo()) throw new Error('当前 Scratch 页面没有绑定可保存的项目文件。');
+      const vm = state.store.getState().scratchGui.vm;
+      if (!vm?.saveProjectSb3) throw new Error('Scratch 还没有准备好。');
+      const filename = getScratchProjectTitle(state).replace(/\\.sb3$/i, '') + '.sb3';
+      const content = await vm.saveProjectSb3();
+      await saveScratchProjectToCurrentFile(state, content);
+      return { bytes: await content.arrayBuffer(), mime: 'application/x.scratch.sb3', filename };
+    };
     const createXEduScratchBridge = (state) => ({
       getState: () => ({
         canSave: Boolean(getProjectInfo()),
@@ -327,12 +336,13 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
       saveProject: () => saveScratchProjectToCurrentFile(state),
       uploadProject: () => uploadScratchProjectFromComputer(state),
       downloadProject: () => downloadScratchProjectToComputer(state),
+      exportProjectForSubmission: () => exportScratchProjectForSubmission(state),
       importProjectFromHost: ({ buffer, fileName }) => importScratchProject(state, { buffer, fileName })
     });
     const bindXEduScratchHostBridge = (state, bridge) => {
       const bridgeToken = params.get('bridgeToken') || '';
       if (!bridgeToken || window.parent === window) return;
-      const send = (payload) => window.parent.postMessage({...payload, bridgeToken}, '*');
+      const send = (payload, transfer = []) => window.parent.postMessage({...payload, bridgeToken}, '*', transfer);
       const sendState = () => send({type: 'xedu:scratch-host-state', state: bridge.getState()});
       window.addEventListener('message', async (event) => {
         const request = event.data;
@@ -355,7 +365,7 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
           return;
         }
         if (request?.type !== 'xedu:scratch-host-action') return;
-        const actionMap = {new: 'newProject', save: 'saveProject', upload: 'uploadProject', download: 'downloadProject'};
+        const actionMap = {new: 'newProject', save: 'saveProject', upload: 'uploadProject', download: 'downloadProject', 'export-for-submission': 'exportProjectForSubmission'};
         const handler = bridge[actionMap[request.action]];
         if (typeof handler !== 'function') {
           send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, error: '当前 Scratch 页面暂不支持这个操作。'});
@@ -363,7 +373,8 @@ fs.writeFileSync(path.join(stagingBuild, 'index.html'), `<!doctype html>
         }
         try {
           const result = await handler();
-          send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, result});
+          send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, result},
+            result?.bytes instanceof ArrayBuffer ? [result.bytes] : []);
           sendState();
         } catch (error) {
           send({type: 'xedu:scratch-host-action-result', requestId: request.requestId, error: error?.message || 'Scratch 文件操作失败'});

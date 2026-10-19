@@ -14,7 +14,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "clean": "node scripts/clean.mjs",
-    "test": "node --test src/index.test.mjs"
+    "test": "node --test src/*.test.mjs"
   },
   "dependencies": {
     "@jupyterlab/application": "~4.5.9",
@@ -28,6 +28,6 @@
   },
   "jupyterlab": {
     "extension": true,
-    "outputDir": "jupyterlab_micropython/labextension"
+    "outputDir": "jupyterlab_micropython/jupyterlab-micropython"
   }
 }

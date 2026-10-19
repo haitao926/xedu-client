@@ -289,3 +289,31 @@
     border-bottom: 1px solid var(--jp-border-color2, #e7e5e4);
   }
 }
+
+/* JupyterLab Launcher MicroPython Card & Section Polish */
+.jp-LauncherCard[data-category="XEdu 实验"],
+.jp-LauncherCard[data-category='XEdu 实验'] {
+  border-color: #fdba74;
+  background: linear-gradient(180deg, #ffffff 0%, #fffaf5 100%);
+  box-shadow: 0 1px 3px rgba(234, 88, 12, 0.08);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.jp-LauncherCard[data-category="XEdu 实验"]:hover,
+.jp-LauncherCard[data-category='XEdu 实验']:hover {
+  border-color: #ea580c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.18);
+}
+
+.jp-LauncherCard[data-category="XEdu 实验"] .jp-LauncherCard-icon svg,
+.jp-LauncherCard[data-category='XEdu 实验'] .jp-LauncherCard-icon svg {
+  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.22));
+}
+
+.jp-LauncherCard[data-category="XEdu 实验"] .jp-LauncherCard-label p,
+.jp-LauncherCard[data-category='XEdu 实验'] .jp-LauncherCard-label p {
+  color: #9a3412;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}

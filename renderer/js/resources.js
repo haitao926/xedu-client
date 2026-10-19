@@ -139,6 +139,7 @@ import {
     isTeacherCodeConfigured,
     readTeacherModeState,
     rememberTeacherMode,
+    rememberStudentMode,
 } from "./main/teacher-mode-state.js";
 import {
     buildLocalCourseFileUrl,
@@ -204,6 +205,13 @@ function xeduTransport() {
         saveScore: () => api().xeduSaveScore?.(),
         uploadScreenshot: (bounds) => api().xeduUploadScreenshot?.(bounds),
         saveEvidence: (bounds, meta) => api().xeduSaveEvidence?.({ bounds, experiment: meta?.experiment || "" }),
+        saveProject: async (meta) => {
+            const experiment = meta?.experiment || "";
+            const file = experiment === "scratch"
+                ? await window.app?.workspace?.saveScratchProjectForSubmission?.()
+                : null;
+            return api().xeduSaveProject?.({ experiment, file });
+        },
         saveCombined: (bounds) => api().xeduSaveCombined?.(bounds),
     };
 }
@@ -213,6 +221,7 @@ let studentSaveResult = null;
 let studentSaveKind = "";
 let pageScorePending = false;
 
+const xeduScoreBridgeSaveHooks = { onSaveResult: null };
 const xeduScoreBridge = createXeduSubmitBridge({
     windowObject: window,
     transport: xeduTransport(),
@@ -220,6 +229,7 @@ const xeduScoreBridge = createXeduSubmitBridge({
     onDraftChange: () => syncStudentFocusChrome(),
     onInvalidScore: (parsed) => notifyUser(parsed?.message || "成绩无效。请使用 0 到 100 之间的数字，0 分也会保留。", "error"),
     onPageScoreSubmit: () => { void submitPageScore(); },
+    onSaveResult: (result) => xeduScoreBridgeSaveHooks.onSaveResult?.(result),
 });
 window.addEventListener("xedu:teacher-credential-updated", () => {
     const state = readTeacherModeState();
@@ -2669,8 +2679,24 @@ function loadLocalCourses() {
 }
 
 async function refreshLocalCoursesFromDisk(courses = []) {
-    if (!Array.isArray(courses) || !courses.length) return [];
-    const refreshed = await Promise.all(courses.map(async (course) => {
+    const existing = Array.isArray(courses) ? courses : [];
+    let discovered = [];
+    try {
+        const config = await apiClient.loadConfig();
+        const root = String(config?.config?.ui?.course_root || '').trim();
+        if (root) {
+            const entries = await apiClient.post('/api/resources/discover-local', { root_path: root });
+            discovered = Array.isArray(entries?.courses) ? entries.courses : [];
+        }
+    } catch (error) {
+        console.warn('自动发现课程失败，继续使用已保存课程:', error);
+    }
+    const byPath = new Map(existing.map((course) => [String(course?.local_path || '').trim(), course]));
+    discovered.forEach((course) => {
+        const path = String(course?.local_path || '').trim();
+        if (path) byPath.set(path, { ...(byPath.get(path) || {}), ...course, source: 'local' });
+    });
+    const refreshed = await Promise.all(Array.from(byPath.values()).map(async (course) => {
         const localPath = (course?.local_path || "").toString().trim();
         if (!localPath) return course;
         try {
@@ -2857,6 +2883,7 @@ function updateTeacherModeUI() {
 function exitTeacherMode() {
     invalidateStudentNavigation();
     resourcesState.teacherMode = clearTeacherModeSession();
+    rememberStudentMode();
     updateTeacherModeUI();
 }
 
@@ -3509,7 +3536,7 @@ function getVisibleLessonContexts(resource, sections = normalizeSections(resourc
 }
 
 function pickStudentCurrentCourse() {
-    return selectStudentCurrentCourse({
+    return resourcesState.xeduLaunchedCourse || selectStudentCurrentCourse({
         classroomState: resourcesState.classroomState,
         remoteSource: resourcesState.remoteSource,
         localCourses: resourcesState.localCourses,
@@ -3570,7 +3597,7 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
         aiBtn.setAttribute("aria-expanded", document.body.classList.contains("student-ai-drawer-open") ? "true" : "false");
     }
     if (submitBtn) {
-        submitBtn.hidden = !focus;
+        submitBtn.hidden = !focus || !currentEvidenceKind(normalized);
         submitBtn.disabled = chrome.submitDisabled;
     }
     if (draftEl) {
@@ -3786,11 +3813,46 @@ function makeExperimentResourceButton(file, context, options = {}) {
 async function openStudentExperimentPage(tabId, context, file = null) {
     const normalized = normalizeWorkspaceTabId(tabId);
     if (!context?.resource) return null;
+    if (normalized === "experience") await prepareStudentHtmlFiles(context.resource);
     resourcesState.activeCourseWorkspaceTab = normalized;
     resourcesState.activeSectionIndex = context.sectionIndex;
     resourcesState.activeExperimentIndex = context.expIndex;
     syncStudentPageBodyState(normalized);
     syncLessonPageTitle(context.resource, normalized);
+
+    if (normalized === "python" && Array.isArray(resourcesState.xeduActivityTasks)
+        && typeof window.electronAPI?.xeduSelectLocalTask === "function") {
+        const selectedFile = file || getWorkspaceFilesForOverview(context.overview, "python")[0];
+        const targetPath = relativeResourcePath(selectedFile?.path || "");
+        const experimentId = String(context?.exp?.id || context?.exp?.experiment_id || context?.exp?.experimentId || "").trim();
+        const overview = context?.overview || {};
+        const primaryEntryPath = relativeResourcePath(
+            overview?.primaryEntry?.file?.path
+            || overview?.htmlFiles?.[0]?.path
+            || context?.exp?.entry_file
+            || context?.exp?.entryFile
+            || ""
+        );
+        const experimentTasks = experimentId
+            ? resourcesState.xeduActivityTasks.filter((item) => {
+                const taskExperimentId = String(item?.experiment_id || item?.experimentId || item?.id || "").trim();
+                return taskExperimentId && taskExperimentId === experimentId;
+            })
+            : [];
+        const task = resourcesState.xeduActivityTasks.find((item) => relativeResourcePath(item.resource_id) === targetPath)
+            || (experimentTasks.length === 1 ? experimentTasks[0] : null)
+            || (primaryEntryPath ? resourcesState.xeduActivityTasks.find((item) => relativeResourcePath(item.resource_id) === primaryEntryPath) : null);
+        if (!task) {
+            notifyUser("本实验尚未绑定到平台活动，请先让老师完成活动绑定。", "warning");
+            return null;
+        }
+        const selected = await window.electronAPI.xeduSelectLocalTask({ activity_id: task.activity_id, resource_id: task.resource_id });
+        if (!selected?.ok) {
+            notifyUser(selected?.message || "切换平台活动失败，请从课程首页重新启动 Client。", "error");
+            return null;
+        }
+        xeduScoreBridge.clearDraft();
+    }
 
     if (normalized === "python") {
         return openStudentPythonWorkspace(context.resource, {
@@ -3923,7 +3985,7 @@ function getStudentRouteEntries(context) {
             file: scratch,
             icon: "▦",
             title: "图形编程",
-            desc: "进入 Scratch，完成后点顶部「截图并提交」。",
+            desc: "进入 Scratch，完成后点顶部「保存并提交」。",
             action: "打开 Scratch",
             meta: scratch ? getBaseName(scratch.path || scratch.name || "") : "",
         },
@@ -3933,7 +3995,7 @@ function getStudentRouteEntries(context) {
             icon: "</>",
             title: "Python 实验",
             desc: notebookEvidence
-                ? "打开 Notebook，完成后点顶部「截图并提交」。"
+                ? "打开 Notebook，完成后点顶部「保存并提交」。"
                 : "打开 Notebook / Python，继续代码实践。",
             action: "进入代码",
             meta: python ? getBaseName(python.path || python.name || "") : "",
@@ -4053,42 +4115,88 @@ function buildStudentExperimentEntryCard(context, tabId = resourcesState.activeC
 function buildStudentHtmlExperienceView(context) {
     const htmlFiles = Array.isArray(context?.overview?.htmlFiles) ? context.overview.htmlFiles : [];
     const launchedPath = relativeResourcePath(resourcesState.xeduLaunchResourceId || "");
-    const primaryHtml = htmlFiles.find((file) => relativeResourcePath(file.path) === launchedPath) || htmlFiles[0] || null;
-    const experimentTitle = context?.exp?.title || `实验 ${Number.isFinite(context?.expIndex) ? context.expIndex + 1 : 1}`;
-    const experimentDesc = String(context?.exp?.description || "").trim();
+    const declaredEntry = context?.exp?.entry_file || context?.exp?.entryFile;
+    const primaryHtml = (declaredEntry ? htmlFiles[0] : htmlFiles.find((file) => relativeResourcePath(file.path) === launchedPath)) || htmlFiles[0] || null;
     const wrap = document.createElement("section");
     wrap.className = "resources-student-html-experience";
 
     const head = document.createElement("div");
     head.className = "resources-student-html-experience-head";
-    const info = document.createElement("div");
-    info.className = "resources-student-html-experience-info";
     const title = document.createElement("div");
     title.className = "resources-student-html-experience-title";
-    title.textContent = experimentTitle;
-    info.appendChild(title);
-    if (experimentDesc) {
-        const desc = document.createElement("div");
-        desc.className = "resources-student-html-experience-desc";
-        desc.textContent = experimentDesc;
-        info.appendChild(desc);
-    }
-    const meta = document.createElement("div");
-    meta.className = "resources-student-html-experience-meta";
-    meta.textContent = primaryHtml
-        ? `${primaryHtml.name || getBaseName(primaryHtml.path || "") || "HTML 体验页"} · ${primaryHtml.path || ""}`
-        : "当前实验没有配置 HTML 体验页";
-    info.appendChild(meta);
-    head.appendChild(info);
+    title.textContent = "互动体验";
+    head.appendChild(title);
 
-    const badge = document.createElement("span");
-    badge.className = "resource-card-badge";
-    badge.textContent = primaryHtml
-        ? htmlFiles.length > 1
-            ? `${htmlFiles.length} 个体验页，当前显示第 1 个`
-            : "HTML 体验页"
-        : "待补充";
-    head.appendChild(badge);
+    const actions = document.createElement("div");
+    actions.className = "resources-student-html-experience-actions";
+
+    if (primaryHtml) {
+        const relativeHtmlPath = String(primaryHtml.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+        const frameUrl =
+            resourcesState.xeduLabFrameUrls?.[relativeHtmlPath]
+            || buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient)
+            || resolveResourceUrl(primaryHtml.path || "", context.resource, {
+                repoUrl: resourcesState.repoUrl,
+                rawBaseUrl: resourcesState.rawBaseUrl,
+                indexBranch: resourcesState.indexBranch,
+            });
+
+        if (frameUrl) {
+            const openBrowserBtn = document.createElement("button");
+            openBrowserBtn.type = "button";
+            openBrowserBtn.className = "btn btn-secondary btn-icon-only resources-student-html-open";
+            openBrowserBtn.title = "在新窗口打开体验";
+            openBrowserBtn.setAttribute("aria-label", "在新窗口打开体验");
+            openBrowserBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+            openBrowserBtn.addEventListener("click", withAsyncActionErrorBoundary(async () => {
+                await openExternal(frameUrl);
+            }, {
+                fallback: "打开互动体验页面失败",
+                logLabel: "打开互动体验页面失败",
+            }));
+            actions.appendChild(openBrowserBtn);
+
+            const maxBtn = document.createElement("button");
+            maxBtn.type = "button";
+            maxBtn.className = "btn btn-secondary btn-icon-only resources-student-html-max-btn";
+            const updateMaxState = (isMaximized) => {
+                wrap.classList.toggle("is-maximized", isMaximized);
+                maxBtn.title = isMaximized ? "还原" : "最大化";
+                maxBtn.setAttribute("aria-label", isMaximized ? "还原" : "最大化");
+                maxBtn.innerHTML = isMaximized
+                    ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>'
+                    : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5m18 0V3h-5M3 16v5h5m13-5v5h-5"></path></svg>';
+                window.dispatchEvent(new Event("resize"));
+            };
+            updateMaxState(false);
+
+            maxBtn.addEventListener("click", () => {
+                const nowMaximized = !wrap.classList.contains("is-maximized");
+                updateMaxState(nowMaximized);
+            });
+
+            const onKeyDown = (event) => {
+                if (event.key === "Escape" && wrap.classList.contains("is-maximized")) {
+                    event.preventDefault();
+                    updateMaxState(false);
+                }
+            };
+            document.addEventListener("keydown", onKeyDown);
+
+            // Clean up keydown listener if wrap element is removed from DOM
+            const observer = new MutationObserver(() => {
+                if (!document.contains(wrap)) {
+                    document.removeEventListener("keydown", onKeyDown);
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            actions.appendChild(maxBtn);
+        }
+    }
+
+    head.appendChild(actions);
     wrap.appendChild(head);
 
     if (!primaryHtml) {
@@ -4121,7 +4229,7 @@ function buildStudentHtmlExperienceView(context) {
     frameWrap.className = "resources-student-html-frame-wrap";
     const frame = document.createElement("iframe");
     frame.className = "resources-student-html-frame";
-    frame.title = primaryHtml.name || primaryHtml.path || "互动体验";
+    frame.title = "互动体验";
     frame.allow = "camera *";
     frame.src = frameUrl;
     frame.loading = "eager";
@@ -4129,17 +4237,6 @@ function buildStudentHtmlExperienceView(context) {
     courseAiFrameBridge.attach(frame, frameUrl);
     xeduScoreBridge.attach(frame);
     wrap.appendChild(frameWrap);
-    const openBrowserBtn = document.createElement("button");
-    openBrowserBtn.type = "button";
-    openBrowserBtn.className = "btn btn-secondary btn-sm resources-student-html-open";
-    openBrowserBtn.textContent = "在新窗口打开体验";
-    openBrowserBtn.addEventListener("click", withAsyncActionErrorBoundary(async () => {
-        await openExternal(frameUrl);
-    }, {
-        fallback: "打开互动体验页面失败",
-        logLabel: "打开互动体验页面失败",
-    }));
-    wrap.appendChild(openBrowserBtn);
     return wrap;
 }
 
@@ -4220,8 +4317,7 @@ async function openStudentPythonWorkspace(
 }
 
 async function openStudentVisualWorkspace(course, context = null) {
-    const currentCourse = pickStudentCurrentCourse();
-    const resource = currentCourse || course;
+    const resource = context?.resource || course || pickStudentCurrentCourse();
     if (!resource) return null;
     resourcesState.currentResource = resource;
     const target = context || findFirstExperimentWithWorkspaceFiles(resource, "visual");
@@ -4435,6 +4531,15 @@ function getWorkspaceEmptyText(tabId = resourcesState.activeCourseWorkspaceTab) 
 function findFirstExperimentWithWorkspaceFiles(resource, tabId = resourcesState.activeCourseWorkspaceTab) {
     const sections = normalizeSections(resource || {});
     const sectionIndex = getCurrentLessonIndex(resource || {});
+    if (tabId === "experience") {
+        const section = sections[sectionIndex];
+        const expIndex = resourcesState.activeExperimentIndex;
+        const exp = section?.experiments?.[expIndex];
+        const overview = getExperimentFileOverview(exp);
+        if (overview.htmlFiles.length) {
+            return { section, sectionIndex, exp, expIndex, overview, file: overview.htmlFiles[0], files: overview.htmlFiles };
+        }
+    }
     return pickFirstExperimentWithFiles({
         sections,
         sectionIndex,
@@ -5599,6 +5704,13 @@ function renderResourceDetailSplitContent(resource, contentEl) {
 }
 
 function renderResourceDetail(resource) {
+    if (isStudentLessonMode() && resource?.local_path
+        && !resourcesState.studentHtmlScans?.has(resource)) {
+        void prepareStudentHtmlFiles(resource).then(() => {
+            if (resourcesState.currentResource === resource) renderResourceDetail(resource);
+        });
+        return;
+    }
     const detailView = document.getElementById("resources-detail-view");
     if (detailView) {
         detailView.classList.toggle("is-section-detail", resourcesState.sectionDetailMode);
@@ -5922,7 +6034,7 @@ function normalizeSections(resource) {
     const rawSections = resource.sections || resource.lessons || resource.modules || [];
 
     if (Array.isArray(rawSections) && rawSections.length) {
-        return rawSections.map((section, index) => normalizeSection(section, index));
+        return rawSections.map((section, index) => normalizeSection(section, index, resource));
     }
 
     if (Array.isArray(resource.experiments) && resource.experiments.length) {
@@ -5931,7 +6043,7 @@ function normalizeSections(resource) {
                 title: "实验列表",
                 description: "",
                 experiments: resource.experiments.map((exp, index) =>
-                    normalizeExperiment(exp, index)
+                    normalizeExperiment(exp, index, resource)
                 )
             }
         ];
@@ -5956,7 +6068,7 @@ function normalizeSections(resource) {
     return [];
 }
 
-function normalizeSection(section, index) {
+function normalizeSection(section, index, resource = {}) {
     const title = section.title || section.name || `第 ${index + 1} 节`;
     const description = section.description || section.desc || "";
     const learningObjectives = getSectionLearningObjectives(section);
@@ -5966,11 +6078,11 @@ function normalizeSection(section, index) {
 
     if (Array.isArray(section.experiments)) {
         experiments = section.experiments.map((exp, idx) =>
-            normalizeExperiment(exp, idx)
+            normalizeExperiment(exp, idx, resource, section)
         );
     } else if (Array.isArray(section.items)) {
         experiments = section.items.map((exp, idx) =>
-            normalizeExperiment(exp, idx)
+            normalizeExperiment(exp, idx, resource, section)
         );
     } else if (Array.isArray(section.files)) {
         experiments = [
@@ -5992,9 +6104,10 @@ function normalizeSection(section, index) {
     };
 }
 
-function normalizeExperiment(exp, index) {
+function normalizeExperiment(exp, index, resource = {}, section = {}) {
     const title = exp.title || exp.name || `实验 ${index + 1}`;
     const description = exp.description || exp.desc || "";
+    const experimentId = String(exp.id || exp.experiment_id || exp.experimentId || "").trim();
     const path = exp.path || exp.dir || "";
     const rawFiles = exp.files || exp.items || exp.resources || [];
     const files = Array.isArray(rawFiles) ? rawFiles.map((file) => normalizeFile(file)) : [];
@@ -6008,9 +6121,47 @@ function normalizeExperiment(exp, index) {
         student_tasks: getExperimentStudentTasks(exp),
         files,
     };
+    if (experimentId) normalized.id = experimentId;
     if (runtime) normalized.runtime = runtime;
     if (entryFile) normalized.entry_file = entryFile;
+    const scannedFiles = resourcesState.studentHtmlScans?.get(resource)?.files || [];
+    const directory = String(path || files.find(isDirectory)?.path || "").replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+|\/+$/g, "");
+    const fileParents = files.filter((file) => !isDirectory(file) && file.path.includes("/"))
+        .map((file) => file.path.slice(0, file.path.lastIndexOf("/")));
+    const root = directory || (fileParents.length && fileParents.every((parent) => parent === fileParents[0]) ? fileParents[0] : "");
+    const sections = resource.sections || resource.lessons || resource.modules || [];
+    const experimentCount = sections.length
+        ? sections.reduce((count, item) => count + (item.experiments || item.items || []).length, 0)
+        : (resource.experiments || []).length;
+    const candidates = scannedFiles.filter((file) => isHtmlFile(file) && (root
+        ? file.path.startsWith(`${root}/`) : experimentCount === 1 && !file.path.includes("/")));
+    const indexFiles = candidates.filter((file) => file.path === `${root ? `${root}/` : ""}index.html` || file.path === `${root ? `${root}/` : ""}index.htm`);
+    const discovered = indexFiles.length === 1 ? indexFiles[0] : candidates.length === 1 ? candidates[0] : null;
+    if (discovered && !getExperimentFileOverview(normalized).allFiles.some((file) => file.path === discovered.path)) {
+        normalized.files.unshift(discovered);
+    }
     return normalized;
+}
+
+async function prepareStudentHtmlFiles(resource) {
+    if (!resource?.local_path) return;
+    resourcesState.studentHtmlScans ||= new WeakMap();
+    const cached = resourcesState.studentHtmlScans.get(resource);
+    if (cached) return cached.pending;
+    const scan = { files: [], pending: null };
+    resourcesState.studentHtmlScans.set(resource, scan);
+    scan.pending = (async () => {
+        try {
+            const response = await apiClient.post("/api/resources/scan-folder", {
+                base_path: resource.local_path,
+                folder_path: resource.local_path,
+            });
+            if (response?.success && Array.isArray(response.files)) scan.files = response.files.map(normalizeFile);
+        } catch (error) {
+            console.warn("补充互动体验文件失败，保留已声明入口:", error);
+        }
+    })();
+    return scan.pending;
 }
 
 function isRemotePath(path) {
@@ -7395,6 +7546,8 @@ function presentPlatformSaveResult(result) {
     return result;
 }
 
+xeduScoreBridgeSaveHooks.onSaveResult = (result) => presentPlatformSaveResult(result);
+
 async function runStudentPlatformSave(kind, meta) {
     if (studentSavePhase === "saving") {
         if (kind === "score") pageScorePending = true;
@@ -7411,7 +7564,8 @@ async function runStudentPlatformSave(kind, meta) {
     syncStudentFocusChrome();
     let result;
     try {
-        if (kind === "screenshot") result = await xeduScoreBridge.uploadScreenshot();
+        if (kind === "project") result = await xeduScoreBridge.saveProject({ experiment: meta?.experiment || "" });
+        else if (kind === "screenshot") result = await xeduScoreBridge.uploadScreenshot();
         else if (kind === "evidence") result = await xeduScoreBridge.saveEvidence(meta);
         else result = await xeduScoreBridge.saveScore();
     } catch (_) {
@@ -7441,12 +7595,17 @@ function submitPageScore() {
 
 export async function submitStudentScreenshot() {
     const experiment = currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
-    if (experiment) return runStudentPlatformSave("evidence", { experiment });
-    return runStudentPlatformSave("screenshot");
+    if (experiment === "scratch" || experiment === "notebook") return runStudentPlatformSave("project", { experiment });
+    if (experiment === "screenshot") return runStudentPlatformSave("screenshot");
+    return { ok: false, platform_status: "", code: "no_active_task", message: studentSaveMessage("no_active_task") };
 }
 
 export function retryStudentSave() {
     const kind = studentSaveResult?.retryKind || studentSaveKind || "screenshot";
+    if (kind === "project") {
+        const experiment = studentSaveResult?.experiment || currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
+        return runStudentPlatformSave("project", experiment ? { experiment } : {});
+    }
     if (kind === "evidence") {
         const experiment = studentSaveResult?.experiment || currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
         return runStudentPlatformSave("evidence", experiment ? { experiment } : {});
@@ -7468,7 +7627,12 @@ function findLaunchExperiment(resource, resourceId) {
             const files = Array.isArray(experiments[expIndex]?.files) ? experiments[expIndex].files : [];
             const file = files.find((item) => relativeResourcePath(item?.path) === target);
             if (file) {
-                return { resource, sectionIndex, expIndex, file };
+                return {
+                    resource, sectionIndex, expIndex, file,
+                    section: sections[sectionIndex],
+                    exp: experiments[expIndex],
+                    overview: getExperimentFileOverview(experiments[expIndex]),
+                };
             }
         }
     }
@@ -7484,6 +7648,7 @@ export async function openLaunchedLocalTask(payload) {
         notifyUser(payload.message || "任务授权已过期，请从学习平台重新打开。当前成绩草稿已保留。", "warning");
     }
     const resourceId = relativeResourcePath(payload.resource_id);
+    resourcesState.xeduActivityTasks = Array.isArray(payload.activity_tasks) ? payload.activity_tasks : [];
     resourcesState.xeduLaunchResourceId = resourceId;
     resourcesState.xeduLabFrameUrls = {
         ...(resourcesState.xeduLabFrameUrls || {}),
@@ -7495,15 +7660,17 @@ export async function openLaunchedLocalTask(payload) {
         local_path: payload.course_root || payload.course.local_path || "",
         source: "local",
     };
-    let context = findLaunchExperiment(course, resourceId);
-    if (!context) {
+    resourcesState.xeduLaunchedCourse = course;
+    const courseLaunch = payload.launch_scope === "course";
+    let context = courseLaunch ? null : findLaunchExperiment(course, resourceId);
+    if (!courseLaunch && !context) {
         course.sections = [
             ...(Array.isArray(course.sections) ? course.sections : []),
             {
                 title: "平台任务",
                 experiments: [{
                     title: course.title || "实验",
-                    files: [{ path: resourceId, type: "html", name: resourceId }],
+                    files: [{ path: resourceId, name: resourceId }],
                 }],
             },
         ];
@@ -7520,8 +7687,16 @@ export async function openLaunchedLocalTask(payload) {
         xeduScoreBridge.clearDraft();
     }
     addCourse(course, { silent: true });
-    if (context) {
-        await openStudentExperimentPage("experience", context, context.file);
+    if (courseLaunch) {
+        await window.app?.jupyter?.setVisibility?.(false);
+        window.app?.ui?.showTab?.("resources", document.getElementById("nav-student-lesson-item"));
+        showDetailView(course, { tabId: "route" });
+    } else if (context) {
+        const kind = getEntryKindForFile(context.file);
+        const tabId = kind === "scratch" ? "visual"
+            : kind === "notebook" || kind === "python" ? "python"
+                : "experience";
+        await openStudentExperimentPage(tabId, context, context.file);
     }
     if (!payload.grant_expired) {
         notifyUser(payload.restored_draft ? "已重新打开任务，上次未保存的成绩草稿还在。" : "已打开学习平台任务。", "info");

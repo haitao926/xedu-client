@@ -767,6 +767,7 @@ export async function startJupyter(options = {}) {
 }
 
 export async function stopJupyter() {
+    let stopped = false;
     writeJupyterViewIntent(false);
     const btn = document.getElementById('stop-btn');
     if (btn) {
@@ -776,7 +777,11 @@ export async function stopJupyter() {
 
     try {
         log('正在停止 Jupyter...', 'info');
-        await apiFetch('/api/stop', { method: 'POST' });
+        const response = await apiFetch('/api/stop', { method: 'POST' });
+        if (!response.ok) {
+            throw new Error(`停止请求失败 (${response.status})`);
+        }
+        stopped = true;
         log('Jupyter 已停止', 'warning');
         
         // Detach View
@@ -791,14 +796,17 @@ export async function stopJupyter() {
         }
         refreshStatus();
     }
+    return stopped;
 }
 
 export async function restartJupyter() {
     if (!confirm('确定要重启 Jupyter 吗？未保存的工作可能会丢失。')) return;
     
+    const stopped = await stopJupyter();
+    if (!stopped) return false;
     writeJupyterViewIntent(true);
-    await stopJupyter();
     setTimeout(() => startJupyter(), 1000);
+    return true;
 }
 
 export async function refreshStatus(options = {}) {

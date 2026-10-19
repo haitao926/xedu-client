@@ -169,6 +169,9 @@ def resolve_micropython_labextension_dir(project_root: Path) -> Path | None:
     for root in _labextension_search_roots(project_root):
         candidates.extend(
             [
+                root / "backend" / "jupyterlab_micropython" / "jupyterlab-micropython",
+                root / "jupyterlab_micropython" / "jupyterlab-micropython",
+                root / "jupyterlab_micropython" / "jupyterlab_micropython" / "jupyterlab-micropython",
                 root / "backend" / "jupyterlab_micropython" / "labextension",
                 root / "jupyterlab_micropython" / "labextension",
                 root / "jupyterlab_micropython" / "jupyterlab_micropython" / "labextension",
@@ -245,6 +248,7 @@ def build_jupyter_command(
         "--ServerApp.open_browser=False",
         "--LabApp.default_url=/lab",
         "--LabApp.core_mode=False",
+        "--LabApp.expose_app_in_browser=True",
         "--ServerApp.max_buffer_size=1000000000",
         "--ServerApp.iopub_msg_rate_limit=1000000",
         "--ServerApp.rate_limit_window=3.0",

@@ -30,10 +30,10 @@ export function describeStudentSaveChrome({ draft = null, phase = 'idle', result
         statusText = '保存中';
         tone = 'progress';
     } else if (evidenceSaved) {
-        statusText = '已保存';
+        statusText = '提交成功 · 作品已保存';
         tone = 'success';
     } else if (completed) {
-        statusText = '平台已保存';
+        statusText = '提交成功 · 平台已确认';
         tone = 'success';
     } else if (failed) {
         statusText = studentSaveMessage(code, result?.message);
