@@ -157,8 +157,11 @@ test('official release workflow builds only tagged, signed Windows and macOS art
   assert.match(workflow, /Get-AuthenticodeSignature/);
   assert.match(workflow, /Include \*\.dll,\*\.exe/);
   assert.match(workflow, /Clean release output/);
-  assert.match(workflow, /XEdu Client-2\.0\.0\.dmg/);
-  assert.match(workflow, /XEdu Client-2\.0\.0\.zip/);
+  assert.match(workflow, /XEdu Client-\$version\.dmg/);
+  assert.match(workflow, /XEdu Client-\$version\.zip/);
+  assert.match(workflow, /XEdu Client-\$version\.exe/);
+  assert.doesNotMatch(workflow, /--version 2\.0\.0/);
+  assert.doesNotMatch(workflow, /XEdu Client-2\.0\.0\.(?:exe|dmg|zip)/);
   assert.match(workflow, /codesign --verify --deep --strict/);
   assert.match(workflow, /spctl --assess --type execute/);
   assert.match(workflow, /xcrun stapler validate/);
@@ -179,8 +182,9 @@ test('macOS build and CI use the complete release path', async () => {
     readRepoFile('.github/workflows/ci-guard.yml'),
   ]);
 
-  assert.ok(buildScript.indexOf('npm run build:scratch') >= 0);
-  assert.ok(buildScript.indexOf('npm run build:scratch') < buildScript.indexOf('npm run build\n'));
+  const { scripts } = JSON.parse(await readRepoFile('package.json'));
+  assert.match(buildScript, /npm run build:installer:mac/);
+  assert.match(scripts['build:installer:mac'], /npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder/);
   assert.match(workflow, /run:\s*npm run quality-gate/);
 });
 

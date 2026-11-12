@@ -211,7 +211,7 @@ Step 5: 验证
 | 文档 | 需更新内容 |
 |------|-----------|
 | `PRE_RELEASE_AUDIT_2026-07-16.md` | ✅ 已更新为完全移除源码、旧课程降级和 T01/T13 分工 |
-| `TASKS.md` / `BLOCKLY_SCRATCH_TASKS.md` | ✅ 已标记为历史归档 |
+| `archive/plans/TASKS.md` / `archive/plans/BLOCKLY_SCRATCH_TASKS.md` | ✅ 已标记为历史归档 |
 | `README.md` / `docs/teacher/*` | ✅ 已改为 Scratch 唯一主线和旧课程不支持提示 |
 
 ---

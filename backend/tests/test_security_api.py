@@ -33,6 +33,33 @@ class SecurityApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
 
+    def test_project_templates_require_a_process_capability(self):
+        response = self.client.get("/api/projects/templates")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
+
+    def test_project_templates_reject_an_invalid_process_capability(self):
+        response = self.client.get(
+            "/api/projects/templates",
+            headers={"X-XEdu-Client-Token": "invalid-capability"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json(), {"success": False, "message": "unauthorized"})
+
+    def test_project_templates_accept_a_valid_process_capability(self):
+        response = self.client.get(
+            "/api/projects/templates",
+            headers=self._capability_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertIsInstance(payload["templates"], list)
+        self.assertEqual(payload["default_path"], str(Path.home() / "Documents" / "XEdu_Projects"))
+
     def test_remaining_privileged_routes_require_a_process_capability(self):
         requests = (
             ("post", "/api/python/pip", {"json": {"action": "invalid"}}),

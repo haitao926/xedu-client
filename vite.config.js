@@ -36,6 +36,13 @@ export default defineConfig(({ command }) => ({
         entryFileNames: 'assets/[name].js',
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/[name].[ext]',
+        manualChunks(id) {
+          const normalized = id.replaceAll('\\', '/')
+          if (normalized.endsWith('/renderer/js/api.js')) return 'api'
+          if (/\/renderer\/js\/resources\/xedu-(submit-bridge|save-chrome|submission-requirements)\.js$/.test(normalized)) {
+            return 'submission'
+          }
+        },
       }
     }
   },

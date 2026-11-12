@@ -14,6 +14,7 @@ def register_project_routes(app, services: dict):
     logger = services["logger"]
 
     @app.route("/api/projects/templates", methods=["GET"])
+    @require_capability("resource:read")
     def get_project_templates():
         try:
             templates = project_service.get_templates()

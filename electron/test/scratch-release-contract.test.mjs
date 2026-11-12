@@ -14,10 +14,11 @@ test('release scripts fail closed when the Scratch build is missing', async () =
   assert.match(packageJson, /"check:scratch-build"\s*:\s*"node scripts\/check_scratch_build\.mjs"/);
   assert.match(packageJson, /"electron:build"\s*:\s*"npm run build:scratch && npm run check:scratch-build/);
   assert.match(packageJson, /"electron:pack"\s*:\s*"npm run build:scratch && npm run check:scratch-build/);
-  assert.match(buildScript, /npm run check:scratch-build/);
-  assert.ok(
-    buildScript.indexOf('npm run check:scratch-build') < buildScript.indexOf('npx electron-builder'),
-  );
+  const scripts = JSON.parse(packageJson).scripts;
+  assert.match(buildScript, /npm run build:installer:mac/);
+  for (const platform of ['mac', 'win']) {
+    assert.match(scripts[`build:installer:${platform}`], /npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder/);
+  }
 });
 
 test('Scratch build checker validates the packaged entry point', async () => {

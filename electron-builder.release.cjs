@@ -55,6 +55,7 @@ const releaseConfig = {
   },
   mac: {
     ...baseMac,
+    artifactName: '${productName}-${version}.${ext}',
     hardenedRuntime: true,
     entitlements: baseMac.entitlements ?? 'resources/entitlements.mac.plist',
     entitlementsInherit: baseMac.entitlementsInherit ?? 'resources/entitlements.mac.plist',

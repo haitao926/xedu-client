@@ -2,6 +2,10 @@
 
 XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Jupyter` 代码实验、`Scratch` 图形化实验、课程资源管理、课堂接入和教师辅助能力放在同一套桌面应用里。
 
+当前课堂客户端版本：`2.1.6`，安装包始终内置便携 Python `3.12.8`，学生首次启动无需另装或选择 Python。
+
+唯一权威仓库：[haitao926/xedu-client](https://github.com/haitao926/xedu-client)，对应远端 `origin`；`main` 是唯一长期维护分支。发布版本用 tag 标记，安装包通过 Release / artifact 分发；临时工作分支完成后合并清理。
+
 这个仓库不是单纯的前端页面，也不是单纯的 Jupyter 启动器。它是一个 `Electron + Flask + Vite` 的桌面应用，负责把课堂实验从课程资源、实验工作区、运行时环境到课堂分发串起来。
 
 ## 项目定位
@@ -34,7 +38,7 @@ XEdu Client 是一套面向 AI 教学场景的桌面实验工作台。它把 `Ju
 
 ESP32 MicroPython 实验从 JupyterLab 启动器中的“ESP32 实验”进入。它使用当前课程实验目录中的 `.py` 文件，通过 USB 串口连接已刷入 MicroPython 固件的 ESP32，支持运行、停止、重启和查看设备输出。详细流程见 [ESP32 MicroPython 实验快速开始](docs/teacher/micropython-esp32-quickstart.md)。
 
-正式发布包始终内置便携 Python 运行时。学生首次启动不需要选择解释器，也看不到设置页。教师登录后仍可在“Python”设置中检测或更换解释器；选择结果保存到用户配置目录，不写入安装目录。即使所选环境没有 Flask，“修复兼容性”也会先通过独立标准库脚本直接修复 XEdu/Jupyter；后端启动时再单独补齐 Flask 等服务依赖。
+正式发布包内置便携 Python 3.12.8 运行时。学生首次启动不需要选择解释器，也看不到设置页。教师登录后仍可在“Python”设置中检测或更换解释器；选择结果保存到用户配置目录，不写入安装目录。即使所选环境没有 Flask，“修复兼容性”也会先通过独立标准库脚本直接修复 XEdu/Jupyter；后端启动时再单独补齐 Flask 等服务依赖。
 
 ### 2. 做 Scratch 图形化实验
 
@@ -141,10 +145,10 @@ ESP32 MicroPython 实验从 JupyterLab 启动器中的“ESP32 实验”进入�
 
 ### 教师交付资料
 
-- 安装说明：[docs/teacher/INSTALL.md](/Users/apple/Documents/GitHub/xedu-client/docs/teacher/INSTALL.md)
-- 快速开始：[docs/teacher/QUICKSTART.md](/Users/apple/Documents/GitHub/xedu-client/docs/teacher/QUICKSTART.md)
-- 课堂网络：[docs/teacher/CLASSROOM_NETWORK.md](/Users/apple/Documents/GitHub/xedu-client/docs/teacher/CLASSROOM_NETWORK.md)
-- 故障排查：[docs/teacher/TROUBLESHOOTING.md](/Users/apple/Documents/GitHub/xedu-client/docs/teacher/TROUBLESHOOTING.md)
+- 安装说明：[docs/teacher/INSTALL.md](docs/teacher/INSTALL.md)
+- 快速开始：[docs/teacher/QUICKSTART.md](docs/teacher/QUICKSTART.md)
+- 课堂网络：[docs/teacher/CLASSROOM_NETWORK.md](docs/teacher/CLASSROOM_NETWORK.md)
+- 故障排查：[docs/teacher/TROUBLESHOOTING.md](docs/teacher/TROUBLESHOOTING.md)
 
 ## 架构概览
 
@@ -158,7 +162,7 @@ ESP32 MicroPython 实验从 JupyterLab 启动器中的“ESP32 实验”进入�
 ### 启动链路
 
 1. Electron 启动主进程
-2. 主进程使用已选择的本机 Python 拉起后端；首次启动先提示选择环境
+2. 主进程默认使用内置 Python 3.12.8 拉起后端；教师主动选择其他解释器后，使用已保存的选择
 3. Flask 注册 `/api/*` 路由
 4. Renderer 通过 `renderer/js/api.js` 调用后端
 5. 用户在 Jupyter、Scratch、资源页和课堂页之间切换
@@ -178,10 +182,17 @@ xedu-client/
 ├── renderer/              # 前端页面、Jupyter / Scratch UI、资源页逻辑
 ├── electron/              # Electron 主进程与 preload
 ├── backend/               # Flask API、路由、服务、运行时支持
+├── scratch-editor/        # Scratch 编辑器，独立安装依赖与构建
+├── jupyterlab_micropython/ # JupyterLab ESP32 MicroPython 插件
 ├── courses/               # 示例课程、Scratch smoke 样例、课堂资源
 ├── config/                # 默认配置与本地运行配置
-├── docs/                  # 架构、API、测试、审计和说明文档
+├── resources/             # 应用图标、权限声明等打包资源
+├── docs/                  # teacher 教师指南、overview 项目说明、archive 历史资料
 ├── scripts/               # 构建、seed、审计和辅助脚本
+├── python_env_minimal/    # macOS 离线 Python 构建输入
+├── python_env_win_minimal/# Windows 离线 Python 构建输入
+├── output/releases/2.1.6/ # 当前版本安装包输出
+├── output/diagnostics/    # 诊断输出
 └── build/                 # Vite 构建输出
 ```
 
@@ -197,8 +208,11 @@ xedu-client/
 # 开发模式：Electron + Vite
 npm run electron:dev
 
-# 仅启动前端开发服务（默认 3002）
+# 启动后端 API + 前端开发服务（前端默认 3002）
 npm run dev
+
+# 仅启动前端开发服务
+npm run dev:renderer
 
 # 仅启动后端 API（默认 5123）
 python3 backend/backend_main.py
@@ -206,9 +220,16 @@ python3 backend/backend_main.py
 # 打包前端
 npm run build
 
-# 打包桌面应用
-npm run electron:build
+# 在 Windows 构建课堂安装包（x64 NSIS setup EXE）
+npm run build:installer:win
+
+# 在 macOS Apple Silicon 构建课堂安装包（arm64 DMG）
+npm run build:installer:mac
 ```
+
+开发前先安装根项目与 Scratch 编辑器依赖：`npm ci`、`npm run install:scratch`，并准备后端 Python 依赖。安装包构建还需要对应平台的离线 Python 3.12.8 输入目录（见上方项目地图），不能当作缓存删除。
+
+两个课堂安装包入口统一输出到 `output/releases/2.1.6/`（版本号跟随 `package.json`）。向教师分发 Windows NSIS 安装 EXE 或 macOS arm64 DMG，安装与首次启动见 [教师安装说明](docs/teacher/INSTALL.md)。
 
 默认端口：
 - 后端 API：`5123`
@@ -249,18 +270,20 @@ npm run build:scratch
 
 ## 相关文档
 
-- 项目地图：[docs/overview/project-map.md](/Users/apple/Documents/GitHub/xedu-client/docs/overview/project-map.md)
-- API 契约：[docs/overview/api-contract.md](/Users/apple/Documents/GitHub/xedu-client/docs/overview/api-contract.md)
-- 架构治理：[docs/overview/architecture-governance.md](/Users/apple/Documents/GitHub/xedu-client/docs/overview/architecture-governance.md)
-- 课程目录约定：[docs/overview/course-folder-contract.md](/Users/apple/Documents/GitHub/xedu-client/docs/overview/course-folder-contract.md)
-- 项目审计：[docs/overview/project-audit-2026-04-05.md](/Users/apple/Documents/GitHub/xedu-client/docs/overview/project-audit-2026-04-05.md)
-- Scratch 教师安装：[docs/teacher/INSTALL.md](/Users/apple/Documents/GitHub/xedu-client/docs/teacher/INSTALL.md)
-- Scratch 教师快速开始：[docs/teacher/QUICKSTART.md](/Users/apple/Documents/GitHub/xedu-client/docs/teacher/QUICKSTART.md)
-- Scratch 课堂网络：[docs/teacher/CLASSROOM_NETWORK.md](/Users/apple/Documents/GitHub/xedu-client/docs/teacher/CLASSROOM_NETWORK.md)
-- Scratch 故障排查：[docs/teacher/TROUBLESHOOTING.md](/Users/apple/Documents/GitHub/xedu-client/docs/teacher/TROUBLESHOOTING.md)
-- 图形化编程遗留审计：[docs/overview/xeduhub-block-audit.md](/Users/apple/Documents/GitHub/xedu-client/docs/overview/xeduhub-block-audit.md)
-- 测试指南：[docs/overview/xedu-client-test-guide.md](/Users/apple/Documents/GitHub/xedu-client/docs/overview/xedu-client-test-guide.md)
+- 项目地图：[docs/overview/project-map.md](docs/overview/project-map.md)
+- API 契约：[docs/overview/api-contract.md](docs/overview/api-contract.md)
+- 架构治理：[docs/overview/architecture-governance.md](docs/overview/architecture-governance.md)
+- 课程目录约定：[docs/overview/course-folder-contract.md](docs/overview/course-folder-contract.md)
+- 项目审计：[docs/overview/project-audit-2026-04-05.md](docs/overview/project-audit-2026-04-05.md)
+- Scratch 教师安装：[docs/teacher/INSTALL.md](docs/teacher/INSTALL.md)
+- Scratch 教师快速开始：[docs/teacher/QUICKSTART.md](docs/teacher/QUICKSTART.md)
+- Scratch 课堂网络：[docs/teacher/CLASSROOM_NETWORK.md](docs/teacher/CLASSROOM_NETWORK.md)
+- Scratch 故障排查：[docs/teacher/TROUBLESHOOTING.md](docs/teacher/TROUBLESHOOTING.md)
+- 图形化编程遗留审计：[docs/overview/xeduhub-block-audit.md](docs/overview/xeduhub-block-audit.md)
+- 测试指南：[docs/overview/xedu-client-test-guide.md](docs/overview/xedu-client-test-guide.md)
 
 ## 许可证
 
 MIT
+
+维护与历史资料：[仓库维护说明](docs/maintenance/REPOSITORY.md) · [历史资料索引](docs/archive/README.md)。

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import atexit
 import json
 from pathlib import Path
@@ -197,7 +198,7 @@ class MicroPythonHandler(JupyterHandler):
             return ""
         return str(getattr(request, "path", "") or getattr(request, "uri", "") or "")
 
-    def _call(self, method: str, action: str | None) -> None:
+    async def _call(self, method: str, action: str | None) -> None:
         try:
             request_path = self._request_path()
             payload = self._payload() if method == "POST" else {}
@@ -209,14 +210,21 @@ class MicroPythonHandler(JupyterHandler):
                 hinted = embedded_after(action, request_path)
                 if hinted:
                     after = hinted
-            status, body = dispatch_micropython_action(
-                _manager(self),
-                method=method,
-                action=action,
-                payload=payload,
-                after=after,
-                request_path=request_path,
-            )
+            manager = _manager(self)
+
+            def dispatch():
+                # Hold the lock in the worker even if the HTTP task is cancelled.
+                with manager.operation_lock:
+                    return dispatch_micropython_action(
+                        manager,
+                        method=method,
+                        action=action,
+                        payload=payload,
+                        after=after,
+                        request_path=request_path,
+                    )
+
+            status, body = await asyncio.get_running_loop().run_in_executor(None, dispatch)
             if status == 404:
                 log = getattr(self, "log", None)
                 if log is not None:
@@ -235,12 +243,12 @@ class MicroPythonHandler(JupyterHandler):
             _json(self, {"success": False, "message": "ESP32 操作失败。"}, 500)
 
     @allow_unauthenticated
-    def get(self, action: str | None = None) -> None:
-        self._call("GET", action)
+    async def get(self, action: str | None = None) -> None:
+        await self._call("GET", action)
 
     @allow_unauthenticated
-    def post(self, action: str | None = None) -> None:
-        self._call("POST", action)
+    async def post(self, action: str | None = None) -> None:
+        await self._call("POST", action)
 
 
 def _load_jupyter_server_extension(server_app) -> None:

@@ -66,7 +66,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22.23.1'
           cache: npm
 
       - name: Setup Python runtime builder
@@ -226,7 +226,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22.23.1'
           cache: npm
 
       - name: Install root dependencies
@@ -262,9 +262,10 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release-evidence | Out-Null
+          $version = node -p "require('./package.json').version"
           $installer = (Get-ChildItem -Path dist-release -Filter *.exe -File | Select-Object -First 1).FullName
           if (-not $installer) { throw 'Windows installer was not produced.' }
-          if ((Split-Path $installer -Leaf) -ne 'XEdu Client-2.0.0.exe') { throw "Unexpected installer name: $installer" }
+          if ((Split-Path $installer -Leaf) -ne "XEdu Client-$version.exe") { throw "Unexpected installer name: $installer" }
           $signedFiles = @($installer, (Join-Path (Resolve-Path dist-release/win-unpacked) 'XEdu Client.exe'))
           $uninstaller = Get-ChildItem -Path dist-release/win-unpacked -Filter 'Uninstall*.exe' -File | Select-Object -First 1
           if ($uninstaller) { $signedFiles += $uninstaller.FullName }
@@ -278,7 +279,7 @@ jobs:
             signtool verify /pa /v $file | Tee-Object -FilePath release-evidence/windows-signtool.txt -Append
             if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed: $file" }
           }
-          node scripts/verify_release_artifact.mjs dist-release/win-unpacked --version 2.0.0 --tag "${{ needs.quality-gate.outputs.release_tag }}" --commit "${{ needs.quality-gate.outputs.source_commit }}" --artifact $installer --manifest release-evidence/windows-manifest.json --platform win32 --arch x64
+          node scripts/verify_release_artifact.mjs dist-release/win-unpacked --version $version --tag "${{ needs.quality-gate.outputs.release_tag }}" --commit "${{ needs.quality-gate.outputs.source_commit }}" --artifact $installer --manifest release-evidence/windows-manifest.json --platform win32 --arch x64
           Get-ChildItem -Path dist-release -File | Get-FileHash -Algorithm SHA256 | ConvertTo-Json -Depth 3 | Out-File release-evidence/windows-artifacts-sha256.json -Encoding utf8
 
       - name: Upload Windows release evidence
@@ -303,7 +304,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22.23.1'
           cache: npm
 
       - name: Setup Python runtime builder
@@ -345,12 +346,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-evidence
+          version="$(node -p "require('./package.json').version")"
           dmg="$(find dist-release -maxdepth 1 -name '*.dmg' -print -quit)"
           zip="$(find dist-release -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$dmg" && test -n "$zip"
-          test "$(basename "$dmg")" = 'XEdu Client-2.0.0.dmg'
-          test "$(basename "$zip")" = 'XEdu Client-2.0.0.zip'
-          node scripts/verify_release_artifact.mjs "dist-release/mac-arm64/XEdu Client.app" --version 2.0.0 --tag "${{ needs.quality-gate.outputs.release_tag }}" --commit "${{ needs.quality-gate.outputs.source_commit }}" --artifact "$dmg" --artifact "$zip" --manifest release-evidence/macos-manifest.json --platform darwin --arch arm64
+          test "$(basename "$dmg")" = "XEdu Client-$version.dmg"
+          test "$(basename "$zip")" = "XEdu Client-$version.zip"
+          node scripts/verify_release_artifact.mjs "dist-release/mac-arm64/XEdu Client.app" --version "$version" --tag "${{ needs.quality-gate.outputs.release_tag }}" --commit "${{ needs.quality-gate.outputs.source_commit }}" --artifact "$dmg" --artifact "$zip" --manifest release-evidence/macos-manifest.json --platform darwin --arch arm64
           codesign --verify --deep --strict --verbose=2 "dist-release/mac-arm64/XEdu Client.app" 2>&1 | tee release-evidence/macos-codesign.txt
           spctl --assess --type execute -vv "dist-release/mac-arm64/XEdu Client.app" 2>&1 | tee release-evidence/macos-spctl.txt
           xcrun stapler validate "$dmg" 2>&1 | tee release-evidence/macos-stapler.txt
@@ -399,6 +401,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
+          version="$(node -p "require('./package.json').version")"
 
           find_one() {
             local name="$1"
@@ -411,9 +414,9 @@ jobs:
             printf '%s\n' "${matches[0]}"
           }
 
-          cp "$(find_one 'XEdu Client-2.0.0.exe')" 'release-assets/XEdu Client-2.0.0.exe'
-          cp "$(find_one 'XEdu Client-2.0.0.dmg')" 'release-assets/XEdu Client-2.0.0.dmg'
-          cp "$(find_one 'XEdu Client-2.0.0.zip')" 'release-assets/XEdu Client-2.0.0.zip'
+          for extension in exe dmg zip; do
+            cp "$(find_one "XEdu Client-$version.$extension")" "release-assets/XEdu Client-$version.$extension"
+          done
           cp "$(find_one 'windows-manifest.json')" release-assets/windows-manifest.json
           cp "$(find_one 'macos-manifest.json')" release-assets/macos-manifest.json
           cp "$(find_one 'windows-artifacts-sha256.json')" release-assets/windows-artifacts-sha256.json

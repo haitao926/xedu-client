@@ -215,6 +215,26 @@ class MicroPythonSessionTestCase(unittest.TestCase):
         finally:
             manager.close()
 
+    def test_list_ports_excludes_platform_uarts_without_hiding_usb_ports(self):
+        devices = [
+            "/dev/ttyS0", "/dev/ttyS12", "/dev/ttys3", "ttyS0", "ttyS12",
+            "/dev/ttyUSB0", "/dev/ttyACM0", "/dev/cu.usbmodem1101",
+            "/dev/tty.usbmodem1101", "COM3",
+        ]
+        manager = MicroPythonSessionManager(
+            ports_factory=lambda: [
+                SimpleNamespace(device=device, description="n/a", hwid="n/a")
+                for device in devices
+            ],
+        )
+        try:
+            self.assertEqual(
+                {port["device"] for port in manager.list_ports()},
+                {"/dev/ttyUSB0", "/dev/ttyACM0", "/dev/cu.usbmodem1101", "COM3"},
+            )
+        finally:
+            manager.close()
+
     def test_connect_starts_session_and_exposes_output_cursor(self):
         result = self.manager.connect("/dev/cu.usbserial-ESP32")
         self.assertTrue(result["connected"])

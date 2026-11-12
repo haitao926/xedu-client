@@ -31,6 +31,24 @@ function loadReleaseConfig() {
   }
 }
 
+test('installer entrypoints produce one versioned EXE or DMG with the correct Python runtime', async () => {
+  const { scripts, version } = JSON.parse(await readRepoFile('package.json'));
+  assert.match(scripts['build:installer:win'] || '', /electron-builder --config electron-builder\.installer\.win\.cjs --win nsis --x64/);
+  assert.match(scripts['build:installer:mac'] || '', /electron-builder --config electron-builder\.installer\.cjs --mac dmg --arm64/);
+  for (const [file, runtime] of [
+    ['../../electron-builder.installer.cjs', process.platform === 'win32' ? 'python_env_win_minimal' : 'python_env_minimal'],
+    ['../../electron-builder.installer.win.cjs', 'python_env_win_minimal'],
+  ]) {
+    const config = require(file);
+    assert.equal(config.directories.output, `output/releases/${version}`);
+    assert.equal(config.extraResources.find(({ to }) => to === 'python_env').from, runtime);
+    assert.equal(config.nsis.oneClick, false);
+    assert.equal(config.nsis.allowToChangeInstallationDirectory, true);
+    assert.equal(config.nsis.deleteAppDataOnUninstall, false);
+    assert.match(config.nsis.artifactName, /Setup.*\.\$\{ext\}/);
+  }
+});
+
 test('release package keeps runtime backend outside asar and filters test data', async () => {
   const packageJson = JSON.parse(await readRepoFile('package.json'));
   const files = packageJson.build.files;
@@ -125,7 +143,7 @@ test('shipping packages always include a bundled Python runtime', async () => {
   assert.equal(scripts['electron:build:external-python:mac'], undefined);
   assert.equal(scripts['electron:build:external-python:win'], undefined);
   assert.equal(scripts['electron:build:external-python:win32'], undefined);
-  assert.match(JSON.stringify(scripts), /electron-builder\.bundled-python-no-models/);
+  assert.match(JSON.stringify(scripts), /electron-builder\.installer/);
   assert.match(JSON.stringify(scripts), /electron-builder\.minimal/);
 });
 

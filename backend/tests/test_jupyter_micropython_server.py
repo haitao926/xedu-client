@@ -1,8 +1,11 @@
+import asyncio
+import inspect
 import json
 import re
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -198,6 +201,154 @@ class JupyterMicroPythonServerTestCase(unittest.TestCase):
             jupyter_micropython_server.parse_json_object(b"[1]")
         self.assertEqual(jupyter_micropython_server.parse_json_object(b'{"port":"COM3"}'), {"port": "COM3"})
 
+    def test_serial_dispatch_leaves_event_loop_heartbeat_running(self):
+        started = threading.Event()
+        release = threading.Event()
+        response_threads = []
+
+        def connect(port):
+            started.set()
+            release.wait(1)
+            return {"connected": True, "port": port, "baudrate": 115200}
+
+        async def exercise():
+            loop_thread = threading.get_ident()
+            operation = asyncio.create_task(self._invoke_handler_async(
+                "POST", action="connect", request_path="/jupyter/xedu-micropython/connect",
+                payload={"port": "COM3"}, response_threads=response_threads,
+            ))
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                heartbeat = asyncio.Event()
+                asyncio.get_running_loop().call_soon(heartbeat.set)
+                await asyncio.wait_for(heartbeat.wait(), 0.5)
+                self.assertFalse(operation.done(), "Serial dispatch blocked the event-loop heartbeat")
+            finally:
+                release.set()
+                status, body = await operation
+            self.assertEqual(status, 200)
+            self.assertEqual(body, {"success": True, "connected": True, "port": "COM3", "baudrate": 115200})
+            self.assertEqual(response_threads, [loop_thread])
+
+        with patch.object(self.manager, "connect", side_effect=connect):
+            asyncio.run(exercise())
+
+    def test_concurrent_handlers_serialize_serial_operations(self):
+        started = threading.Event()
+        release = threading.Event()
+        second_started = threading.Event()
+        calls = []
+
+        def run_file(file):
+            calls.append(("run", file))
+            started.set()
+            release.wait(1)
+            calls.append(("run-finished", file))
+            return {"running": True, "file": file}
+
+        def write_input(text):
+            calls.append(("input", text))
+            second_started.set()
+            return {"sent": True}
+
+        async def exercise():
+            first = asyncio.create_task(self._invoke_handler_async(
+                "POST", action="run", request_path="/jupyter/xedu-micropython/run",
+                payload={"file": "main.py"},
+            ))
+            second = None
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                self.assertFalse(first.done(), "Serial dispatch must run off the event loop")
+                second = asyncio.create_task(self._invoke_handler_async(
+                    "POST", action="input", request_path="/jupyter/xedu-micropython/input",
+                    payload={"text": "print(2)"},
+                ))
+                self.assertFalse(await asyncio.to_thread(second_started.wait, 0.1))
+                self.assertFalse(second.done())
+            finally:
+                release.set()
+                first_result = await first
+                second_result = await second if second is not None else None
+            self.assertEqual(first_result, (200, {"success": True, "running": True, "file": "main.py"}))
+            self.assertEqual(second_result, (200, {"success": True, "sent": True}))
+            self.assertEqual(calls, [("run", "main.py"), ("run-finished", "main.py"), ("input", "print(2)")])
+
+        with patch.object(self.manager, "run_file", side_effect=run_file), \
+                patch.object(self.manager, "write_input", side_effect=write_input):
+            asyncio.run(exercise())
+
+    def test_cancelled_handler_keeps_pending_serial_work_serialized(self):
+        started = threading.Event()
+        release = threading.Event()
+        second_started = threading.Event()
+
+        def run_file(file):
+            started.set()
+            release.wait(1)
+            return {"running": True, "file": file}
+
+        def write_input(text):
+            second_started.set()
+            return {"sent": True}
+
+        async def exercise():
+            first = asyncio.create_task(self._invoke_handler_async(
+                "POST", action="run", request_path="/jupyter/xedu-micropython/run",
+                payload={"file": "main.py"},
+            ))
+            second = None
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                self.assertFalse(first.done(), "Serial dispatch must run off the event loop")
+                first.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await first
+                second = asyncio.create_task(self._invoke_handler_async(
+                    "POST", action="input", request_path="/jupyter/xedu-micropython/input",
+                    payload={"text": "print(2)"},
+                ))
+                self.assertFalse(await asyncio.to_thread(second_started.wait, 0.1))
+            finally:
+                release.set()
+                if not first.cancelled():
+                    await first
+                second_result = await second if second is not None else None
+            self.assertEqual(second_result, (200, {"success": True, "sent": True}))
+
+        with patch.object(self.manager, "run_file", side_effect=run_file), \
+                patch.object(self.manager, "write_input", side_effect=write_input):
+            asyncio.run(exercise())
+
+    def test_handler_preserves_validation_and_error_response_contracts(self):
+        for action, payload, message in (
+            ("connect", {"port": "http://attacker"}, "串口无效。"),
+            ("run", {"file": "../secret.py"}, "实验文件路径无效。"),
+            ("run", [], "请求数据格式无效。"),
+        ):
+            with self.subTest(action=action, payload=payload):
+                status, body = self._invoke_handler(
+                    "POST", action=action, request_path=f"/jupyter/xedu-micropython/{action}",
+                    payload=payload,
+                )
+                self.assertEqual(status, 400)
+                self.assertEqual(body, {"success": False, "message": message})
+
+        for error, status, message in (
+            (MicroPythonSessionError("设备未连接。"), 400, "设备未连接。"),
+            (RuntimeError("serial failure"), 500, "ESP32 操作失败。"),
+        ):
+            with self.subTest(error=error), patch.object(self.manager, "write_input", side_effect=error):
+                self.assertEqual(self._invoke_handler(
+                    "POST", action="input", request_path="/jupyter/xedu-micropython/input",
+                    payload={"text": "print(2)"},
+                ), (status, {"success": False, "message": message}))
+        with patch.object(self.manager, "write_input", return_value={"sent": True}):
+            self.assertEqual(self._invoke_handler(
+                "POST", action="input", request_path="/jupyter/xedu-micropython/input",
+                payload={"text": "print(2)"},
+            ), (200, {"success": True, "sent": True}))
+
     def test_missing_capture_group_uses_request_path_for_every_panel_action(self):
         routes = _panel_routes_from_source()
         self.assertEqual(
@@ -271,6 +422,11 @@ class JupyterMicroPythonServerTestCase(unittest.TestCase):
         self.assertTrue(body["ports"])
 
     def _invoke_handler(self, method, *, action, request_path, payload=None):
+        return asyncio.run(self._invoke_handler_async(
+            method, action=action, request_path=request_path, payload=payload,
+        ))
+
+    async def _invoke_handler_async(self, method, *, action, request_path, payload=None, response_threads=None):
         handler = jupyter_micropython_server.MicroPythonHandler.__new__(
             jupyter_micropython_server.MicroPythonHandler
         )
@@ -304,11 +460,18 @@ class JupyterMicroPythonServerTestCase(unittest.TestCase):
         handler.get_argument = get_argument
         handler.set_status = lambda status: setattr(handler, "_status", status)
         handler.set_header = lambda _name, _value: None
-        handler.finish = lambda raw: setattr(handler, "_finished", raw)
+        def finish(raw):
+            handler._finished = raw
+            if response_threads is not None:
+                response_threads.append(threading.get_ident())
+
+        handler.finish = finish
         if method == "GET":
-            handler.get(action)
+            result = handler.get(action)
         else:
-            handler.post(action)
+            result = handler.post(action)
+        if inspect.isawaitable(result):
+            await result
         return handler._status, json.loads(handler._finished)
 
 

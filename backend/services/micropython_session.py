@@ -165,6 +165,8 @@ class MicroPythonSessionManager:
         self._reader: threading.Thread | None = None
         self._stop_reader = threading.Event()
         self._lock = threading.RLock()
+        # Whole device operations need a separate lock: the reader uses _lock.
+        self.operation_lock = threading.Lock()
         self._events: deque[tuple[int, str]] = deque(maxlen=_MAX_OUTPUT_EVENTS)
         self._cursor = 0
         self._running_file = ""
@@ -178,6 +180,8 @@ class MicroPythonSessionManager:
             description = str(getattr(port, "description", "") or "").strip()
             hwid = str(getattr(port, "hwid", "") or "").strip()
             if not _is_safe_port(device) or _looks_like_bluetooth(device, description, hwid):
+                continue
+            if re.search(r"(?:^|/)ttys\d+$", device, re.IGNORECASE):
                 continue
             vid = getattr(port, "vid", None)
             ports.append(

@@ -1,16 +1,50 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { accessSync, constants, readFileSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   completionItemsForPrefix,
   completionPrefix,
   insertCompletion,
 } from './panel-logic.js';
 
-const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+function findChrome() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/opt/google/chrome/chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    join(homedir(), 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+    ...[process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA]
+      .filter(Boolean)
+      .flatMap((root) => [
+        join(root, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        join(root, 'Chromium', 'Application', 'chrome.exe'),
+      ]),
+    ...(process.env.PATH || '').split(delimiter).filter(Boolean).flatMap((directory) =>
+      ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome.exe']
+        .map((name) => join(directory, name))),
+  ];
+  return candidates.filter(Boolean).find((candidate) => {
+    try {
+      accessSync(candidate, constants.X_OK);
+      return statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+const CHROME_PATH = findChrome();
+const BROWSER_SKIP = CHROME_PATH ? false : 'Chrome/Chromium unavailable; install a browser or set CHROME_PATH to its executable.';
 const CSS_PATH = new URL('../style/index.css', import.meta.url);
 
 test('index.css specifies stable typography for the editable code surface', () => {
@@ -22,7 +56,7 @@ test('index.css specifies stable typography for the editable code surface', () =
   assert.match(css, /tab-size:\s*4/);
 });
 
-test('real Chromium browser measures stable editor typography under JupyterLab theme cascade', async () => {
+test('real Chromium browser measures stable editor typography under JupyterLab theme cascade', { skip: BROWSER_SKIP }, async () => {
   const cssContent = readFileSync(CSS_PATH, 'utf8');
 
   // JupyterLab theme rules that simulate JupyterLab 4.5.9 theme CSS loaded AFTER plugin CSS
@@ -99,7 +133,7 @@ test('real Chromium browser measures stable editor typography under JupyterLab t
         '--headless',
         '--disable-gpu',
         '--dump-dom',
-        `file://${tempFile}`,
+        pathToFileURL(tempFile).href,
       ]);
 
       let stdout = '';
@@ -136,7 +170,7 @@ test('real Chromium browser measures stable editor typography under JupyterLab t
   }
 });
 
-test('real Chromium keeps long lines horizontally scrollable in the single editor surface', async () => {
+test('real Chromium keeps long lines horizontally scrollable in the single editor surface', { skip: BROWSER_SKIP }, async () => {
   const cssContent = readFileSync(CSS_PATH, 'utf8');
   const code = `${'0123456789'.repeat(30)}\n${'abcdefghij'.repeat(30)}`;
   const html = `<!DOCTYPE html>
@@ -164,7 +198,7 @@ test('real Chromium keeps long lines horizontally scrollable in the single edito
     const { writeFileSync } = await import('node:fs');
     writeFileSync(tempFile, html, 'utf8');
     const result = await new Promise((resolve, reject) => {
-      const child = spawn(CHROME_PATH, ['--headless', '--disable-gpu', '--dump-dom', `file://${tempFile}`]);
+      const child = spawn(CHROME_PATH, ['--headless', '--disable-gpu', '--dump-dom', pathToFileURL(tempFile).href]);
       let stdout = '';
       let stderr = '';
       child.stdout.on('data', (chunk) => { stdout += chunk; });

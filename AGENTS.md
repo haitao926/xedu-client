@@ -44,6 +44,15 @@ Keep runtime marker contracts stable and non-destructive when overlays are appli
 <!-- OMX:GUIDANCE:OPERATING:END -->
 </operating_principles>
 
+## Repository workflow
+- Canonical repository: `origin` = `https://github.com/haitao926/xedu-client.git`.
+- `main` is the only maintained branch. Make small verified commits there for routine work; temporary isolation branches must be integrated and removed after use. Do not create long-lived branches named after agents.
+- Use version tags to identify releases. Build Windows EXE with `npm run build:installer:win` and macOS arm64 DMG with `npm run build:installer:mac`.
+- Keep deliverables in `output/releases/<version>/` and local diagnostics in `output/diagnostics/`; both are ignored by Git. Preserve a working release before removing generated directories.
+- Preserve `python_env_minimal/` and `python_env_win_minimal/` as build inputs. Do not treat these runtimes as disposable npm caches.
+- Put historical plans in `docs/archive/plans/`, communications in `docs/archive/communications/`, and active maintenance instructions in `docs/maintenance/`.
+- Do not write extracted bundles or app copies into the repository root. Do not rewrite Git history for disk cleanup.
+
 ## Working agreements
 - Write a cleanup plan before modifying code for cleanup/refactor/deslop work.
 - Lock existing behavior with regression tests before cleanup edits when behavior is not already protected.
