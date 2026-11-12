@@ -185,6 +185,10 @@ test('real Chromium keeps long lines horizontally scrollable in the single edito
   const code = ${JSON.stringify(code)};
   const editor = document.querySelector('[data-role="editor"]');
   editor.textContent = code;
+  // A classic (non-overlay) scrollbar can change clientWidth after the first
+  // scroll triggers layout. Settle that width, then measure the final edge.
+  editor.scrollLeft = 10000;
+  void editor.clientWidth;
   editor.scrollLeft = 10000;
   document.getElementById('metrics-output').textContent = JSON.stringify({
     maxScrollLeft: editor.scrollWidth - editor.clientWidth,
