@@ -125,6 +125,7 @@ function httpsRequest() {
 function coursePackage(courseId = 'pkg-course') {
     const course = {
         id: courseId,
+        version: '3',
         title: '包内课程',
         sections: [{
             title: '第 1 课',
@@ -165,144 +166,154 @@ function json(res, status, payload) {
     res.end(body);
 }
 
-test('local course wins after exchange, serves local-only resources and retains platform grants', async (t) => {
+test('platform package replaces stale local course content for a task launch', async (t) => {
     const root = mkdtempSync(path.join(tmpdir(), 'xedu-local-first-'));
     const local = path.join(root, '本地 course');
-    mkdirSync(local);
-    writeFileSync(path.join(local, 'course.json'), JSON.stringify({ id: 'pkg-course' }));
-    writeFileSync(path.join(local, 'local-only.html'), '<h1>local resource</h1>');
+    mkdirSync(path.join(local, 'labs'), { recursive: true });
+    writeFileSync(path.join(local, 'course.json'), JSON.stringify({ id: 'pkg-course', version: '3' }));
+    writeFileSync(path.join(local, 'labs/quiz.html'), '<h1>stale local resource</h1>');
+    writeFileSync(path.join(local, 'obsolete.txt'), 'remove this file');
     const pkg = coursePackage();
     const origin = 'https://learn.example';
     const calls = [];
-    let candidate = local;
     const session = createLocalTaskSession({
         cacheRoot: path.join(root, 'cache'),
-        resolveLocalCourseRoot: async (snapshot) => {
-            assert.equal(snapshot.course_id, 'pkg-course');
-            assert.ok(calls.at(-1).url.endsWith('/launch/exchange'));
-            return candidate;
-        },
+        resolveLocalCourseRoot: async () => local,
         request: async (req) => {
             calls.push(req);
             const body = req.url.endsWith('/launch/exchange')
-                ? exchangePayload(origin, pkg, { resource_id: candidate ? 'local-only.html' : 'labs/quiz.html' })
+                ? exchangePayload(origin, pkg)
                 : req.url.endsWith('/artifacts') ? { upload_id: 'local-shot', size: 3 }
                     : req.url.endsWith('/submissions') ? { ok: true, status: 'completed' } : null;
             return { status: 200, body: body ? Buffer.from(JSON.stringify(body)) : pkg.zip };
         },
     });
     t.after(async () => { await session.close(); rmSync(root, { recursive: true, force: true }); });
-    const link = (grant) => ({ launchGrant: grant, platformOrigin: origin });
-    const opened = await session.openLocalTask(link('first'));
-    assert.equal(calls.filter((req) => req.url.includes('/packages/')).length, 0);
+    const opened = await session.openLocalTask({ launchGrant: 'first', platformOrigin: origin });
     assert.equal(opened.ok, true);
     assert.equal(opened.course_root, local);
     assert.equal(opened.course.local_path, local);
-    assert.equal(session.getPublicTask().course_root, local);
+    assert.equal(calls.filter((req) => req.url.includes('/packages/')).length, 1);
+    assert.equal(fs.existsSync(path.join(local, 'obsolete.txt')), false);
+    assert.equal(fs.existsSync(path.join(local, '.xedu-package-sha256')), false);
     const resource = await defaultRequest({ url: opened.lab_url });
     assert.equal(resource.status, 200);
-    assert.equal(resource.body.toString(), '<h1>local resource</h1>');
-    session.setDraft({ name: 'local result', value: 90 });
-    assert.equal((await session.saveCombined({ mime: 'image/png', bytes: Buffer.from('png') })).ok, true);
-    for (const req of calls.filter((req) => /\/(artifacts|submissions)$/.test(req.url))) {
-        assert.equal(req.headers.Authorization, 'Bearer task-grant-secret');
-        assert.ok(req.url.startsWith(origin));
-    }
-    const submission = JSON.parse(calls.find((req) => req.url.endsWith('/submissions')).body);
-    assert.equal(submission.resource_id, 'local-only.html');
-    assert.equal(submission.platform_activity_id, 'plat-act-1');
-    assert.equal(submission.activity_id, 'activity-1');
-    candidate = null;
-    const switched = await session.openLocalTask(link('second'));
-    assert.equal(switched.ok, true);
-    assert.notEqual(switched.course_root, local);
-    assert.equal(switched.course_root, switched.course.local_path);
-    await session.close();
-    assert.equal(session.getPublicTask().ok, false);
-    candidate = null;
-    const fallback = await session.openLocalTask(link('first'));
-    assert.equal(fallback.ok, true);
-    assert.equal(fallback.course_root, path.join(packageCacheDirectory(path.join(root, 'cache'), exchangePayload(origin, pkg, { platform_origin: origin })), 'extracted'));
-    assert.notEqual(fallback.course_root, local);
+    assert.equal(resource.body.toString(), '<!doctype html><canvas id="lab"></canvas>');
 });
 
-for (const invalid of ['missing', 'wrong-id', 'file', 'bad-json', 'throws']) {
-    test(`invalid local course (${invalid}) silently falls back to platform ZIP`, async (t) => {
-        const root = mkdtempSync(path.join(tmpdir(), 'xedu-local-fallback-'));
-        const local = path.join(root, 'local');
-        if (invalid === 'file') writeFileSync(local, '{}');
-        else if (invalid !== 'missing') {
-            mkdirSync(local);
-            writeFileSync(path.join(local, 'course.json'), invalid === 'bad-json' ? '{' : JSON.stringify({ id: 'other-course' }));
-        }
-        const pkg = coursePackage();
-        let downloads = 0;
-        const session = createLocalTaskSession({
-            cacheRoot: path.join(root, 'cache'),
-            localCourseRoot: local,
-            ...(invalid === 'throws' ? { resolveLocalCourseRoot: () => { throw new Error('unreadable'); } } : {}),
-            request: async ({ url }) => {
-                if (url.endsWith('/launch/exchange')) return { status: 200, body: Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg))) };
-                downloads += 1;
-                return { status: 200, body: pkg.zip };
-            },
-        });
-        t.after(async () => { await session.close(); rmSync(root, { recursive: true, force: true }); });
-        const result = await session.openLocalTask({ launchGrant: 'grant', platformOrigin: 'https://learn.example' });
-        assert.equal(result.ok, true);
-        assert.equal(downloads, 1);
-        assert.notEqual(result.course_root, local);
-        assert.equal(result.course_root, result.course.local_path);
+test('matching local course opens when the platform package download is invalid', async (t) => {
+    const root = mkdtempSync(path.join(tmpdir(), 'xedu-local-package-fallback-'));
+    const local = path.join(root, 'docs', 'course');
+    mkdirSync(path.join(local, 'labs'), { recursive: true });
+    writeFileSync(path.join(local, 'course.json'), JSON.stringify({ id: 'pkg-course', version: '3' }));
+    writeFileSync(path.join(local, 'labs/quiz.html'), '<h1>local course content</h1>');
+    const pkg = coursePackage();
+    let packageGets = 0;
+    const session = createLocalTaskSession({
+        cacheRoot: path.join(root, 'cache'),
+        sleep: async () => {},
+        resolveLocalCourseRoot: async () => local,
+        request: async ({ url }) => {
+            if (url.endsWith('/launch/exchange')) {
+                return { status: 200, body: Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg))) };
+            }
+            packageGets += 1;
+            return { status: 200, body: Buffer.from('HTML proxy error page') };
+        },
     });
-}
+    t.after(async () => { await session.close(); rmSync(root, { recursive: true, force: true }); });
 
-test('main resolver reads userData config without writes and matches only root or direct children', () => {
+    const opened = await session.openLocalTask('xedu://open-local-task?launch_grant=local-fallback&platform_origin=https%3A%2F%2Flearn.example');
+    assert.equal(opened.ok, true, opened.message);
+    assert.equal(opened.course_root, local);
+    assert.equal(packageGets, 4);
+    const response = await defaultRequest({ url: opened.lab_url });
+    assert.equal(response.status, 200);
+    assert.equal(response.body.toString(), '<h1>local course content</h1>');
+});
+
+test('main resolver finds a matching course below Documents/XeduCourses when no root is configured', () => {
     const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
     const start = source.indexOf('function resolveConfiguredLocalCourseRoot(');
-    assert.ok(start >= 0);
     const end = source.indexOf('function getLocalTaskSession(', start);
-    const root = mkdtempSync(path.join(tmpdir(), 'xedu-local-config-'));
+    const home = mkdtempSync(path.join(tmpdir(), 'xedu-default-course-root-'));
+    const userData = path.join(home, 'user-data');
+    const documents = path.join(home, 'Documents');
+    const project = path.join(home, 'repo', 'docs', 'course');
+    const courseRoot = path.join(documents, 'XeduCourses', 'mqtt-publish-subscribe-grade8');
+    mkdirSync(path.join(userData, 'config'), { recursive: true });
+    mkdirSync(courseRoot, { recursive: true });
+    mkdirSync(path.join(project, 'lesson1'), { recursive: true });
+    writeFileSync(path.join(userData, 'config', 'config.json'), JSON.stringify({
+        ui: { course_root: '' }, jupyter: { project_dir: path.join(project, 'lesson1') },
+    }));
+    writeFileSync(path.join(courseRoot, 'course.json'), JSON.stringify({ id: 'mqtt-publish-subscribe-grade8', version: '0.5.2' }));
+    writeFileSync(path.join(project, 'course.json'), JSON.stringify({ id: 'docs-course', version: '1.0' }));
+    const context = vm.createContext({
+        fs,
+        path,
+        app: { getPath: (name) => name === 'userData' ? userData : documents },
+    });
     try {
-        mkdirSync(path.join(root, 'config'));
-        const courses = path.join(root, '课程 with spaces');
-        const course = path.join(courses, 'arbitrary-folder-name');
-        mkdirSync(course, { recursive: true });
-        writeFileSync(path.join(course, 'course.json'), JSON.stringify({ id: 'course-id' }));
-        const config = path.join(root, 'config', 'config.json');
-        const context = vm.createContext({ fs, path, app: { getPath: (name) => { assert.equal(name, 'userData'); return root; } } });
         vm.runInContext(source.slice(start, end), context);
-        for (const courseRoot of [course, courses]) {
-            const text = JSON.stringify({ ui: { course_root: courseRoot } });
-            writeFileSync(config, text);
-            assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'course-id' }), course);
-            assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'different-id' }), null);
-            assert.equal(readFileSync(config, 'utf8'), text);
-        }
-        writeFileSync(config, '{');
-        assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'course-id' }), null);
-        rmSync(config);
-        assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'course-id' }), null);
-        const windowsRoot = 'C:\\Users\\学生\\Local Courses';
-        const windowsCourse = path.win32.join(windowsRoot, 'course');
-        const windowsConfig = 'C:\\UserData\\config\\config.json';
-        const windowsContext = vm.createContext({
-            path: path.win32,
-            app: { getPath: () => 'C:\\UserData' },
-            fs: {
-                readFileSync: (file) => {
-                    if (file === windowsConfig) return JSON.stringify({ ui: { course_root: windowsRoot } });
-                    if (file === path.win32.join(windowsCourse, 'course.json')) return JSON.stringify({ id: 'course-id' });
-                    throw new Error('not found');
-                },
-                statSync: (file) => ({ isDirectory: () => [windowsRoot, windowsCourse].includes(file) }),
-                readdirSync: () => [{ name: 'course', isDirectory: () => true }],
-            },
-        });
-        vm.runInContext(source.slice(start, end), windowsContext);
-        assert.equal(windowsContext.resolveConfiguredLocalCourseRoot({ course_id: 'course-id' }), windowsCourse);
+        assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'mqtt-publish-subscribe-grade8' }), courseRoot);
+        assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'docs-course' }), project);
+        assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'other-course' }), null);
     } finally {
-        rmSync(root, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
     }
+});
+
+test('main resolver handles Windows Documents and project paths', () => {
+    const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+    const start = source.indexOf('function resolveConfiguredLocalCourseRoot(');
+    const end = source.indexOf('function getLocalTaskSession(', start);
+    const winPath = path.win32;
+    const userData = 'C:\\Users\\学生\\AppData\\Roaming\\xedu-client';
+    const documents = 'C:\\Users\\学生\\Documents';
+    const project = 'D:\\课程项目\\docs\\mqtt-course\\lesson1';
+    const courseRoot = winPath.join(documents, 'XeduCourses', 'mqtt-publish-subscribe-grade8');
+    const projectCourseRoot = winPath.join('D:\\课程项目', 'docs', 'mqtt-course');
+    const files = new Map([
+        [winPath.join(userData, 'config', 'config.json'), JSON.stringify({
+            ui: { course_root: '' },
+            jupyter: { project_dir: project },
+        })],
+        [winPath.join(courseRoot, 'course.json'), JSON.stringify({ id: 'mqtt-publish-subscribe-grade8', version: '0.5.2' })],
+        [winPath.join(projectCourseRoot, 'course.json'), JSON.stringify({ id: 'docs-course', version: '1.0' })],
+    ]);
+    const directories = new Set([
+        winPath.normalize(documents),
+        winPath.normalize(winPath.join(documents, 'XeduCourses')),
+        winPath.normalize(courseRoot),
+        winPath.normalize(project),
+        winPath.normalize(projectCourseRoot),
+    ]);
+    const fakeFs = {
+        readFileSync(filePath) {
+            const content = files.get(winPath.normalize(filePath));
+            if (content === undefined) throw new Error(`missing file: ${filePath}`);
+            return content;
+        },
+        statSync(filePath) {
+            return { isDirectory: () => directories.has(winPath.normalize(filePath)) };
+        },
+        readdirSync(directory) {
+            if (winPath.normalize(directory) === winPath.normalize(winPath.join(documents, 'XeduCourses'))) {
+                return [{ name: 'mqtt-publish-subscribe-grade8', isDirectory: () => true }];
+            }
+            return [];
+        },
+    };
+    const context = vm.createContext({
+        fs: fakeFs,
+        path: winPath,
+        app: { getPath: (name) => name === 'userData' ? userData : documents },
+    });
+    vm.runInContext(source.slice(start, end), context);
+    assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'mqtt-publish-subscribe-grade8' }), courseRoot);
+    assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'docs-course' }), projectCourseRoot);
+    assert.equal(context.resolveConfiguredLocalCourseRoot({ course_id: 'missing-course' }), null);
 });
 
 async function openSession({ handler, sleep, createRequestId, pkg }) {
@@ -393,6 +404,38 @@ test('HTTP completes exchange, same-origin package download, and score submissio
     }
 });
 
+test('HTTP completed text without ok=true is never treated as a saved submission', async () => {
+    const pkg = coursePackage();
+    const { mock, session, link } = await openSession({
+        pkg,
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (url.pathname.endsWith('/submissions')) {
+                json(res, 200, { status: 'completed' });
+                return;
+            }
+            json(res, 404, { ok: false, code: 'SUBMISSION_NOT_FOUND' });
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        assert.equal((await session.setDraft({ name: '成绩', value: 80 })).ok, true);
+        const result = await session.saveScore();
+        assert.equal(result.ok, false);
+        assert.notEqual(result.platform_status, 'completed');
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
 test('HTTP package URL must match the launch origin before download', async () => {
     const origin = 'http://classroom.example:8088';
     const pkg = coursePackage();
@@ -413,13 +456,88 @@ test('HTTP package URL must match the launch origin before download', async () =
     try {
         const result = await session.openLocalTask(`xedu://open-local-task?launch_grant=mismatch&platform_origin=${encodeURIComponent(origin)}`);
         assert.equal(result.ok, false);
-        assert.equal(result.code, 'package_invalid');
+        assert.equal(result.code, 'package_url_invalid');
         assert.equal(requests.length, 1);
     } finally {
         await session.close();
         rmSync(cacheRoot, { recursive: true, force: true });
     }
 });
+
+for (const scenario of [
+    {
+        name: 'exchange HTTP 400 package_invalid keeps the platform package-config message and skips local/package reads',
+        response: {
+            status: 400,
+            body: Buffer.from(JSON.stringify({
+                ok: false,
+                code: 'package_invalid',
+                message: '课程包配置不完整，请让老师重新上传课程包后再打开。',
+            })),
+        },
+    },
+    {
+        name: 'exchange 200 ok:false package_invalid keeps the platform package-config message and skips local/package reads',
+        response: {
+            status: 200,
+            body: Buffer.from(JSON.stringify({
+                ok: false,
+                code: 'package_invalid',
+                message: '课程包配置不完整，请让老师重新上传课程包后再打开。',
+            })),
+        },
+    },
+    {
+        name: 'exchange package_invalid hides an unsafe platform message',
+        response: {
+            status: 400,
+            body: Buffer.from(JSON.stringify({
+                ok: false,
+                code: 'package_invalid',
+                message: 'Authorization: Bearer private-launch-value',
+            })),
+        },
+        expectedMessage: '平台下发的课程包信息不完整，请让教师重新上传并绑定课程包。',
+    },
+    {
+        name: 'exchange 200 package_invalid without a message explains the package configuration failure',
+        response: {
+            status: 200,
+            body: Buffer.from(JSON.stringify({ ok: false, code: 'package_invalid' })),
+        },
+        expectedMessage: '平台下发的课程包信息不完整，请让教师重新上传并绑定课程包。',
+    },
+]) {
+    test(scenario.name, async () => {
+        const origin = 'http://10.74.136.127:8088';
+        const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-exchange-package-invalid-'));
+        const requests = [];
+        let resolverCalls = 0;
+        const session = createLocalTaskSession({
+            cacheRoot,
+            resolveLocalCourseRoot: async () => {
+                resolverCalls += 1;
+                return path.join(cacheRoot, 'unexpected-local-course');
+            },
+            request: async ({ url, method }) => {
+                requests.push({ url, method });
+                if (url === `${origin}/api/xedu/v1/launch/exchange`) return scenario.response;
+                throw new Error(`unexpected request ${method} ${url}`);
+            },
+        });
+        try {
+            const result = await session.openLocalTask(`xedu://open-local-task?launch_grant=package-invalid&platform_origin=${encodeURIComponent(origin)}`);
+            assert.equal(result.ok, false);
+            assert.equal(result.code, 'package_invalid');
+            assert.equal(result.message, scenario.expectedMessage || '课程包配置不完整，请让老师重新上传课程包后再打开。');
+            assert.deepEqual(requests, [{ url: `${origin}/api/xedu/v1/launch/exchange`, method: 'POST' }]);
+            assert.equal(resolverCalls, 0);
+        } finally {
+            await session.close();
+            rmSync(cacheRoot, { recursive: true, force: true });
+        }
+    });
+}
 
 test('defaultRequest uses HTTP and returns redirects without following them', async () => {
     let redirectTargetHits = 0;
@@ -475,7 +593,7 @@ test('course launch scope survives exchange while retaining task submission iden
     const pkg = coursePackage();
     for (const launchScope of ['course', undefined, 'unsupported']) {
         const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-course-scope-'));
-        const session = createLocalTaskSession({ cacheRoot, request: async ({ url }) => ({
+        const session = createLocalTaskSession({ cacheRoot, sleep: async () => {}, request: async ({ url }) => ({
             status: 200, body: url.endsWith('/launch/exchange')
                 ? Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg, { launch_scope: launchScope })))
                 : pkg.zip,
@@ -534,7 +652,7 @@ test('whole course launch still rejects a corrupt package or mismatched course i
     const pkg = coursePackage();
     for (const overrides of [{ package_sha256: '0'.repeat(64) }, { course_id: 'wrong-course' }]) {
         const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-whole-integrity-'));
-        const session = createLocalTaskSession({ cacheRoot, request: async ({ url }) => ({
+        const session = createLocalTaskSession({ cacheRoot, sleep: async () => {}, request: async ({ url }) => ({
             status: 200,
             body: url.endsWith('/launch/exchange')
                 ? Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg, {
@@ -544,7 +662,7 @@ test('whole course launch still rejects a corrupt package or mismatched course i
         try {
             const result = await session.openLocalTask('xedu://open-local-task?launch_grant=integrity&platform_origin=https%3A%2F%2Flearn.example');
             assert.equal(result.ok, false);
-            assert.equal(result.code, overrides.course_id ? 'course_id_mismatch' : 'package_invalid');
+            assert.equal(result.code, overrides.course_id ? 'course_id_mismatch' : 'package_hash_mismatch');
         } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
     }
 });
@@ -756,12 +874,41 @@ test('package cache is keyed by origin, course id, version, and sha256', async (
     }
 });
 
+test('verified package refreshes an existing extraction without its matching package marker', async (t) => {
+    const pkg = coursePackage();
+    const cacheRoot = mkdtempSync(path.join(tmpdir(), 'xedu-stale-extraction-'));
+    const snapshot = {
+        platform_origin: 'https://learn.example',
+        course_id: 'pkg-course',
+        course_version: '3',
+        package_sha256: pkg.sha256,
+    };
+    const cacheDir = packageCacheDirectory(cacheRoot, snapshot);
+    const extractedRoot = path.join(cacheDir, 'extracted');
+    mkdirSync(path.join(extractedRoot, 'labs'), { recursive: true });
+    writeFileSync(path.join(cacheDir, 'package.bin'), pkg.zip);
+    writeFileSync(path.join(extractedRoot, 'course.json'), JSON.stringify({ id: 'pkg-course' }));
+    writeFileSync(path.join(extractedRoot, 'labs/quiz.html'), '<h1>stale cached content</h1>');
+    const session = createLocalTaskSession({
+        cacheRoot,
+        request: async ({ url }) => ({
+            status: 200,
+            body: Buffer.from(JSON.stringify(exchangePayload('https://learn.example', pkg))),
+        }),
+    });
+    t.after(async () => { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); });
+
+    const opened = await session.openLocalTask('xedu://open-local-task?launch_grant=refresh&platform_origin=https%3A%2F%2Flearn.example');
+    assert.equal(opened.ok, true, opened.message);
+    assert.equal(readFileSync(path.join(opened.course_root, 'labs/quiz.html'), 'utf8'), '<!doctype html><canvas id="lab"></canvas>');
+});
+
 function mockOrigin(req) {
     const host = req.headers.host;
     return `https://${host}`;
 }
 
-test('course.json id mismatch and bad sha are hard errors', async () => {
+test('course.json id mismatch and package size/hash mismatch return distinct errors', async () => {
     const pkg = coursePackage('other-package');
     const declared = coursePackage('pkg-course');
     const { mock, session, link } = await openSession({
@@ -785,6 +932,7 @@ test('course.json id mismatch and bad sha are hard errors', async () => {
 
     const bad = coursePackage('pkg-course');
     const { mock: mock2, session: session2, link: link2 } = await openSession({
+        sleep: async () => {},
         handler: ({ req, res, url }) => {
             if (url.pathname.endsWith('/launch/exchange')) {
                 json(res, 200, exchangePayload(mockOrigin(req), bad));
@@ -796,10 +944,37 @@ test('course.json id mismatch and bad sha are hard errors', async () => {
     });
     try {
         const invalid = await session2.openLocalTask(link2);
-        assert.equal(invalid.code, 'package_invalid');
+        assert.equal(invalid.code, 'package_size_mismatch');
+        assert.match(invalid.message, /实际收到/);
     } finally {
         await session2.close();
         await mock2.close();
+    }
+
+    const expected = coursePackage('pkg-course');
+    const changedBytes = Buffer.from(expected.zip);
+    const marker = Buffer.from('<!doctype html><canvas id="lab"></canvas>');
+    const markerOffset = changedBytes.indexOf(marker);
+    assert.notEqual(markerOffset, -1);
+    changedBytes[markerOffset + marker.length - 2] ^= 1;
+    const { mock: mock3, session: session3, link: link3 } = await openSession({
+        sleep: async () => {},
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), expected));
+                return;
+            }
+            res.writeHead(200);
+            res.end(changedBytes);
+        },
+    });
+    try {
+        const invalid = await session3.openLocalTask(link3);
+        assert.equal(invalid.code, 'package_hash_mismatch');
+        assert.match(invalid.message, /SHA-256/);
+    } finally {
+        await session3.close();
+        await mock3.close();
     }
 });
 
@@ -1270,6 +1445,164 @@ test('rate limited saves use the Chinese message', async () => {
     }
 });
 
+test('submission error codes expose explicit Chinese guidance and preserve server actions', async () => {
+    const cases = [
+        ['XEDU_PYTHON_ARTIFACT_REQUIRED', /Python|Notebook/, 'save_project', false],
+        ['XEDU_ARTIFACT_INVALID', /作品|附件/, 'reupload_artifact', false],
+        ['ARTIFACT_TYPE_UNSUPPORTED', /作品文件类型|支持/, 'reupload_artifact', false],
+        ['ARTIFACT_TOO_LARGE', /超过|较小/, 'reduce_artifact', false],
+        ['XEDU_SUBMISSION_ERROR', /提交|稍后/, 'check_status', true],
+        ['XEDU_TASK_GRANT_INVALID', /授权|重新打开/, 'relaunch', false],
+        ['XEDU_ACTIVITY_FORBIDDEN', /活动|权限/, 'return_to_course', false],
+        ['XEDU_ANSWERS_INVALID', /作答|答案/, 'complete_self_check', false],
+    ];
+    const pkg = coursePackage();
+    for (const [code, messagePattern, defaultAction, retryable] of cases) {
+        const { mock, session, link } = await openSession({
+            pkg,
+            handler: ({ req, res, url }) => {
+                if (url.pathname.endsWith('/launch/exchange')) {
+                    json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                    return;
+                }
+                if (url.pathname === '/packages/course.zip') {
+                    res.end(pkg.zip);
+                    return;
+                }
+                json(res, code === 'XEDU_TASK_GRANT_INVALID' ? 401 : 400, {
+                    ok: false,
+                    code,
+                    message: 'server implementation detail',
+                    retryable,
+                    next_action: defaultAction,
+                    diagnostic_id: 'diag-test-123',
+                });
+            },
+        });
+        try {
+            assert.equal((await session.openLocalTask(link)).ok, true, code);
+            assert.equal((await session.setDraft({ name: '题', value: 80 })).ok, true, code);
+            const result = await session.saveScore();
+            assert.equal(result.code, code);
+            assert.match(result.message, messagePattern, code);
+            assert.equal(result.message.includes('server implementation detail'), false, code);
+            assert.equal(result.retryable, retryable, code);
+            assert.equal(result.next_action, defaultAction, code);
+            assert.equal(result.diagnostic_id, 'diag-test-123', code);
+            assert.equal(session.getDraft().name, '题', code);
+            assert.equal(result.platform_status, '', code);
+            assert.notEqual(defaultAction, '', code);
+        } finally {
+            await session.close();
+            await mock.close();
+        }
+    }
+});
+
+test('a timed out submission checks status before failing and keeps the score draft', async () => {
+    const pkg = coursePackage();
+    let statusGets = 0;
+    const { mock, session, link } = await openSession({
+        pkg,
+        createRequestId: () => 'req-timeout-pending',
+        handler: ({ req, res, url }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/submissions')) {
+                req.socket.destroy();
+                return;
+            }
+            if (url.pathname.endsWith('/submissions/status')) {
+                statusGets += 1;
+                json(res, 404, { ok: false, code: 'SUBMISSION_NOT_FOUND' });
+                return;
+            }
+            json(res, 404, { ok: false });
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        assert.equal((await session.setDraft({ name: '题', value: 10 })).ok, true);
+        const result = await session.saveScore();
+        assert.equal(result.ok, false);
+        assert.equal(result.platform_status, '');
+        assert.equal(result.code, 'submission_not_completed');
+        assert.equal(result.has_draft, true);
+        assert.equal(result.draft.name, '题');
+        assert.ok(statusGets >= 1);
+        assert.equal(session.getDraft().name, '题');
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
+test('an uncertain project submission retry reuses the uploaded attachment and request id', async () => {
+    const pkg = coursePackage();
+    let artifactUploads = 0;
+    const submissionBodies = [];
+    const { mock, session, link } = await openSession({
+        pkg,
+        createRequestId: () => 'req-project-uncertain',
+        handler: ({ req, res, url, body }) => {
+            if (url.pathname.endsWith('/launch/exchange')) {
+                json(res, 200, exchangePayload(mockOrigin(req), pkg));
+                return;
+            }
+            if (url.pathname === '/packages/course.zip') {
+                res.end(pkg.zip);
+                return;
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/artifacts')) {
+                artifactUploads += 1;
+                json(res, 200, { ok: true, upload_id: 'upload-project-1', size: body.length });
+                return;
+            }
+            if (req.method === 'POST' && url.pathname.endsWith('/submissions')) {
+                submissionBodies.push(JSON.parse(body.toString('utf8')));
+                req.socket.destroy();
+                return;
+            }
+            if (url.pathname.endsWith('/submissions/status')) {
+                json(res, 404, { ok: false, code: 'SUBMISSION_NOT_FOUND' });
+                return;
+            }
+            json(res, 404, { ok: false });
+        },
+    });
+    try {
+        assert.equal((await session.openLocalTask(link)).ok, true);
+        const file = {
+            filename: 'note.ipynb',
+            mime: 'application/x-ipynb+json',
+            bytes: Buffer.from(JSON.stringify({ nbformat: 4, cells: [] })),
+        };
+        const first = await session.saveProject(file, { experiment: 'notebook' });
+        assert.equal(first.code, 'submission_not_completed');
+        const conflictingRequest = await session.saveProject(file, {
+            experiment: 'notebook', request_id: 'req-project-restarted',
+        });
+        assert.equal(conflictingRequest.code, 'XEDU_REQUEST_ID_CONFLICT');
+        assert.equal(conflictingRequest.next_action, 'check_status');
+        const retry = await session.saveProject({ ...file, bytes: Buffer.from('newer-content') }, { experiment: 'notebook' });
+        assert.equal(retry.code, 'submission_not_completed');
+        assert.equal(artifactUploads, 1);
+        assert.ok(submissionBodies.length > 1);
+        assert.deepEqual(new Set(submissionBodies.map(item => item.request_id)), new Set(['req-project-uncertain']));
+        assert.deepEqual(new Set(submissionBodies.map(item => item.artifacts[0].upload_id)), new Set(['upload-project-1']));
+        assert.equal(submissionBodies.every(item => item.resource_id === submissionBodies[0].resource_id), true);
+    } finally {
+        await session.close();
+        await mock.close();
+    }
+});
+
 test('experiment capture requires the experiment rectangle and launch opens are shared', async () => {
     assert.equal(experimentCaptureRect(null), null);
     assert.equal(experimentCaptureRect({ width: 0, height: 40 }), null);
@@ -1705,6 +2038,93 @@ test('project submission uploads the saved bytes and filename without a screensh
 });
 
 
+test('MicroPython save and submit uploads the edited Python file required by the platform', async (t) => {
+    const { evidenceExperimentKind } = await import('../../renderer/js/resources/xedu-evidence.js');
+    const { saveCurrentJupyterProject } = require('./jupyter-project-save');
+    const extensionSource = readFileSync(new URL('../../jupyterlab_micropython/src/index.js', import.meta.url), 'utf8');
+    const panelPrototype = vm.runInNewContext(
+        `${extensionSource.slice(extensionSource.indexOf('class MicroPythonPanel'), extensionSource.indexOf('\nconst plugin ='))}; MicroPythonPanel.prototype;`,
+        { Panel: class {}, TextEncoder },
+    );
+    const editedCode = 'print("学生最新修改")\n';
+    const resourceId = 'lesson1/code/publish_teacher_lamp.py';
+    const panel = Object.assign(Object.create(panelPrototype), {
+        id: 'xedu-micropython-panel',
+        activePythonPath: resourceId,
+        codeText: () => editedCode,
+        app: { serviceManager: { contents: {
+            async save(filePath, model) {
+                assert.equal(filePath, resourceId);
+                assert.equal(model.content, editedCode);
+                writeFileSync(path.join(local, filePath), model.content);
+            },
+        } } },
+        updateFileLabel() {},
+        updateActionState() {},
+        async refreshFiles() {},
+        setStatus() {},
+    });
+    const zip = makeStoredZip([
+        { name: 'course.json', data: JSON.stringify({ id: 'pkg-course', version: '3' }) },
+        { name: resourceId, data: 'print("original template")\n' },
+    ]);
+    const pkg = { zip, sha256: sha256(zip), size: zip.length };
+    const origin = 'https://learn.example';
+    const root = mkdtempSync(path.join(tmpdir(), 'xedu-micropython-submit-'));
+    const local = path.join(root, 'course');
+    mkdirSync(path.dirname(path.join(local, resourceId)), { recursive: true });
+    writeFileSync(path.join(local, 'course.json'), JSON.stringify({ id: 'pkg-course', version: '3' }));
+    writeFileSync(path.join(local, resourceId), 'print("original template")\n');
+    let uploaded = null;
+    let submitted = null;
+    const session = createLocalTaskSession({
+        cacheRoot: path.join(root, 'cache'),
+        resolveLocalCourseRoot: async () => local,
+        request: async ({ url, headers, body }) => {
+            if (url.endsWith('/launch/exchange')) return {
+                status: 200,
+                body: Buffer.from(JSON.stringify(exchangePayload(origin, pkg, { resource_id: resourceId }))),
+            };
+            if (url.includes('/packages/')) return { status: 200, body: pkg.zip };
+            if (url.endsWith('/artifacts')) {
+                uploaded = { headers, bytes: body };
+                return { status: 201, body: Buffer.from(JSON.stringify({ ok: true, upload_id: 'python-file', size: body.length })) };
+            }
+            if (url.endsWith('/submissions')) {
+                submitted = JSON.parse(body.toString());
+                const hasPythonFile = uploaded?.headers['Content-Type'] === 'text/plain'
+                    && uploaded.headers['X-XEdu-Filename'].endsWith('.py')
+                    && submitted.artifacts?.[0]?.upload_id === 'python-file';
+                return {
+                    status: hasPythonFile ? 200 : 400,
+                    body: Buffer.from(JSON.stringify(hasPythonFile
+                        ? { ok: true, status: 'completed' }
+                        : { ok: false, code: 'XEDU_PYTHON_ARTIFACT_REQUIRED', message: '请先提交本次 Python 或 Notebook 实验文件' })),
+                };
+            }
+            throw new Error(`unexpected URL: ${url}`);
+        },
+    });
+    t.after(async () => { await session.close(); rmSync(root, { recursive: true, force: true }); });
+    assert.equal((await session.openLocalTask({ launchGrant: 'python-project', platformOrigin: origin })).ok, true);
+    const kind = evidenceExperimentKind({
+        tabId: 'python', experiment: { runtime: 'micropython-esp32' }, overview: { pythonFiles: [{ path: resourceId }] },
+    });
+    const exported = await vm.runInNewContext(`(${saveCurrentJupyterProject.toString()})()`, {
+        window: { jupyterapp: { shell: { currentWidget: panel } } }, TextEncoder,
+    });
+    const result = kind === 'notebook'
+        ? await session.saveProject(exported, { experiment: kind })
+        : await session.uploadScreenshot({ mime: 'image/png', bytes: Buffer.from('screenshot') });
+
+    assert.equal(result.platform_status, 'completed', result.message);
+    assert.equal(readFileSync(path.join(local, resourceId), 'utf8'), editedCode);
+    assert.equal(uploaded.bytes.toString(), editedCode);
+    assert.equal(uploaded.headers['Content-Type'], 'text/plain');
+    assert.equal(submitted.resource_id, resourceId);
+    assert.equal(submitted.attachments[0].sha256, sha256(Buffer.from(editedCode)));
+});
+
 test('native launch accepts packaged notebooks, Python and Scratch without HTML', async () => {
     for (const resourceId of ['exp1/fireworks.ipynb', 'exp2/doraemon.py', 'exp3/project.sb3']) {
         const zip = makeStoredZip([
@@ -1745,7 +2165,9 @@ test('native launch rejects unsafe, unsupported, missing and directory entries',
         try {
             const result = await session.openLocalTask('xedu://open-local-task?launch_grant=invalid&platform_origin=https%3A%2F%2Flearn.example');
             assert.equal(result.ok, false, resourceId);
-            assert.equal(result.code, 'package_invalid', resourceId);
+            assert.equal(result.code, ['../valid.py', '/valid.py', 'C:/valid.py', 'https://example/valid.py', 'unknown.exe'].includes(resourceId)
+                ? 'package_metadata_invalid'
+                : 'package_resource_missing', resourceId);
         } finally { await session.close(); rmSync(cacheRoot, { recursive: true, force: true }); }
     }
 });

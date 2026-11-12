@@ -165,6 +165,14 @@ import { createCourseAiFrameBridge } from "./resources/course-ai-bridge.js";
 import { createXeduSubmitBridge } from "./resources/xedu-submit-bridge.js";
 import { describeStudentSaveChrome, studentSaveMessage } from "./resources/xedu-save-chrome.js";
 import { evidenceExperimentKind } from "./resources/xedu-evidence.js";
+import {
+    describeSubmissionRequirements,
+    getSubmissionActionGuidance,
+    isProjectSubmissionRequired,
+    isSubmissionCompleted,
+    isSubmissionConfirming,
+    normalizeSubmissionRequirements,
+} from "./resources/xedu-submission-requirements.js";
 
 const resourcesState = createResourcesState();
 const courseAiFrameBridge = createCourseAiFrameBridge({
@@ -202,7 +210,7 @@ function xeduTransport() {
     const api = () => window.electronAPI || {};
     return {
         setDraft: (draft) => api().xeduSetScoreDraft?.(draft),
-        saveScore: () => api().xeduSaveScore?.(),
+        saveScore: (meta) => api().xeduSaveScore?.(meta),
         uploadScreenshot: (bounds) => api().xeduUploadScreenshot?.(bounds),
         saveEvidence: (bounds, meta) => api().xeduSaveEvidence?.({ bounds, experiment: meta?.experiment || "" }),
         saveProject: async (meta) => {
@@ -3574,6 +3582,35 @@ function currentEvidenceKind(tabId = resourcesState.activeCourseWorkspaceTab) {
     });
 }
 
+function getAuthorizedXeduTask() {
+    const task = resourcesState.xeduLocalTask;
+    return task && typeof task === "object" && !Array.isArray(task) ? task : null;
+}
+
+function currentSubmissionRequirements() {
+    return normalizeSubmissionRequirements(getAuthorizedXeduTask()?.submission_requirements);
+}
+
+function submissionActionButtonLabel(result) {
+    if (result?.next_action === 'check_status') return '查询提交状态';
+    if (result?.next_action === 'retry_submission') return '安全重试';
+    if (result?.retryable !== false) return "重试";
+    switch (result?.next_action) {
+        case "save_project": return "去正确编辑器";
+        case "reupload_artifact": return "重新导出后提交";
+        case "reduce_artifact": return "缩小作品后提交";
+        case "relaunch": return "回平台重开";
+        case "return_to_course": return "返回课程";
+        default: return "查看下一步";
+    }
+}
+
+function shouldShowSubmissionAction(result) {
+    if (!result) return false;
+    if (result.retryable !== false) return true;
+    return Boolean(getSubmissionActionGuidance(result));
+}
+
 function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab) {
     const normalized = normalizeWorkspaceTabId(tabId);
     const studentShell = document.body.classList.contains("student-mode")
@@ -3591,6 +3628,8 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
         phase: studentSavePhase,
         result: studentSaveResult,
     });
+    const requirementText = describeSubmissionRequirements(currentSubmissionRequirements());
+    const actionGuidance = getSubmissionActionGuidance(studentSaveResult);
     if (backBtn) backBtn.hidden = !focus;
     if (aiBtn) {
         aiBtn.hidden = !focus;
@@ -3605,11 +3644,15 @@ function syncStudentFocusChrome(tabId = resourcesState.activeCourseWorkspaceTab)
         draftEl.hidden = !focus || !chrome.draftLabel;
     }
     if (statusEl) {
-        statusEl.textContent = chrome.statusText;
+        statusEl.textContent = [chrome.statusText, requirementText, actionGuidance].filter(Boolean).join(" ");
         statusEl.dataset.tone = chrome.tone || "";
-        statusEl.hidden = !focus || !chrome.statusText;
+        statusEl.hidden = !focus || !statusEl.textContent;
     }
-    if (retryBtn) retryBtn.hidden = !focus || !chrome.retryVisible;
+    if (retryBtn) {
+        retryBtn.hidden = !focus || !chrome.retryVisible || !shouldShowSubmissionAction(studentSaveResult);
+        retryBtn.textContent = submissionActionButtonLabel(studentSaveResult);
+        retryBtn.setAttribute("aria-label", submissionActionButtonLabel(studentSaveResult));
+    }
     if (!focus) {
         collapseStudentJupyterControls();
         document.body.classList.remove("student-ai-drawer-open");
@@ -3851,6 +3894,7 @@ async function openStudentExperimentPage(tabId, context, file = null) {
             notifyUser(selected?.message || "切换平台活动失败，请从课程首页重新启动 Client。", "error");
             return null;
         }
+        resourcesState.xeduLocalTask = selected;
         xeduScoreBridge.clearDraft();
     }
 
@@ -4116,6 +4160,15 @@ function buildStudentHtmlExperienceView(context) {
     const htmlFiles = Array.isArray(context?.overview?.htmlFiles) ? context.overview.htmlFiles : [];
     const launchedPath = relativeResourcePath(resourcesState.xeduLaunchResourceId || "");
     const declaredEntry = context?.exp?.entry_file || context?.exp?.entryFile;
+    const buildXeduLabFileUrl = (filePath) => {
+        const baseUrl = String(resourcesState.xeduLabBaseUrl || "").trim().replace(/\/+$/, "");
+        const launchedRoot = String(resourcesState.xeduLaunchedCourse?.local_path || "").replace(/\\/g, "/").replace(/\/+$/, "");
+        const currentRoot = String(context?.resource?.local_path || "").replace(/\\/g, "/").replace(/\/+$/, "");
+        const normalizedPath = relativeResourcePath(filePath);
+        if (!baseUrl || !normalizedPath || !launchedRoot || launchedRoot !== currentRoot) return "";
+        const encodedPath = normalizedPath.split("/").map((part) => encodeURIComponent(part)).join("/");
+        return `${baseUrl}/${encodedPath}`;
+    };
     const primaryHtml = (declaredEntry ? htmlFiles[0] : htmlFiles.find((file) => relativeResourcePath(file.path) === launchedPath)) || htmlFiles[0] || null;
     const wrap = document.createElement("section");
     wrap.className = "resources-student-html-experience";
@@ -4134,6 +4187,7 @@ function buildStudentHtmlExperienceView(context) {
         const relativeHtmlPath = String(primaryHtml.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
         const frameUrl =
             resourcesState.xeduLabFrameUrls?.[relativeHtmlPath]
+            || buildXeduLabFileUrl(relativeHtmlPath)
             || buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient)
             || resolveResourceUrl(primaryHtml.path || "", context.resource, {
                 repoUrl: resourcesState.repoUrl,
@@ -4210,6 +4264,7 @@ function buildStudentHtmlExperienceView(context) {
     const relativeHtmlPath = String(primaryHtml.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
     const frameUrl =
         resourcesState.xeduLabFrameUrls?.[relativeHtmlPath]
+        || buildXeduLabFileUrl(relativeHtmlPath)
         || buildLocalCourseFileUrl(context.resource, primaryHtml.path || "", apiClient)
         || resolveResourceUrl(primaryHtml.path || "", context.resource, {
             repoUrl: resourcesState.repoUrl,
@@ -7535,13 +7590,19 @@ export function returnToStudentTaskCenter() {
 }
 
 function presentPlatformSaveResult(result) {
-    const completed = result?.platform_status === "completed";
-    studentSaveResult = result || null;
-    studentSavePhase = completed ? "saved" : "failed";
+    const completed = isSubmissionCompleted(result);
+    const confirming = isSubmissionConfirming(result);
+    const presentedResult = completed && result?.platform_status !== "completed"
+        ? { ...result, platform_status: "completed" }
+        : result;
+    studentSaveResult = presentedResult || null;
+    studentSavePhase = completed ? "saved" : confirming ? "confirming" : "failed";
     const message = completed
-        ? (result?.message || "平台已保存")
-        : studentSaveMessage(result?.code, result?.message);
-    notifyUser(message, completed ? "success" : "error");
+        ? (presentedResult?.message || "平台已保存")
+        : confirming
+            ? (presentedResult?.message || "提交确认中，请稍候。")
+        : studentSaveMessage(presentedResult?.code, presentedResult?.message);
+    notifyUser(message, completed ? "success" : confirming ? "info" : "error");
     syncStudentFocusChrome();
     return result;
 }
@@ -7559,6 +7620,9 @@ async function runStudentPlatformSave(kind, meta) {
         };
     }
     studentSaveKind = kind;
+    if (studentSaveResult?.next_action === 'check_status' || studentSaveResult?.next_action === 'retry_submission') {
+        studentSaveResult = { ...studentSaveResult, retryKind: kind, experiment: meta?.experiment || studentSaveResult?.experiment || '' };
+    }
     studentSavePhase = "saving";
     studentSaveResult = { retryKind: kind, experiment: meta?.experiment || "" };
     syncStudentFocusChrome();
@@ -7595,12 +7659,61 @@ function submitPageScore() {
 
 export async function submitStudentScreenshot() {
     const experiment = currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
+    const requirements = currentSubmissionRequirements();
+    if (isProjectSubmissionRequired(requirements) && experiment !== "notebook") {
+        const result = {
+            ok: false,
+            platform_status: "",
+            code: "project_file_invalid",
+            message: "本任务要求提交 Python/Notebook 文件，请切换到正确编辑器后再提交。",
+            retryable: false,
+            next_action: "save_project",
+            retryKind: "project",
+        };
+        studentSaveKind = "project";
+        studentSaveResult = result;
+        studentSavePhase = "failed";
+        notifyUser(result.message, "warning");
+        syncStudentFocusChrome();
+        return result;
+    }
     if (experiment === "scratch" || experiment === "notebook") return runStudentPlatformSave("project", { experiment });
     if (experiment === "screenshot") return runStudentPlatformSave("screenshot");
     return { ok: false, platform_status: "", code: "no_active_task", message: studentSaveMessage("no_active_task") };
 }
 
 export function retryStudentSave() {
+    const action = studentSaveResult?.next_action || "";
+    if (action === "check_status" || action === "retry_submission") {
+        const kind = studentSaveResult?.retryKind || studentSaveKind || "screenshot";
+        if (kind === "project") {
+            const experiment = studentSaveResult?.experiment || currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
+            return runStudentPlatformSave("project", experiment ? { experiment } : {});
+        }
+        if (kind === "evidence") return runStudentPlatformSave("evidence", { experiment: studentSaveResult?.experiment || "" });
+        if (kind === "score") return runStudentPlatformSave("score");
+        return runStudentPlatformSave("screenshot");
+    }
+    if (action === "save_project") {
+        notifyUser(getSubmissionActionGuidance(studentSaveResult), "info");
+        return openStudentLessonTab("python");
+    }
+    if (action === "return_to_course") {
+        notifyUser(getSubmissionActionGuidance(studentSaveResult), "info");
+        return returnToStudentTaskCenter();
+    }
+    if (action === "reupload_artifact") {
+        const experiment = studentSaveResult?.experiment || currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
+        return runStudentPlatformSave("project", experiment ? { experiment } : {});
+    }
+    if (action === "relaunch" || action === "reduce_artifact"
+        || action === "complete_self_check" || action === "contact_teacher" || action === "fix_request") {
+        notifyUser(getSubmissionActionGuidance(studentSaveResult), "info");
+        return studentSaveResult;
+    }
+    if (studentSaveResult?.retryable === false) {
+        return studentSaveResult;
+    }
     const kind = studentSaveResult?.retryKind || studentSaveKind || "screenshot";
     if (kind === "project") {
         const experiment = studentSaveResult?.experiment || currentEvidenceKind(resourcesState.activeCourseWorkspaceTab);
@@ -7650,6 +7763,7 @@ export async function openLaunchedLocalTask(payload) {
     const resourceId = relativeResourcePath(payload.resource_id);
     resourcesState.xeduActivityTasks = Array.isArray(payload.activity_tasks) ? payload.activity_tasks : [];
     resourcesState.xeduLaunchResourceId = resourceId;
+    resourcesState.xeduLabBaseUrl = String(payload.lab_base_url || "").trim();
     resourcesState.xeduLabFrameUrls = {
         ...(resourcesState.xeduLabFrameUrls || {}),
         [resourceId]: payload.lab_url,
@@ -7677,6 +7791,7 @@ export async function openLaunchedLocalTask(payload) {
         context = findLaunchExperiment(course, resourceId);
     }
     studentSaveKind = "";
+    resourcesState.xeduLocalTask = payload;
     studentSaveResult = payload?.grant_expired
         ? { ok: false, platform_status: "", code: "grant_expired" }
         : null;

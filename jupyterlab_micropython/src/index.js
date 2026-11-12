@@ -9,11 +9,16 @@ import {
   STARTER_MAIN_PY,
   actionAvailability,
   appendConsoleText,
+  canReuseMicroPythonPanel,
   clampOutputHeight,
   DEFAULT_OUTPUT_HEIGHT,
+  completionItemsForPrefix,
+  completionPrefix,
+  insertCompletion,
   panelRequestPath,
   panelRoute,
   highlightPython,
+  highlightDisplaySource,
   preferredPythonFile,
   projectDirectoryFromLabPath,
   projectFilePath,
@@ -119,8 +124,8 @@ class MicroPythonPanel extends Panel {
           <section class="xedu-mp-editor-pane">
             <div class="xedu-mp-editor-tab" data-role="file">main.py</div>
             <div class="xedu-mp-editor-scroll">
-              <pre class="xedu-mp-highlight" data-role="highlight" aria-hidden="true"></pre>
-              <textarea class="xedu-mp-editor" data-role="editor" spellcheck="false" wrap="off" autocomplete="off" autocorrect="off" autocapitalize="off" aria-label="MicroPython 代码"></textarea>
+              <div class="xedu-mp-editor" data-role="editor" contenteditable="true" spellcheck="false" autocorrect="off" autocapitalize="off" role="textbox" aria-multiline="true" aria-label="MicroPython 代码"></div>
+              <div class="xedu-mp-completions" data-role="completions" role="listbox" aria-label="代码补全" hidden></div>
             </div>
           </section>
         </div>
@@ -135,10 +140,11 @@ class MicroPythonPanel extends Panel {
         </footer>
       </div>`;
     this.editor = this.node.querySelector('[data-role="editor"]');
+    this.completionList = this.node.querySelector('[data-role="completions"]');
     this.bindActions();
     this.updateFileLabel();
     this.updateActionState();
-    void this.bootstrapFiles();
+    this.filesReady = this.bootstrapFiles();
   }
 
   bindActions() {
@@ -153,8 +159,13 @@ class MicroPythonPanel extends Panel {
       this.dirty = true;
       this.renderHighlight();
       this.updateFileLabel();
+      this.showCompletions(false);
     });
-    this.editor.addEventListener('scroll', () => this.syncHighlightScroll());
+    this.editor.addEventListener('scroll', () => this.positionCompletions());
+    this.editor.addEventListener('paste', (event) => {
+      event.preventDefault();
+      this.insertTextAtCursor(event.clipboardData?.getData('text/plain') || '');
+    });
     this.bindOutputResize();
     this.editor.addEventListener('keydown', (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
@@ -162,16 +173,51 @@ class MicroPythonPanel extends Panel {
         void this.handleAction('save');
         return;
       }
-      if (event.key !== 'Tab') return;
-      event.preventDefault();
-      const start = this.editor.selectionStart;
-      const end = this.editor.selectionEnd;
-      this.editor.value = `${this.editor.value.slice(0, start)}    ${this.editor.value.slice(end)}`;
-      this.editor.selectionStart = start + 4;
-      this.editor.selectionEnd = start + 4;
-      this.dirty = true;
-      this.renderHighlight();
+      if ((event.ctrlKey || event.metaKey) && event.code === 'Space') {
+        event.preventDefault();
+        this.showCompletions(true);
+        return;
+      }
+      if (event.key === 'Escape') this.hideCompletions();
+      if (event.key === 'ArrowDown' && !this.completionList.hidden) {
+        event.preventDefault();
+        this.selectCompletion(1);
+        return;
+      }
+      if (event.key === 'ArrowUp' && !this.completionList.hidden) {
+        event.preventDefault();
+        this.selectCompletion(-1);
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.insertTextAtCursor(`\n${this.currentIndent()}`);
+        this.showCompletions(false);
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        if (!this.completionList.hidden) this.applyCompletion();
+        else this.insertTextAtCursor('    ');
+        return;
+      }
+      const pairs = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" };
+      if (pairs[event.key] && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        this.insertTextAtCursor(event.key + pairs[event.key], 1);
+      }
     });
+  }
+
+  bindEditorResize() {
+    const sync = () => this.syncHighlightScroll();
+    if (typeof ResizeObserver !== 'undefined') {
+      this.editorResizeObserver = new ResizeObserver(sync);
+      this.editorResizeObserver.observe(this.editor);
+    } else if (typeof window !== 'undefined') {
+      this.editorResizeListener = sync;
+      window.addEventListener('resize', sync);
+    }
   }
 
   bindOutputResize() {
@@ -216,26 +262,124 @@ class MicroPythonPanel extends Panel {
   }
 
   codeText() {
-    return this.editor?.value || '';
+    return (this.editor?.textContent ?? this.editor?.value ?? '').replace(/\u200b$/, '').replace(/\r/g, '');
   }
 
   setCodeText(value) {
-    if (this.editor) this.editor.value = value ?? '';
+    if (this.editor) this.editor.textContent = value ?? '';
     this.renderHighlight();
   }
 
   renderHighlight() {
-    const highlight = this.node.querySelector('[data-role="highlight"]');
-    if (!highlight) return;
-    highlight.innerHTML = highlightPython(this.codeText());
-    this.syncHighlightScroll();
+    if (!this.editor) return;
+    const source = this.codeText();
+    const cursor = this.cursorOffset();
+    this.editor.innerHTML = highlightPython(highlightDisplaySource(source));
+    this.setCursorOffset(Math.min(cursor, source.length));
+    this.positionCompletions();
   }
 
-  syncHighlightScroll() {
-    const highlight = this.node.querySelector('[data-role="highlight"]');
-    if (!highlight || !this.editor) return;
-    highlight.scrollTop = this.editor.scrollTop;
-    highlight.scrollLeft = this.editor.scrollLeft;
+  cursorOffset() {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !this.editor.contains(selection.anchorNode)) return this.codeText().length;
+    const range = document.createRange();
+    range.selectNodeContents(this.editor);
+    range.setEnd(selection.anchorNode, selection.anchorOffset);
+    return range.toString().length;
+  }
+
+  setCursorOffset(offset) {
+    const walker = document.createTreeWalker(this.editor, NodeFilter.SHOW_TEXT);
+    let remaining = offset;
+    let node = null;
+    while ((node = walker.nextNode())) {
+      if (remaining <= node.textContent.length) break;
+      remaining -= node.textContent.length;
+    }
+    const range = document.createRange();
+    if (node) range.setStart(node, Math.min(remaining, node.textContent.length));
+    else {
+      range.selectNodeContents(this.editor);
+      range.collapse(false);
+    }
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  insertTextAtCursor(text, cursorDelta = text.length) {
+    const source = this.codeText();
+    const offset = this.cursorOffset();
+    const value = `${source.slice(0, offset)}${text}${source.slice(offset)}`;
+    this.editor.textContent = value;
+    this.dirty = true;
+    this.renderHighlight();
+    this.setCursorOffset(offset + cursorDelta);
+    this.updateFileLabel();
+  }
+
+  currentIndent() {
+    const beforeCursor = this.codeText().slice(0, this.cursorOffset());
+    const line = beforeCursor.split('\n').pop() || '';
+    const indent = line.match(/^\s*/)?.[0] || '';
+    return /:\s*$/.test(line) ? `${indent}    ` : indent;
+  }
+
+  showCompletions(force) {
+    const source = this.codeText();
+    const cursor = this.cursorOffset();
+    const prefix = completionPrefix(source, cursor);
+    if (!force && prefix.length < 1) return this.hideCompletions();
+    const items = completionItemsForPrefix(source, cursor, { allowEmpty: force });
+    if (!items.length) return this.hideCompletions();
+    this.completionList.replaceChildren(...items.map((item, index) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'xedu-mp-completion';
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', String(index === 0));
+      option.textContent = item;
+      option.addEventListener('mousedown', (event) => event.preventDefault());
+      option.addEventListener('click', () => this.applyCompletion(item));
+      return option;
+    }));
+    this.completionIndex = 0;
+    this.completionList.hidden = false;
+    this.positionCompletions();
+  }
+
+  selectCompletion(direction) {
+    const options = [...this.completionList.querySelectorAll('[role="option"]')];
+    if (!options.length) return;
+    this.completionIndex = (this.completionIndex + direction + options.length) % options.length;
+    options.forEach((option, index) => option.setAttribute('aria-selected', String(index === this.completionIndex)));
+  }
+
+  applyCompletion(value) {
+    const option = value || this.completionList.querySelector('[aria-selected="true"]')?.textContent;
+    if (!option) return this.hideCompletions();
+    const result = insertCompletion(this.codeText(), this.cursorOffset(), option);
+    this.editor.textContent = result.value;
+    this.dirty = true;
+    this.renderHighlight();
+    this.setCursorOffset(result.cursor);
+    this.updateFileLabel();
+    this.hideCompletions();
+  }
+
+  hideCompletions() {
+    if (this.completionList) this.completionList.hidden = true;
+  }
+
+  positionCompletions() {
+    if (!this.completionList || this.completionList.hidden) return;
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return;
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    const container = this.editor.getBoundingClientRect();
+    this.completionList.style.left = `${Math.max(0, rect.left - container.left)}px`;
+    this.completionList.style.top = `${Math.max(0, rect.bottom - container.top)}px`;
   }
 
   async handleAction(action) {
@@ -269,6 +413,7 @@ class MicroPythonPanel extends Panel {
   }
 
   async bootstrapFiles() {
+    this.fileLoadError = null;
     try {
       await this.app.serviceManager?.ready;
       await this.refreshFiles();
@@ -285,6 +430,7 @@ class MicroPythonPanel extends Panel {
       this.updateActionState();
       this.setStatus('还没有 main.py，保存后会在当前实验中创建它。');
     } catch (error) {
+      this.fileLoadError = error;
       this.setStatus(studentErrorMessage(error), true);
     }
   }
@@ -350,18 +496,30 @@ class MicroPythonPanel extends Panel {
   }
 
   async save() {
+    await this.filesReady;
+    if (this.fileLoadError) throw new Error('MicroPython 项目加载失败，尚未保存或提交。请重新打开实验。');
     const file = this.activePythonPath || projectFilePath(this.projectDirectory, 'main.py');
+    const content = this.codeText();
     this.activePythonPath = file;
     await this.app.serviceManager.contents.save(file, {
       type: 'file',
       format: 'text',
-      content: this.codeText(),
+      content,
     });
-    this.dirty = false;
+    if (this.activePythonPath === file && this.codeText() === content) this.dirty = false;
     this.updateFileLabel();
     this.updateActionState();
     await this.refreshFiles().catch(() => {});
     this.setStatus(`已保存 ${file}`);
+    return {
+      bytes: Array.from(new TextEncoder().encode(content)),
+      filename: file.split(/[\\/]/).pop() || 'main.py',
+      mime: 'text/plain',
+    };
+  }
+
+  async exportForSubmission() {
+    return this.save();
   }
 
   async refreshPorts() {
@@ -489,6 +647,11 @@ class MicroPythonPanel extends Panel {
     }
   }
 
+  onCloseRequest(msg) {
+    super.onCloseRequest(msg);
+    this.dispose();
+  }
+
   setStatus(message, isError = false) {
     const status = this.node.querySelector('[data-role="status"]');
     status.textContent = message;
@@ -519,7 +682,7 @@ const plugin = {
     let panel = null;
     const openPanel = () => {
       const currentPath = pythonPathFromWidget(app.shell.currentWidget);
-      if (!panel || panel.isDisposed) {
+      if (!canReuseMicroPythonPanel(panel)) {
         panel = new MicroPythonPanel(app);
         addCodeMode(app, panel);
       }

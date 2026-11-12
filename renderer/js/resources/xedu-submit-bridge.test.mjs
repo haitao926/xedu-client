@@ -328,3 +328,113 @@ test('submit-request with request_id still acks when score is invalid', async ()
     assert.equal(posts[0][0].code, 'score_invalid');
     assert.match(posts[0][0].error, /0 到 100/);
 });
+
+test('submit-request forwards mapped failure metadata and keeps its draft', async () => {
+    const posts = [];
+    const ui = harness();
+    const frame = {
+        contentWindow: {
+            postMessage(message, origin) {
+                posts.push([message, origin]);
+            },
+        },
+    };
+    const bridge = createXeduSubmitBridge({
+        windowObject: ui.windowObject,
+        transport: {
+            setDraft: async (draft) => ({ ok: true, has_draft: true, draft }),
+            saveScore: async () => ({
+                ok: false,
+                code: 'XEDU_ANSWERS_INVALID',
+                message: 'server detail',
+                retryable: true,
+                next_action: 'complete_self_check',
+                platform_status: 'failed',
+                has_draft: true,
+            }),
+        },
+    });
+    bridge.attach(frame);
+    await ui.emit({
+        source: frame.contentWindow,
+        origin: 'http://127.0.0.1:8765',
+        data: {
+            type: 'xedu:submit-request',
+            request_id: 'answers-invalid',
+            name: '交互测验',
+            value: 67,
+        },
+    });
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0][0].ok, false);
+    assert.equal(posts[0][0].code, 'XEDU_ANSWERS_INVALID');
+    assert.match(posts[0][0].error, /作答|答案/);
+    assert.equal(posts[0][0].retryable, true);
+    assert.equal(posts[0][0].next_action, 'complete_self_check');
+    assert.equal(bridge.getDraft().name, '交互测验');
+});
+
+test('repeated request ids reuse one save and replay the confirmed receipt', async () => {
+    const posts = [];
+    const ui = harness();
+    const frame = { contentWindow: { postMessage(message) { posts.push(message); } } };
+    let finishSave;
+    let saveCount = 0;
+    const bridge = createXeduSubmitBridge({
+        windowObject: ui.windowObject,
+        transport: {
+            setDraft: async draft => ({ ok: true, draft }),
+            saveScore: async () => {
+                saveCount += 1;
+                await new Promise(resolve => { finishSave = resolve; });
+                return { ok: true, platform_status: 'completed', status: 'completed' };
+            },
+        },
+    });
+    bridge.attach(frame);
+    const request = {
+        type: 'xedu:submit-request', request_id: 'page-request-1', name: '测验', value: 80,
+    };
+    const first = ui.emit({ source: frame.contentWindow, origin: 'http://127.0.0.1:8765', data: request });
+    await Promise.resolve();
+    const duplicate = ui.emit({ source: frame.contentWindow, origin: 'http://127.0.0.1:8765', data: request });
+    await Promise.resolve();
+    assert.equal(saveCount, 1);
+    finishSave();
+    await Promise.all([first, duplicate]);
+    assert.equal(posts.filter(post => post.request_id === request.request_id && post.status === 'completed').length, 1);
+
+    await ui.emit({
+        source: frame.contentWindow,
+        origin: 'http://127.0.0.1:8765',
+        data: { ...request, value: 91 },
+    });
+    const conflict = posts.at(-1);
+    assert.equal(saveCount, 1);
+    assert.equal(conflict.ok, false);
+    assert.equal(conflict.code, 'XEDU_REQUEST_ID_CONFLICT');
+});
+
+test('failed draft storage and thrown transports receive a failure receipt', async () => {
+    const posts = [];
+    const ui = harness();
+    const frame = { contentWindow: { postMessage(message) { posts.push(message); } } };
+    const bridge = createXeduSubmitBridge({
+        windowObject: ui.windowObject,
+        transport: {
+            setDraft: async () => ({ ok: false, code: 'XEDU_TASK_GRANT_INVALID' }),
+            saveScore: async () => { throw new Error('private disk detail'); },
+        },
+    });
+    bridge.attach(frame);
+    await ui.emit({
+        source: frame.contentWindow,
+        origin: 'http://127.0.0.1:8765',
+        data: { type: 'xedu:submit-request', request_id: 'grant-failed', name: '测验', value: 80 },
+    });
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].ok, false);
+    assert.equal(posts[0].code, 'XEDU_TASK_GRANT_INVALID');
+    assert.equal(posts[0].next_action, 'relaunch');
+    assert.doesNotMatch(posts[0].error, /private disk detail/);
+});

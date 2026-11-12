@@ -78,6 +78,76 @@ test('grant expiry tells the student to reopen and other codes stay in Chinese',
     assert.match(studentSaveMessage('XEDU_RESULT_NOT_PASSED'), /还没有通过/);
 });
 
+test('server submission errors show mapped guidance and keep server retry metadata', () => {
+    const cases = [
+        ['XEDU_PYTHON_ARTIFACT_REQUIRED', /Python|Notebook/],
+        ['XEDU_ARTIFACT_INVALID', /作品|附件/],
+        ['ARTIFACT_TYPE_UNSUPPORTED', /作品文件类型|支持/],
+        ['ARTIFACT_TOO_LARGE', /超过|较小/],
+        ['XEDU_SUBMISSION_ERROR', /提交|稍后/],
+        ['XEDU_TASK_GRANT_INVALID', /授权|重新打开/],
+        ['XEDU_ACTIVITY_FORBIDDEN', /活动|权限/],
+        ['XEDU_ANSWERS_INVALID', /作答|答案/],
+    ];
+    for (const [code, pattern] of cases) {
+        const result = describeStudentSaveChrome({
+            draft,
+            phase: 'failed',
+            result: { ok: false, code, message: 'server detail', retryable: code === 'XEDU_SUBMISSION_ERROR', next_action: {
+                XEDU_PYTHON_ARTIFACT_REQUIRED: 'save_project',
+                XEDU_ARTIFACT_INVALID: 'reupload_artifact',
+                ARTIFACT_TYPE_UNSUPPORTED: 'reupload_artifact',
+                ARTIFACT_TOO_LARGE: 'reduce_artifact',
+                XEDU_SUBMISSION_ERROR: 'check_status',
+                XEDU_TASK_GRANT_INVALID: 'relaunch',
+                XEDU_ACTIVITY_FORBIDDEN: 'return_to_course',
+                XEDU_ANSWERS_INVALID: 'complete_self_check',
+            }[code] },
+        });
+        assert.match(result.statusText, pattern, code);
+        assert.equal(result.statusText.includes('server detail'), false, code);
+        assert.equal(result.retryVisible, true, code);
+        assert.equal(result.nextAction, {
+            XEDU_PYTHON_ARTIFACT_REQUIRED: 'save_project',
+            XEDU_ARTIFACT_INVALID: 'reupload_artifact',
+            ARTIFACT_TYPE_UNSUPPORTED: 'reupload_artifact',
+            ARTIFACT_TOO_LARGE: 'reduce_artifact',
+            XEDU_SUBMISSION_ERROR: 'check_status',
+            XEDU_TASK_GRANT_INVALID: 'relaunch',
+            XEDU_ACTIVITY_FORBIDDEN: 'return_to_course',
+            XEDU_ANSWERS_INVALID: 'complete_self_check',
+        }[code], code);
+    }
+});
+
+test('intermediate save status never renders success', () => {
+    const pending = describeStudentSaveChrome({
+        draft,
+        phase: 'saved',
+        result: { ok: true, status: 'accepted', platform_status: 'accepted' },
+    });
+    assert.equal(pending.statusText, '');
+    assert.equal(pending.tone, '');
+    assert.equal(pending.retryVisible, false);
+    const contradictory = describeStudentSaveChrome({
+        draft: null,
+        phase: 'saved',
+        result: { ok: false, platform_status: 'completed' },
+    });
+    assert.notEqual(contradictory.statusText, '提交成功 · 平台已确认');
+
+    const confirming = describeStudentSaveChrome({
+        draft,
+        phase: 'confirming',
+        result: { ok: false, code: 'submission_not_completed', retryable: true, next_action: 'check_status' },
+    });
+    assert.match(confirming.statusText, /确认中/);
+    assert.equal(confirming.tone, 'progress');
+    assert.equal(confirming.submitDisabled, true);
+    assert.equal(confirming.retryVisible, true);
+    assert.equal(confirming.nextAction, 'check_status');
+});
+
 test('screenshot submit stays available without a score draft', () => {
     const idle = describeStudentSaveChrome({ draft: null, phase: 'idle' });
     assert.equal(idle.submitDisabled, false);

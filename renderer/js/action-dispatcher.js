@@ -3,7 +3,28 @@ import { loadDocument } from './docs.js';
 
 const ACTIONS = Object.freeze({
     'ui.showTab': (app, element) => app.ui?.showTab?.(element.dataset.actionValue, element),
-    'ui.showModal': (app, element) => app.ui?.showModal?.(element.dataset.actionValue),
+    'ui.showModal': async (app, element) => {
+        const modalId = element.dataset.actionValue;
+        app.ui?.showModal?.(modalId);
+        if (modalId !== 'about-us-modal') return;
+
+        const version = document.getElementById('about-app-version');
+        const platform = document.getElementById('about-app-platform');
+        try {
+            const info = await window.electronAPI?.getSystemInfo?.();
+            if (version) version.textContent = info?.version ? `v${info.version}` : '开发版';
+            if (platform) {
+                const platformNames = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
+                const archNames = { arm64: 'Apple Silicon', x64: 'x64', ia32: 'x86' };
+                platform.textContent = [platformNames[info?.platform] || info?.platform, archNames[info?.arch] || info?.arch]
+                    .filter(Boolean)
+                    .join(' · ') || '未知';
+            }
+        } catch (_) {
+            if (version) version.textContent = '开发版';
+            if (platform) platform.textContent = '未知';
+        }
+    },
     'ui.hideModal': (app, element) => app.ui?.hideModal?.(element.dataset.actionValue),
     'docs.loadDocument': (_app, element) => loadDocument(element.dataset.actionValue),
     'jupyter.browseFolder': (app) => app.jupyter?.browseFolder?.(),

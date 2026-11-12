@@ -3039,6 +3039,27 @@ body.focus-mode {
     line-height: 1.7;
     color: var(--text-heading);
 }
+.about-us-build-info {
+    display: grid;
+    gap: 7px;
+    margin: 0;
+}
+.about-us-build-info > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.about-us-build-info dt {
+    color: var(--text-secondary);
+}
+.about-us-build-info dd {
+    margin: 0;
+    color: var(--text-heading);
+    font-weight: 600;
+    text-align: right;
+}
 .about-us-list {
     list-style: none;
     margin: 0;

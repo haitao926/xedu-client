@@ -788,29 +788,55 @@ function dispatchPracticeDeepLink(payload) {
 }
 
 function resolveConfiguredLocalCourseRoot(snapshot) {
+    const roots = [];
+    const projectDirectories = [];
     try {
         const configPath = path.join(app.getPath('userData'), 'config', 'config.json');
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         const configuredRoot = config?.ui?.course_root;
-        if (typeof configuredRoot !== 'string' || !path.isAbsolute(configuredRoot)) return null;
-        const root = path.resolve(configuredRoot);
-        if (!fs.statSync(root).isDirectory()) return null;
-        const matches = (directory) => {
-            try {
-                return fs.statSync(directory).isDirectory()
-                    && JSON.parse(fs.readFileSync(path.join(directory, 'course.json'), 'utf8'))?.id === snapshot.course_id;
-            } catch (_) {
-                return false;
-            }
-        };
+        if (typeof configuredRoot === 'string' && path.isAbsolute(configuredRoot)) roots.push(configuredRoot);
+        const projectDir = config?.jupyter?.project_dir;
+        if (typeof projectDir === 'string' && path.isAbsolute(projectDir)) projectDirectories.push(projectDir);
+    } catch (_) {
+    }
+    try {
+        roots.push(path.join(app.getPath('documents'), 'XeduCourses'));
+    } catch (_) {
+    }
+
+    const matches = (directory) => {
+        try {
+            return fs.statSync(directory).isDirectory()
+                && JSON.parse(fs.readFileSync(path.join(directory, 'course.json'), 'utf8'))?.id === snapshot.course_id;
+        } catch (_) {
+            return false;
+        }
+    };
+    for (const projectDirectory of projectDirectories) {
+        let current = path.resolve(projectDirectory);
+        for (let depth = 0; depth < 12; depth += 1) {
+            if (matches(current)) return current;
+            const parent = path.dirname(current);
+            if (parent === current) break;
+            current = parent;
+        }
+    }
+    const visited = new Set();
+    for (const candidateRoot of roots) {
+        const root = path.resolve(candidateRoot);
+        if (visited.has(root)) continue;
+        visited.add(root);
         if (matches(root)) return root;
+        try {
+            if (!fs.statSync(root).isDirectory()) continue;
+        } catch (_) {
+            continue;
+        }
         for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
             if (!entry.isDirectory()) continue;
             const candidate = path.join(root, entry.name);
             if (matches(candidate)) return candidate;
         }
-    } catch (_) {
-        // Missing/unreadable local configuration must not block a platform launch.
     }
     return null;
 }

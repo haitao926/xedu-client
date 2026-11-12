@@ -1,5 +1,12 @@
 async function saveCurrentJupyterProject() {
-    const context = window.jupyterapp?.shell?.currentWidget?.context;
+    const widget = window.jupyterapp?.shell?.currentWidget;
+    if (widget?.id === 'xedu-micropython-panel') {
+        if (typeof widget.exportForSubmission !== 'function') {
+            throw new Error('当前 MicroPython 编辑器尚未支持作品提交，请更新客户端后重试。');
+        }
+        return widget.exportForSubmission();
+    }
+    const context = widget?.context;
     if (!context || typeof context.save !== 'function') {
         throw new Error('The current Jupyter widget has no saveable document context.');
     }

@@ -1,6 +1,6 @@
 {
   "name": "xedu-client",
-  "version": "2.1.2",
+  "version": "2.1.6",
   "description": "专业的 Jupyter Notebook 桌面管理工具 - 重构版本",
   "main": "electron/main/main.js",
   "scripts": {
@@ -34,7 +34,7 @@
     "electron:build:minimal:win": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --config electron-builder.minimal.win.cjs --win",
     "electron:pack": "npm run build:scratch && npm run check:scratch-build && npm run build && electron-builder --dir",
     "build:micropython-extension": "npm run build --prefix jupyterlab_micropython",
-    "test:micropython-extension": "node --test jupyterlab_micropython/src/index.test.mjs"
+    "test:micropython-extension": "node --test jupyterlab_micropython/src/*.test.mjs"
   },
   "dependencies": {
     "jszip": "^3.10.1"

@@ -82,31 +82,6 @@ def validate_scratch_project_archive(
         raise InvalidScratchProject("Scratch 项目不是有效的 ZIP 文件") from exc
 
 
-_READABLE_SUFFIXES = frozenset(
-    {
-        ".blockly.json",
-        ".blockly.xml",
-        ".css",
-        ".html",
-        ".ipynb",
-        ".jpeg",
-        ".jpg",
-        ".js",
-        ".json",
-        ".md",
-        ".mp3",
-        ".mp4",
-        ".png",
-        ".py",
-        ".sb3",
-        ".svg",
-        ".toolbox.json",
-        ".txt",
-        ".webm",
-        ".webp",
-        ".xml",
-    }
-)
 _WRITABLE_SUFFIXES = frozenset({".sb3", ".toolbox.json"})
 
 
@@ -180,10 +155,10 @@ class ResourceHandleRegistry:
         target = (root / relative).resolve()
         if root != target and root not in target.parents:
             raise InvalidResourceHandle("非法资源路径")
-        suffixes = "".join(target.suffixes[-2:]) if target.suffix == ".json" and len(target.suffixes) >= 2 else target.suffix.lower()
-        allowed = _WRITABLE_SUFFIXES if operation == "write" else _READABLE_SUFFIXES
-        if suffixes.lower() not in allowed:
-            raise InvalidResourceHandle("不允许的资源类型")
+        if operation == "write":
+            suffixes = "".join(target.suffixes[-2:]) if target.suffix == ".json" and len(target.suffixes) >= 2 else target.suffix.lower()
+            if suffixes.lower() not in _WRITABLE_SUFFIXES:
+                raise InvalidResourceHandle("不允许的资源类型")
         return relative.as_posix()
 
 

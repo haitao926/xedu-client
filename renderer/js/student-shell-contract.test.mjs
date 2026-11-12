@@ -70,6 +70,22 @@ test("student shell starts at the task center without a persistent sidebar", () 
   assert.doesNotMatch(html, /id="resources-teacher-mode-btn"/);
 });
 
+test("student submission chrome consumes authorized requirements and next actions", () => {
+  const resources = readRepoFile("renderer/js/resources.js");
+  const requirements = readRepoFile("renderer/js/resources/xedu-submission-requirements.js");
+
+  assert.match(resources, /resourcesState\.xeduLocalTask = payload/);
+  assert.match(resources, /submission_requirements/);
+  assert.match(resources, /describeSubmissionRequirements\(currentSubmissionRequirements\(\)\)/);
+  assert.match(resources, /isProjectSubmissionRequired\(requirements\)/);
+  assert.match(resources, /切换到正确编辑器/);
+  assert.match(resources, /getSubmissionActionGuidance\(studentSaveResult\)/);
+  assert.match(resources, /studentSavePhase = completed \? "saved" : confirming \? "confirming" : "failed"/);
+  assert.match(requirements, /result\.ok === true/);
+  assert.match(requirements, /retryable === false/);
+  assert.match(requirements, /return_to_course/);
+});
+
 test("student experiment focus hides Jupyter controls until the student expands them", () => {
   const classes = new Set();
   const button = {
@@ -203,7 +219,7 @@ test("student mode hides the sidebar, settings, and AI page nav", () => {
   assert.doesNotMatch(resources, /export async function saveStudentScore\(|export async function uploadStudentScreenshot\(|export async function saveStudentEvidence\(|export async function saveStudentScoreAndScreenshot\(/);
   assert.match(readRepoFile("renderer/js/action-dispatcher.js"), /resources\.submitStudentScreenshot/);
   assert.doesNotMatch(readRepoFile("renderer/js/action-dispatcher.js"), /resources\.saveStudentScore|resources\.uploadStudentScreenshot|resources\.saveStudentEvidence|resources\.saveStudentScoreAndScreenshot/);
-  assert.match(resources, /platform_status === "completed"/);
+  assert.match(resources, /isSubmissionCompleted\(result\)/);
   assert.match(resources, /describeStudentSaveChrome/);
   const saveChrome = readRepoFile("renderer/js/resources/xedu-save-chrome.js");
   assert.match(saveChrome, /待保存：/);
@@ -448,6 +464,10 @@ test("about us lists software authors and the current testers with schools", () 
   const about = html.slice(html.indexOf('id="about-us-modal"'), html.indexOf("<!-- Modal -->"));
 
   assert.match(about, /data-action="ui\.hideModal" data-action-value="about-us-modal"/);
+  assert.match(about, /开发信息[\s\S]*id="about-app-version"[\s\S]*id="about-app-platform"/);
+  const actionDispatcher = readRepoFile("renderer/js/action-dispatcher.js");
+  assert.match(actionDispatcher, /getSystemInfo\?\.\(\)/);
+  assert.match(actionDispatcher, /about-app-version[\s\S]*about-app-platform/);
   assert.match(about, /王海涛[\s\S]*上海科技大学附属学校/);
   assert.match(about, /邱奕盛[\s\S]*上海科技大学附属学校/);
   assert.match(about, /项目指导：[\s\S]*谢作如/);

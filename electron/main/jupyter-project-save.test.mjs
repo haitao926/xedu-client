@@ -208,3 +208,43 @@ test('export rejects a document that changes to an unsupported type while saving
     await assert.rejects(async () => executeExport(document.window), /ipynb|python|supported|path/i);
     assert.deepEqual(document.events, []);
 });
+
+test('export saves the active MicroPython panel instead of a stale notebook context', async () => {
+    const file = { bytes: [112, 114, 105, 110, 116, 40, 49, 41], filename: 'main.py', mime: 'text/plain' };
+    const events = [];
+    const document = makeDocument('stale.ipynb');
+    document.window.jupyterapp.shell.currentWidget = {
+        id: 'xedu-micropython-panel',
+        context: document.context,
+        async exportForSubmission() {
+            events.push('export');
+            return file;
+        },
+    };
+
+    const result = await executeExport(document.window);
+
+    assert.equal(result.filename, 'main.py');
+    assert.equal(result.mime, 'text/plain');
+    assert.deepEqual(Array.from(result.bytes), file.bytes);
+    assert.deepEqual(events, ['export']);
+    assert.deepEqual(document.events, []);
+});
+
+test('MicroPython export failure does not fall back to an unrelated notebook', async () => {
+    const document = makeDocument('stale.ipynb');
+    document.window.jupyterapp.shell.currentWidget = {
+        id: 'xedu-micropython-panel',
+        context: document.context,
+        async exportForSubmission() { throw new Error('MicroPython save failed'); },
+    };
+
+    await assert.rejects(async () => executeExport(document.window), /MicroPython save failed/);
+    assert.deepEqual(document.events, []);
+});
+
+test('MicroPython without a submission exporter reports the missing integration', async () => {
+    await assert.rejects(async () => executeExport({
+        jupyterapp: { shell: { currentWidget: { id: 'xedu-micropython-panel' } } },
+    }), /MicroPython/);
+});

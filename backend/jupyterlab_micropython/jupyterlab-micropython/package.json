@@ -30,7 +30,7 @@
     "extension": true,
     "outputDir": "jupyterlab_micropython/jupyterlab-micropython",
     "_build": {
-      "load": "static/remoteEntry.35859acdb255d30bc1de.js",
+      "load": "static/remoteEntry.e01171edd6240bd454a0.js",
       "extension": "./extension",
       "xeduCoreVersion": "4.5.9"
     }

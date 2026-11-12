@@ -37,14 +37,14 @@ MicroPython 留在现有的 JupyterLab 实验页里。学生外壳（课程任�
 
 ## 开发与安装包
 
-- 预构建插件位于 `backend/jupyterlab_micropython/labextension/`。打包后在 `Resources/backend/jupyterlab_micropython/labextension/`。
+- 预构建插件位于 `backend/jupyterlab_micropython/jupyterlab-micropython/`。打包后在 `Resources/backend/jupyterlab_micropython/jupyterlab-micropython/`。
 - JupyterLab 运行时是 `4.5.9`。插件 `package.json` 里的 `@jupyterlab/*` 依赖必须和这个版本重叠，否则 `jupyter labextension list` 会把它标成过期，启动器里就像没有插件。
 - 每次启动 Jupyter，Client 会跳过空的 labextension 目录，并把这份已构建插件复制到用户数据目录的 `jupyter_data/labextensions/jupyterlab-micropython/`，放到 `JUPYTER_PATH` 前面。这样安装包里的文件存在时，代码模式可以稳定出现。
 - 设备接口仍是 Jupyter 同源的 `/xedu-micropython/*`（含 `upload`）。不要再把学生指到单独的 Thonny。
 
 ## 常见问题
 
-- **启动器里没有 MicroPython**：确认上面的 labextension 目录里有 `package.json` 和 `static/remoteEntry.*.js`，然后重新打开实验。空目录不会再挡住后面的正式插件。
+- **启动器里没有 MicroPython**：确认上面的插件目录里有 `package.json` 和 `static/remoteEntry.*.js`，然后重新打开实验。空目录不会再挡住后面的正式插件。
 - **没有串口**：检查 USB 是否支持数据传输，并确认系统已安装 CH340、CP210x 或板卡对应的串口驱动。
 - **串口被占用**：关闭其他串口监视器、Arduino Serial Monitor 或 Thonny 后重试。
 - **没有 MicroPython 提示**：开发板可能还没有刷入 MicroPython 固件。

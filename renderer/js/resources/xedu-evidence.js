@@ -7,8 +7,11 @@ export function evidenceExperimentKind({ tabId = 'route', experiment = null, ove
         if (Array.isArray(overview?.scratchFiles) && overview.scratchFiles.length) return 'scratch';
         return experiment ? 'screenshot' : '';
     }
-    if (tab === 'python' && !isMicroPythonExperiment(experiment)) {
-        return Array.isArray(overview?.notebookFiles) && overview.notebookFiles.length ? 'notebook' : 'screenshot';
+    if (tab === 'python') {
+        const hasProject = isMicroPythonExperiment(experiment)
+            || (Array.isArray(overview?.notebookFiles) && overview.notebookFiles.length > 0)
+            || (Array.isArray(overview?.pythonFiles) && overview.pythonFiles.length > 0);
+        return hasProject ? 'notebook' : 'screenshot';
     }
     if (tab !== 'route' && experiment) return 'screenshot';
     return '';

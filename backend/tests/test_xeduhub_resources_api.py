@@ -111,7 +111,8 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
         course_dir.mkdir()
         (course_dir / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
         (course_dir / "cover.png").write_bytes(b"png")
-        (course_dir / "payload.exe").write_bytes(b"binary")
+        (course_dir / "room.glb").write_bytes(b"glb-model")
+        (course_dir / "payload.bin").write_bytes(b"binary")
         outside_file = Path(self.temp_dir.name) / "outside.txt"
         outside_file.write_text("private", encoding="utf-8")
 
@@ -128,16 +129,21 @@ class XEduHubResourcesApiTestCase(unittest.TestCase):
             self.client.get(f"/api/resources/local-file/{handle}/cover.png").status_code,
             200,
         )
+        model = self.client.get(f"/api/resources/local-file/{handle}/room.glb")
+        self.assertEqual(model.status_code, 200)
+        self.assertEqual(model.get_data(), b"glb-model")
+        model.close()
         traversal = self.client.get(
             f"/api/resources/local-file/{handle}/%2e%2e%2f{outside_file.name}"
         )
         self.assertEqual(traversal.status_code, 400)
         self.assertEqual(traversal.get_json()["message"], "非法资源路径")
-        disallowed = self.client.get(
-            f"/api/resources/local-file/{handle}/payload.exe"
+        custom_asset = self.client.get(
+            f"/api/resources/local-file/{handle}/payload.bin"
         )
-        self.assertEqual(disallowed.status_code, 400)
-        self.assertEqual(disallowed.get_json()["message"], "不允许的资源类型")
+        self.assertEqual(custom_asset.status_code, 200)
+        self.assertEqual(custom_asset.get_data(), b"binary")
+        custom_asset.close()
         expired = self.client.get(
             f"/api/resources/local-file/{expired_handle}/index.html"
         )

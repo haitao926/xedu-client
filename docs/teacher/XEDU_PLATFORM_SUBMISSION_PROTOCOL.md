@@ -8,11 +8,11 @@
 
 ## 学生在焦点栏看到的操作
 
-进入实验后的顶栏保留：返回任务中心、当前任务名、AI 助手、**截图并提交**。没有进度条。没有「保存成绩」「保存成绩并截图」，也不会按 HTML / Scratch / Notebook 换成另一套成绩按钮。
+进入实验后的顶栏保留：返回任务中心、当前任务名、AI 助手、**保存并提交**。Scratch 和 Notebook 保存当前作品文件后提交；HTML 不显示文件提交按钮，由页面自身提交成绩或作答。没有「保存成绩」「保存成绩并截图」。
 
 | 按钮 | 行为 |
 | --- | --- |
-| 截图并提交 | 唯一的顶栏提交按钮。HTML、Scratch、Notebook 都是这一颗。截取当前实验视图（含 iframe 里的 canvas），不截全桌面。Scratch / Notebook 按证据提交，带 `evidence.experiment`。其它材料是无分数证据：`name` / `raw_score` / `score` 为 `null`，`passed` 为 `true`。 |
+| 保存并提交 | Scratch / Notebook 顶栏按钮。先保存当前作品文件，再上传 `.sb3`、`.ipynb` 或 `.py` 并提交。HTML 不显示此按钮，由页面自身提交成绩或作答。 |
 
 HTML 互动成绩不走顶栏按钮。页面表单通过 `postMessage` 把成绩交给宿主（`xedu:submit-request`、`ols-score/1` 或 `{name, value}`）。有效成绩会按原来的成绩提交协议发给平台，有作答袋时一并带上 `answers`。顶栏显示保存中；只有平台回执 `status: "completed"` 才显示「平台已保存」。
 
@@ -20,7 +20,9 @@ HTML 互动成绩不走顶栏按钮。页面表单通过 `postMessage` 把成绩
 
 ## 启动
 
-`xedu://open-local-task?launch_grant=...&platform_origin=https%3A%2F%2F...`
+`xedu://open-local-task?launch_grant=...&platform_origin=<HTTP(S) origin>`
+
+`platform_origin` 接受有效的 HTTP 或 HTTPS 地址，包括内网 IP、域名和 localhost；无需在每台 Client 登记服务器地址。
 
 Client 向 `{platform_origin}/api/xedu/v1/launch/exchange` 发送：
 
@@ -34,9 +36,9 @@ Client 向 `{platform_origin}/api/xedu/v1/launch/exchange` 发送：
 
 服务端必须原样确认 `protocol_version` 和 `contract_revision`。不一致就停止，并提示协议版本不一致。Client 不会改用旧版本再试一次。
 
-现场 LearnSite / classroom 仍使用更早的深链：`xedu://open-local-task?grant=...&platform_origin=https%3A%2F%2F...`。两条都在时用 `launch_grant`。只带 `grant` 时，兑换请求是 `Authorization: Bearer <grant>`，正文只有 `{ "protocol_version": 1 }`。成功响应可以用 `grant` 作为任务令牌，也可以不带 `contract_revision`。响应里如果写了别的 `contract_revision`，仍然停止。`launch_grant` 链接继续按上面的 2026-09-22 正文兑换。
+现场 LearnSite / classroom 仍使用更早的深链：`xedu://open-local-task?grant=...&platform_origin=<HTTP(S) origin>`。两条都在时用 `launch_grant`。只带 `grant` 时，兑换请求是 `Authorization: Bearer <grant>`，正文只有 `{ "protocol_version": 1 }`。成功响应可以用 `grant` 作为任务令牌，也可以不带 `contract_revision`。响应里如果写了别的 `contract_revision`，仍然停止。`launch_grant` 链接继续按上面的 2026-09-22 正文兑换。
 
-兑换、课程包 GET、截图上传和提交共用主进程的同一条 Node `https` 请求。URL 主机名是 `localhost`、`127.0.0.1` 或 `::1` 时，接受本机 Caddy 自签或私有 CA 证书，不校验该证书。其它主机仍走 Node 默认信任库。不要用 `NODE_TLS_REJECT_UNAUTHORIZED=0` 启动 Client：那会关掉所有主机的校验。`package_url` 若不是上述回环主机名，仍必须是受信任的 HTTPS。
+兑换、课程包 GET、作品文件上传和提交共用主进程的 HTTP(S) 请求。Client 接受有效的 HTTP 或 HTTPS `platform_origin`，不需要逐台配置可信主机或登记学校 IP；HTTP 不限于 RFC1918 地址。HTTPS 下，`localhost`、`127.0.0.1` 或 `::1` 可使用本机 Caddy 自签或私有 CA 证书，其它主机仍走 Node 默认信任库。不要用 `NODE_TLS_REJECT_UNAUTHORIZED=0` 启动 Client：那会关掉所有主机的校验。课程包和提交接口仍必须与启动 origin 完全同源。
 
 在 Mac 上用正式包核对本地 LearnSite（不要加那个环境变量）：
 
@@ -70,11 +72,11 @@ HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 
 
 可选作答袋 `answers` 可以和成绩一起出现。两字段消息允许的键只有 `name`、`value`，以及可选的 `answers`。`ols-score/1` 和旧的 `xedu:submit-request` 也读取同一字段。`answers` 必须是 JSON 对象或数组。缺省、`null` 表示没有作答袋，成绩仍可保存。字符串和其他标量会拒绝这次草稿。序列化后超过 32KB 也会拒绝，已有草稿保留。函数、`undefined` 和循环引用按 JSON 规则去掉或拒绝。
 
-有效成绩消息会提交，顶栏不再提供「保存成绩」。保存进行中的新消息留作下一稿，当前这次结束后再提交。没有草稿时不会发出成绩提交。「截图并提交」不需要成绩草稿。
+有效成绩消息会提交，顶栏不再提供「保存成绩」。带 `request_id` 的 `xedu:submit-request`（HTML 路径 B）会在提交完成后向 iframe 回发 `xedu:submit-response`（`ok` + `status: "completed"` 或失败 `error`）。保存进行中的新消息留作下一稿，当前这次结束后再提交。没有草稿时不会发出成绩提交。作品文件提交不需要成绩草稿。
 
 ## 上传和提交
 
-1. `POST /api/xedu/v1/artifacts`：原始图片字节，`Content-Type` 为 `image/png`、`image/jpeg` 或 `image/webp`，并带 `X-XEdu-Filename`、`X-XEdu-SHA256`。单张不超过 10MiB。返回的 `upload_id` 只是暂存。
+1. `POST /api/xedu/v1/artifacts`：原始作品字节，`Content-Type` 为 `application/x.scratch.sb3`、`application/x-ipynb+json` 或 `text/plain`（Python 文件），并带 `X-XEdu-Filename`、`X-XEdu-SHA256`。单个文件不超过 10MiB。返回的 `upload_id` 只是暂存。
 2. `POST /api/xedu/v1/submissions`：带上 grant 快照里的课程三元组、`course_version`、`package_sha256`，以及分数或至少一个 `upload_id`。
 3. 超时后先 `GET /api/xedu/v1/submissions/status?request_id=`。
 
@@ -92,9 +94,9 @@ HTML 实验只通过 `window.parent.postMessage` 把成绩交给宿主。Client 
 
 自动计分的 HTML 实验仍要带 `ols-score/1` 或 `{name, value}` 成绩。平台在「声称了分数」且 `passed` 不是 `true` 时返回 `XEDU_RESULT_NOT_PASSED`。Client 不把这次保存记为完成，不自动重试，草稿保留，并提示这次成绩还没有通过。`passed: true` 的成绩按原来的完成回执处理。Client 不会把已声称的分数上的 `passed` 改成 `true`。
 
-没有分数的证据提交（`name` / `raw_score` / `score` 都是 `null`）必须带 `passed: true`。这表示学生完成了一次证据保存，不是自动计分。Scratch、Notebook 和「截图并提交」都按这条发送。不带 `answers`。
+没有分数的作品提交（`name` / `raw_score` / `score` 都是 `null`）必须带 `passed: true`。这表示学生完成了一次作品保存，不是自动计分。Scratch 和 Notebook 按这条发送。不带 `answers`。
 
-Scratch 和 Notebook 用证据提交。学生点「截图并提交」后，Client 走同一条截图上传，并带上 `evidence.experiment`。成功且 `status: "completed"` 后，焦点栏显示「已保存」。已有成绩草稿不会被这次证据提交清掉。
+Scratch、Notebook、普通 Python 和 MicroPython 使用作品文件提交。学生点「保存并提交」后，Client 先保存当前 Scratch `.sb3`、Jupyter `.ipynb`/`.py` 或 MicroPython 编辑器里的 `.py`，再上传作品文件并带上 `evidence.experiment`。MicroPython 导出本次保存的文件名和代码快照，不要求开发板已连接。成功且 `status: "completed"` 后，焦点栏显示「已保存」。已有成绩草稿不会被这次作品提交清掉。
 
 ```json
 {
@@ -111,16 +113,16 @@ Scratch 和 Notebook 用证据提交。学生点「截图并提交」后，Clien
     }
   ],
   "evidence": {
-    "type": "screenshot",
+      "type": "project_file",
     "experiment": "scratch",
-    "project_file": null
+    "project_file": "<同一附件描述>"
   }
 }
 ```
 
 `evidence.experiment` 是 `"scratch"` 或 `"notebook"`。Notebook 截的是当前 Jupyter 视图；Scratch 和 HTML 截的是当前实验区域，不截全桌面。
 
-`project_file` 现在固定是 `null`。作品文件（`.sb3` / `.ipynb`）还没有上传：现有 `/api/xedu/v1/artifacts` 只收 PNG、JPEG、WebP。以后平台接受非图片字节时，再把导出的工程文件作为可选附件，并填上 `project_file`。在那之前截图就是证据。
+作品文件作为 `/api/xedu/v1/artifacts` 的正式附件上传。Scratch 使用 `application/x.scratch.sb3`，Notebook 使用 `application/x-ipynb+json`，当前 Python 文件使用服务端接受的 `text/plain`。提交正文同时带 `artifacts`（含 `upload_id`、`sha256`、`size`）和兼容性的 `attachments`。
 
 同一次保存的 `request_id` 不变，重试时正文也不变。自动重试最多 3 次，间隔 1 秒、2 秒、4 秒。同一任务同时只有一个在途保存。409 冲突、作业锁定、成绩无效、授权过期、`XEDU_RESULT_NOT_PASSED` 不会重试。
 
@@ -133,7 +135,11 @@ Scratch 和 Notebook 用证据提交。学生点「截图并提交」后，Clien
 | `score_invalid` | 成绩无效。请使用 0 到 100 之间的数字，0 分也会保留。 |
 | `work_locked` | 这份作业已锁定，暂时不能再保存。 |
 | `conflict` | 保存发生冲突，请从学习平台重新打开后再试。 |
-| `package_invalid` / `course_id_mismatch` | 课程包校验失败，或 course.json 的 id 与任务不一致。 |
+| `package_invalid`（授权接口返回） | 保留平台提供的安全错误说明；平台拒绝配置时尚未下载或读取本地课程。 |
+| `package_metadata_invalid` / `package_url_invalid` | 平台下发的课程包字段不完整，或下载地址无效、不同源。 |
+| `package_size_mismatch` / `package_hash_mismatch` | 下载的字节大小或 SHA-256 与平台声明不一致。 |
+| `package_zip_invalid` / `package_manifest_invalid` / `package_resource_missing` | ZIP 无法解压、course.json 无效，或缺少指定资源。 |
+| `course_id_mismatch` | course.json 的 id 与任务课程编号不一致。 |
 | `grant_invalid` | 学习平台没有返回有效的任务授权，请重新打开。 |
 | `rate_limited` | 保存太频繁，请稍后再试。 |
 | `screenshot_failed` | 截图失败，没有上传。成绩草稿还在。 |
@@ -149,7 +155,7 @@ Scratch 和 Notebook 用证据提交。学生点「截图并提交」后，Clien
 
 ## 还需要真实 LearnSite Mock / T20 确认
 
-客户端用本地 HTTPS 模拟覆盖了兑换、校验、截图上传和提交。下面几项还没有对着真实 LearnSite 跑过：
+客户端用本地 HTTPS 模拟覆盖了兑换、校验、作品文件上传和提交。下面几项还没有对着真实 LearnSite 跑过：
 
 - 兑换响应里的字段名、`task_grant` 头和 `grant_expires_at` 是否与平台 Mock 完全一致
 - `package_url` 的真实下载主机、重定向和大小字段

@@ -28,6 +28,10 @@ const SCREENSHOT_MIME = Object.freeze({
     'image/jpeg': '.jpg',
     'image/webp': '.webp',
 });
+const NEXT_ACTIONS = new Set([
+    'save_project', 'reupload_artifact', 'reduce_artifact', 'relaunch', 'return_to_course',
+    'complete_self_check', 'retry_submission', 'check_status', 'contact_teacher', 'fix_request',
+]);
 
 const STUDENT_MESSAGES = Object.freeze({
     protocol_mismatch: '学习平台协议版本与客户端不一致，已停止打开。请更新后再从平台重新进入。',
@@ -37,6 +41,14 @@ const STUDENT_MESSAGES = Object.freeze({
     work_locked: '这份作业已锁定，暂时不能再保存。',
     conflict: '保存发生冲突，请从学习平台重新打开后再试。',
     package_invalid: '课程包校验失败，请从学习平台重新打开。',
+    package_metadata_invalid: '平台下发的课程包信息不完整，请让教师重新上传并绑定课程包。',
+    package_url_invalid: '平台下发的课程包地址无效或与学习平台地址不一致。',
+    package_size_mismatch: '下载课程包大小与平台声明不一致。请检查平台课程包文件或服务器代理。',
+    package_hash_mismatch: '下载课程包的 SHA-256 与平台声明不一致。请重新上传并绑定课程包。',
+    package_zip_invalid: '平台返回的课程包不是有效 ZIP 或包含无法读取的压缩内容。',
+    package_manifest_invalid: '课程包中的 course.json 格式无效。',
+    package_resource_missing: '课程包缺少本次任务指定的实验文件。',
+    local_course_refresh_failed: '课程包已校验，但更新本地课程目录失败。',
     course_id_mismatch: '课程包编号与任务不一致，已停止打开。课程编号以 course.json 的 id 为准。',
     screenshot_failed: '截图失败，没有上传。成绩草稿还在。',
     screenshot_too_large: '截图超过 10MB，没有上传。',
@@ -46,6 +58,15 @@ const STUDENT_MESSAGES = Object.freeze({
     no_score_draft: '还没有可保存的成绩。',
     answers_invalid: '作答内容格式无效，成绩没有保存。',
     answers_too_large: '作答内容超过 32KB，成绩没有保存。',
+    XEDU_PYTHON_ARTIFACT_REQUIRED: '请先保存并提交本次 Python 或 Notebook 作品文件。',
+    XEDU_ARTIFACT_INVALID: '作品文件无效或已损坏，请重新保存后提交。',
+    ARTIFACT_TYPE_UNSUPPORTED: '当前作品文件类型不受支持，请提交 Python、Notebook 或 Scratch 文件。',
+    ARTIFACT_TOO_LARGE: '作品文件超过平台大小限制，请提交较小的文件。',
+    XEDU_SUBMISSION_ERROR: '学习平台保存结果暂时无法确认，请先查询提交状态。',
+    XEDU_TASK_GRANT_INVALID: '任务授权无效或已过期，请从学习平台重新打开。',
+    XEDU_ACTIVITY_FORBIDDEN: '当前学生无权提交此活动，请返回课程并重新打开正确的活动。',
+    XEDU_ANSWERS_INVALID: '作答内容无效，请完成自查后重新提交。',
+    XEDU_REQUEST_ID_CONFLICT: '上一次提交仍待确认，请先查询该提交状态后再提交新内容。',
     XEDU_RESULT_NOT_PASSED: '这次成绩还没有通过，平台没有记为完成。',
     no_active_task: '请从学习平台重新打开这个任务。',
     submission_not_completed: '学习平台尚未确认完成，请稍后再试。',
@@ -57,6 +78,55 @@ const STUDENT_MESSAGES = Object.freeze({
     project_file_unsupported: '作品已保存在本地，但学习平台尚不支持作品文件上传。',
     forbidden: '当前窗口不能执行这个操作。',
 });
+
+const STUDENT_NEXT_ACTIONS = Object.freeze({
+    XEDU_PYTHON_ARTIFACT_REQUIRED: 'save_project',
+    XEDU_ARTIFACT_INVALID: 'reupload_artifact',
+    ARTIFACT_TYPE_UNSUPPORTED: 'reupload_artifact',
+    ARTIFACT_TOO_LARGE: 'reduce_artifact',
+    XEDU_SUBMISSION_ERROR: 'check_status',
+    XEDU_TASK_GRANT_INVALID: 'relaunch',
+    XEDU_ACTIVITY_FORBIDDEN: 'return_to_course',
+    XEDU_ANSWERS_INVALID: 'complete_self_check',
+    XEDU_RESULT_NOT_PASSED: 'complete_self_check',
+    XEDU_REQUEST_ID_CONFLICT: 'fix_request',
+    screenshot_failed: 'retry_submission',
+    project_save_failed: 'retry_submission',
+    attachment_invalid: 'reupload_artifact',
+    grant_expired: 'relaunch',
+    grant_invalid: 'relaunch',
+    no_score_draft: 'complete_self_check',
+    submission_not_completed: 'check_status',
+});
+
+function safeNextAction(value, fallback = '') {
+    return typeof value === 'string' && NEXT_ACTIONS.has(value) ? value : fallback;
+}
+
+function safeSubmissionRequirements(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    try {
+        const json = JSON.stringify(value);
+        if (!json || Buffer.byteLength(json, 'utf8') > 16 * 1024) return undefined;
+        const cloned = JSON.parse(json);
+        const pending = [cloned];
+        let visited = 0;
+        while (pending.length) {
+            const item = pending.pop();
+            if (!item || typeof item !== 'object') continue;
+            visited += 1;
+            if (visited > 512) return undefined;
+            for (const key of Object.keys(item)) {
+                if (key === '__proto__' || key === 'prototype' || key === 'constructor') return undefined;
+                const child = item[key];
+                if (child && typeof child === 'object') pending.push(child);
+            }
+        }
+        return cloned;
+    } catch (_) {
+        return undefined;
+    }
+}
 
 const SUCCESS_MESSAGES = Object.freeze({
     score: '成绩已保存，平台已确认完成。',
@@ -100,12 +170,16 @@ function createLaunchOpener(openLocalTask) {
     };
 }
 
+function safeStudentFallbackMessage(fallback = '') {
+    const text = String(fallback || '').trim();
+    if (text && text.length <= 180 && !/authorization|bearer|grant|token/i.test(text)) return text;
+    return '';
+}
+
 function studentMessage(code, fallback = '') {
     const canonical = canonicalPlatformCode(code);
     if (STUDENT_MESSAGES[canonical]) return STUDENT_MESSAGES[canonical];
-    const text = String(fallback || '').trim();
-    if (text && text.length <= 180 && !/bearer|grant|token/i.test(text)) return text;
-    return '保存没有完成，请稍后再试。';
+    return safeStudentFallbackMessage(fallback) || '保存没有完成，请稍后再试。';
 }
 
 function failure(code, extra = {}) {
@@ -114,9 +188,11 @@ function failure(code, extra = {}) {
         status: Number.isFinite(extra.status) ? extra.status : 0,
         platform_status: '',
         code,
-        message: studentMessage(code, extra.serverMessage),
+        message: extra.message || studentMessage(code, extra.serverMessage),
         retryable: Boolean(extra.retryable),
+        next_action: safeNextAction(extra.next_action || extra.nextAction, STUDENT_NEXT_ACTIONS[code] || ''),
         request_id: extra.requestId || '',
+        diagnostic_id: extra.diagnosticId || '',
         has_draft: Boolean(extra.hasDraft),
         draft: extra.draft || null,
         timedOut: Boolean(extra.timedOut),
@@ -131,10 +207,11 @@ function success(mode, extra = {}) {
         platform_status: 'completed',
         code: '',
         mode,
-        message: SUCCESS_MESSAGES[mode] || '平台已确认完成。',
+        message: extra.message || SUCCESS_MESSAGES[mode] || '平台已确认完成。',
         retryable: false,
         request_id: extra.requestId || '',
         receipt_id: extra.receiptId || '',
+        progress_sync_status: extra.progressSyncStatus || '',
         has_draft: Boolean(extra.hasDraft),
         draft: extra.draft || null,
     };
@@ -524,6 +601,7 @@ function createLocalTaskSession(options = {}) {
 
     const drafts = new Map();
     const nextDrafts = new Map();
+    const submissionAttempts = new Map();
     let snapshot = null;
     let activeKey = '';
     let taskGrant = '';
@@ -566,6 +644,9 @@ function createLocalTaskSession(options = {}) {
             lab_base_url: labBaseUrl,
             course: courseRecord,
             activity_tasks: activityTasks,
+            ...(snapshot && Object.prototype.hasOwnProperty.call(snapshot, 'submission_requirements')
+                ? { submission_requirements: snapshot.submission_requirements }
+                : {}),
             restored_draft: draft,
             has_draft: Boolean(draft),
             draft,
@@ -611,13 +692,14 @@ function createLocalTaskSession(options = {}) {
         const httpStatus = response.networkError ? 0 : response.status;
         let code = canonicalPlatformCode(typeof payload.code === 'string' ? payload.code : '');
         if (response.timedOut) code = code || 'network';
-        if (httpStatus === 401) code = 'grant_expired';
+        if (httpStatus === 401 && !code) code = 'grant_expired';
         if (httpStatus === 429 && (!code || code === 'network' || code === 'rate_limited')) code = 'rate_limited';
         if (httpStatus === 409 && code !== 'work_locked') code = code || 'conflict';
         if (code === 'work_locked' || httpStatus === 423) code = 'work_locked';
         if (!code) code = response.networkError ? 'network' : 'network';
         const neverRetry = [
             'grant_expired',
+            'XEDU_TASK_GRANT_INVALID',
             'protocol_mismatch',
             'score_invalid',
             'work_locked',
@@ -626,7 +708,7 @@ function createLocalTaskSession(options = {}) {
             'package_invalid',
             'XEDU_RESULT_NOT_PASSED',
         ].includes(code);
-        const retryable = !neverRetry && (
+        const computedRetryable = !neverRetry && (
             response.timedOut
             || response.networkError
             || httpStatus === 408
@@ -634,12 +716,17 @@ function createLocalTaskSession(options = {}) {
             || httpStatus >= 500
             || payload.retryable === true
         ) && payload.retryable !== false;
-        if (code === 'grant_expired' || httpStatus === 401) clearGrantKeepDraft();
+        const retryable = neverRetry
+            ? false
+            : (typeof payload.retryable === 'boolean' ? payload.retryable : computedRetryable);
+        if (code === 'grant_expired' || code === 'XEDU_TASK_GRANT_INVALID') clearGrantKeepDraft();
         return failure(code, {
             status: httpStatus,
             serverMessage: payload.message,
             retryable,
+            next_action: safeNextAction(payload.next_action, STUDENT_NEXT_ACTIONS[code] || ''),
             requestId: payload.request_id || requestId || '',
+            diagnosticId: payload.diagnostic_id || '',
             timedOut: Boolean(response.timedOut),
             hasDraft: Boolean(draftForActive()),
             draft: draftForActive(),
@@ -692,6 +779,13 @@ function createLocalTaskSession(options = {}) {
         });
         if (response.networkError || response.status < 200 || response.status >= 300) {
             const error = interpretPlatformError(response, '');
+            if (error.code === 'package_invalid') {
+                return {
+                    ...error,
+                    message: safeStudentFallbackMessage(readJsonBody(response.body)?.message)
+                        || STUDENT_MESSAGES.package_metadata_invalid,
+                };
+            }
             if (error.code === 'protocol_mismatch' || error.code === 'grant_expired') return error;
             if (response.networkError || error.retryable) {
                 return failure('network', { status: response.status || 0, timedOut: response.timedOut, retryable: true });
@@ -701,8 +795,12 @@ function createLocalTaskSession(options = {}) {
         const payload = readJsonBody(response.body);
         if (!payload || payload.ok === false) {
             const code = canonicalPlatformCode(typeof payload?.code === 'string' ? payload.code : '');
-            return failure(code === 'protocol_unsupported' ? 'protocol_mismatch' : (code || 'grant_invalid'), {
+            const resolvedCode = code === 'protocol_unsupported' ? 'protocol_mismatch' : (code || 'grant_invalid');
+            return failure(resolvedCode, {
                 status: response.status,
+                message: resolvedCode === 'package_invalid'
+                    ? (safeStudentFallbackMessage(payload?.message) || STUDENT_MESSAGES.package_metadata_invalid)
+                    : '',
                 serverMessage: payload?.message,
             });
         }
@@ -713,9 +811,28 @@ function createLocalTaskSession(options = {}) {
         if (!taskToken) return failure('grant_invalid', { status: response.status });
         const nextSnapshot = normalizeSnapshot(payload, link.platformOrigin);
         if (!nextSnapshot.ok) return nextSnapshot;
-        const local = await resolveLocalCourse(nextSnapshot.snapshot);
-        const downloaded = local || await ensurePackage(nextSnapshot.snapshot, payload.package_url);
-        if (!downloaded.ok) return downloaded;
+        const localCourseRoot = await resolveLocalCourseRoot(nextSnapshot.snapshot);
+        const localCourse = localCourseRoot
+            ? JSON.parse(fs.readFileSync(path.join(localCourseRoot, 'course.json'), 'utf8'))
+            : null;
+        let downloaded = await ensurePackage(nextSnapshot.snapshot, payload.package_url);
+        if (!downloaded.ok) {
+            if (!localCourse || String(localCourse.version || '') !== nextSnapshot.snapshot.course_version) return downloaded;
+            console.warn(`课程包下载校验未通过，改用版本匹配的本地课程：${localCourse.id} ${localCourse.version}`);
+            downloaded = {
+                ok: true,
+                extractedRoot: localCourseRoot,
+                course: { ...localCourse, local_path: localCourseRoot, source: 'local' },
+            };
+        } else if (localCourseRoot && path.resolve(localCourseRoot) !== path.resolve(downloaded.extractedRoot)) {
+            const refreshed = replaceLocalCourse(localCourseRoot, downloaded.extractedRoot);
+            if (!refreshed.ok) return refreshed;
+            downloaded = {
+                ...downloaded,
+                extractedRoot: localCourseRoot,
+                course: { ...downloaded.course, local_path: localCourseRoot, source: 'local' },
+            };
+        }
         const hosted = await ensureHost(downloaded.extractedRoot);
         if (!hosted.ok) return hosted;
         snapshot = nextSnapshot.snapshot;
@@ -763,12 +880,12 @@ function createLocalTaskSession(options = {}) {
             : String(payload.course_version);
         const packageSize = Number(payload.package_size);
         if (!courseId || !payload.activity_id || (!courseLaunch && !resourceId) || !courseVersion || !/^[a-f0-9]{64}$/.test(sha)) {
-            return failure('package_invalid');
+            return failure('package_metadata_invalid');
         }
-        if (!Number.isFinite(packageSize) || packageSize < 0) return failure('package_invalid');
+        if (!Number.isSafeInteger(packageSize) || packageSize <= 0) return failure('package_metadata_invalid');
         if (!courseLaunch && (resourceId.startsWith('/') || resourceId.includes(':') || resourceId.includes('\0')
             || resourceId.split('/').some((part) => !part || part === '.' || part === '..')
-            || !/\.(html?|ipynb|py|sb3)$/i.test(resourceId))) return failure('package_invalid');
+            || !/\.(html?|ipynb|py|sb3)$/i.test(resourceId))) return failure('package_metadata_invalid');
         return {
             ok: true,
             snapshot: {
@@ -782,11 +899,19 @@ function createLocalTaskSession(options = {}) {
                 course_version: courseVersion,
                 package_sha256: sha,
                 package_size: packageSize,
+                ...(() => {
+                    const submissionRequirements = Object.prototype.hasOwnProperty.call(payload, 'submission_requirements')
+                        ? safeSubmissionRequirements(payload.submission_requirements)
+                        : undefined;
+                    return submissionRequirements === undefined
+                        ? {}
+                        : { submission_requirements: submissionRequirements };
+                })(),
             },
         };
     }
 
-    async function resolveLocalCourse(nextSnapshot) {
+    async function resolveLocalCourseRoot(nextSnapshot) {
         try {
             const candidate = options.resolveLocalCourseRoot
                 ? await options.resolveLocalCourseRoot({ ...nextSnapshot })
@@ -795,19 +920,42 @@ function createLocalTaskSession(options = {}) {
             const root = path.resolve(candidate);
             if (!fs.statSync(root).isDirectory()) return null;
             const course = JSON.parse(fs.readFileSync(path.join(root, 'course.json'), 'utf8'));
-            if (!course || course.id !== nextSnapshot.course_id) return null;
+            if (course?.id !== nextSnapshot.course_id) return null;
             if (nextSnapshot.launch_scope !== 'course') {
                 const resource = safeZipDestination(root, nextSnapshot.resource_id);
                 if (!resource || !fs.statSync(resource).isFile()) return null;
-                // A local symlink must not let a platform resource escape the course.
                 const relative = path.relative(fs.realpathSync(root), fs.realpathSync(resource));
                 if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
             }
-            course.local_path = root;
-            course.source = 'local';
-            return { ok: true, extractedRoot: root, course };
+            return root;
         } catch (_) {
             return null;
+        }
+    }
+
+    function replaceLocalCourse(targetRoot, sourceRoot) {
+        const target = path.resolve(targetRoot);
+        const source = path.resolve(sourceRoot);
+        if (target === source) return { ok: true };
+        const targetParent = path.dirname(target);
+        const staged = fs.mkdtempSync(path.join(targetParent, `.${path.basename(target)}.xedu-`));
+        const backup = `${target}.previous-${process.pid}`;
+        try {
+            fs.cpSync(source, staged, { recursive: true, force: true });
+            fs.rmSync(path.join(staged, '.xedu-package-sha256'), { force: true });
+            fs.rmSync(backup, { recursive: true, force: true });
+            if (fs.existsSync(target)) fs.renameSync(target, backup);
+            try {
+                fs.renameSync(staged, target);
+            } catch (error) {
+                if (fs.existsSync(backup) && !fs.existsSync(target)) fs.renameSync(backup, target);
+                throw error;
+            }
+            fs.rmSync(backup, { recursive: true, force: true });
+            return { ok: true };
+        } catch (_) {
+            fs.rmSync(staged, { recursive: true, force: true });
+            return failure('local_course_refresh_failed');
         }
     }
 
@@ -816,16 +964,17 @@ function createLocalTaskSession(options = {}) {
         try {
             parsedUrl = new URL(String(packageUrl || ''));
         } catch (_) {
-            return failure('package_invalid');
+            return failure('package_url_invalid');
         }
         if ((parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:')
             || parsedUrl.username || parsedUrl.password || parsedUrl.hash
             || parsedUrl.origin !== nextSnapshot.platform_origin
             || (parsedUrl.protocol === 'http:' && !normalizeHttpOrigin(parsedUrl.origin)))
-            return failure('package_invalid');
+            return failure('package_url_invalid');
         const directory = packageCacheDirectory(cacheRoot, nextSnapshot);
         const packagePath = path.join(directory, 'package.bin');
         const extractedRoot = path.join(directory, 'extracted');
+        const extractionMarker = path.join(extractedRoot, '.xedu-package-sha256');
         let bytes = null;
         if (fs.existsSync(packagePath)) {
             const cached = fs.readFileSync(packagePath);
@@ -844,26 +993,51 @@ function createLocalTaskSession(options = {}) {
             fs.writeFileSync(partial, bytes);
             fs.renameSync(partial, packagePath);
         }
-        const courseJsonPath = path.join(extractedRoot, 'course.json');
         const courseLaunch = nextSnapshot.launch_scope === 'course';
-        const resourcePath = safeZipDestination(extractedRoot, nextSnapshot.resource_id);
-        if (!fs.existsSync(courseJsonPath) || (!courseLaunch && (!resourcePath || !fs.existsSync(resourcePath)))) {
+        let extractedMatchesPackage = false;
+        try {
+            extractedMatchesPackage = fs.readFileSync(extractionMarker, 'utf8').trim() === nextSnapshot.package_sha256;
+        } catch (_) {
+        }
+        if (!extractedMatchesPackage) {
+            const stagedRoot = fs.mkdtempSync(path.join(directory, 'extracted-'));
             try {
-                extractZip(bytes, extractedRoot);
+                extractZip(bytes, stagedRoot);
+                const stagedCoursePath = path.join(stagedRoot, 'course.json');
+                const stagedResourcePath = safeZipDestination(stagedRoot, nextSnapshot.resource_id);
+                if (!fs.existsSync(stagedCoursePath)
+                    || (!courseLaunch && (!stagedResourcePath || !fs.existsSync(stagedResourcePath) || !fs.statSync(stagedResourcePath).isFile()))) {
+                    fs.rmSync(stagedRoot, { recursive: true, force: true });
+                    return failure('package_resource_missing');
+                }
+                fs.writeFileSync(path.join(stagedRoot, '.xedu-package-sha256'), nextSnapshot.package_sha256);
+                const previousRoot = `${extractedRoot}.previous-${process.pid}`;
+                fs.rmSync(previousRoot, { recursive: true, force: true });
+                if (fs.existsSync(extractedRoot)) fs.renameSync(extractedRoot, previousRoot);
+                try {
+                    fs.renameSync(stagedRoot, extractedRoot);
+                } catch (error) {
+                    if (fs.existsSync(previousRoot) && !fs.existsSync(extractedRoot)) fs.renameSync(previousRoot, extractedRoot);
+                    throw error;
+                }
+                fs.rmSync(previousRoot, { recursive: true, force: true });
             } catch (_) {
-                return failure('package_invalid');
+                fs.rmSync(stagedRoot, { recursive: true, force: true });
+                return failure('package_zip_invalid');
             }
         }
+        const courseJsonPath = path.join(extractedRoot, 'course.json');
+        const resourcePath = safeZipDestination(extractedRoot, nextSnapshot.resource_id);
         let course;
         try {
             course = JSON.parse(fs.readFileSync(courseJsonPath, 'utf8'));
         } catch (_) {
-            return failure('package_invalid');
+            return failure('package_manifest_invalid');
         }
         if (!course || course.id !== nextSnapshot.course_id) {
             return failure('course_id_mismatch');
         }
-        if (!courseLaunch && (!resourcePath || !fs.existsSync(resourcePath) || !fs.statSync(resourcePath).isFile())) return failure('package_invalid');
+        if (!courseLaunch && (!resourcePath || !fs.existsSync(resourcePath) || !fs.statSync(resourcePath).isFile())) return failure('package_resource_missing');
         course.local_path = extractedRoot;
         course.source = 'local';
         course.id = course.id;
@@ -873,15 +1047,25 @@ function createLocalTaskSession(options = {}) {
     async function downloadPackage(packageUrl, nextSnapshot) {
         let lastError = failure('package_invalid', { retryable: true });
         for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
-            const response = await callJson({ url: packageUrl, method: 'GET', headers: {} });
+            const response = await callJson({ url: packageUrl, method: 'GET', headers: { 'Accept-Encoding': 'identity' } });
             if (!response.networkError && response.status >= 200 && response.status < 300) {
                 const bytes = Buffer.from(response.body || Buffer.alloc(0));
-                if (bytes.length !== nextSnapshot.package_size || sha256Hex(bytes) !== nextSnapshot.package_sha256) {
-                    return failure('package_invalid');
+                if (bytes.length !== nextSnapshot.package_size) {
+                    lastError = failure('package_size_mismatch', {
+                        retryable: true,
+                        message: `课程包大小校验失败：平台声明 ${nextSnapshot.package_size} 字节，实际收到 ${bytes.length} 字节。客户端已重试下载；仍不一致通常表示平台文件或反向代理返回不一致。`,
+                    });
+                } else if (sha256Hex(bytes) !== nextSnapshot.package_sha256) {
+                    lastError = failure('package_hash_mismatch', {
+                        retryable: true,
+                        message: '课程包 SHA-256 校验失败：服务器返回的 ZIP 与授权信息中记录的包不一致。客户端已重试下载；请在平台重新上传并绑定课程包。',
+                    });
+                } else {
+                    return { ok: true, bytes };
                 }
-                return { ok: true, bytes };
+            } else {
+                lastError = failure('network', { retryable: true, timedOut: response.timedOut, status: response.status || 0 });
             }
-            lastError = failure('network', { retryable: true, timedOut: response.timedOut, status: response.status || 0 });
             if (attempt === RETRY_DELAYS_MS.length) break;
             await sleep(RETRY_DELAYS_MS[attempt]);
         }
@@ -1004,6 +1188,7 @@ function createLocalTaskSession(options = {}) {
         const headers = authorizationHeaders({
             'Content-Type': prepared.mime,
             'Content-Length': String(prepared.bytes.length),
+            'X-XEdu-Request-Id': requestId,
             'X-XEdu-Filename': /^[\x20-\x7e]+$/.test(prepared.filename) ? prepared.filename : encodeURIComponent(prepared.filename),
             'X-XEdu-SHA256': prepared.sha256,
         });
@@ -1084,6 +1269,32 @@ function createLocalTaskSession(options = {}) {
         return { ok: true, bytes, filename, mime: pythonFile ? 'text/plain' : spec.content_type, sha256: sha256Hex(bytes) };
     }
 
+    function sameSubmissionBody(left, right) {
+        try {
+            const a = JSON.parse(Buffer.from(left).toString('utf8'));
+            const b = JSON.parse(Buffer.from(right).toString('utf8'));
+            delete a.request_id;
+            delete b.request_id;
+            return JSON.stringify(a) === JSON.stringify(b);
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function draftMatchesSubmission(draft, rawBody) {
+        if (!draft) return false;
+        try {
+            const body = JSON.parse(Buffer.from(rawBody).toString('utf8'));
+            return body.name === draft.name
+                && body.raw_score === draft.raw_score
+                && body.score === draft.score
+                && body.passed === draft.passed
+                && JSON.stringify(body.answers) === JSON.stringify(draft.answers);
+        } catch (_) {
+            return false;
+        }
+    }
+
     async function lookupStatus(requestId) {
         const url = `${snapshot.platform_origin}/api/xedu/v1/submissions/status?request_id=${encodeURIComponent(requestId)}`;
         const response = await callJson({
@@ -1096,7 +1307,10 @@ function createLocalTaskSession(options = {}) {
             return failure('network', { retryable: true, timedOut: response.timedOut, requestId });
         }
         const payload = readJsonBody(response.body) || {};
-        if (response.status >= 200 && response.status < 300 && payload.status === 'completed') {
+        if (response.status === 401 || response.status === 403 || payload.ok === false) {
+            return interpretPlatformError(response, requestId);
+        }
+        if (response.status >= 200 && response.status < 300 && payload.ok === true && payload.status === 'completed') {
             return {
                 found: true,
                 ok: true,
@@ -1111,8 +1325,34 @@ function createLocalTaskSession(options = {}) {
         return { found: response.status !== 404, pending: true, retryable: true };
     }
 
+    function submissionSuccessMessage(mode, progressSyncStatus = '') {
+        if (mode === 'project' && snapshot?.submission_requirements?.requires_web_feedback === true) {
+            return '作品已保存；网页反馈与活动完成进度请查看课程页。';
+        }
+        if (progressSyncStatus === 'pending') {
+            return '作品已保存；成绩同步尚在处理中，请稍后核对课程页。';
+        }
+        return SUCCESS_MESSAGES[mode] || '平台已确认完成。';
+    }
+
     async function postSubmission(rawBody, requestId, mode) {
         const url = `${snapshot.platform_origin}/api/xedu/v1/submissions`;
+        const previous = submissionAttempts.get(activeKey);
+        if (previous && previous.requestId === requestId && sameSubmissionBody(previous.rawBody, rawBody)) {
+            const status = await lookupStatus(requestId);
+            if (status?.platform_status === 'completed') {
+                submissionAttempts.delete(activeKey);
+                return success(mode, { requestId, receiptId: status.receiptId || '', message: submissionSuccessMessage(mode) });
+            }
+            if (status?.ok === false && status.retryable === false) {
+                submissionAttempts.delete(activeKey);
+                return status;
+            }
+            if (status?.found !== false) {
+                return failure('submission_not_completed', { retryable: true, requestId });
+            }
+        }
+        submissionAttempts.set(activeKey, { requestId, rawBody: Buffer.from(rawBody), mode });
         let accepted = false;
         let last = failure('network', { retryable: true, requestId });
         for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
@@ -1127,34 +1367,60 @@ function createLocalTaskSession(options = {}) {
                     body: rawBody,
                 });
                 const payload = readJsonBody(response.body) || {};
-                if (!response.networkError && response.status >= 200 && response.status < 300 && payload.ok !== false) {
-                    accepted = true;
+                const acceptedResponse = !response.networkError
+                    && response.status >= 200 && response.status < 300
+                    && payload.ok === true;
+                const uncertain = response.timedOut || response.networkError || response.status >= 500;
+                if (acceptedResponse) {
+                    accepted = payload.status !== 'completed';
                     if (payload.status === 'completed') {
-                        return success(mode, { requestId, receiptId: payload.receipt_id || '', status: response.status });
+                        submissionAttempts.delete(activeKey);
+                        return success(mode, {
+                            requestId,
+                            receiptId: payload.receipt_id || '',
+                            status: response.status,
+                            progressSyncStatus: payload.progress_sync_status || '',
+                            message: submissionSuccessMessage(mode, payload.progress_sync_status),
+                        });
                     }
-                } else if (response.timedOut || response.networkError) {
+                }
+                if (uncertain) {
                     const status = await lookupStatus(requestId);
                     if (status?.platform_status === 'completed') {
-                        return success(mode, { requestId, receiptId: status.receiptId || '' });
+                        submissionAttempts.delete(activeKey);
+                        return success(mode, { requestId, receiptId: status.receiptId || '', message: submissionSuccessMessage(mode) });
                     }
-                    last = failure('network', { retryable: true, timedOut: Boolean(response.timedOut), requestId });
-                } else {
+                    if (status?.ok === false && status.retryable === false) {
+                        submissionAttempts.delete(activeKey);
+                        return status;
+                    }
+                    last = response.timedOut || response.networkError
+                        ? failure('network', { retryable: true, timedOut: Boolean(response.timedOut), requestId })
+                        : interpretPlatformError(response, requestId);
+                } else if (!acceptedResponse) {
                     last = interpretPlatformError(response, requestId);
-                    if (!last.retryable) return last;
+                    if (!last.retryable) {
+                        submissionAttempts.delete(activeKey);
+                        return last;
+                    }
                 }
             } else {
                 const status = await lookupStatus(requestId);
                 if (status?.platform_status === 'completed') {
-                    return success(mode, { requestId, receiptId: status.receiptId || '' });
+                    submissionAttempts.delete(activeKey);
+                    return success(mode, { requestId, receiptId: status.receiptId || '', message: submissionSuccessMessage(mode) });
                 }
-                if (status && status.ok === false && status.retryable === false) return status;
+                if (status && status.ok === false && status.retryable === false) {
+                    submissionAttempts.delete(activeKey);
+                    return status;
+                }
                 last = failure('submission_not_completed', { retryable: true, requestId });
             }
             if (attempt === RETRY_DELAYS_MS.length) break;
             await sleep(RETRY_DELAYS_MS[attempt]);
         }
         if (last.code === 'network' || last.code === 'submission_not_completed') {
-            return failure('submission_not_completed', { retryable: false, requestId, hasDraft: Boolean(draftForActive()) });
+            return failure('submission_not_completed', { retryable: true, requestId, hasDraft: Boolean(draftForActive()) });
         }
         return last;
     }
@@ -1168,6 +1434,39 @@ function createLocalTaskSession(options = {}) {
         }
         const needsScore = mode === 'score' || mode === 'combined';
         const needsFile = mode === 'screenshot' || mode === 'combined' || mode === 'evidence' || mode === 'project';
+        const pending = submissionAttempts.get(activeKey);
+        if (pending) {
+            const explicitRequestId = typeof meta?.request_id === 'string' ? meta.request_id.trim()
+                : (typeof meta?.requestId === 'string' ? meta.requestId.trim() : '');
+            if (explicitRequestId && explicitRequestId !== pending.requestId) {
+                return failure('XEDU_REQUEST_ID_CONFLICT', {
+                    retryable: false,
+                    next_action: 'check_status',
+                    requestId: explicitRequestId,
+                    hasDraft: Boolean(draftForActive()),
+                });
+            }
+            if (pending.mode !== mode) {
+                return failure('submission_not_completed', {
+                    retryable: true,
+                    requestId: pending.requestId,
+                    hasDraft: Boolean(draftForActive()),
+                });
+            }
+            saving = true;
+            try {
+                const posted = await postSubmission(pending.rawBody, pending.requestId, pending.mode);
+                if (posted.platform_status === 'completed') {
+                    const queued = nextDrafts.get(activeKey);
+                    if (queued) promoteNextDraft(needsScore);
+                    else if (needsScore && draftMatchesSubmission(draftForActive(), pending.rawBody)) drafts.delete(activeKey);
+                }
+                else restoreAfterSave(null, false);
+                return { ...posted, has_draft: Boolean(draftForActive()), draft: draftForActive() };
+            } finally {
+                saving = false;
+            }
+        }
         const existingDraft = drafts.get(activeKey) || null;
         if (needsScore && !existingDraft) {
             return failure('no_score_draft');
@@ -1175,7 +1474,10 @@ function createLocalTaskSession(options = {}) {
         if (needsFile && (!file || !file.bytes || !(file.bytes.byteLength || file.bytes.length))) {
             return failure(mode === 'project' ? 'project_save_failed' : 'screenshot_failed', { hasDraft: Boolean(existingDraft), draft: existingDraft });
         }
-        const requestId = createRequestId();
+        let requestId = typeof meta?.request_id === 'string' && meta.request_id.trim()
+            ? meta.request_id.trim()
+            : (typeof meta?.requestId === 'string' && meta.requestId.trim() ? meta.requestId.trim() : '');
+        if (!requestId) requestId = createRequestId();
         let frozen = null;
         if (needsScore) {
             frozen = existingDraft;
@@ -1211,13 +1513,18 @@ function createLocalTaskSession(options = {}) {
                     project_file: projectFileEvidenceAttachment(experiment).attachment,
                 };
             }
-            const rawBody = Buffer.from(JSON.stringify(buildSubmission({
+            let rawBody = Buffer.from(JSON.stringify(buildSubmission({
                 requestId,
                 score,
                 attachments,
                 evidence,
                 mode,
             })));
+            const pending = submissionAttempts.get(activeKey);
+            if (!meta?.request_id && !meta?.requestId && pending && sameSubmissionBody(pending.rawBody, rawBody)) {
+                requestId = pending.requestId;
+                rawBody = Buffer.from(pending.rawBody);
+            }
             const posted = await postSubmission(rawBody, requestId, mode);
             if (posted.platform_status !== 'completed') {
                 restoreAfterSave(frozen, needsScore);
@@ -1285,8 +1592,8 @@ function createLocalTaskSession(options = {}) {
         },
         setDraft,
         getDraft: draftForActive,
-        saveScore() {
-            return runSave('score');
+        saveScore(options = {}) {
+            return runSave('score', null, options || {});
         },
         uploadScreenshot(file) {
             return runSave('screenshot', file);
@@ -1327,10 +1634,10 @@ function registerLocalTaskIpc({ ipcMain, isTrusted, session, captureExperimentVi
         return session.setDraft(draft);
     });
 
-    ipcMain.handle('xedu:local-task-save-score', (event) => {
+    ipcMain.handle('xedu:local-task-save-score', (event, options) => {
         const denied = guard(event);
         if (denied) return denied;
-        return session.saveScore();
+        return session.saveScore(options || {});
     });
 
     ipcMain.handle('xedu:local-task-save-project', async (event, payload) => {

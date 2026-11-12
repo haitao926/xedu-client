@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     xeduGetLocalTask: () => ipcRenderer.invoke('xedu:local-task-state'),
     xeduSelectLocalTask: (payload) => ipcRenderer.invoke('xedu:local-task-select', payload),
     xeduSetScoreDraft: (draft) => ipcRenderer.invoke('xedu:local-task-set-draft', draft),
-    xeduSaveScore: () => ipcRenderer.invoke('xedu:local-task-save-score'),
+    xeduSaveScore: (meta) => ipcRenderer.invoke('xedu:local-task-save-score', meta),
     xeduUploadScreenshot: (bounds) => ipcRenderer.invoke('xedu:local-task-upload-screenshot', bounds),
     xeduSaveEvidence: (payload) => ipcRenderer.invoke('xedu:local-task-save-evidence', payload),
     xeduSaveProject: (payload) => ipcRenderer.invoke('xedu:local-task-save-project', payload),

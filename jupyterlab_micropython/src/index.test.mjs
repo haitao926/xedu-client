@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   PANEL_ROUTES,
+  MICROPYTHON_ICON_SVG,
   PLACEHOLDER_OUTPUT,
   STARTER_MAIN_PY,
   actionAvailability,
   appendConsoleText,
   panelRequestPath,
   panelRoute,
+  canReuseMicroPythonPanel,
   preferredPythonFile,
   projectDirectoryFromLabPath,
   projectFilePath,
@@ -16,6 +18,7 @@ import {
   clampOutputHeight,
   DEFAULT_OUTPUT_HEIGHT,
   highlightPython,
+  highlightDisplaySource,
   shouldAutoOpenCodeMode,
   studentErrorMessage,
   xsrfTokenFromCookie,
@@ -144,12 +147,27 @@ test('code mode highlights Python while keeping the editable source', () => {
     source,
   );
   assert.equal(highlightPython(''), '');
+  assert.equal(highlightDisplaySource('print(1)'), 'print(1)');
+  assert.equal(highlightDisplaySource('print(1)\n'), 'print(1)\n\u200b');
 
   const panel = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
   assert.match(panel, /data-role="editor"/);
-  assert.match(panel, /data-role="highlight"/);
-  assert.match(panel, /highlightPython\(this\.codeText\(\)\)/);
-  assert.match(panel, /content: this\.codeText\(\)/);
+  assert.doesNotMatch(panel, /data-role="highlight"/);
+  assert.match(panel, /this\.editor\.innerHTML = highlightPython\(highlightDisplaySource\(source\)\)/);
+});
+
+test('code editor uses a single text surface with stable typography and completions', () => {
+  const panel = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../style/index.css', import.meta.url), 'utf8');
+  assert.match(css, /font-weight:\s*400/);
+  assert.match(css, /line-height:\s*22px/);
+  assert.match(css, /-moz-tab-size:\s*4/);
+  assert.match(css, /box-sizing:\s*border-box/);
+  assert.doesNotMatch(css, /--xedu-mp-scrollbar/);
+  assert.match(panel, /data-role="completions"/);
+  assert.match(panel, /showCompletions\(true\)/);
+  assert.match(panel, /insertTextAtCursor\(`\\n\$\{this\.currentIndent\(\)\}`\)/);
+  assert.match(css, /\.xedu-mp-completions/);
 });
 
 test('code mode keeps the editor larger than the output console', () => {
@@ -190,4 +208,15 @@ test('MicroPython launcher configuration ensures top placement and MicroPython i
 
   // CSS styling for launcher icon polish and sharp rendering
   assert.match(css, /\.jp-LauncherCard\[data-category="XEdu 实验"\]|\.jp-LauncherCard\[data-category='XEdu 实验'\]/);
+});
+
+test('MicroPython launcher SVG is URI encoded for JupyterLab icon parsing', () => {
+  assert.doesNotThrow(() => decodeURIComponent(MICROPYTHON_ICON_SVG));
+  assert.match(decodeURIComponent(MICROPYTHON_ICON_SVG), /x1="0%"/);
+});
+
+test('closing MicroPython mode disposes the detached panel for the next launch', () => {
+  const panel = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+  assert.match(panel, /onCloseRequest\(msg\)\s*\{\s*super\.onCloseRequest\(msg\);\s*this\.dispose\(\);\s*\}/);
+  assert.match(panel, /if \(!canReuseMicroPythonPanel\(panel\)\)\s*\{\s*panel = new MicroPythonPanel\(app\);/);
 });

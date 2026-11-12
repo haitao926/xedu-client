@@ -229,3 +229,67 @@ test('HTML view uses a neutral title and honors entry_file ahead of a stale plat
     assert.equal(elements.find(node => node.className === 'resources-student-html-experience-title').textContent, '互动体验');
     assert.equal(elements.find(node => node.tag === 'iframe').title, '互动体验');
 });
+
+test('HTML view uses the XEdu local course host for a second experiment in course launch scope', () => {
+    const elements = [];
+    const createElement = (tag) => {
+        const node = { tag, children: [], classList: { toggle() {}, contains: () => false },
+            appendChild(child) { this.children.push(child); }, setAttribute() {}, addEventListener() {} };
+        elements.push(node);
+        return node;
+    };
+    const context = vm.createContext({
+        document: { createElement, addEventListener() {}, body: {} },
+        window: { dispatchEvent() {} }, Event: class {},
+        MutationObserver: class { observe() {} },
+        resourcesState: {
+            xeduLaunchResourceId: 'lab_tts.html',
+            xeduLabBaseUrl: 'http://127.0.0.1:4567/',
+            xeduLaunchedCourse: { local_path: '/cache/course-v1' },
+            xeduLabFrameUrls: { 'lab_tts.html': 'http://127.0.0.1:4567/lab_tts.html' },
+        },
+        relativeResourcePath: value => String(value || '').replace(/^\/+/, ''),
+        getExperimentFileOverview,
+        buildLocalCourseFileUrl: () => '',
+        apiClient: {}, courseAiFrameBridge: { attach() {} }, xeduScoreBridge: { attach() {} },
+        withAsyncActionErrorBoundary: action => action,
+    });
+    const start = source.indexOf('function buildStudentHtmlExperienceView(');
+    const end = source.indexOf('function invalidateStudentNavigation(', start);
+    vm.runInContext(source.slice(start, end), context);
+    const exp = { title: '声音原理', files: [{ path: 'lab_principle.html', type: 'html' }] };
+    context.buildStudentHtmlExperienceView({ resource: { title: '课程名', local_path: '/cache/course-v1' }, exp, overview: getExperimentFileOverview(exp) });
+    assert.equal(elements.find(node => node.tag === 'iframe').src, 'http://127.0.0.1:4567/lab_principle.html');
+});
+
+test('XEdu local course host is not reused for another local course', () => {
+    const elements = [];
+    const createElement = (tag) => {
+        const node = { tag, children: [], classList: { toggle() {}, contains: () => false },
+            appendChild(child) { this.children.push(child); }, setAttribute() {}, addEventListener() {} };
+        elements.push(node);
+        return node;
+    };
+    const context = vm.createContext({
+        document: { createElement, addEventListener() {}, body: {} },
+        window: { dispatchEvent() {} }, Event: class {},
+        MutationObserver: class { observe() {} },
+        resourcesState: {
+            xeduLaunchResourceId: 'lab_tts.html',
+            xeduLabBaseUrl: 'http://127.0.0.1:4567/',
+            xeduLaunchedCourse: { local_path: '/cache/course-v1' },
+            xeduLabFrameUrls: { 'lab_tts.html': 'http://127.0.0.1:4567/lab_tts.html' },
+        },
+        relativeResourcePath: value => String(value || '').replace(/^\/+/, ''),
+        getExperimentFileOverview,
+        buildLocalCourseFileUrl: (_course, path) => `http://127.0.0.1:5123/local/${path}`,
+        apiClient: {}, courseAiFrameBridge: { attach() {} }, xeduScoreBridge: { attach() {} },
+        withAsyncActionErrorBoundary: action => action,
+    });
+    const start = source.indexOf('function buildStudentHtmlExperienceView(');
+    const end = source.indexOf('function invalidateStudentNavigation(', start);
+    vm.runInContext(source.slice(start, end), context);
+    const exp = { title: '另一门课', files: [{ path: 'lab_principle.html', type: 'html' }] };
+    context.buildStudentHtmlExperienceView({ resource: { title: '另一门课', local_path: '/courses/other' }, exp, overview: getExperimentFileOverview(exp) });
+    assert.equal(elements.find(node => node.tag === 'iframe').src, 'http://127.0.0.1:5123/local/lab_principle.html');
+});

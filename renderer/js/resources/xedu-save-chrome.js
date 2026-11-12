@@ -19,14 +19,27 @@ export function describeStudentSaveChrome({ draft = null, phase = 'idle', result
     const score = Number.isFinite(draft?.score) ? draft.score : null;
     const hasDraft = Boolean(name) && score !== null;
     const saving = phase === 'saving';
-    const completed = phase === 'saved' && result?.platform_status === 'completed';
+    const confirming = phase === 'confirming';
+    const completed = phase === 'saved' && result?.ok === true && result?.platform_status === 'completed';
     const evidenceSaved = completed && result?.mode === 'evidence';
     const failed = phase === 'failed';
     const code = failed ? canonicalCode(result?.code) : '';
     const grantExpired = code === 'grant_expired';
+    const nextAction = typeof result?.next_action === 'string' && result.next_action
+        ? result.next_action
+        : ({
+            screenshot_failed: 'retry_submission',
+            project_save_failed: 'retry_submission',
+            attachment_invalid: 'reupload_artifact',
+        }[code] || '');
+    const actionable = ['save_project', 'reupload_artifact', 'reduce_artifact', 'relaunch', 'return_to_course',
+        'complete_self_check', 'retry_submission', 'check_status', 'contact_teacher', 'fix_request'].includes(nextAction);
     let statusText = '';
     let tone = '';
-    if (saving) {
+    if (confirming) {
+        statusText = '提交结果确认中，请勿重复提交';
+        tone = 'progress';
+    } else if (saving) {
         statusText = '保存中';
         tone = 'progress';
     } else if (evidenceSaved) {
@@ -43,8 +56,9 @@ export function describeStudentSaveChrome({ draft = null, phase = 'idle', result
         draftLabel: hasDraft ? `待保存：${name} ${score}分` : '',
         statusText,
         tone,
-        submitDisabled: saving,
-        retryVisible: failed && !grantExpired,
+        submitDisabled: saving || confirming,
+        retryVisible: (failed || confirming) && !grantExpired && (result?.retryable === true || actionable),
+        nextAction,
         grantExpired,
     };
 }

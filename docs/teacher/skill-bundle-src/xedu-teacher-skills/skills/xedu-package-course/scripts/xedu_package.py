@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Inspect, stage, build, and audit Scratch resources for XEdu courses."""
+"""Deterministically inspect, stage, and build XEdu course-content ZIPs."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -24,6 +25,8 @@ NATIVE_PREFIXES = (
 WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:")
 MAX_ARCHIVE_MEMBERS = 10000
 MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+MAX_PACKAGE_MEMBERS = 10000
+MAX_PACKAGE_BYTES = 512 * 1024 * 1024
 
 
 class PackageError(ValueError):
@@ -40,7 +43,12 @@ def read_json(path: Path):
 def safe_relative(value: str) -> PurePosixPath:
     if not isinstance(value, str) or not value.strip():
         raise PackageError("Resource path is empty")
-    if value != value.strip() or "\\" in value or value.startswith("/"):
+    if (
+        value != value.strip()
+        or "\\" in value
+        or value.startswith("/")
+        or any(char in value for char in "?#")
+    ):
         raise PackageError(f"Unsafe resource path: {value}")
     if WINDOWS_DRIVE.match(value):
         raise PackageError(f"Unsafe resource path: {value}")
@@ -62,13 +70,49 @@ def ensure_plain_path(path: Path, root: Path) -> None:
 
 def file_reference(item):
     if isinstance(item, str):
-        return item
+        return (
+            item
+            if item.strip()
+            and "://" not in item
+            and not item.lstrip().lower().startswith("data:")
+            else None
+        )
     if isinstance(item, dict):
         for key in ("path", "file", "url"):
             value = item.get(key)
-            if isinstance(value, str) and value.strip() and "://" not in value:
+            if (
+                isinstance(value, str)
+                and value.strip()
+                and "://" not in value
+                and not value.lstrip().lower().startswith("data:")
+            ):
                 return value
     return None
+
+
+def experiment_reference_items(experiment: dict) -> list[tuple[str, str]]:
+    rows = []
+    for key in ("entry", "entry_file", "cover", "cover_url"):
+        value = experiment.get(key)
+        reference = file_reference(value)
+        if reference:
+            rows.append((reference, ""))
+    def add_item(item):
+        reference = file_reference(item)
+        if reference:
+            declared_type = item.get("type", "") if isinstance(item, dict) else ""
+            rows.append((reference, str(declared_type or "").lower()))
+        if isinstance(item, dict) and isinstance(item.get("children"), list):
+            for child in item["children"]:
+                add_item(child)
+
+    for item in experiment.get("files", []):
+        add_item(item)
+    deduplicated = {}
+    for path, kind in rows:
+        if path not in deduplicated or (not deduplicated[path] and kind):
+            deduplicated[path] = kind
+    return list(deduplicated.items())
 
 
 def course_references(course: dict) -> list[str]:
@@ -95,22 +139,77 @@ def course_references(course: dict) -> list[str]:
             files = experiment.get("files", [])
             if not isinstance(files, list):
                 raise PackageError("Each experiment files value must be an array")
-            for item in files:
-                reference = file_reference(item)
-                if reference:
-                    references.append(reference)
+            references.extend(path for path, _kind in experiment_reference_items(experiment))
     return list(dict.fromkeys(references))
 
 
-def expand_references(root: Path, references: list[str]) -> list[tuple[Path, str]]:
+def experiment_reference_rows(course: dict, root: Path) -> list[dict]:
+    rows = []
+    for section_index, section in enumerate(course.get("sections", []), 1):
+        for experiment_index, experiment in enumerate(section.get("experiments", []), 1):
+            raw_references = []
+            typed_references = experiment_reference_items(experiment)
+            raw_references.extend(path for path, _kind in typed_references)
+            refs = list(dict.fromkeys(raw_references))
+            declared_types = dict(typed_references)
+            resources = []
+            missing = []
+            forms = set()
+            for reference in refs:
+                relative = safe_relative(reference)
+                source = root.joinpath(*relative.parts)
+                exists = source.exists()
+                if exists:
+                    ensure_plain_path(source, root)
+                    form = resource_form(reference, declared_types.get(reference, ""))
+                    forms.add(form)
+                else:
+                    form = resource_form(reference, declared_types.get(reference, ""))
+                    missing.append(reference)
+                resources.append({"path": reference, "form": form, "exists": exists})
+            rows.append({
+                "id": str(experiment.get("id") or f"experiment-{section_index}-{experiment_index}"),
+                "title": str(experiment.get("title") or ""),
+                "status": (
+                    "missing-assets" if missing
+                    else "resources-present" if resources
+                    else "no-local-resources"
+                ),
+                "forms": sorted(forms),
+                "resources": resources,
+                "missing_assets": missing,
+            })
+    return rows
+
+
+def resource_form(path: str, declared_type: str = "") -> str:
+    suffix = PurePosixPath(path).suffix.lower()
+    lower_path = path.lower()
+    kind = (declared_type or "").lower()
+    if kind == "scratch" or suffix == ".sb3":
+        return "scratch"
+    if kind == "blockly" or lower_path.endswith((".blockly.xml", ".blockly.json")):
+        return "blockly"
+    if kind in {"html", "ipynb"}:
+        return kind
+    if suffix in {".html", ".htm"}:
+        return "html"
+    if suffix == ".ipynb":
+        return "ipynb"
+    return "material"
+
+
+def expand_references(root: Path, references: list[str]) -> tuple[list[tuple[Path, str]], list[str]]:
     root = root.resolve()
     files = [(root / "course.json", "course.json")]
     seen = {"course.json"}
+    missing = []
     for reference in references:
         relative = safe_relative(reference)
         source = root.joinpath(*relative.parts)
         if not source.exists():
-            raise PackageError(f"Referenced resource does not exist: {reference}")
+            missing.append(reference)
+            continue
         ensure_plain_path(source, root)
         candidates = [source]
         if source.is_dir():
@@ -126,7 +225,7 @@ def expand_references(root: Path, references: list[str]) -> list[tuple[Path, str
             if name not in seen:
                 seen.add(name)
                 files.append((candidate, name))
-    return files
+    return files, missing
 
 
 def validate_scratch_archive(path: Path) -> dict:
@@ -185,19 +284,124 @@ def inspect_course(root: Path) -> dict:
         raise PackageError("Course root requires a plain course.json file")
     course = read_json(course_path)
     references = course_references(course)
-    files = expand_references(root, references)
+    experiment_rows = experiment_reference_rows(course, root)
+    missing_assets = list(dict.fromkeys(
+        [path for row in experiment_rows for path in row["missing_assets"]]
+    ))
+    files, missing_references = expand_references(root, references)
+    missing_assets = list(dict.fromkeys([*missing_assets, *missing_references]))
     scratch = []
     for source, name in files:
         if source.suffix.lower() in {".sb3", ".ib"}:
             scratch.append({"path": name, **validate_scratch_archive(source)})
     return {
+        "input_type": "course-root",
         "course_root": str(root),
         "course_id": str(course.get("id") or ""),
         "title": course["title"],
+        "version": str(course.get("version") or ""),
         "referenced_paths": references,
         "package_files": [name for _, name in files],
-        "scratch": scratch,
+        "resource_status_by_experiment": experiment_rows,
+        "scratch_validation": scratch,
+        "legacy_blockly_gaps": [
+            name for source, name in files
+            if source.name.lower().endswith((".blockly.xml", ".blockly.json"))
+        ],
+        "missing_assets": missing_assets,
+        "recommended_next_action": "stop_with_gaps" if missing_assets else "stage_for_pack",
+        "version_policy": "preserved; packaging does not increment or rewrite course.json version",
     }
+
+
+def inspect_package(path: Path) -> dict:
+    path = path.resolve()
+    if not path.is_file() or path.suffix.lower() != ".zip":
+        raise PackageError(f"Package input must be a readable .zip file: {path}")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            infos = archive.infolist()
+            if len(infos) > MAX_PACKAGE_MEMBERS:
+                raise PackageError(f"Course package has too many members: {len(infos)}")
+            names = []
+            total_size = 0
+            for info in infos:
+                name = info.filename
+                normalized = name[:-1] if name.endswith("/") else name
+                if (
+                    not normalized
+                    or "\\" in name
+                    or name.startswith("/")
+                    or WINDOWS_DRIVE.match(name)
+                    or any(part in {"", ".", ".."} for part in normalized.split("/"))
+                    or any(char in name for char in "?#")
+                ):
+                    raise PackageError(f"Unsafe course package member: {name}")
+                if name in names:
+                    raise PackageError(f"Duplicate course package member: {name}")
+                names.append(name)
+                total_size += info.file_size
+                if total_size > MAX_PACKAGE_BYTES:
+                    raise PackageError("Course package expands beyond the 512 MB safety limit")
+                if info.flag_bits & 1:
+                    raise PackageError(f"Encrypted course package member: {name}")
+                if info.create_system == 3:
+                    kind = stat.S_IFMT((info.external_attr >> 16) & 0xFFFF)
+                    if kind not in (0, stat.S_IFREG, stat.S_IFDIR):
+                        raise PackageError(f"Special course package member: {name}")
+            if "course.json" not in names:
+                raise PackageError("XEdu course package requires root-level course.json")
+            file_names = {info.filename for info in infos if not info.is_dir()}
+            directory_names = {info.filename.rstrip("/") for info in infos if info.is_dir()}
+            conflicts = file_names & directory_names
+            if conflicts:
+                raise PackageError(f"Course package has file/directory path conflicts: {sorted(conflicts)}")
+            for name in file_names:
+                parts = PurePosixPath(name).parts
+                if any("/".join(parts[:index]) in file_names for index in range(1, len(parts))):
+                    raise PackageError(f"Course package file is also used as a directory: {name}")
+            bad_member = archive.testzip()
+            if bad_member:
+                raise PackageError(f"Course package ZIP integrity check failed at: {bad_member}")
+            file_names = [info.filename for info in infos if not info.is_dir()]
+            with tempfile.TemporaryDirectory(prefix="xedu-package-inspect-") as temp_dir:
+                extraction_root = Path(temp_dir)
+                try:
+                    archive.extractall(extraction_root)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    raise PackageError("Course package members cannot be safely extracted") from exc
+                report = inspect_course(extraction_root)
+            unreferenced = sorted(set(file_names) - set(report["package_files"]))
+    except zipfile.BadZipFile as exc:
+        raise PackageError(f"Unreadable XEdu course ZIP: {path}") from exc
+
+    report["input_type"] = "pack-output"
+    report["course_root"] = str(path)
+    report["package_path"] = str(path)
+    report["package_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    report["unreferenced_files"] = unreferenced
+    report["verification"] = {
+        "status": "passed" if not report["missing_assets"] else "failed",
+        "zip_integrity": "passed",
+        "course_json": "parsed",
+        "referenced_resources": "missing" if report["missing_assets"] else "present",
+        "unreferenced_files": len(unreferenced),
+    }
+    if report["missing_assets"]:
+        report["recommended_next_action"] = "stop_with_gaps"
+    elif unreferenced:
+        report["recommended_next_action"] = "stage_for_pack"
+    else:
+        report["recommended_next_action"] = "publish"
+    return report
+
+
+def inspect_input(path: Path) -> dict:
+    if path.is_dir():
+        return inspect_course(path)
+    if path.is_file() and path.suffix.lower() == ".zip":
+        return inspect_package(path)
+    raise PackageError(f"Inspect input must be a course directory or .zip file: {path}")
 
 
 def reject_output(root: Path, output: Path) -> None:
@@ -211,9 +415,12 @@ def reject_output(root: Path, output: Path) -> None:
 
 def stage_course(root: Path, output: Path) -> dict:
     report = inspect_course(root)
+    if report["missing_assets"]:
+        raise PackageError(f"Referenced resources do not exist: {report['missing_assets']}")
     root = root.resolve()
     reject_output(root, output)
     output = output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
     try:
         for name in report["package_files"]:
@@ -225,18 +432,67 @@ def stage_course(root: Path, output: Path) -> dict:
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
-    return {**report, "staged_path": str(output)}
+    staged_report = inspect_course(output)
+    if staged_report["missing_assets"]:
+        shutil.rmtree(output, ignore_errors=True)
+        raise PackageError(f"Staged course has missing resources: {staged_report['missing_assets']}")
+    return {
+        **report,
+        "staged_path": str(output),
+        "verification": {
+            "status": "passed",
+            "files": len(report["package_files"]),
+            "referenced_resources": "present",
+        },
+        "recommended_next_action": "build_pack",
+    }
+
+
+def verify_built_package(path: Path, expected_files: list[str]) -> dict:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            bad_member = archive.testzip()
+            if bad_member:
+                raise PackageError(f"ZIP integrity check failed at: {bad_member}")
+            if len(names) != len(set(names)):
+                raise PackageError("Built ZIP contains duplicate paths")
+            if sorted(names) != sorted(expected_files):
+                raise PackageError("Built ZIP content does not match inspection")
+            try:
+                course = json.loads(archive.read("course.json").decode("utf-8"))
+            except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise PackageError("Built ZIP course.json cannot be parsed") from exc
+            references = course_references(course)
+            names_set = set(names)
+            for reference in references:
+                relative = safe_relative(reference).as_posix()
+                exact = relative in names_set
+                descendants = any(name.startswith(relative.rstrip("/") + "/") for name in names)
+                if not exact and not descendants:
+                    raise PackageError(f"Built ZIP is missing a declared resource: {reference}")
+    except zipfile.BadZipFile as exc:
+        raise PackageError("Built ZIP is unreadable") from exc
+    return {
+        "status": "passed",
+        "files": len(expected_files),
+        "zip_integrity": "passed",
+        "course_json": "parsed",
+        "referenced_resources": "present",
+    }
 
 
 def build_course(root: Path, output: Path) -> dict:
     report = inspect_course(root)
+    if report["missing_assets"]:
+        raise PackageError(f"Referenced resources do not exist: {report['missing_assets']}")
     root = root.resolve()
     reject_output(root, output)
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(f".{output.name}.tmp")
-    if temporary.exists():
-        raise PackageError(f"Temporary output already exists: {temporary}")
+    handle, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.tmp-", dir=output.parent)
+    os.close(handle)
+    temporary = Path(temporary_name)
     try:
         with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
             for name in sorted(report["package_files"]):
@@ -245,15 +501,19 @@ def build_course(root: Path, output: Path) -> dict:
                 info.compress_type = zipfile.ZIP_DEFLATED
                 info.external_attr = 0o100644 << 16
                 archive.writestr(info, source.read_bytes())
-        with zipfile.ZipFile(temporary) as archive:
-            if sorted(archive.namelist()) != sorted(report["package_files"]):
-                raise PackageError("Built ZIP content does not match inspection")
-            archive.testzip()
+        verification = verify_built_package(temporary, report["package_files"])
+        digest = hashlib.sha256(temporary.read_bytes()).hexdigest()
         temporary.rename(output)
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
-    return {**report, "built_path": str(output)}
+    return {
+        **report,
+        "built_path": str(output),
+        "sha256": digest,
+        "verification": verification,
+        "recommended_next_action": "publish",
+    }
 
 
 def scratch_audit(
@@ -329,8 +589,17 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command", required=True)
     for name in ("inspect", "stage", "build"):
         command = commands.add_parser(name)
-        command.add_argument("--course-root", type=Path, required=True)
-        if name != "inspect":
+        if name == "inspect":
+            command.add_argument(
+                "--input",
+                "--course-root",
+                dest="input_path",
+                type=Path,
+                required=True,
+                help="Course root directory or an existing XEdu .zip package",
+            )
+        else:
+            command.add_argument("--course-root", type=Path, required=True)
             command.add_argument("--output", type=Path, required=True)
     audit = commands.add_parser("scratch-audit")
     audit.add_argument("--project", type=Path, required=True)
@@ -344,7 +613,7 @@ def main(argv=None) -> int:
     args = parser().parse_args(argv)
     try:
         if args.command == "inspect":
-            result = inspect_course(args.course_root)
+            result = inspect_input(args.input_path)
         elif args.command == "stage":
             result = stage_course(args.course_root, args.output)
         elif args.command == "build":

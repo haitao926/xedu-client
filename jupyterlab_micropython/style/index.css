@@ -153,58 +153,83 @@
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
   background: #fff;
 }
 
-.xedu-mp-highlight,
 .xedu-mp-editor {
   position: absolute;
   inset: 0;
+  z-index: 1;
   box-sizing: border-box;
   margin: 0;
   padding: 14px 16px 20px;
   border: 0;
   white-space: pre;
   overflow-wrap: normal;
+  overflow: auto;
   tab-size: 4;
+  -moz-tab-size: 4;
   font-family: var(--jp-code-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 14px;
-  line-height: 1.55;
+  font-weight: 400;
+  line-height: 22px;
   letter-spacing: 0;
   font-variant-ligatures: none;
+  outline: none;
+  background: #fff;
+  color: #202a35;
+  caret-color: #176b87;
+  white-space: pre;
   scrollbar-gutter: stable;
 }
 
-.xedu-mp-highlight {
-  overflow: hidden;
-  pointer-events: none;
-  color: #1c1917;
-  background: #fff;
-}
-
-.xedu-mp-editor {
-  width: 100%;
-  height: 100%;
-  resize: none;
-  outline: none;
-  overflow: auto;
-  background: transparent;
-  color: transparent;
-  caret-color: #1c1917;
-  -webkit-text-fill-color: transparent;
+.xedu-mp-editor:focus {
+  box-shadow: inset 0 0 0 1px rgba(23, 107, 135, 0.18);
 }
 
 .xedu-mp-editor::selection {
-  background: rgba(37, 99, 235, 0.22);
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  background: rgba(23, 107, 135, 0.2);
 }
 
-.xedu-py-keyword { color: #1d4ed8; }
-.xedu-py-string { color: #047857; }
-.xedu-py-comment { color: #78716c; }
-.xedu-py-number { color: #c2410c; }
-.xedu-py-text { color: #1c1917; }
+.xedu-py-keyword { color: #8a3ffc; font-weight: 600; }
+.xedu-py-string { color: #177245; }
+.xedu-py-comment { color: #77818a; font-style: italic; }
+.xedu-py-number { color: #b54708; }
+.xedu-py-text { color: #202a35; }
+
+.xedu-mp-completions {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  min-width: 160px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid #cbd5dc;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(24, 39, 52, 0.18);
+}
+
+.xedu-mp-completions[hidden] { display: none; }
+
+.xedu-mp-completion {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: #202a35;
+  font: 13px var(--jp-code-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  text-align: left;
+  cursor: pointer;
+}
+
+.xedu-mp-completion[aria-selected="true"],
+.xedu-mp-completion:hover {
+  background: #e8f2f5;
+  color: #10566d;
+}
 
 .xedu-mp-splitter {
   flex: 0 0 6px;

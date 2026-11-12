@@ -1,6 +1,6 @@
 export const MICROPYTHON_ICON_NAME = 'xedu-micropython:icon';
 
-export const MICROPYTHON_ICON_SVG = [
+export const MICROPYTHON_ICON_SVG = encodeURIComponent([
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">',
   '  <defs>',
   '    <linearGradient id="mp-grad-bg" x1="0%" y1="0%" x2="100%" y2="100%">',
@@ -44,7 +44,7 @@ export const MICROPYTHON_ICON_SVG = [
   '  <!-- MicroPython ESP32 Chip Label -->',
   '  <text x="50" y="81" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="8.5" font-weight="800" fill="#f8fafc" text-anchor="middle" letter-spacing="1">ESP32 · μPy</text>',
   '</svg>',
-].join('\n');
+].join('\n'));
 
 export const PLACEHOLDER_OUTPUT = '连接后，ESP32 的输出会显示在这里。';
 export const STARTER_MAIN_PY = [
@@ -286,4 +286,50 @@ export function highlightPython(source) {
   }
   flushPlain();
   return html;
+}
+
+export function highlightDisplaySource(source) {
+  const text = String(source ?? '');
+  return text.endsWith('\n') || text.endsWith('\r') ? `${text}\u200b` : text;
+}
+
+export const MICROPYTHON_COMPLETIONS = Object.freeze([
+  'abs', 'all', 'any', 'append', 'break', 'bytearray', 'bytes', 'class',
+  'clear', 'continue', 'def', 'del', 'dict', 'elif', 'else', 'enumerate',
+  'except', 'False', 'float', 'for', 'from', ' in', 'if', 'import',
+  'input', 'int', 'isinstance', 'len', 'list', 'machine', 'map', 'max',
+  'min', 'None', 'open', ' Pin', 'print', 'range', 'return', 'self',
+  'set', 'sleep', 'str', 'sum', 'super', 'time', 'True', 'try', 'tuple',
+  'while', 'with', 'write', 'yield',
+]);
+
+export function completionPrefix(source, cursor) {
+  const beforeCursor = String(source ?? '').slice(0, Math.max(0, cursor));
+  return beforeCursor.match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0] || '';
+}
+
+export function completionItemsForPrefix(source, cursor, { allowEmpty = false } = {}) {
+  const prefix = completionPrefix(source, cursor);
+  if (!prefix && !allowEmpty) return [];
+  const normalizedPrefix = prefix.toLowerCase();
+  const beforeCursor = String(source ?? '').slice(0, Math.max(0, cursor));
+  const moduleImport = /\bfrom\s+machine\s+import\s+[^\n]*$/i.test(beforeCursor);
+  const candidates = moduleImport ? ['ADC', 'I2C', 'Pin', 'PWM', 'SPI', 'UART', 'WDT'] : MICROPYTHON_COMPLETIONS;
+  return candidates
+    .filter((item) => !normalizedPrefix || item.trim().toLowerCase().startsWith(normalizedPrefix))
+    .map((item) => item.trim())
+    .slice(0, 8);
+}
+
+export function insertCompletion(source, cursor, completion) {
+  const text = String(source ?? '');
+  const end = Math.max(0, Math.min(text.length, cursor));
+  const prefix = completionPrefix(text, end);
+  const start = end - prefix.length;
+  const value = `${text.slice(0, start)}${completion}${text.slice(end)}`;
+  return { value, cursor: start + completion.length };
+}
+
+export function canReuseMicroPythonPanel(panel) {
+  return Boolean(panel && !panel.isDisposed && panel.parent);
 }

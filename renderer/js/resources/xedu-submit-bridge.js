@@ -19,6 +19,15 @@ const STUDENT_MESSAGES = Object.freeze({
     no_score_draft: '还没有可保存的成绩。',
     answers_invalid: '作答内容格式无效，成绩没有保存。',
     answers_too_large: '作答内容超过 32KB，成绩没有保存。',
+    XEDU_PYTHON_ARTIFACT_REQUIRED: '请先保存并提交本次 Python 或 Notebook 作品文件。',
+    XEDU_ARTIFACT_INVALID: '作品文件无效或已损坏，请重新保存后提交。',
+    ARTIFACT_TYPE_UNSUPPORTED: '当前作品文件类型不受支持，请提交 Python、Notebook 或 Scratch 文件。',
+    ARTIFACT_TOO_LARGE: '作品文件超过平台大小限制，请提交较小的文件。',
+    XEDU_SUBMISSION_ERROR: '学习平台保存结果暂时无法确认，请先查询提交状态。',
+    XEDU_TASK_GRANT_INVALID: '任务授权无效或已过期，请从学习平台重新打开。',
+    XEDU_ACTIVITY_FORBIDDEN: '当前学生无权提交此活动，请返回课程并重新打开正确的活动。',
+    XEDU_ANSWERS_INVALID: '作答内容无效，请完成自查后重新提交。',
+    XEDU_REQUEST_ID_CONFLICT: '上一次提交仍待确认，请先查询该提交状态后再提交新内容。',
     XEDU_RESULT_NOT_PASSED: '这次成绩还没有通过，平台没有记为完成。',
     no_active_task: '请从学习平台重新打开这个任务。',
     submission_not_completed: '学习平台尚未确认完成，请稍后再试。',
@@ -31,6 +40,25 @@ const STUDENT_MESSAGES = Object.freeze({
     forbidden: '当前窗口不能执行这个操作。',
 });
 
+const STUDENT_NEXT_ACTIONS = Object.freeze({
+    XEDU_PYTHON_ARTIFACT_REQUIRED: 'save_project',
+    XEDU_ARTIFACT_INVALID: 'reupload_artifact',
+    ARTIFACT_TYPE_UNSUPPORTED: 'reupload_artifact',
+    ARTIFACT_TOO_LARGE: 'reduce_artifact',
+    XEDU_SUBMISSION_ERROR: 'check_status',
+    XEDU_TASK_GRANT_INVALID: 'relaunch',
+    XEDU_ACTIVITY_FORBIDDEN: 'return_to_course',
+    XEDU_ANSWERS_INVALID: 'complete_self_check',
+    XEDU_REQUEST_ID_CONFLICT: 'fix_request',
+    screenshot_failed: 'retry_submission',
+    project_save_failed: 'retry_submission',
+    attachment_invalid: 'reupload_artifact',
+    grant_expired: 'relaunch',
+    grant_invalid: 'relaunch',
+    network: 'check_status',
+    submission_not_completed: 'check_status',
+});
+
 function failure(code) {
     return {
         ok: false,
@@ -38,7 +66,8 @@ function failure(code) {
         platform_status: '',
         code,
         message: STUDENT_MESSAGES[code] || '保存没有完成，请稍后再试。',
-        retryable: false,
+        retryable: code === 'network' || code === 'submission_not_completed' || code === 'save_in_flight',
+        next_action: STUDENT_NEXT_ACTIONS[code] || '',
         request_id: '',
     };
 }
@@ -192,6 +221,7 @@ export function createXeduSubmitBridge({
     let activeFrame = null;
     let draft = null;
     let saving = false;
+    const requestsBySource = new WeakMap();
 
     function notify() {
         onDraftChange?.({ hasDraft: Boolean(draft), draft });
@@ -222,18 +252,26 @@ export function createXeduSubmitBridge({
 
     function replySubmitResponse(event, requestId, result) {
         if (!requestId || typeof event?.source?.postMessage !== 'function') return;
-        const completed = result?.platform_status === 'completed' || result?.status === 'completed';
+        const completed = result?.ok === true
+            && (result?.platform_status === 'completed' || result?.status === 'completed');
+        const confirming = result?.code === 'submission_not_completed'
+            || result?.platform_status === 'confirming'
+            || result?.status === 'confirming';
         const ok = result?.ok === true && completed;
         const payload = {
             type: 'xedu:submit-response',
             request_id: requestId,
             ok,
-            status: ok ? 'completed' : (result?.platform_status || result?.status || 'failed'),
+            status: ok ? 'completed' : (confirming ? 'confirming' : (result?.platform_status || result?.status || 'failed')),
             code: result?.code || '',
-            error: ok ? '' : (result?.message || result?.error || STUDENT_MESSAGES[result?.code] || '平台未确认保存完成，请重试。'),
-            message: result?.message || '',
+            error: ok ? '' : (STUDENT_MESSAGES[result?.code] || result?.message || result?.error || '平台未确认保存完成，请重试。'),
+            message: ok ? (result?.message || '') : (STUDENT_MESSAGES[result?.code] || result?.message || result?.error || ''),
+            retryable: result?.retryable === true,
+            next_action: result?.next_action || STUDENT_NEXT_ACTIONS[result?.code] || '',
             receipt_id: result?.receipt_id || '',
             submission_id: result?.submission_id || '',
+            diagnostic_id: result?.diagnostic_id || '',
+            progress_sync_status: result?.progress_sync_status || '',
         };
         const origin = typeof event.origin === 'string' && event.origin && event.origin !== 'null'
             ? event.origin
@@ -256,41 +294,103 @@ export function createXeduSubmitBridge({
         return requestId && requestId.length <= 100 ? requestId : '';
     }
 
-    async function handleMessage(event) {
+    async function processMessage(event, requestId) {
         const frameWindow = activeFrame?.contentWindow || null;
-        if (!frameWindow || event.source !== frameWindow) return;
-        const requestId = submitRequestId(event.data);
+        if (!frameWindow || event.source !== frameWindow) return null;
         const parsed = parseLabScoreMessage(event.data);
-        if (parsed.ignore) return;
+        if (parsed.ignore) return null;
         if (!parsed.ok) {
             onInvalidScore?.(parsed);
             if (requestId) {
-                replySubmitResponse(event, requestId, {
+                const result = {
                     ok: false,
                     platform_status: 'failed',
                     code: parsed.code || 'score_invalid',
                     message: parsed.message || STUDENT_MESSAGES.score_invalid,
-                });
+                };
+                replySubmitResponse(event, requestId, result);
+                return result;
             }
-            return;
+            return null;
         }
-        const stored = await remember(parsed.draft);
-        if (stored?.ok === false || !draft) return;
+        let stored;
+        try {
+            stored = await remember(parsed.draft);
+        } catch (_) {
+            stored = failure('network');
+        }
+        if (stored?.ok === false || !draft) {
+            const result = stored?.ok === false ? stored : failure('no_active_task');
+            if (requestId) replySubmitResponse(event, requestId, result);
+            return result;
+        }
         // Path B HTML (xedu:submit-request + request_id): save now and ack the iframe.
         // Other page scores notify the shell (no top-bar 保存成绩).
         if (requestId) {
-            const result = await run('score');
+            const result = await run('score', { requestId });
             onSaveResult?.(result);
             replySubmitResponse(event, requestId, result);
-            return;
+            return result;
         }
         onPageScoreSubmit?.(draft);
+        return { ok: true, draft };
+    }
+
+    async function handleMessage(event) {
+        const frameWindow = activeFrame?.contentWindow || null;
+        if (!frameWindow || event.source !== frameWindow) return;
+        const requestId = submitRequestId(event.data);
+        if (!requestId) return processMessage(event, '');
+        let records = requestsBySource.get(event.source);
+        if (!records) {
+            records = new Map();
+            requestsBySource.set(event.source, records);
+        }
+        let fingerprint;
+        try { fingerprint = JSON.stringify(event.data); }
+        catch (_) { fingerprint = ''; }
+        const existing = records.get(requestId);
+        if (existing) {
+            if (existing.fingerprint !== fingerprint) {
+                const conflict = {
+                    ok: false,
+                    platform_status: 'failed',
+                    code: 'XEDU_REQUEST_ID_CONFLICT',
+                    message: STUDENT_MESSAGES.XEDU_REQUEST_ID_CONFLICT,
+                    retryable: false,
+                    next_action: 'check_status',
+                };
+                replySubmitResponse(event, requestId, conflict);
+                return conflict;
+            }
+            if (existing.result) replySubmitResponse(event, requestId, existing.result);
+            return existing.promise || existing.result || null;
+        }
+        const record = { fingerprint, result: null, promise: null };
+        records.set(requestId, record);
+        record.promise = processMessage(event, requestId)
+            .then((result) => {
+                record.result = result;
+                return result;
+            })
+            .catch(() => {
+                const result = failure('network');
+                record.result = result;
+                replySubmitResponse(event, requestId, result);
+                return result;
+            });
+        while (records.size > 64) {
+            const completedId = [...records].find(([, value]) => value.result)?.[0];
+            if (!completedId) break;
+            records.delete(completedId);
+        }
+        return record.promise;
     }
 
     windowObject?.addEventListener?.('message', handleMessage);
 
-    async function run(kind, meta) {
-        if (saving) return failure('save_in_flight');
+    async function run(kind, meta = {}) {
+        if (saving) return { ...failure('save_in_flight'), retryable: true, next_action: 'check_status' };
         if ((kind === 'score' || kind === 'combined') && !draft) return failure('no_score_draft');
         const method = kind === 'project' ? 'saveProject' : kind === 'score'
             ? 'saveScore'
@@ -308,7 +408,7 @@ export function createXeduSubmitBridge({
             const bounds = kind !== 'project' && typeof captureBounds === 'function' ? captureBounds() : null;
             const result = kind === 'project' ? await transport.saveProject(meta) : kind === 'evidence'
                 ? await transport.saveEvidence(bounds, meta)
-                : await transport[method](bounds);
+                : await transport[method](kind === 'score' ? meta : bounds);
             const keepsScoreDraft = kind === 'screenshot' || kind === 'evidence' || kind === 'project';
             if (result?.platform_status === 'completed' && !keepsScoreDraft) {
                 draft = result.draft || null;
@@ -319,9 +419,18 @@ export function createXeduSubmitBridge({
             }
             notify();
             return result;
+        } catch (_) {
+            const result = failure('network');
+            if (!keepsDraftOnFailure(kind)) draft = frozen;
+            notify();
+            return result;
         } finally {
             saving = false;
         }
+    }
+
+    function keepsDraftOnFailure(kind) {
+        return kind === 'screenshot' || kind === 'evidence' || kind === 'project';
     }
 
     return {
