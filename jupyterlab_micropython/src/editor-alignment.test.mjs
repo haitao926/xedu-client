@@ -185,14 +185,19 @@ test('real Chromium keeps long lines horizontally scrollable in the single edito
   const code = ${JSON.stringify(code)};
   const editor = document.querySelector('[data-role="editor"]');
   editor.textContent = code;
-  // A classic (non-overlay) scrollbar can change clientWidth after the first
-  // scroll triggers layout. Settle that width, then measure the final edge.
   editor.scrollLeft = 10000;
-  void editor.clientWidth;
-  editor.scrollLeft = 10000;
+  const lastCharacter = document.createRange();
+  lastCharacter.setStart(editor.firstChild, code.length - 1);
+  lastCharacter.setEnd(editor.firstChild, code.length);
+  const editorRect = editor.getBoundingClientRect();
+  const lastRect = lastCharacter.getBoundingClientRect();
   document.getElementById('metrics-output').textContent = JSON.stringify({
     maxScrollLeft: editor.scrollWidth - editor.clientWidth,
     scrollLeft: editor.scrollLeft,
+    lastCharacterLeft: lastRect.left,
+    lastCharacterRight: lastRect.right,
+    visibleLeft: editorRect.left + editor.clientLeft,
+    visibleRight: editorRect.left + editor.clientLeft + editor.clientWidth,
   });
 </script></body></html>`;
   const tempDir = mkdtempSync(join(tmpdir(), 'chrome-editor-horizontal-'));
@@ -217,7 +222,12 @@ test('real Chromium keeps long lines horizontally scrollable in the single edito
     });
 
     assert.ok(result.maxScrollLeft > 0);
-    assert.equal(result.scrollLeft, result.maxScrollLeft);
+    assert.ok(result.scrollLeft > 0);
+    // Chromium counts a reserved classic scrollbar gutter differently from an
+    // overlay scrollbar. Verify the last character is visible, not that two
+    // browser-reported widths produce an identical scroll maximum.
+    assert.ok(result.lastCharacterLeft >= result.visibleLeft - 1, JSON.stringify(result));
+    assert.ok(result.lastCharacterRight <= result.visibleRight + 1, JSON.stringify(result));
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
